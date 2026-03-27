@@ -96,7 +96,7 @@ RUN for path in $(bin/toybox --long); do \
 
 # --- Install permissive packages from Alpine repos ---
 RUN apk add --no-cache \
-    clang lld llvm compiler-rt musl-dev linux-headers \
+    clang lld llvm compiler-rt musl-dev linux-headers libstdc++-dev \
     python3 nodejs ncurses perl dropbear dropbear-scp dropbear-dbclient curl zstd cmake samurai \
     alpine \
     && apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community mksh
