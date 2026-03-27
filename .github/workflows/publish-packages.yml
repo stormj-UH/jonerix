@@ -164,10 +164,12 @@ jobs:
         run: |
           set -e
 
-          shopt -s nullglob
-          pkgs=(/var/cache/jpkg/*.jpkg)
+          count=0
+          for pkg in /var/cache/jpkg/*.jpkg; do
+            [ -f "$pkg" ] && count=$((count + 1))
+          done
 
-          if [ ${#pkgs[@]} -eq 0 ]; then
+          if [ "$count" -eq 0 ]; then
             echo "No .jpkg files to upload."
             exit 0
           fi
@@ -175,9 +177,9 @@ jobs:
           gh release upload packages \
             --repo "$GITHUB_REPOSITORY" \
             --clobber \
-            "${pkgs[@]}"
+            /var/cache/jpkg/*.jpkg
 
-          echo "Uploaded ${#pkgs[@]} package(s)."
+          echo "Uploaded $count package(s)."
 
       - name: Upload INDEX.zst
         env:
