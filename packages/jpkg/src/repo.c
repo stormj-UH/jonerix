@@ -17,12 +17,18 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 
 /* ========== Configuration ========== */
 
 repo_config_t *repo_config_load(void) {
     repo_config_t *cfg = xcalloc(1, sizeof(repo_config_t));
-    cfg->arch = xstrdup("x86_64");
+    /* Detect architecture at runtime */
+    struct utsname uts;
+    if (uname(&uts) == 0)
+        cfg->arch = xstrdup(uts.machine);
+    else
+        cfg->arch = xstrdup("unknown");
 
     /* Default cache directory */
     char cache[512];
