@@ -23,8 +23,31 @@ The system ships with a full development toolchain including Python, Node.js, an
 ```sh
 brew install container
 container system start
+```
+
+Three image variants are available depending on how much you need:
+
+**Minimal** — bare essentials (toybox, jpkg, dropbear, openrc, mksh):
+```sh
+container build -f Dockerfile.minimal --tag jonerix-minimal:latest .
+container run --interactive --name jonerix jonerix-minimal:latest
+```
+
+**Develop** — minimal + clang, python3, node, cmake, perl:
+```sh
+container build -f Dockerfile.develop --tag jonerix-develop:latest .
+container run --interactive --name jonerix jonerix-develop:latest
+```
+
+**Bootstrap** — full build including alpine package manager:
+```sh
 container build --tag jonerix:latest .
 container run --interactive --name jonerix jonerix:latest
+```
+
+To build all three variants at once:
+```sh
+make images
 ```
 
 ## What's Inside
