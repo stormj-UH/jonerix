@@ -1,0 +1,4 @@
+# /etc/shells — valid login shells
+# jonerix ships mksh as the default shell.
+/bin/mksh
+/bin/sh

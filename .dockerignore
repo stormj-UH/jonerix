@@ -1,0 +1,5 @@
+.git
+.cas
+.claude
+.env*
+*.output
