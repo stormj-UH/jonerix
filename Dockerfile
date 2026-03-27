@@ -137,8 +137,12 @@ RUN cp /bin/mksh bin/mksh && \
     find /usr/lib/gcc -name 'crtendS.o' -exec cp {} lib/ \; 2>/dev/null || true && \
     find /usr/lib/gcc -name 'libgcc.a' -exec cp {} lib/ \; 2>/dev/null || true && \
     find /usr/lib/gcc -name 'libgcc_eh.a' -exec cp {} lib/ \; 2>/dev/null || true && \
-    # Headers
+    # Headers (C + C++ + Python)
     mkdir -p include && cp -r /usr/include/* include/ && \
+    # C++ stdlib headers (GCC's libstdc++ puts them in a versioned path)
+    for d in /usr/include/c++/*; do \
+        [ -d "$d" ] && cp -r "$d" include/c++/ 2>/dev/null; \
+    done && \
     # --- Python 3 (PSF) ---
     cp /usr/bin/python3 bin/python3 && ln -s python3 bin/python && \
     cp -r /usr/lib/python3.* lib/ && \
