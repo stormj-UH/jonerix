@@ -96,7 +96,7 @@ RUN for path in $(bin/toybox --long); do \
 
 # --- Install permissive packages from Alpine repos ---
 RUN apk add --no-cache \
-    clang lld llvm compiler-rt musl-dev linux-headers libstdc++-dev \
+    clang lld llvm compiler-rt musl-dev linux-headers libstdc++-dev pkgconf python3-dev \
     python3 nodejs ncurses perl dropbear dropbear-scp dropbear-dbclient curl zstd cmake samurai \
     alpine \
     && apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community mksh
@@ -154,6 +154,11 @@ RUN cp /bin/mksh bin/mksh && \
     cp -r /usr/share/terminfo/* lib/terminfo/ 2>/dev/null || true && \
     # --- zstd (BSD) ---
     cp /usr/bin/zstd bin/zstd && \
+    # --- pkgconf (ISC) ---
+    cp /usr/bin/pkgconf bin/pkgconf && \
+    ln -s pkgconf bin/pkg-config && \
+    mkdir -p lib/pkgconfig && \
+    cp /usr/lib/pkgconfig/*.pc lib/pkgconfig/ 2>/dev/null || true && \
     # --- cmake (BSD-3-Clause) + samurai/ninja (Apache-2.0) ---
     cp /usr/bin/cmake bin/cmake && \
     cp /usr/bin/samu bin/samu && ln -s samu bin/ninja && \
