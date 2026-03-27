@@ -1,0 +1,106 @@
+name: License Check
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'packages/**'
+      - 'config/**'
+      - 'scripts/license-audit.sh'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'config/**'
+      - 'scripts/license-audit.sh'
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: license-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  license-audit:
+    name: Audit package licenses
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Run license audit
+        run: |
+          echo "=== jonerix License Audit ==="
+          echo ""
+          echo "Policy: Every runtime component must be permissively licensed."
+          echo "Allowed: MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, Zlib, public domain"
+          echo "Forbidden: GPL, LGPL, AGPL (except Linux kernel)"
+          echo ""
+
+          # Run the license audit against package recipes
+          sh scripts/license-audit.sh --recipes --verbose
+
+      - name: Check for GPL strings in source
+        run: |
+          echo "=== Scanning for unexpected GPL references ==="
+
+          # Search for files that might indicate GPL dependencies snuck in.
+          # This is a heuristic check — not definitive.
+          violations=0
+
+          # Check for GPL license files in config/defaults (the shipped rootfs)
+          if grep -rl "GNU General Public License" config/defaults/ 2>/dev/null; then
+            echo "WARNING: Found GPL license text in config/defaults/"
+            violations=$((violations + 1))
+          fi
+
+          if grep -rl "GNU Lesser General Public License" config/defaults/ 2>/dev/null; then
+            echo "WARNING: Found LGPL license text in config/defaults/"
+            violations=$((violations + 1))
+          fi
+
+          # Check that no GPL-only tools are referenced in runtime scripts
+          for tool in bash gawk gsed gzip grep-gnu coreutils-gnu; do
+            if grep -rl "depends.*${tool}" packages/ 2>/dev/null | grep -v 'build\s*=' | grep 'runtime'; then
+              echo "WARNING: GPL tool '$tool' found as runtime dependency"
+              violations=$((violations + 1))
+            fi
+          done
+
+          if [ "$violations" -gt 0 ]; then
+            echo ""
+            echo "Found $violations potential GPL violation(s)."
+            echo "Please review the warnings above."
+            exit 1
+          fi
+
+          echo "No GPL references found in runtime files."
+
+      - name: Verify no GPL binaries in config defaults
+        run: |
+          echo "=== Checking config/defaults for binary files ==="
+
+          # config/defaults should only contain text configuration files
+          # and empty placeholder directories. No binaries should be present.
+          binary_count=0
+
+          find config/defaults -type f | while read -r f; do
+            ftype="$(file -b "$f" 2>/dev/null || echo 'unknown')"
+            case "$ftype" in
+              ELF*|*executable*|*"shared object"*)
+                echo "ERROR: Binary file found in config/defaults: $f ($ftype)"
+                binary_count=$((binary_count + 1))
+                ;;
+              empty|*"empty"*)
+                # .gitkeep files are fine
+                ;;
+              *text*|*ASCII*|*"very short"*)
+                # Text files are fine
+                ;;
+              *)
+                echo "NOTE: Non-text file: $f ($ftype)"
+                ;;
+            esac
+          done
+
+          echo "Config defaults check complete."

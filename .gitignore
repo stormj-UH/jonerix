@@ -1,3 +1,17 @@
 .cas/
 # Worktree-specific files (generated per worktree)
 .env.worktree
+# Build artifacts
+node-v*.tar.gz
+output/
+*.img
+*.tar.zst
+# Compiled objects
+*.o
+*.d
+*.dSYM/
+# Test binaries (keep .c sources)
+packages/jpkg/tests/test_toml
+packages/jpkg/tests/test_pkg
+packages/jpkg/tests/test_deps
+packages/jpkg/jpkg

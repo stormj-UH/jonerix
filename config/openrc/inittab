@@ -1,0 +1,20 @@
+# /etc/inittab — jonerix system initialization table
+#
+# Format: id:runlevels:action:process
+#
+# Default runlevel
+::sysinit:/bin/openrc sysinit
+::sysinit:/bin/openrc boot
+::wait:/bin/openrc default
+
+# Spawn agetty on tty1-tty3
+tty1::respawn:/bin/agetty 38400 tty1 linux
+tty2::respawn:/bin/agetty 38400 tty2 linux
+tty3::respawn:/bin/agetty 38400 tty3 linux
+
+# Serial console (for cloud / headless)
+#ttyS0::respawn:/bin/agetty -L 115200 ttyS0 vt100
+
+# Shutdown / reboot
+::shutdown:/bin/openrc shutdown
+::ctrlaltdel:/bin/reboot
