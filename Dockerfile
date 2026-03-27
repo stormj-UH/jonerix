@@ -98,8 +98,8 @@ RUN for path in $(bin/toybox --long); do \
 RUN apk add --no-cache \
     clang lld llvm compiler-rt musl-dev linux-headers \
     python3 nodejs ncurses perl dropbear dropbear-scp dropbear-dbclient \
-    && apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community mksh \
-    && (apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community alpine-pico || true)
+    alpine \
+    && apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community mksh
 
 # --- Copy binaries from Alpine into jonerix rootfs ---
 RUN cp /bin/mksh bin/mksh && \
