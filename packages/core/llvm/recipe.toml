@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "cmake"
-configure = "cmake -S llvm -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=\"clang;lld\" -DLLVM_TARGETS_TO_BUILD=\"X86;AArch64\""
+configure = "cmake -S llvm -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=\"clang;lld\" -DLLVM_TARGETS_TO_BUILD=\"X86;AArch64\""
 build = "cmake --build build -j$(nproc)"
 install = "DESTDIR=$DESTDIR cmake --install build"
 

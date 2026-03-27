@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "custom"
-configure = "./bootstrap --prefix=/usr --parallel=$(nproc)"
+configure = "./bootstrap --prefix=/ --parallel=$(nproc)"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 

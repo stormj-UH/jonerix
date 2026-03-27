@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "configure"
-configure = "./configure --prefix=/usr CC=clang"
+configure = "./configure --prefix=/ CC=clang"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 

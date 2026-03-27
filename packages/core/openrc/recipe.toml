@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "meson"
-configure = "meson setup build --prefix=/usr"
+configure = "meson setup build --prefix=/"
 build = "ninja -C build"
 install = "DESTDIR=$DESTDIR ninja -C build install"
 

@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "cmake"
-configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr"
+configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/"
 build = "cmake --build build -j$(nproc)"
 install = "DESTDIR=$DESTDIR cmake --install build"
 
