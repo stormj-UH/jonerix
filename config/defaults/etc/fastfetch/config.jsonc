@@ -28,7 +28,7 @@
         {
             "type": "command",
             "key": "Packages",
-            "text": "echo \"$(ls /var/db/jpkg/installed/ | wc -l | tr -d ' ') (jpkg)\""
+            "text": "echo $(ls -d /var/db/jpkg/installed/*/ 2>/dev/null | grep -c /) '(jpkg)'"
         },
         "shell",
         "terminal",

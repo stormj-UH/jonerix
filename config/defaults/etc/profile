@@ -3,7 +3,7 @@
 
 # --- PATH ---
 # jonerix uses merged /usr: all binaries live in /bin, all libraries in /lib.
-export PATH="/bin"
+export PATH="/bin:/usr/bin"
 
 # Add local bin if it exists (for user-installed tools)
 [ -d "/usr/local/bin" ] && export PATH="/usr/local/bin:$PATH"
