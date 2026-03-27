@@ -200,6 +200,7 @@ COPY config/defaults/etc/shells etc/shells
 COPY config/defaults/etc/profile etc/profile
 COPY config/defaults/etc/doas.conf etc/doas.conf
 COPY config/defaults/etc/os-release etc/os-release
+COPY config/defaults/etc/jpkg/keys/ etc/jpkg/keys/
 COPY config/defaults/etc/fastfetch/ etc/fastfetch/
 COPY config/openrc/init.d/ etc/init.d/
 RUN chmod 755 etc/init.d/* 2>/dev/null || true
