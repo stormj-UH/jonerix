@@ -489,32 +489,31 @@ int cmd_build(int argc, char **argv) {
     if (rc != 0) goto cleanup;
 
     /* Step 2: Find the actual source directory (tarball may extract to a subdir) */
+    /* Look for a single subdirectory inside src_dir that contains the source */
     {
         DIR *d = opendir(src_dir);
         if (d) {
             struct dirent *ent;
-            char *subdir = NULL;
-            int count = 0;
+            char only_subdir[256] = {0};
+            int dir_count = 0;
             while ((ent = readdir(d)) != NULL) {
                 if (ent->d_name[0] == '.') continue;
-                count++;
-                if (!subdir) subdir = xstrdup(ent->d_name);
-            }
-            closedir(d);
-            /* If there's exactly one subdirectory, cd into it */
-            if (count == 1 && subdir) {
-                char check[512];
-                snprintf(check, sizeof(check), "%s/%s", src_dir, subdir);
-                if (dir_exists(check)) {
-                    snprintf(src_dir, sizeof(src_dir), "%s/%s", work_dir, subdir);
-                    /* Move contents up: rename subdir to src_dir path */
-                    char new_src[256];
-                    snprintf(new_src, sizeof(new_src), "%s/src/%s", work_dir, subdir);
-                    strncpy(src_dir, new_src, sizeof(src_dir) - 1);
-                    log_debug("source directory: %s", src_dir);
+                char check_path[512];
+                snprintf(check_path, sizeof(check_path), "%s/%s", src_dir, ent->d_name);
+                if (dir_exists(check_path)) {
+                    dir_count++;
+                    if (dir_count == 1)
+                        strncpy(only_subdir, ent->d_name, sizeof(only_subdir) - 1);
                 }
             }
-            free(subdir);
+            closedir(d);
+            if (dir_count == 1 && only_subdir[0]) {
+                char new_src[512];
+                snprintf(new_src, sizeof(new_src), "%s/%s", src_dir, only_subdir);
+                strncpy(src_dir, new_src, sizeof(src_dir) - 1);
+                src_dir[sizeof(src_dir) - 1] = '\0';
+                log_info("  source directory: %s", src_dir);
+            }
         }
     }
 
