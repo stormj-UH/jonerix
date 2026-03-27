@@ -33,7 +33,7 @@ repo_config_t *repo_config_load(void) {
     char conf_path[512];
     snprintf(conf_path, sizeof(conf_path), "%s%s/repos.conf", g_rootfs, JPKG_CONFIG_DIR);
 
-    uint8_t *data;
+    uint8_t *data = NULL;
     ssize_t len = file_read(conf_path, &data);
     if (len > 0) {
         char *err = NULL;
