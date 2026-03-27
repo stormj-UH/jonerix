@@ -1,0 +1,18 @@
+[package]
+name = "npm"
+version = "10.9.2"
+license = "Artistic-2.0"
+description = "Node.js package manager"
+
+[source]
+url = "https://registry.npmjs.org/npm/-/npm-10.9.2.tgz"
+sha256 = "FIXME"
+
+[build]
+configure = ""
+build = ""
+install = "mkdir -p $DESTDIR/usr/lib/node_modules/npm && cp -r . $DESTDIR/usr/lib/node_modules/npm/ && mkdir -p $DESTDIR/usr/bin && ln -sf ../lib/node_modules/npm/bin/npm-cli.js $DESTDIR/usr/bin/npm && ln -sf ../lib/node_modules/npm/bin/npx-cli.js $DESTDIR/usr/bin/npx"
+
+[depends]
+runtime = ["nodejs"]
+build = []

@@ -1,0 +1,19 @@
+[package]
+name = "llvm"
+version = "19.1.5"
+license = "Apache-2.0"
+description = "LLVM compiler infrastructure with clang and lld"
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.5/llvm-project-19.1.5.src.tar.xz"
+sha256 = "FIXME"
+
+[build]
+system = "cmake"
+configure = "cmake -S llvm -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=\"clang;lld\" -DLLVM_TARGETS_TO_BUILD=\"X86;AArch64\""
+build = "cmake --build build -j$(nproc)"
+install = "DESTDIR=$DESTDIR cmake --install build"
+
+[depends]
+runtime = ["musl"]
+build = ["cmake", "samurai"]

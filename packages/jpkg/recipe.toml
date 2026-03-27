@@ -1,0 +1,17 @@
+[package]
+name = "jpkg"
+version = "0.1.0"
+license = "MIT"
+description = "jonerix package manager"
+
+[source]
+# Local package — no upstream URL
+
+[build]
+system = "make"
+build = "make CC=clang LD=ld.lld"
+install = "install -Dm755 jpkg $DESTDIR/usr/bin/jpkg && install -d $DESTDIR/etc/jpkg/keys && install -d $DESTDIR/var/db/jpkg/installed && install -d $DESTDIR/var/cache/jpkg"
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "llvm"]

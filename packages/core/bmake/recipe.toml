@@ -1,0 +1,19 @@
+[package]
+name = "bmake"
+version = "20240808"
+license = "MIT"
+description = "Portable version of NetBSD make"
+
+[source]
+url = "https://www.crufty.net/ftp/pub/sjg/bmake-20240808.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "custom"
+configure = "./configure --prefix=/usr CC=clang"
+build = "sh make-bootstrap.sh"
+install = "install -Dm755 bmake $DESTDIR/usr/bin/bmake"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

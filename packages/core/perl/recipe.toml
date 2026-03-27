@@ -1,0 +1,19 @@
+[package]
+name = "perl"
+version = "5.40.0"
+license = "Artistic-2.0"
+description = "Practical Extraction and Report Language"
+
+[source]
+url = "https://www.cpan.org/src/5.0/perl-5.40.0.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "custom"
+configure = "./Configure -des -Dprefix=/usr -Duseshrplib"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl"]
+build = ["make"]

@@ -1,0 +1,19 @@
+[package]
+name = "musl"
+version = "1.2.5"
+license = "MIT"
+description = "Lightweight, fast, and standards-conformant C library"
+
+[source]
+url = "https://musl.libc.org/releases/musl-1.2.5.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "configure"
+configure = "./configure --prefix=/"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = []
+build = ["clang"]

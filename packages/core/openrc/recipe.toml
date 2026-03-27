@@ -1,0 +1,19 @@
+[package]
+name = "openrc"
+version = "0.54"
+license = "BSD-2-Clause"
+description = "Dependency-based init system for Unix-like systems"
+
+[source]
+url = "https://github.com/OpenRC/openrc/archive/0.54.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "meson"
+configure = "meson setup build --prefix=/usr"
+build = "ninja -C build"
+install = "DESTDIR=$DESTDIR ninja -C build install"
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "meson", "samurai"]
