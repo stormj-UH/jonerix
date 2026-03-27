@@ -185,7 +185,10 @@ RUN cp /bin/mksh bin/mksh && \
     done && \
     # GCC runtime (needed by linker)
     find /usr/lib/gcc -name 'libgcc_s.so*' -exec cp -n {} lib/ \; 2>/dev/null || true && \
-    cp /usr/lib/libgcc_s.so* lib/ 2>/dev/null || true
+    cp /usr/lib/libgcc_s.so* lib/ 2>/dev/null || true && \
+    # Linker symlinks for -lstdc++ and -lgcc_s
+    ln -sf libstdc++.so.6 lib/libstdc++.so 2>/dev/null || true && \
+    ln -sf libgcc_s.so.1 lib/libgcc_s.so 2>/dev/null || true
 
 # --- Default configs ---
 COPY config/defaults/etc/hostname etc/hostname
