@@ -1,0 +1,3 @@
+.cas/
+# Worktree-specific files (generated per worktree)
+.env.worktree
