@@ -1,0 +1,19 @@
+[package]
+name = "nvi"
+version = "2.2.1"
+license = "BSD-3-Clause"
+description = "nvi2 text editor (reimplementation of Berkeley vi)"
+
+[source]
+url = "https://github.com/lichray/nvi2/archive/refs/tags/v2.2.1.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "cmake"
+configure = "cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/"
+build = "cmake --build build -j$(nproc)"
+install = "DESTDIR=$DESTDIR cmake --install build"
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "cmake", "samurai"]

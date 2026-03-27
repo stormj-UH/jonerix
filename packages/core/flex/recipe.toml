@@ -1,0 +1,19 @@
+[package]
+name = "flex"
+version = "2.6.4"
+license = "BSD-2-Clause"
+description = "Fast lexical analyzer generator"
+
+[source]
+url = "https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "configure"
+configure = "./configure --prefix=/usr CC=clang"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]

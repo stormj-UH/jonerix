@@ -1,0 +1,19 @@
+[package]
+name = "dropbear"
+version = "2024.86"
+license = "MIT"
+description = "Lightweight SSH server and client"
+
+[source]
+url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.86.tar.bz2"
+sha256 = "FIXME"
+
+[build]
+system = "configure"
+configure = "./configure --prefix=/usr --disable-wtmp --disable-lastlog"
+build = "make PROGRAMS=\"dropbear dbclient dropbearkey scp\" -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

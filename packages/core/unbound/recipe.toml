@@ -1,0 +1,19 @@
+[package]
+name = "unbound"
+version = "1.22.0"
+license = "BSD-3-Clause"
+description = "Validating, recursive, and caching DNS resolver"
+
+[source]
+url = "https://nlnetlabs.nl/downloads/unbound/unbound-1.22.0.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "configure"
+configure = "./configure --prefix=/usr --with-ssl=/usr"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl", "libressl"]
+build = ["clang", "libressl"]
