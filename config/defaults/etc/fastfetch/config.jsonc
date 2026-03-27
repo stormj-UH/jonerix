@@ -26,11 +26,17 @@
         "kernel",
         "uptime",
         {
-            "type": "packages",
-            "key": "Packages"
+            "type": "command",
+            "key": "Packages",
+            "text": "echo \"$(ls /var/db/jpkg/installed/ | wc -l | tr -d ' ') (jpkg)\""
         },
         "shell",
         "terminal",
+        {
+            "type": "command",
+            "key": "Editor",
+            "text": "echo pico"
+        },
         "cpu",
         "memory",
         "disk",
