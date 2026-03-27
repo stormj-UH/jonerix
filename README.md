@@ -1,5 +1,27 @@
 # jonerix
 
+```
+          .---------.
+        /    _   _    \
+       |    (o) (o)    |
+       |      \_/      |
+       |    \_____/    |
+        \ ,-------. /
+         |#########|
+         |## ||| ##|
+         |#|||||||#|
+          \#######/
+           `-----'
+
+    _                       _
+   (_) ___  _ __   ___ _ __(_)_  __
+   | |/ _ \| '_ \ / _ \ '__| \ \/ /
+   | | (_) | | | |  __/ |  | |>  <
+  _/ |\___/|_| |_|\___|_|  |_/_/\_\
+ |__/
+   ========= permissive linux =========
+```
+
 **A Linux distribution with a strictly permissive userland.**
 
 ## Overview
@@ -69,7 +91,25 @@ See `bootstrap/config.sh` for version pins, SHA256 hashes, and compiler flags.
 ## fastfetch
 
 ```
-fastfetch output showing jonerix system info on aarch64
+          .---------.
+        /    _   _    \                root@jonerix
+       |    (o) (o)    |               -----------------
+       |      \_/      |               OS -> jonerix 1.0 aarch64
+       |    \_____/    |               Kernel -> Linux 6.18.5
+        \ ,-------. /                  Uptime -> 5 seconds
+         |#########|                   Shell -> mksh
+         |## ||| ##|                   Terminal -> xterm
+         |#|||||||#|                   CPU -> Virtualized Apple Silicon (4)
+          \#######/                    Memory -> 102.67 MiB / 1.01 GiB (10%)
+           `-----'                     Disk (/) -> 726 MiB / 504 GiB (0%) - ext4
+                                       Local IP (eth0) -> 192.168.64.29/24
+    _                       _
+   (_) ___  _ __   ___ _ __(_)_  __
+   | |/ _ \| '_ \ / _ \ '__| \ \/ /
+   | | (_) | | | |  __/ |  | |>  <
+  _/ |\___/|_| |_|\___|_|  |_/_/\_\
+ |__/
+   ========= permissive linux =========
 ```
 
 ## License
