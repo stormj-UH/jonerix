@@ -1,0 +1,19 @@
+[package]
+name = "pico"
+version = "8.2"
+license = "GPL-3.0"
+description = "Pico-compatible text editor (nano with pico mode)"
+
+[source]
+url = "https://www.nano-editor.org/dist/v8/nano-8.2.tar.xz"
+sha256 = "c3c23d325e41efcf8eb44f61d6e5e49cf43fa3b1c24a3d7777dda4b5c79a2027"
+
+[build]
+system = "autoconf"
+configure = "./configure --prefix=/ --disable-nls --disable-mouse --enable-tiny CFLAGS=-Os"
+build = "make -j$(nproc)"
+install = "make DESTDIR=$DESTDIR install && ln -sf nano $DESTDIR/bin/pico"
+
+[depends]
+runtime = ["ncurses"]
+build = ["ncurses"]

@@ -1,17 +1,25 @@
 # jonerix top-level Makefile
 #
 # Targets:
-#   bootstrap  - Run stage0 through stage2 to produce the jonerix rootfs
-#   image      - Build a bootable disk image (requires stage2 output)
-#   oci        - Build an OCI container image (requires stage2 output)
-#   verify     - Run stage3 self-hosting verification
-#   clean      - Remove all build artifacts
-#   license-audit - Verify no GPL binaries in the rootfs
+#   bootstrap      - Run stage0 through stage2 to produce the jonerix rootfs
+#   image          - Build a bootable disk image (requires stage2 output)
+#   oci            - Build an OCI container image (requires stage2 output)
+#   verify         - Run stage3 self-hosting verification
+#   clean          - Remove all build artifacts
+#   license-audit  - Verify no GPL binaries in the rootfs
+#   image-minimal  - Build container image: bare essentials only
+#   image-develop  - Build container image: minimal + dev tools
+#   image-bootstrap- Build container image: full build including alpine apk
+#   images         - Build all three container image variants
 #
 # Usage:
-#   make bootstrap   # full build from Alpine host
-#   make image       # after bootstrap, produce bootable image
-#   make oci         # after bootstrap, produce OCI image
+#   make bootstrap       # full build from Alpine host
+#   make image           # after bootstrap, produce bootable image
+#   make oci             # after bootstrap, produce OCI image
+#   make image-minimal   # bare-essentials container image
+#   make image-develop   # development container image
+#   make image-bootstrap # full bootstrap container image
+#   make images          # build all three container variants
 
 SHELL       := /bin/sh
 ROOTDIR     := $(CURDIR)
@@ -20,7 +28,7 @@ OUTPUT      := $(ROOTDIR)/output
 IMAGE_DIR   := $(ROOTDIR)/image
 SCRIPTS_DIR := $(ROOTDIR)/scripts
 
-.PHONY: all bootstrap stage0 stage1 stage2 image oci verify clean license-audit help
+.PHONY: all bootstrap stage0 stage1 stage2 image oci verify clean license-audit help image-minimal image-develop image-bootstrap images
 
 all: bootstrap
 
@@ -57,6 +65,21 @@ oci:
 	@echo "=== Building OCI container image ==="
 	@test -d $(OUTPUT) || { echo "ERROR: Run 'make bootstrap' first."; exit 1; }
 	sh $(IMAGE_DIR)/oci.sh
+
+# --------------------------------------------------------------------------
+# Container image variants
+# --------------------------------------------------------------------------
+
+image-minimal:
+	container build -f Dockerfile.minimal --tag jonerix-minimal:latest .
+
+image-develop:
+	container build -f Dockerfile.develop --tag jonerix-develop:latest .
+
+image-bootstrap:
+	container build --tag jonerix:latest .
+
+images: image-minimal image-develop image-bootstrap
 
 # --------------------------------------------------------------------------
 # Verification
@@ -100,3 +123,9 @@ help:
 	@echo "  license-audit  Verify all rootfs binaries are permissive"
 	@echo "  clean          Remove all build artifacts"
 	@echo "  help           Show this help message"
+	@echo ""
+	@echo "Container image variants:"
+	@echo "  image-minimal  bare essentials (toybox, jpkg, dropbear, openrc, mksh)"
+	@echo "  image-develop  minimal + clang, python3, node, cmake, perl"
+	@echo "  image-bootstrap full build including alpine package manager"
+	@echo "  images         build all three variants"
