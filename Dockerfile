@@ -126,7 +126,12 @@ RUN cp /bin/mksh bin/mksh && \
     mkdir -p lib/clang && \
     CLANG_RES=$(find /usr/lib -path '*/clang/*/include' -type d 2>/dev/null | head -1) && \
     [ -n "$CLANG_RES" ] && cp -r "$(dirname "$CLANG_RES")" lib/clang/ || true && \
-    mkdir -p etc/clang && cp /etc/clang*/*.cfg etc/clang/ 2>/dev/null || true && \
+    mkdir -p etc/clang && \
+    GCC_VER=$(ls /usr/include/c++/ | head -1) && \
+    TRIPLE=$(clang -dumpmachine) && \
+    (cat /etc/clang*/*.cfg 2>/dev/null; \
+     echo "--gcc-install-dir=/usr/lib/gcc/${TRIPLE}/${GCC_VER}"; \
+    ) > etc/clang/${TRIPLE}.cfg && \
     # CRT objects + static libs (musl-dev)
     for f in Scrt1.o crt1.o crti.o crtn.o rcrt1.o \
              libc.a libc.so libm.a libpthread.a libdl.a librt.a \
@@ -143,6 +148,11 @@ RUN cp /bin/mksh bin/mksh && \
     for d in /usr/include/c++/*; do \
         [ -d "$d" ] && cp -r "$d" include/c++/ 2>/dev/null; \
     done && \
+    # Copy GCC install directory (needed for clang to find C++ headers)
+    GCC_VER=$(ls /usr/include/c++/ | head -1) && \
+    TRIPLE=$(clang -dumpmachine) && \
+    mkdir -p "lib/gcc/${TRIPLE}/${GCC_VER}/include" && \
+    cp -r "/usr/lib/gcc/${TRIPLE}/${GCC_VER}/"* "lib/gcc/${TRIPLE}/${GCC_VER}/" 2>/dev/null || true && \
     # --- Python 3 (PSF) ---
     cp /usr/bin/python3 bin/python3 && ln -s python3 bin/python && \
     cp -r /usr/lib/python3.* lib/ && \
