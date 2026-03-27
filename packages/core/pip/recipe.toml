@@ -1,0 +1,18 @@
+[package]
+name = "pip"
+version = "24.3.1"
+license = "MIT"
+description = "Python package installer"
+
+[source]
+url = "https://github.com/pypa/pip/archive/refs/tags/24.3.1.tar.gz"
+sha256 = "FIXME"
+
+[build]
+configure = ""
+build = "python3 setup.py build"
+install = "python3 setup.py install --prefix=/usr --root=$DESTDIR"
+
+[depends]
+runtime = ["python3"]
+build = ["python3"]

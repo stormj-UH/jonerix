@@ -1,0 +1,19 @@
+[package]
+name = "libressl"
+version = "4.0.0"
+license = "ISC"
+description = "Free TLS/crypto stack forked from OpenSSL"
+
+[source]
+url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "cmake"
+configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr"
+build = "cmake --build build -j$(nproc)"
+install = "DESTDIR=$DESTDIR cmake --install build"
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "cmake", "samurai"]

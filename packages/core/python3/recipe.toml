@@ -1,0 +1,19 @@
+[package]
+name = "python3"
+version = "3.12.8"
+license = "PSF-2.0"
+description = "Python programming language interpreter"
+
+[source]
+url = "https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tar.xz"
+sha256 = "FIXME"
+
+[build]
+system = "configure"
+configure = "./configure --prefix=/usr --without-ensurepip --with-openssl=/usr --disable-test-modules CC=clang"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl", "openssl"]
+build = ["clang", "make"]

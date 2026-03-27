@@ -1,0 +1,19 @@
+[package]
+name = "nodejs"
+version = "22.12.0"
+license = "MIT"
+description = "JavaScript runtime built on V8"
+
+[source]
+url = "https://nodejs.org/dist/v22.12.0/node-v22.12.0.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "custom"
+configure = "CC=clang CXX=clang++ python3 configure.py --prefix=/usr --ninja --partly-static --without-npm --without-corepack --with-intl=none --shared-zlib"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl", "zlib"]
+build = ["clang", "python3", "make", "samurai"]

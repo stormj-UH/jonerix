@@ -1,0 +1,19 @@
+[package]
+name = "cmake"
+version = "4.1.0"
+license = "BSD-3-Clause"
+description = "Cross-platform build system generator"
+
+[source]
+url = "https://github.com/Kitware/CMake/releases/download/v4.1.0/cmake-4.1.0.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "custom"
+configure = "./bootstrap --prefix=/usr --parallel=$(nproc)"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

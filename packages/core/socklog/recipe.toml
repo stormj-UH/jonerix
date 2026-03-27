@@ -1,0 +1,19 @@
+[package]
+name = "socklog"
+version = "2.2.3"
+license = "BSD-3-Clause"
+description = "Small and secure syslogd replacement (DJB-style)"
+
+[source]
+url = "https://smarden.org/socklog/socklog-2.2.3.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "custom"
+configure = "echo 'clang -Os -pipe -fstack-protector-strong -fPIE' > src/conf-cc && echo 'clang -Wl,-z,relro,-z,now -pie' > src/conf-ld"
+build = "cd src && make"
+install = "install -Dm755 src/socklog $DESTDIR/bin/socklog && install -Dm755 src/socklog-check $DESTDIR/bin/socklog-check && install -Dm755 src/tryto $DESTDIR/bin/tryto && install -Dm755 src/uncat $DESTDIR/bin/uncat && mkdir -p $DESTDIR/var/log/socklog"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]
