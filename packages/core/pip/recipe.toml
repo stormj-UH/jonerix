@@ -11,7 +11,7 @@ sha256 = "FIXME"
 [build]
 configure = ""
 build = "python3 setup.py build"
-install = "python3 setup.py install --prefix=/usr --root=$DESTDIR"
+install = "python3 setup.py install --prefix=/ --root=$DESTDIR"
 
 [depends]
 runtime = ["python3"]

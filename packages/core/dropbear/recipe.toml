@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "configure"
-configure = "./configure --prefix=/usr --disable-wtmp --disable-lastlog"
+configure = "./configure --prefix=/ --disable-wtmp --disable-lastlog"
 build = "make PROGRAMS=\"dropbear dbclient dropbearkey scp\" -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 

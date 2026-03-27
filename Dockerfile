@@ -228,7 +228,7 @@ FROM scratch
 
 COPY --from=assembler /jonerix/ /
 
-ENV PATH=/bin:/usr/bin
+ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/mksh
 ENV TERM=xterm

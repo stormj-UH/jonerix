@@ -10,9 +10,9 @@ sha256 = "FIXME"
 
 [build]
 system = "custom"
-configure = "./configure --prefix=/usr CC=clang"
+configure = "./configure --prefix=/ CC=clang"
 build = "sh make-bootstrap.sh"
-install = "install -Dm755 bmake $DESTDIR/usr/bin/bmake"
+install = "install -Dm755 bmake $DESTDIR/bin/bmake"
 
 [depends]
 runtime = ["musl"]

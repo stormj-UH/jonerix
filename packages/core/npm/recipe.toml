@@ -11,7 +11,7 @@ sha256 = "FIXME"
 [build]
 configure = ""
 build = ""
-install = "mkdir -p $DESTDIR/usr/lib/node_modules/npm && cp -r . $DESTDIR/usr/lib/node_modules/npm/ && mkdir -p $DESTDIR/usr/bin && ln -sf ../lib/node_modules/npm/bin/npm-cli.js $DESTDIR/usr/bin/npm && ln -sf ../lib/node_modules/npm/bin/npx-cli.js $DESTDIR/usr/bin/npx"
+install = "mkdir -p $DESTDIR/lib/node_modules/npm && cp -r . $DESTDIR/lib/node_modules/npm/ && mkdir -p $DESTDIR/bin && ln -sf ../lib/node_modules/npm/bin/npm-cli.js $DESTDIR/bin/npm && ln -sf ../lib/node_modules/npm/bin/npx-cli.js $DESTDIR/bin/npx"
 
 [depends]
 runtime = ["nodejs"]

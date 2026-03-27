@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "configure"
-configure = "./configure --prefix=/usr --without-ensurepip --with-openssl=/usr --disable-test-modules CC=clang"
+configure = "./configure --prefix=/ --without-ensurepip --with-openssl=/ --disable-test-modules CC=clang"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 
