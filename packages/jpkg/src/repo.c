@@ -88,7 +88,7 @@ repo_config_t *repo_config_load(void) {
     /* If no mirrors configured, use default */
     if (cfg->mirror_count == 0) {
         repo_mirror_t *m = xcalloc(1, sizeof(repo_mirror_t));
-        m->url = xstrdup("https://pkg.jonerix.org/v1");
+        m->url = xstrdup("https://github.com/stormj-UH/jonerix/releases/download/packages");
         m->priority = 100;
         m->enabled = true;
         cfg->mirrors = m;
@@ -339,26 +339,27 @@ int repo_update(const repo_config_t *cfg) {
         return -1;
     }
 
-    /* Verify signature */
-    uint8_t *index_data;
+    /* Verify signature (if available) */
+    uint8_t *index_data = NULL;
     ssize_t index_len = file_read(index_path, &index_data);
-    if (index_len <= 0) {
+    if (index_len <= 0 || !index_data) {
         log_error("failed to read downloaded INDEX");
+        free(index_data);
         return -1;
     }
 
-    uint8_t *sig_data;
+    uint8_t *sig_data = NULL;
     ssize_t sig_len = file_read(sig_path, &sig_data);
-    if (sig_len > 0) {
+    if (sig_len > 0 && sig_data) {
         if (!sign_verify_detached(index_data, (size_t)index_len,
                                   sig_data, (size_t)sig_len)) {
             log_warn("INDEX signature verification failed (continuing anyway)");
-            /* In strict mode, we would return -1 here */
         } else {
             log_info("INDEX signature verified");
         }
         free(sig_data);
     } else {
+        free(sig_data);
         log_debug("no INDEX signature to verify");
     }
 
