@@ -7,6 +7,8 @@
  */
 
 #include "pkg.h"
+#include "repo.h"
+#include "fetch.h"
 #include "toml.h"
 #include "util.h"
 #include <stdio.h>
@@ -362,14 +364,78 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
     return rc;
 }
 
+/*
+ * Fetch a recipe.toml from the package repository for a given package name.
+ * Downloads from <mirror>/recipes/<name>/recipe.toml
+ * Returns a temporary directory containing the recipe, or NULL on failure.
+ */
+static char *fetch_remote_recipe(const char *pkg_name) {
+    repo_config_t *cfg = repo_config_load();
+    if (!cfg || !cfg->mirrors) {
+        log_error("no repository mirrors configured");
+        repo_config_free(cfg);
+        return NULL;
+    }
+
+    /* Create temp directory for the recipe */
+    char *recipe_dir = xstrdup("/tmp/jpkg-recipe-XXXXXX");
+    if (!mkdtemp(recipe_dir)) {
+        log_error("failed to create temp directory");
+        free(recipe_dir);
+        repo_config_free(cfg);
+        return NULL;
+    }
+
+    char recipe_path[512];
+    snprintf(recipe_path, sizeof(recipe_path), "%s/recipe.toml", recipe_dir);
+
+    /* Try each mirror — look for recipes/<name>/recipe.toml */
+    bool fetched = false;
+    for (repo_mirror_t *m = cfg->mirrors; m && !fetched; m = m->next) {
+        if (!m->enabled) continue;
+
+        char url[2048];
+        /* Try GitHub raw content URL pattern for stormj-UH/jonerix */
+        snprintf(url, sizeof(url),
+                 "https://raw.githubusercontent.com/stormj-UH/jonerix/master/"
+                 "packages/core/%s/recipe.toml", pkg_name);
+
+        log_info("fetching recipe for %s...", pkg_name);
+        if (fetch_to_file(url, recipe_path) == 0) {
+            fetched = true;
+        } else {
+            /* Fallback: try <mirror>/recipes/<name>.toml */
+            snprintf(url, sizeof(url), "%s/recipes/%s.toml", m->url, pkg_name);
+            if (fetch_to_file(url, recipe_path) == 0) {
+                fetched = true;
+            }
+        }
+    }
+
+    repo_config_free(cfg);
+
+    if (!fetched) {
+        log_error("no recipe found for '%s' in any mirror", pkg_name);
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", recipe_dir);
+        system(cmd);
+        free(recipe_dir);
+        return NULL;
+    }
+
+    log_info("recipe downloaded for %s", pkg_name);
+    return recipe_dir;
+}
+
 int cmd_build(int argc, char **argv) {
     if (argc < 1) {
-        fprintf(stderr, "usage: jpkg build <recipe-dir> [--output <dir>]\n");
+        fprintf(stderr, "usage: jpkg build <recipe-dir-or-package-name> [--output <dir>]\n");
         return 1;
     }
 
-    const char *recipe_dir = argv[0];
+    const char *arg = argv[0];
     const char *output_dir = ".";
+    char *fetched_recipe_dir = NULL;
 
     /* Parse options */
     for (int i = 1; i < argc; i++) {
@@ -379,14 +445,29 @@ int cmd_build(int argc, char **argv) {
         }
     }
 
-    if (!dir_exists(recipe_dir)) {
-        log_error("recipe directory not found: %s", recipe_dir);
-        return 1;
+    const char *recipe_dir;
+
+    if (dir_exists(arg)) {
+        /* Argument is a local directory */
+        recipe_dir = arg;
+    } else {
+        /* Argument is a package name — fetch recipe from repo */
+        fetched_recipe_dir = fetch_remote_recipe(arg);
+        if (!fetched_recipe_dir) return 1;
+        recipe_dir = fetched_recipe_dir;
     }
 
     /* Load recipe */
     build_recipe_t *recipe = load_recipe(recipe_dir);
-    if (!recipe) return 1;
+    if (!recipe) {
+        if (fetched_recipe_dir) {
+            char cmd[512];
+            snprintf(cmd, sizeof(cmd), "rm -rf '%s'", fetched_recipe_dir);
+            system(cmd);
+            free(fetched_recipe_dir);
+        }
+        return 1;
+    }
 
     log_info("building %s-%s...", recipe->name, recipe->version);
 
@@ -438,6 +519,14 @@ cleanup:
         log_info("build complete: %s-%s", recipe->name, recipe->version);
     } else {
         log_error("build failed: %s-%s", recipe->name, recipe->version);
+    }
+
+    /* Clean up fetched recipe directory */
+    if (fetched_recipe_dir) {
+        char cmd2[512];
+        snprintf(cmd2, sizeof(cmd2), "rm -rf '%s'", fetched_recipe_dir);
+        system(cmd2);
+        free(fetched_recipe_dir);
     }
 
     recipe_free(recipe);

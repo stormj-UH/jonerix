@@ -97,7 +97,7 @@ RUN for path in $(bin/toybox --long); do \
 # --- Install permissive packages from Alpine repos ---
 RUN apk add --no-cache \
     clang lld llvm compiler-rt musl-dev linux-headers \
-    python3 nodejs ncurses perl dropbear dropbear-scp dropbear-dbclient curl zstd \
+    python3 nodejs ncurses perl dropbear dropbear-scp dropbear-dbclient curl zstd cmake samurai \
     alpine \
     && apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community mksh
 
@@ -154,6 +154,10 @@ RUN cp /bin/mksh bin/mksh && \
     cp -r /usr/share/terminfo/* lib/terminfo/ 2>/dev/null || true && \
     # --- zstd (BSD) ---
     cp /usr/bin/zstd bin/zstd && \
+    # --- cmake (BSD-3-Clause) + samurai/ninja (Apache-2.0) ---
+    cp /usr/bin/cmake bin/cmake && \
+    cp /usr/bin/samu bin/samu && ln -s samu bin/ninja && \
+    mkdir -p share && cp -r /usr/share/cmake share/cmake && \
     # --- curl (MIT-like) + CA certificates ---
     cp /usr/bin/curl bin/curl && \
     apk add --no-cache ca-certificates && \
@@ -166,7 +170,7 @@ RUN cp /bin/mksh bin/mksh && \
     cp /usr/bin/scp bin/scp 2>/dev/null || true && \
     # --- All shared libraries: use ldd to find everything needed ---
     for bin in bin/python3 bin/node bin/clang bin/ld.lld bin/mksh \
-               bin/dropbear bin/dbclient bin/perl bin/pico bin/curl bin/zstd; do \
+               bin/dropbear bin/dbclient bin/perl bin/pico bin/curl bin/zstd bin/cmake; do \
         [ -f "$bin" ] && ldd "$bin" 2>/dev/null | awk '/=>/{print $3}' | while read so; do \
             [ -f "$so" ] && cp -n "$so" lib/ 2>/dev/null || true; \
         done; \
@@ -203,7 +207,8 @@ RUN for pkg in \
     "python3 3.12 PSF-2.0" "nodejs 22 MIT" "zlib 1.3 Zlib" "pico 2.26 Apache-2.0" \
     "dropbear 2024.86 MIT" "llvm 21.1.2 Apache-2.0" "clang 21.1.2 Apache-2.0" \
     "lld 21.1.2 Apache-2.0" "bmake 20240808 MIT" "flex 2.6.4 BSD-2-Clause" \
-    "perl 5.40 Artistic-2.0" "bc 7.0.3 BSD-2-Clause" "curl 8.17 MIT" "zstd 1.5.7 BSD"; \
+    "perl 5.40 Artistic-2.0" "bc 7.0.3 BSD-2-Clause" "curl 8.17 MIT" "zstd 1.5.7 BSD" \
+    "cmake 4.1 BSD-3-Clause" "samurai 1.2 Apache-2.0"; \
     do set -- $pkg; \
     mkdir -p "var/db/jpkg/installed/$1"; \
     printf "[package]\nname = \"$1\"\nversion = \"$2\"\nlicense = \"$3\"\n" > "var/db/jpkg/installed/$1/metadata.toml"; \
