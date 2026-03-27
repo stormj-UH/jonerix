@@ -7,7 +7,7 @@
   | | (_) | | | |  __/ |  | |>  <
  _/ |\___/|_| |_|\___|_|  |_/_/\_\
 |__/
-  ========= permissive linux =========
+  ========= permissive + linux =========
 ```
 
 **A Linux distribution with a strictly permissive userland.**
@@ -85,7 +85,7 @@ See `bootstrap/config.sh` for version pins, SHA256 hashes, and compiler flags.
   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.0 aarch64
  _/ |\___/|_| |_|\___|_|  |_/_/\_\      Kernel -> Linux 6.18.5
 |__/                                     Shell -> mksh
-  ========= permissive linux =========  CPU -> Virtualized Apple Silicon (4)
+  ========= permissive + linux =========  CPU -> Virtualized Apple Silicon (4)
                                          Memory -> 102 MiB / 1.01 GiB (10%)
                                          Disk (/) -> 726 MiB / 504 GiB - ext4
 ```
