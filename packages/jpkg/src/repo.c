@@ -317,13 +317,13 @@ int repo_update(const repo_config_t *cfg) {
         if (!m->enabled) continue;
 
         char url[2048];
-        snprintf(url, sizeof(url), "%s/%s/INDEX.zst", m->url, cfg->arch);
+        snprintf(url, sizeof(url), "%s/INDEX.zst", m->url);
 
         log_info("fetching INDEX from %s", m->url);
 
         if (fetch_to_file(url, index_path) == 0) {
             /* Also fetch signature */
-            snprintf(url, sizeof(url), "%s/%s/INDEX.zst.sig", m->url, cfg->arch);
+            snprintf(url, sizeof(url), "%s/INDEX.zst.sig", m->url);
             if (fetch_to_file(url, sig_path) != 0) {
                 log_warn("failed to fetch INDEX signature from %s", m->url);
                 /* Continue - verification will fail if keys are loaded */
@@ -466,7 +466,7 @@ char *repo_fetch_package(const repo_config_t *cfg, const repo_entry_t *entry) {
         if (!m->enabled) continue;
 
         char url[2048];
-        snprintf(url, sizeof(url), "%s/%s/%s", m->url, cfg->arch, filename);
+        snprintf(url, sizeof(url), "%s/%s", m->url, filename);
 
         log_info("downloading %s", filename);
         if (fetch_to_file(url, local_path) == 0) {
