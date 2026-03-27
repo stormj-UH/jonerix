@@ -147,8 +147,11 @@ RUN cp /bin/mksh bin/mksh && \
     # --- Perl (Artistic-2.0) ---
     cp /usr/bin/perl bin/perl && \
     cp -r /usr/lib/perl5 lib/perl5 2>/dev/null || true && \
-    # --- Pico (Apache-2.0) ---
+    # --- Pico (Apache-2.0) + terminfo ---
     cp /usr/bin/pico bin/pico 2>/dev/null || true && \
+    mkdir -p etc/terminfo lib/terminfo && \
+    cp -r /etc/terminfo/* etc/terminfo/ 2>/dev/null || true && \
+    cp -r /usr/share/terminfo/* lib/terminfo/ 2>/dev/null || true && \
     # --- Dropbear SSH (MIT) ---
     cp /usr/sbin/dropbear bin/dropbear 2>/dev/null || cp /usr/bin/dropbear bin/dropbear 2>/dev/null || true && \
     cp /usr/bin/dbclient bin/dbclient 2>/dev/null || true && \
@@ -209,6 +212,7 @@ COPY --from=assembler /jonerix/ /
 ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/mksh
+ENV TERM=xterm
 
 WORKDIR /root
 
