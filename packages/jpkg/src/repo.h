@@ -15,7 +15,7 @@
 
 /* Repository mirror */
 typedef struct repo_mirror {
-    char *url;           /* e.g., "https://pkg.jonerix.org/v1/x86_64" */
+    char *url;           /* e.g., "https://github.com/stormj-UH/jonerix/releases/download/packages" */
     int priority;
     bool enabled;
     struct repo_mirror *next;
