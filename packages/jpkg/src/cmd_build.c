@@ -488,23 +488,53 @@ int cmd_build(int argc, char **argv) {
     rc = fetch_source(recipe, src_dir);
     if (rc != 0) goto cleanup;
 
-    /* Step 2: Apply patches */
+    /* Step 2: Find the actual source directory (tarball may extract to a subdir) */
+    {
+        DIR *d = opendir(src_dir);
+        if (d) {
+            struct dirent *ent;
+            char *subdir = NULL;
+            int count = 0;
+            while ((ent = readdir(d)) != NULL) {
+                if (ent->d_name[0] == '.') continue;
+                count++;
+                if (!subdir) subdir = xstrdup(ent->d_name);
+            }
+            closedir(d);
+            /* If there's exactly one subdirectory, cd into it */
+            if (count == 1 && subdir) {
+                char check[512];
+                snprintf(check, sizeof(check), "%s/%s", src_dir, subdir);
+                if (dir_exists(check)) {
+                    snprintf(src_dir, sizeof(src_dir), "%s/%s", work_dir, subdir);
+                    /* Move contents up: rename subdir to src_dir path */
+                    char new_src[256];
+                    snprintf(new_src, sizeof(new_src), "%s/src/%s", work_dir, subdir);
+                    strncpy(src_dir, new_src, sizeof(src_dir) - 1);
+                    log_debug("source directory: %s", src_dir);
+                }
+            }
+            free(subdir);
+        }
+    }
+
+    /* Step 3: Apply patches */
     rc = apply_patches(recipe_dir, src_dir);
     if (rc != 0) goto cleanup;
 
-    /* Step 3: Configure */
+    /* Step 4: Configure */
     rc = run_build_step("configure", recipe->configure_cmd, src_dir, dest_dir);
     if (rc != 0) goto cleanup;
 
-    /* Step 4: Build */
+    /* Step 5: Build */
     rc = run_build_step("build", recipe->build_cmd, src_dir, dest_dir);
     if (rc != 0) goto cleanup;
 
-    /* Step 5: Install to staging */
+    /* Step 6: Install to staging */
     rc = run_build_step("install", recipe->install_cmd, src_dir, dest_dir);
     if (rc != 0) goto cleanup;
 
-    /* Step 6: Package */
+    /* Step 7: Package */
     rc = create_package(recipe, dest_dir, output_dir);
 
 cleanup:
