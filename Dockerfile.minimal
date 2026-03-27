@@ -1,0 +1,196 @@
+# jonerix — Minimal Permissive Linux Distribution
+# Multi-stage build: Alpine builder → Alpine assembler → FROM scratch
+#
+# Components (all permissively licensed — zero GPL runtime):
+#   toybox 0.8.11  (0BSD)         — built statically from source
+#   jpkg           (MIT)          — built statically from source
+#   mksh R59c      (MirOS)        — Alpine edge/community
+#   musl libc      (MIT)          — Alpine
+#   dropbear SSH   (MIT)          — Alpine (dropbear + dbclient + dropbearkey + scp)
+#   openrc         (BSD-2-Clause) — Alpine (init system)
+#   CA certificates               — Alpine
+#   curl           (MIT)          — Alpine (jpkg HTTP fetching)
+#   zstd binary    (BSD)          — Alpine (jpkg decompression)
+#
+# Build: docker build -f Dockerfile.minimal .
+
+# ============================================================
+# Stage 0: Build toybox and jpkg from source
+# ============================================================
+FROM alpine:latest AS builder
+
+RUN apk add --no-cache \
+    clang lld musl-dev make curl patch tar xz bash \
+    zstd-dev zstd-static linux-headers
+
+WORKDIR /build
+
+# --- Build toybox 0.8.11 (0BSD) — static binary ---
+RUN curl -fsSL https://landley.net/toybox/downloads/toybox-0.8.11.tar.gz -o toybox.tar.gz && \
+    tar xf toybox.tar.gz && \
+    cd toybox-0.8.11 && \
+    make defconfig && \
+    make CC=clang CFLAGS="-Os -static" -j$(nproc) && \
+    cp toybox /build/toybox && \
+    strip /build/toybox
+
+# --- Build jpkg (MIT) — static binary ---
+COPY packages/jpkg/ /build/jpkg-src/
+RUN cd /build/jpkg-src && \
+    find . -name '*.o' -o -name '*.d' | xargs rm -f && rm -f jpkg && \
+    make CC=clang LD=ld.lld \
+        CFLAGS="-Os -pipe -fstack-protector-strong -D_FORTIFY_SOURCE=2" \
+        LDFLAGS="-static -fuse-ld=lld" jpkg && \
+    cp jpkg /build/jpkg && \
+    strip /build/jpkg
+RUN cd /build/jpkg-src && make test
+
+# ============================================================
+# Stage 1: Assemble minimal jonerix rootfs
+# ============================================================
+FROM alpine:latest AS assembler
+
+# Install permissive runtime packages from Alpine
+RUN apk add --no-cache \
+    musl \
+    dropbear \
+    dropbear-scp \
+    dropbear-dbclient \
+    openrc \
+    ca-certificates \
+    curl \
+    zstd && \
+    apk add --no-cache \
+        --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+        mksh
+
+WORKDIR /jonerix
+
+# Create merged /usr filesystem layout (bin/ is the single binary directory)
+RUN mkdir -p \
+        bin lib etc dev proc sys run tmp \
+        etc/init.d etc/conf.d etc/ssl/certs \
+        etc/jpkg etc/network etc/dropbear \
+        var/log var/cache/jpkg var/db/jpkg/installed \
+        home root boot && \
+    chmod 1777 tmp && \
+    chmod 700 root && \
+    ln -s / usr
+
+# --- Static binaries from builder ---
+COPY --from=builder /build/toybox bin/toybox
+COPY --from=builder /build/jpkg   bin/jpkg
+
+# --- Toybox applet symlinks ---
+RUN for path in $(bin/toybox --long); do \
+        cmd=$(basename "$path"); \
+        [ "$cmd" != "toybox" ] && [ ! -e "bin/$cmd" ] && \
+            ln -s toybox "bin/$cmd" || true; \
+    done
+
+# --- mksh as sh ---
+RUN cp /bin/mksh bin/mksh && \
+    ln -sf mksh bin/sh
+
+# --- Dropbear SSH suite ---
+RUN cp /usr/sbin/dropbear bin/dropbear 2>/dev/null || \
+    cp /usr/bin/dropbear  bin/dropbear 2>/dev/null || true && \
+    cp /usr/bin/dbclient     bin/dbclient    2>/dev/null || true && \
+    cp /usr/bin/dropbearkey  bin/dropbearkey 2>/dev/null || true && \
+    cp /usr/bin/scp          bin/scp         2>/dev/null || true && \
+    ln -s dbclient bin/ssh
+
+# --- zstd binary ---
+RUN cp /usr/bin/zstd bin/zstd
+
+# --- CA certificates ---
+RUN cp /etc/ssl/certs/ca-certificates.crt etc/ssl/certs/
+
+# --- openrc: copy essential init support files ---
+RUN cp -r /lib/rc lib/rc 2>/dev/null || true && \
+    cp -r /usr/lib/rc /jonerix/lib/rc 2>/dev/null || true && \
+    for f in /sbin/openrc /sbin/rc /sbin/rc-service /sbin/rc-status \
+              /sbin/rc-update /sbin/runscript /sbin/start-stop-daemon; do \
+        [ -e "$f" ] && cp "$f" bin/ 2>/dev/null || true; \
+    done && \
+    cp -r /etc/conf.d/* etc/conf.d/ 2>/dev/null || true && \
+    cp -r /etc/rc.conf  etc/          2>/dev/null || true
+
+# --- curl (MIT) ---
+RUN cp /usr/bin/curl bin/curl
+
+# --- Collect shared library dependencies (transitive) ---
+# Pass 1: direct deps of all installed binaries
+RUN for bin in bin/mksh bin/dropbear bin/dbclient bin/dropbearkey bin/scp \
+               bin/zstd bin/curl bin/openrc bin/rc-service bin/start-stop-daemon; do \
+        [ -f "$bin" ] && \
+        ldd "$bin" 2>/dev/null | awk '/=>/ { print $3 }' | while read so; do \
+            [ -f "$so" ] && cp -n "$so" lib/ 2>/dev/null || true; \
+        done; \
+    done && \
+    # Pass 2: transitive deps of collected libs
+    for so in lib/*.so*; do \
+        ldd "$so" 2>/dev/null | awk '/=>/ { print $3 }' | while read dep; do \
+            [ -f "$dep" ] && cp -n "$dep" lib/ 2>/dev/null || true; \
+        done; \
+    done && \
+    # musl dynamic linker
+    for ld in /lib/ld-musl-*.so* /lib/ld-musl-*.so.1; do \
+        [ -f "$ld" ] && cp -n "$ld" lib/ 2>/dev/null || true; \
+    done
+
+# --- Default config files ---
+COPY config/defaults/etc/hostname     etc/hostname
+COPY config/defaults/etc/resolv.conf  etc/resolv.conf
+COPY config/defaults/etc/passwd       etc/passwd
+COPY config/defaults/etc/group        etc/group
+COPY config/defaults/etc/shadow       etc/shadow
+COPY config/defaults/etc/shells       etc/shells
+COPY config/defaults/etc/profile      etc/profile
+COPY config/defaults/etc/doas.conf    etc/doas.conf
+COPY config/defaults/etc/os-release   etc/os-release
+COPY config/defaults/etc/jpkg/keys/   etc/jpkg/keys/
+COPY config/defaults/etc/fastfetch/   etc/fastfetch/
+
+# --- OpenRC init scripts ---
+COPY config/openrc/init.d/ etc/init.d/
+RUN chmod 755 etc/init.d/* 2>/dev/null || true
+
+# --- License audit helper ---
+COPY scripts/license-audit.sh bin/license-audit
+RUN chmod 755 bin/license-audit
+
+# --- Package database (var/db/jpkg/installed/) ---
+RUN for pkg in \
+        "toybox 0.8.11 0BSD" \
+        "jpkg 0.1.0 MIT" \
+        "mksh R59c MirOS" \
+        "musl 1.2.5 MIT" \
+        "dropbear 2024.86 MIT" \
+        "openrc 0.60 BSD-2-Clause" \
+        "ca-certificates 20241121 MPL-2.0" \
+        "curl 8.17 MIT" \
+        "zstd 1.5.7 BSD"; \
+    do \
+        set -- $pkg; \
+        mkdir -p "var/db/jpkg/installed/$1"; \
+        printf '[package]\nname = "%s"\nversion = "%s"\nlicense = "%s"\n' \
+            "$1" "$2" "$3" > "var/db/jpkg/installed/$1/metadata.toml"; \
+    done
+
+# ============================================================
+# Stage 2: Final image — FROM scratch, zero GPL runtime
+# ============================================================
+FROM scratch
+
+COPY --from=assembler /jonerix/ /
+
+ENV PATH=/bin
+ENV HOME=/root
+ENV SHELL=/bin/mksh
+ENV TERM=xterm
+
+WORKDIR /root
+
+ENTRYPOINT ["/bin/mksh"]
+CMD ["-l"]

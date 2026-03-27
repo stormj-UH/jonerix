@@ -1,0 +1,191 @@
+name: Publish packages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'packages/core/**'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package name to build (leave empty to build all)'
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    name: Build and publish packages
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+      options: --privileged
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apk update
+          apk add \
+            clang lld musl-dev make \
+            curl patch tar xz bash \
+            zstd-dev zstd-static \
+            linux-headers git \
+            github-cli
+
+      - name: Build jpkg
+        run: |
+          cd packages/jpkg
+          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          install -m 755 jpkg /usr/local/bin/jpkg
+          jpkg --version || jpkg --help || true
+
+      - name: Prepare output directory
+        run: mkdir -p /var/cache/jpkg
+
+      - name: Build packages
+        run: |
+          set -e
+
+          PKG_INPUT="${{ github.event.inputs.package }}"
+
+          if [ -n "$PKG_INPUT" ]; then
+            # Build a single named package
+            recipe_dir="packages/core/${PKG_INPUT}"
+            if [ ! -f "${recipe_dir}/recipe.toml" ]; then
+              echo "ERROR: no recipe.toml found at ${recipe_dir}/recipe.toml"
+              exit 1
+            fi
+            echo "=== Building ${PKG_INPUT} ==="
+            jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || \
+              echo "FAILED: ${PKG_INPUT}"
+          else
+            # Build all packages
+            for recipe in packages/core/*/recipe.toml; do
+              pkg_dir="$(dirname "$recipe")"
+              pkg_name="$(basename "$pkg_dir")"
+              echo "=== Building ${pkg_name} ==="
+              jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || \
+                echo "FAILED: ${pkg_name}"
+            done
+          fi
+
+      - name: List built packages
+        run: |
+          echo "Built packages:"
+          ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Generate INDEX.zst
+        run: |
+          set -e
+
+          INDEX_PLAIN=/var/cache/jpkg/INDEX
+          INDEX_ZST=/var/cache/jpkg/INDEX.zst
+
+          # Write metadata header
+          printf '[meta]\ntimestamp = "%s"\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$INDEX_PLAIN"
+
+          # For each .jpkg file, extract its embedded TOML metadata and append a
+          # section to the INDEX.  A .jpkg file starts with a 4-byte magic
+          # "JPKG", then 4 bytes of metadata length (little-endian uint32),
+          # then the metadata bytes, then the payload.  We use dd + awk to pull
+          # the TOML out without a dedicated tool.
+          for pkg in /var/cache/jpkg/*.jpkg; do
+            [ -f "$pkg" ] || continue
+            pkg_base="$(basename "$pkg")"
+
+            # Read metadata length from bytes 5-8 (4 bytes, little-endian).
+            # Use od to dump bytes then awk to decode.
+            meta_len=$(dd if="$pkg" bs=1 skip=4 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n')
+            if [ -z "$meta_len" ] || [ "$meta_len" -eq 0 ] 2>/dev/null; then
+              echo "WARNING: could not read metadata length from $pkg_base, skipping"
+              continue
+            fi
+
+            # Extract metadata block (skip 8-byte header)
+            meta=$(dd if="$pkg" bs=1 skip=8 count="$meta_len" 2>/dev/null)
+
+            # Pull fields from the embedded TOML
+            name=$(printf '%s' "$meta"    | grep '^name '    | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            version=$(printf '%s' "$meta" | grep '^version ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            license=$(printf '%s' "$meta" | grep '^license ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            arch=$(printf '%s' "$meta"    | grep '^arch '    | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            sha256=$(printf '%s' "$meta"  | grep '^sha256 '  | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            size_val=$(printf '%s' "$meta"  | grep '^size '    | head -1 | sed 's/.*= *//')
+
+            [ -z "$name" ]    && name="$(echo "$pkg_base" | sed 's/-[^-]*\.jpkg$//')"
+            [ -z "$version" ] && version="0"
+            [ -z "$arch" ]    && arch="x86_64"
+            [ -z "$size_val" ] && size_val="$(stat -c %s "$pkg" 2>/dev/null || echo 0)"
+
+            {
+              printf '[%s]\n' "$name"
+              printf 'version = "%s"\n' "$version"
+              [ -n "$license" ] && printf 'license = "%s"\n' "$license"
+              [ -n "$desc" ]    && printf 'description = "%s"\n' "$desc"
+              printf 'arch = "%s"\n' "$arch"
+              [ -n "$sha256" ]  && printf 'sha256 = "%s"\n' "$sha256"
+              printf 'size = %s\n' "$size_val"
+              printf '\n'
+            } >> "$INDEX_PLAIN"
+
+            echo "  indexed: $name-$version"
+          done
+
+          echo "Generated INDEX:"
+          cat "$INDEX_PLAIN"
+
+          # Compress
+          zstd -19 -f -o "$INDEX_ZST" "$INDEX_PLAIN"
+          echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
+
+      - name: Create or update packages release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          # Create the release if it does not exist yet
+          if ! gh release view packages --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create packages \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Package repository" \
+              --notes "Pre-built jpkg packages. Updated automatically on push to master." \
+              --prerelease
+          fi
+
+      - name: Upload .jpkg assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          shopt -s nullglob
+          pkgs=(/var/cache/jpkg/*.jpkg)
+
+          if [ ${#pkgs[@]} -eq 0 ]; then
+            echo "No .jpkg files to upload."
+            exit 0
+          fi
+
+          gh release upload packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            "${pkgs[@]}"
+
+          echo "Uploaded ${#pkgs[@]} package(s)."
+
+      - name: Upload INDEX.zst
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            /var/cache/jpkg/INDEX.zst
+
+          echo "INDEX.zst uploaded."
