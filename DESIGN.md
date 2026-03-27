@@ -73,26 +73,29 @@ This stage is throwaway. Nothing from it enters the final image.
 Using Alpine's tools, build every jonerix component from source into a staging sysroot (`/jonerix-sysroot`). Build order matters — dependencies first:
 
 ```
-1. musl           (C library — everything links against this)
-2. zstd, lz4      (compression — needed by jpkg and kernel)
-3. LibreSSL       (TLS — needed by curl, dropbear)
-4. toybox         (coreutils — ls, cp, cat, grep, sed, awk, tar, ...)
-5. mksh           (shell)
-6. samurai        (ninja-compatible build tool, Apache-2.0)
-7. LLVM/Clang/lld (compiler + linker — the long pole, ~45min)
-8. OpenRC         (init system)
-9. dropbear       (SSH)
-10. curl          (HTTP client)
-11. dhcpcd        (DHCP)
-12. unbound       (DNS resolver)
-13. doas          (privilege escalation)
-14. socklog       (logging)
-15. snooze        (cron)
-16. mandoc        (man pages)
-17. ifupdown-ng   (network config)
-18. jpkg          (package manager)
-19. pigz          (parallel gzip, zlib license)
-20. nvi           (text editor)
+1. musl              (C library — everything links against this)
+2. zstd, lz4         (compression — needed by jpkg and kernel)
+3. zlib              (compression — needed by Python, Node.js, pigz, etc.)
+4. LibreSSL          (TLS — needed by curl, dropbear, Python, Node.js)
+5. toybox            (coreutils — ls, cp, cat, grep, sed, awk, tar, ...)
+6. mksh              (shell)
+7. samurai           (ninja-compatible build tool, Apache-2.0)
+8. LLVM/Clang/lld/libc++/libc++abi (compiler + linker + C++ stdlib)
+9. OpenRC            (init system)
+10. dropbear         (SSH)
+11. curl             (HTTP client)
+12. dhcpcd           (DHCP)
+13. unbound          (DNS resolver)
+14. doas             (privilege escalation)
+15. socklog          (logging)
+16. snooze           (cron)
+17. mandoc           (man pages)
+18. ifupdown-ng      (network config)
+19. jpkg             (package manager)
+20. pigz             (parallel gzip, zlib license)
+21. nvi              (text editor)
+22. Python 3         (interpreter + build dep for Node.js)
+23. Node.js          (JavaScript runtime — needs Python 3, libc++)
 ```
 
 All components are compiled with:
@@ -147,7 +150,10 @@ If the output is bit-for-bit identical to the Stage 2 rootfs (reproducible build
 | Network config | ifupdown-ng | ISC | — |
 | Bootloader | EFISTUB (kernel feature) | n/a | GRUB (GPL) |
 | Package manager | jpkg (custom) | MIT | apk-tools (GPL) |
-| Compression | zstd (BSD), lz4 (BSD), pigz (zlib) | BSD / zlib | gzip (GPL) |
+| Compression | zstd (BSD), lz4 (BSD), zlib (zlib), pigz (zlib) | BSD / zlib | gzip (GPL) |
+| C++ standard library | libc++ / libc++abi | Apache-2.0 w/ LLVM exception | libstdc++ (GPL) |
+| Scripting / build tool | Python 3 | PSF-2.0 | — |
+| JavaScript runtime | Node.js | MIT | — |
 | Build tool | samurai | Apache-2.0 | GNU make (GPL) |
 | Text editor | nvi | BSD | vim |
 | grep/sed/awk | toybox builtins | 0BSD | GNU versions (GPL) |
@@ -368,8 +374,8 @@ The OCI image includes: musl, toybox, mksh, curl, LibreSSL certs, jpkg. Everythi
 
 Target sizes:
 - **Minimal rootfs**: ~8 MB (toybox + mksh + musl + jpkg)
-- **Server image**: ~15 MB (adds dropbear, curl, OpenRC, socklog)
-- **Full development**: ~500 MB (adds LLVM/Clang)
+- **Server image**: ~80 MB (adds dropbear, curl, OpenRC, socklog, Python 3, Node.js)
+- **Full development**: ~600 MB (adds LLVM/Clang, libc++)
 
 ### Cloud Images
 
@@ -443,9 +449,12 @@ jonerix/
 │   │   ├── ifupdown-ng/
 │   │   ├── pigz/
 │   │   ├── zstd/
+│   │   ├── zlib/
 │   │   ├── lz4/
 │   │   ├── samurai/
 │   │   ├── nvi/
+│   │   ├── python3/
+│   │   ├── nodejs/
 │   │   └── linux/            ← kernel config + build
 │   └── jpkg/                 ← the package manager source code
 │       ├── src/

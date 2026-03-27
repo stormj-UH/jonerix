@@ -1,0 +1,54 @@
+# /etc/profile — jonerix system-wide login profile for mksh
+# Sourced by login shells. Keep this POSIX-compatible.
+
+# --- PATH ---
+# jonerix uses merged /usr: all binaries live in /bin, all libraries in /lib.
+export PATH="/bin"
+
+# Add local bin if it exists (for user-installed tools)
+[ -d "/usr/local/bin" ] && export PATH="/usr/local/bin:$PATH"
+
+# --- Prompt ---
+# root gets a red '#', regular users get '$'
+if [ "$(id -u)" -eq 0 ]; then
+    PS1='\[\033[1;31m\]\h\[\033[0m\]:\w# '
+else
+    PS1='\[\033[1;32m\]\u@\h\[\033[0m\]:\w$ '
+fi
+export PS1
+
+# --- Umask ---
+# 022: owner rwx, group r-x, other r-x
+umask 022
+
+# --- Locale ---
+export CHARSET="UTF-8"
+export LANG="C.UTF-8"
+export LC_ALL="C.UTF-8"
+
+# --- Editor ---
+export EDITOR="pico"
+export VISUAL="pico"
+export PAGER="less"
+
+# --- Aliases ---
+alias ls='ls --color=auto'
+alias ll='ls -la'
+alias la='ls -A'
+alias l='ls -CF'
+alias grep='grep --color=auto'
+alias ..='cd ..'
+alias ...='cd ../..'
+
+# --- History ---
+export HISTSIZE=1000
+export HISTFILE="$HOME/.mksh_history"
+
+# --- Misc ---
+# Prevent core dumps by default
+ulimit -c 0
+
+# Source user-specific profile if present
+if [ -f "$HOME/.profile" ]; then
+    . "$HOME/.profile"
+fi
