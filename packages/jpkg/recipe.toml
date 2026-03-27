@@ -10,7 +10,7 @@ description = "jonerix package manager"
 [build]
 system = "make"
 build = "make CC=clang LD=ld.lld"
-install = "install -Dm755 jpkg $DESTDIR/usr/bin/jpkg && install -d $DESTDIR/etc/jpkg/keys && install -d $DESTDIR/var/db/jpkg/installed && install -d $DESTDIR/var/cache/jpkg"
+install = "install -Dm755 jpkg $DESTDIR/bin/jpkg && install -d $DESTDIR/etc/jpkg/keys && install -d $DESTDIR/var/db/jpkg/installed && install -d $DESTDIR/var/cache/jpkg"
 
 [depends]
 runtime = ["musl"]

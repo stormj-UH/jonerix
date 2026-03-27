@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "configure"
-configure = "CC=clang ./configure --prefix=/usr --disable-nls"
+configure = "CC=clang ./configure --prefix=/ --disable-nls"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 

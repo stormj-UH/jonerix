@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "custom"
-configure = "./Configure -des -Dprefix=/usr -Duseshrplib"
+configure = "./Configure -des -Dprefix=/ -Duseshrplib"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 

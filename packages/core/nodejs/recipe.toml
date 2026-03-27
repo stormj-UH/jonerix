@@ -10,7 +10,7 @@ sha256 = "FIXME"
 
 [build]
 system = "custom"
-configure = "CC=clang CXX=clang++ python3 configure.py --prefix=/usr --ninja --partly-static --without-npm --without-corepack --with-intl=none --shared-zlib"
+configure = "CC=clang CXX=clang++ python3 configure.py --prefix=/ --ninja --partly-static --without-npm --without-corepack --with-intl=none --shared-zlib"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 
