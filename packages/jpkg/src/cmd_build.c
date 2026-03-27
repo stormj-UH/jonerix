@@ -9,6 +9,7 @@
 #include "pkg.h"
 #include "repo.h"
 #include "fetch.h"
+#include "db.h"
 #include "toml.h"
 #include "util.h"
 #include <stdio.h>
@@ -429,17 +430,20 @@ static char *fetch_remote_recipe(const char *pkg_name) {
 
 int cmd_build(int argc, char **argv) {
     if (argc < 1) {
-        fprintf(stderr, "usage: jpkg build <recipe-dir-or-package-name> [--output <dir>]\n");
+        fprintf(stderr, "usage: jpkg build <recipe-dir-or-package-name> [--build-jpkg] [--output <dir>]\n");
         return 1;
     }
 
     const char *arg = argv[0];
     const char *output_dir = ".";
+    bool build_jpkg = false;
     char *fetched_recipe_dir = NULL;
 
     /* Parse options */
     for (int i = 1; i < argc; i++) {
-        if ((strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) &&
+        if (strcmp(argv[i], "--build-jpkg") == 0) {
+            build_jpkg = true;
+        } else if ((strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) &&
             i + 1 < argc) {
             output_dir = argv[++i];
         }
@@ -529,12 +533,38 @@ int cmd_build(int argc, char **argv) {
     rc = run_build_step("build", recipe->build_cmd, src_dir, dest_dir);
     if (rc != 0) goto cleanup;
 
-    /* Step 6: Install to staging */
-    rc = run_build_step("install", recipe->install_cmd, src_dir, dest_dir);
-    if (rc != 0) goto cleanup;
+    if (build_jpkg) {
+        /* Step 6: Install to staging directory */
+        rc = run_build_step("install", recipe->install_cmd, src_dir, dest_dir);
+        if (rc != 0) goto cleanup;
 
-    /* Step 7: Package */
-    rc = create_package(recipe, dest_dir, output_dir);
+        /* Step 7: Create .jpkg package */
+        rc = create_package(recipe, dest_dir, output_dir);
+    } else {
+        /* Step 6: Install directly to the system rootfs */
+        char real_dest[512];
+        snprintf(real_dest, sizeof(real_dest), "%s", g_rootfs[0] ? g_rootfs : "");
+        rc = run_build_step("install", recipe->install_cmd, src_dir,
+                            real_dest[0] ? real_dest : "/");
+        if (rc != 0) goto cleanup;
+
+        /* Register in the package database */
+        {
+            pkg_meta_t meta = {0};
+            meta.name = recipe->name;
+            meta.version = recipe->version;
+            meta.license = recipe->license;
+            meta.description = recipe->description;
+            meta.arch = recipe->arch;
+            jpkg_db_t *db = db_open();
+            if (db) {
+                db_register(db, &meta, NULL);
+                db_close(db);
+                log_info("registered %s-%s in package database",
+                         recipe->name, recipe->version);
+            }
+        }
+    }
 
 cleanup:
     /* Clean up working directory */
