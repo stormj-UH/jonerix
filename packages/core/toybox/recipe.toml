@@ -1,0 +1,19 @@
+[package]
+name = "toybox"
+version = "0.8.11"
+license = "0BSD"
+description = "BSD-licensed coreutils replacement"
+
+[source]
+url = "https://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
+sha256 = "FIXME"
+
+[build]
+system = "make"
+configure = "cp toybox.config .config"
+build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
+install = "make PREFIX=$DESTDIR install"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

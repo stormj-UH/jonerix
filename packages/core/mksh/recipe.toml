@@ -1,0 +1,18 @@
+[package]
+name = "mksh"
+version = "R59c"
+license = "MirOS"
+description = "MirBSD Korn Shell"
+
+[source]
+url = "https://www.mirbsd.org/MirOS/dist/mir/mksh/mksh-R59c.tgz"
+sha256 = "FIXME"
+
+[build]
+system = "custom"
+build = "CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" sh Build.sh -r"
+install = "mkdir -p $DESTDIR/bin && install -m 755 mksh $DESTDIR/bin/mksh && ln -sf mksh $DESTDIR/bin/sh && mkdir -p $DESTDIR/share/man/man1 && install -m 644 mksh.1 $DESTDIR/share/man/man1/mksh.1"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

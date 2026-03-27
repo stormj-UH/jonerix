@@ -339,28 +339,11 @@ int repo_update(const repo_config_t *cfg) {
         return -1;
     }
 
-    /* Verify signature (if available) */
-    uint8_t *index_data = NULL;
-    ssize_t index_len = file_read(index_path, &index_data);
-    if (index_len <= 0 || !index_data) {
-        log_error("failed to read downloaded INDEX");
-        free(index_data);
+    /* Check that the downloaded file actually exists and has content */
+    struct stat st;
+    if (stat(index_path, &st) != 0 || st.st_size == 0) {
+        log_error("downloaded INDEX.zst is empty or missing");
         return -1;
-    }
-
-    uint8_t *sig_data = NULL;
-    ssize_t sig_len = file_read(sig_path, &sig_data);
-    if (sig_len > 0 && sig_data) {
-        if (!sign_verify_detached(index_data, (size_t)index_len,
-                                  sig_data, (size_t)sig_len)) {
-            log_warn("INDEX signature verification failed (continuing anyway)");
-        } else {
-            log_info("INDEX signature verified");
-        }
-        free(sig_data);
-    } else {
-        free(sig_data);
-        log_debug("no INDEX signature to verify");
     }
 
     /* Decompress: zstd -d INDEX.zst > INDEX */
@@ -368,16 +351,40 @@ int repo_update(const repo_config_t *cfg) {
     snprintf(cmd, sizeof(cmd), "zstd -d -f -o '%s' '%s' 2>/dev/null", out_path, index_path);
     int rc = system(cmd);
     if (rc != 0) {
-        /* Maybe it's not actually compressed (plain text INDEX) */
+        /* Maybe it's not actually compressed — try copying as-is */
         log_debug("zstd decompress failed, assuming plain text INDEX");
-        if (file_write(out_path, index_data, (size_t)index_len) != 0) {
-            log_error("failed to write INDEX");
-            free(index_data);
+        uint8_t *raw_data = NULL;
+        ssize_t raw_len = file_read(index_path, &raw_data);
+        if (raw_len <= 0 || !raw_data) {
+            log_error("failed to read downloaded INDEX");
+            free(raw_data);
             return -1;
         }
+        if (file_write(out_path, raw_data, (size_t)raw_len) != 0) {
+            log_error("failed to write INDEX");
+            free(raw_data);
+            return -1;
+        }
+        free(raw_data);
     }
 
-    free(index_data);
+    /* Optionally verify signature */
+    uint8_t *sig_data = NULL;
+    ssize_t sig_len = file_read(sig_path, &sig_data);
+    if (sig_len > 0 && sig_data) {
+        uint8_t *idx_data = NULL;
+        ssize_t idx_len = file_read(index_path, &idx_data);
+        if (idx_len > 0 && idx_data) {
+            if (!sign_verify_detached(idx_data, (size_t)idx_len,
+                                      sig_data, (size_t)sig_len)) {
+                log_warn("INDEX signature verification failed (continuing anyway)");
+            } else {
+                log_info("INDEX signature verified");
+            }
+            free(idx_data);
+        }
+        free(sig_data);
+    }
     log_info("package index updated successfully");
     return 0;
 }
