@@ -10,7 +10,7 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 
 [build]
 system = "make"
-configure = "cp toybox.config .config"
+configure = "make defconfig"
 build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
 install = "make PREFIX=$DESTDIR install"
 
