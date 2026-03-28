@@ -4,16 +4,22 @@ version = "0.8.11"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 
-[source]
-url = "https://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
-sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
-
 [build]
-system = "make"
-configure = "make defconfig"
-build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
-install = "make PREFIX=$DESTDIR install"
+system = "custom"
+build = """
+set -e
+# toybox is not in Alpine; build from source (fast plain-C, no autoconf)
+apk add --no-cache make
+curl -fsSL https://landley.net/toybox/downloads/toybox-0.8.11.tar.gz -o toybox.tar.gz
+printf '15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc  toybox.tar.gz\n' | sha256sum -c
+tar xzf toybox.tar.gz
+cd toybox-0.8.11
+make defconfig
+make CC=clang -j$(nproc)
+make PREFIX=${DESTDIR} install
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

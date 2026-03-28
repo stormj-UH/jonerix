@@ -4,16 +4,28 @@ version = "20240808"
 license = "MIT"
 description = "Portable version of NetBSD make"
 
-[source]
-url = "https://www.crufty.net/ftp/pub/sjg/bmake-20240808.tar.gz"
-sha256 = "b59189251b483decd4492f1f74387b2a584c03d5aa4637cd48b38ec62b9c0848"
-
 [build]
 system = "custom"
-configure = "./configure --prefix=/ CC=clang"
-build = "sh make-bootstrap.sh"
-install = "install -Dm755 bmake $DESTDIR/bin/bmake"
+build = """
+set -e
+apk add --no-cache bmake
+for pkg in bmake; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

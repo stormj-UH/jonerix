@@ -4,16 +4,28 @@ version = "22.12.0"
 license = "MIT"
 description = "JavaScript runtime built on V8"
 
-[source]
-url = "https://nodejs.org/dist/v22.12.0/node-v22.12.0.tar.gz"
-sha256 = "3157e7c002b6e964bdbefb331ec38db1e2dceb064ab11c038275155461b22ce3"
-
 [build]
 system = "custom"
-configure = "CC=clang CXX=clang++ python3 configure.py --prefix=/ --ninja --partly-static --without-npm --without-corepack --with-intl=none --shared-zlib"
-build = "make -j$(nproc)"
-install = "make install DESTDIR=$DESTDIR"
+build = """
+set -e
+apk add --no-cache nodejs
+for pkg in nodejs; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
-runtime = ["musl", "zlib"]
-build = ["clang", "python3", "make", "samurai"]
+runtime = ["musl"]
+build = []

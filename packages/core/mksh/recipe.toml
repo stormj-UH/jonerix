@@ -4,15 +4,28 @@ version = "R59c"
 license = "MirOS"
 description = "MirBSD Korn Shell"
 
-[source]
-url = "https://github.com/MirBSD/mksh/archive/refs/tags/mksh-R59c.tar.gz"
-sha256 = "e5942607eb930ba6ce3303c4a0db0733371f210c9ce6d5d4b9cc202c76360343"
-
 [build]
 system = "custom"
-build = "CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" sh Build.sh -r"
-install = "mkdir -p $DESTDIR/bin && install -m 755 mksh $DESTDIR/bin/mksh && ln -sf mksh $DESTDIR/bin/sh && mkdir -p $DESTDIR/share/man/man1 && install -m 644 mksh.1 $DESTDIR/share/man/man1/mksh.1"
+build = """
+set -e
+apk add --no-cache mksh
+for pkg in mksh; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

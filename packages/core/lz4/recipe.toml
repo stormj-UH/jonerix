@@ -4,15 +4,28 @@ version = "1.10.0"
 license = "BSD-2-Clause"
 description = "Extremely fast lossless compression library and tool"
 
-[source]
-url = "https://github.com/lz4/lz4/archive/v1.10.0.tar.gz"
-sha256 = "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b"
-
 [build]
-system = "make"
-build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" PREFIX=/ -j$(nproc)"
-install = "make install PREFIX=/ DESTDIR=$DESTDIR"
+system = "custom"
+build = """
+set -e
+apk add --no-cache lz4 lz4-libs
+for pkg in lz4 lz4-libs; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

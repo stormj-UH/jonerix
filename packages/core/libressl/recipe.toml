@@ -4,16 +4,28 @@ version = "4.0.0"
 license = "ISC"
 description = "Free TLS/crypto stack forked from OpenSSL"
 
-[source]
-url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz"
-sha256 = "4d841955f0acc3dfc71d0e3dd35f283af461222350e26843fea9731c0246a1e4"
-
 [build]
-system = "cmake"
-configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF"
-build = "cmake --build build -j$(nproc)"
-install = "DESTDIR=$DESTDIR cmake --install build"
+system = "custom"
+build = """
+set -e
+apk add --no-cache libressl
+for pkg in libressl; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "cmake", "samurai"]
+build = []
