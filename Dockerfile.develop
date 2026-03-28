@@ -1,13 +1,15 @@
-# jonerix — Permissive Linux Distribution (develop image)
-# Multi-stage build: Alpine host → Build custom components → Assemble rootfs (FROM scratch)
+# jonerix — Develop image
+# Extends jonerix-minimal with dev toolchain (clang, cmake, python3, node, etc.)
+# Multi-stage build: Alpine builds dev tools → layer on top of jonerix-minimal
 #
-# Strategy: Build from source what's ours or unavailable. Install from Alpine
-# packages what's permissively licensed (Node, Python, LLVM, etc.)
-# GPL tools (Alpine) used only at build time — nothing GPL ships in final image.
-#
-# Develop image: identical to Dockerfile except the `alpine` package is NOT
-# installed (that package is bootstrap-only).  Build with:
-#   container build -f Dockerfile.develop .
+# Build locally (minimal must already exist):
+#   container build -f Dockerfile.develop --tag jonerix-develop:latest .
+# Build with explicit base:
+#   docker build -f Dockerfile.develop \
+#     --build-arg MINIMAL_IMAGE=ghcr.io/stormj-UH/jonerix:minimal \
+#     --tag jonerix-develop:latest .
+
+ARG MINIMAL_IMAGE=jonerix-minimal:latest
 
 # ============================================================
 # Stage 0: Build custom/unavailable components from source
@@ -245,9 +247,9 @@ COPY scripts/license-audit.sh bin/license-audit
 RUN chmod 755 bin/license-audit
 
 # ============================================================
-# Stage 2: Final image — FROM scratch, zero GPL runtime
+# Stage 2: Final image — extend minimal with dev toolchain
 # ============================================================
-FROM scratch
+FROM ${MINIMAL_IMAGE}
 
 COPY --from=assembler /jonerix/ /
 
