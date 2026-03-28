@@ -10,9 +10,15 @@ sha256 = "b59189251b483decd4492f1f74387b2a584c03d5aa4637cd48b38ec62b9c0848"
 
 [build]
 system = "custom"
-configure = "./configure --prefix=/ CC=clang"
+configure = """
+patch -p0 < $RECIPE_DIR/gnu-compat.patch
+./configure --prefix=/ CC=clang
+"""
 build = "sh make-bootstrap.sh"
-install = "install -Dm755 bmake $DESTDIR/bin/bmake"
+install = """
+install -Dm755 bmake $DESTDIR/bin/bmake
+ln -sf bmake $DESTDIR/bin/make
+"""
 
 [depends]
 runtime = ["musl"]
