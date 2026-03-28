@@ -2,6 +2,7 @@
 name = "libressl"
 version = "4.0.0"
 license = "ISC"
+pre_bootstrap = true
 description = "Free TLS/crypto stack forked from OpenSSL"
 
 [build]

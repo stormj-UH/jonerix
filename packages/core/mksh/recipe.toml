@@ -2,6 +2,7 @@
 name = "mksh"
 version = "R59c"
 license = "MirOS"
+pre_bootstrap = true
 description = "MirBSD Korn Shell"
 
 [build]

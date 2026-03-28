@@ -2,6 +2,7 @@
 name = "nvi"
 version = "2.2.1"
 license = "BSD-3-Clause"
+pre_bootstrap = true
 description = "nvi2 text editor (reimplementation of Berkeley vi)"
 
 [build]

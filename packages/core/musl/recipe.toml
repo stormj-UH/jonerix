@@ -2,6 +2,7 @@
 name = "musl"
 version = "1.2.5"
 license = "MIT"
+pre_bootstrap = true
 description = "Lightweight, fast, and standards-conformant C library"
 
 [build]
