@@ -11,7 +11,7 @@ build = """
 set -e
 apk add --no-cache snooze
 for pkg in snooze; do
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -v '/\$' | while IFS= read -r f; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -v '/$' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
     [ -e "$src" ] || continue
