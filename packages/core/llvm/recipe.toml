@@ -1,6 +1,6 @@
 [package]
 name = "llvm"
-version = "19"
+version = "21"
 license = "Apache-2.0"
 pre_bootstrap = true
 description = "LLVM compiler infrastructure with clang and lld"
@@ -9,9 +9,22 @@ description = "LLVM compiler infrastructure with clang and lld"
 system = "custom"
 build = """
 set -e
-# clang, lld, and llvm-libs are pre-installed in the Alpine build environment.
-# Package their files directly rather than building LLVM from source.
-for pkg in clang lld llvm-libs; do
+apk add --no-cache clang lld musl-dev linux-headers libstdc++-dev
+
+# Detect versioned package names (Alpine uses clang21, lld21, etc.)
+CLANG_PKG=$(apk info 2>/dev/null | grep '^clang[0-9]' | grep -v 'headers\|libs\|dev\|rt\|tools' | head -1)
+CLANG_LIBS=$(apk info 2>/dev/null | grep '^clang[0-9].*-libs' | head -1)
+CLANG_HDRS=$(apk info 2>/dev/null | grep '^clang[0-9].*-headers' | head -1)
+LLD_PKG=$(apk info 2>/dev/null | grep '^lld[0-9]' | grep -v 'libs' | head -1)
+LLD_LIBS=$(apk info 2>/dev/null | grep '^lld[0-9].*-libs' | head -1)
+LLVM_LIBS=$(apk info 2>/dev/null | grep '^llvm[0-9].*-libs$' | head -1)
+LLVM_LINKER=$(apk info 2>/dev/null | grep '^llvm[0-9].*linker' | head -1)
+
+for pkg in "$CLANG_PKG" "$CLANG_LIBS" "$CLANG_HDRS" \
+           "$LLD_PKG" "$LLD_LIBS" "$LLVM_LIBS" "$LLVM_LINKER" \
+           libstdc++ libgcc libffi xz-libs libxml2 jansson \
+           musl-dev linux-headers libstdc++-dev; do
+  [ -z "$pkg" ] && continue
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
@@ -21,7 +34,19 @@ for pkg in clang lld llvm-libs; do
     cp -aP "$src" "$dst" 2>/dev/null || true
   done
 done
-# Flatten /usr -> /
+
+# Symlinks: ld -> ld.lld for compiler invocation
+ln -sf ld.lld "${DESTDIR}/bin/ld" 2>/dev/null || true
+
+# clang.cfg: point to gcc install dir so C++ headers are found
+GCC_VER=$(ls "${DESTDIR}/include/c++/" 2>/dev/null | head -1)
+TRIPLE=$(clang -dumpmachine 2>/dev/null || true)
+if [ -n "$GCC_VER" ] && [ -n "$TRIPLE" ]; then
+  mkdir -p "${DESTDIR}/etc/clang"
+  echo "--gcc-install-dir=/lib/gcc/${TRIPLE}/${GCC_VER}" \
+    > "${DESTDIR}/etc/clang/${TRIPLE}.cfg"
+fi
+
 if [ -d "${DESTDIR}/usr" ]; then
   cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
   rm -rf "${DESTDIR}/usr"
@@ -30,5 +55,5 @@ fi
 install = ""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "zstd"]
 build = []
