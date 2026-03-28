@@ -100,6 +100,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set lowercase image ref
+        id: refs
+        run: |
+          echo "minimal=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Docker metadata (develop)
         id: meta
         uses: docker/metadata-action@v5
@@ -119,7 +124,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            MINIMAL_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal
+            MINIMAL_IMAGE=${{ steps.refs.outputs.minimal }}
           cache-from: type=gha,scope=develop
           cache-to: type=gha,mode=max,scope=develop
 
