@@ -25,4 +25,4 @@ install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = ["clang", "bmake", "curl"]
