@@ -14,10 +14,17 @@
 
 ## Overview
 
-jonerix is a Linux distribution where every userland component runs under a permissive license: MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is the sole GPL exception -- there is no viable permissive alternative with equivalent hardware and container support. Yes, the kernel is only GPLv2, but there is another reason this is a solution: if you provide containers, you aren't necessarily even providing the kernel. This isn't legal adice; consult a lawyer. This lowers the unrealized entry costs for startups that, especially when a lot of the copylefted products are funded by large corporations, is effectively pulling up the moat behind them. We the techo-bourgeoisie benefit from permissive licenses. The profit motive is a creativity stimulant. This also isn't preaching. It is simply a use-case statement. You don't have to agree with the logic, but that's what this is for. Most distributions of Linux cannot answer what their purpose is. That should be a minimum requirement for existing. This is a statement of what this is for. If you disagree, don't use it. Call me names. Whatever. 
+jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is the one exception. At present, there is no realistic permissively licensed alternative with comparable hardware support, container support, and general maturity.
 
-The system ships with a full development toolchain including Python, Node.js, and Clang/LLVM, and is designed to be fully self-hosting: jonerix can build its own kernel and rebuild the entire distribution from source using only its own permissive tools.
+That exception matters for another reason as well: in many containerized deployments, a distributor may not even be providing the kernel. This is not legal advice, and anyone making legal or business decisions should consult a lawyer. Even so, the practical result is that jonerix minimizes copyleft exposure everywhere it realistically can.
 
+The point of jonerix is not moral instruction. It is not a sermon against copyleft, and it does not require anyone to agree with its premises. It is a distribution for people and organizations who want the lowest possible licensing friction in userland, especially startups that may see copyleft obligations as a barrier to entry. Many major copylefted projects are backed by large institutions that can absorb those costs more easily. jonerix is aimed at those who would rather build on a permissive stack.
+
+You do not have to agree with that reasoning. This is simply the use case. If that use case does not matter to you, then jonerix is probably not for you.
+
+Most Linux distributions struggle to explain, in plain terms, what they are actually for. jonerix does not. Its purpose is to provide a practical, self-hosting Linux system built on a permissively licensed userland.
+
+The system ships with a full development toolchain, including Python, Node.js, and Clang/LLVM, and is designed to be fully self-hosting. jonerix can build its own kernel and rebuild the entire distribution from source using only the permissive tools it provides.
 ## Quick Start
 
 ```sh
