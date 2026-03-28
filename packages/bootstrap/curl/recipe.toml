@@ -5,15 +5,15 @@ license = "MIT"
 description = "Command-line tool and library for transferring data with URLs"
 
 [source]
-url = "https://curl.se/download/curl-8.11.1.tar.xz"
-sha256 = "c7ca7db48b0909743eaef34250da02c19bc61d4f1dcedd6603f109409536ab56"
+url = "https://curl.se/download/curl-8.11.1.tar.gz"
+sha256 = "a889ac9dbba3644271bd9d1302b5c22a088893719b72be3487bc3d401e5c4e80"
 
 [build]
-system = "configure"
-configure = "./configure --prefix=/ --with-openssl --without-libpsl"
-build = "make -j$(nproc)"
-install = "make install DESTDIR=$DESTDIR"
+system = "cmake"
+configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_C_COMPILER=clang -DCURL_USE_OPENSSL=ON -DCURL_USE_LIBPSL=OFF -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release"
+build = "cmake --build build -j$(nproc)"
+install = "DESTDIR=$DESTDIR cmake --install build"
 
 [depends]
 runtime = ["musl", "openssl"]
-build = ["clang", "openssl"]
+build = ["clang", "openssl", "cmake"]

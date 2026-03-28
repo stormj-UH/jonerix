@@ -19,9 +19,11 @@ LLD_PKG=$(apk info 2>/dev/null | grep '^lld[0-9]' | grep -v 'libs' | head -1)
 LLD_LIBS=$(apk info 2>/dev/null | grep '^lld[0-9].*-libs' | head -1)
 LLVM_LIBS=$(apk info 2>/dev/null | grep '^llvm[0-9].*-libs$' | head -1)
 LLVM_LINKER=$(apk info 2>/dev/null | grep '^llvm[0-9].*linker' | head -1)
+# llvm21 base package provides llvm-ar, llvm-nm, llvm-ranlib (Apache-2.0)
+LLVM_PKG=$(apk info 2>/dev/null | grep '^llvm[0-9]' | grep -v 'libs\|linker\|dev\|test\|tools' | head -1)
 
 for pkg in "$CLANG_PKG" "$CLANG_LIBS" "$CLANG_HDRS" \
-           "$LLD_PKG" "$LLD_LIBS" "$LLVM_LIBS" "$LLVM_LINKER" \
+           "$LLD_PKG" "$LLD_LIBS" "$LLVM_LIBS" "$LLVM_LINKER" "$LLVM_PKG" \
            gcc libstdc++ libgcc libffi xz-libs libxml2 jansson \
            musl-dev linux-headers libstdc++-dev; do
   [ -z "$pkg" ] && continue
@@ -43,6 +45,16 @@ fi
 
 # ld symlink: clang invokes bare 'ld' which must resolve to lld
 ln -sf ld.lld "${DESTDIR}/bin/ld" 2>/dev/null || true
+
+# ar/nm/ranlib symlinks: point to llvm binutils (Apache-2.0, not GPL)
+# llvm-ar etc. are installed as llvm21-ar, llvm21-nm, etc.
+LLVM_VER=$(ls "${DESTDIR}/bin/" 2>/dev/null | grep '^llvm[0-9]*-ar$' | sed 's/llvm\([0-9]*\)-ar/\1/' | head -1)
+if [ -n "$LLVM_VER" ]; then
+  ln -sf "llvm${LLVM_VER}-ar"     "${DESTDIR}/bin/ar"     2>/dev/null || true
+  ln -sf "llvm${LLVM_VER}-nm"     "${DESTDIR}/bin/nm"     2>/dev/null || true
+  ln -sf "llvm${LLVM_VER}-ranlib" "${DESTDIR}/bin/ranlib" 2>/dev/null || true
+  ln -sf "llvm${LLVM_VER}-strip"  "${DESTDIR}/bin/strip"  2>/dev/null || true
+fi
 
 # clang.cfg: tell clang where to find C++ stdlib and GCC CRT support
 GCC_VER=$(ls "${DESTDIR}/include/c++/" 2>/dev/null | head -1)
