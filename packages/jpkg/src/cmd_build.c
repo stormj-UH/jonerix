@@ -437,6 +437,16 @@ static char *fetch_remote_recipe(const char *pkg_name) {
     return recipe_dir;
 }
 
+static bool tool_in_path(const char *name) {
+    static const char *dirs[] = {"/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin", NULL};
+    for (int i = 0; dirs[i]; i++) {
+        char p[512];
+        snprintf(p, sizeof(p), "%s/%s", dirs[i], name);
+        if (access(p, X_OK) == 0) return true;
+    }
+    return false;
+}
+
 int cmd_build(int argc, char **argv) {
     if (argc < 1) {
         fprintf(stderr, "usage: jpkg build <recipe-dir-or-package-name> [--build-jpkg] [--output <dir>]\n");
@@ -483,6 +493,50 @@ int cmd_build(int argc, char **argv) {
     }
 
     log_info("building %s-%s...", recipe->name, recipe->version);
+
+    /* Pre-flight: check that required build tools are available.
+     * Only require clang for recipes that actually use make/configure.
+     * Custom recipes (e.g. Rust) download their own toolchain. */
+    {
+        bool needs_cc = (recipe->configure_cmd && recipe->configure_cmd[0]) ||
+                        (recipe->build_cmd &&
+                            (strstr(recipe->build_cmd, "make") ||
+                             strstr(recipe->build_cmd, "cmake") ||
+                             strstr(recipe->build_cmd, "./configure")));
+        if (needs_cc && !tool_in_path("clang")) {
+            log_error("build requires 'clang' — install it with: jpkg install llvm");
+            recipe_free(recipe);
+            if (fetched_recipe_dir) {
+                char cmd[512];
+                snprintf(cmd, sizeof(cmd), "rm -rf '%s'", fetched_recipe_dir);
+                system(cmd);
+                free(fetched_recipe_dir);
+            }
+            return 1;
+        }
+
+        /* Check that each declared build dependency is installed */
+        jpkg_db_t *db_chk = db_open();
+        for (size_t i = 0; i < recipe->build_dep_count; i++) {
+            const char *dep = recipe->build_deps[i];
+            bool installed = (db_chk && db_is_installed(db_chk, dep)) ||
+                             tool_in_path(dep);
+            if (!installed) {
+                if (db_chk) db_close(db_chk);
+                log_error("build requires '%s' — install it with: jpkg install %s",
+                          dep, dep);
+                recipe_free(recipe);
+                if (fetched_recipe_dir) {
+                    char cmd[512];
+                    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", fetched_recipe_dir);
+                    system(cmd);
+                    free(fetched_recipe_dir);
+                }
+                return 1;
+            }
+        }
+        if (db_chk) db_close(db_chk);
+    }
 
     /* Create working directories */
     char work_dir[256], src_dir[256], dest_dir[256];
