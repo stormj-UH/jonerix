@@ -538,6 +538,11 @@ void sign_cleanup(void) {
     memset(&g_keys, 0, sizeof(g_keys));
 }
 
+bool sign_has_keys(void) {
+    sign_load_keys();
+    return g_keys.count > 0;
+}
+
 /* ========== Public API ========== */
 
 bool sign_verify(const uint8_t *msg, size_t msg_len,

@@ -20,6 +20,12 @@
 /* Load the distribution's public key(s) from /etc/jpkg/keys/ */
 int sign_load_keys(void);
 
+/* Returns true if at least one public key is loaded */
+bool sign_has_keys(void);
+
+/* Returns true if at least one public key is loaded */
+bool sign_has_keys(void);
+
 /* Verify an Ed25519 signature.
  * Returns true if valid. */
 bool sign_verify(const uint8_t *msg, size_t msg_len,
