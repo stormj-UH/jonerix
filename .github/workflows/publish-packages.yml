@@ -6,6 +6,7 @@ on:
     paths:
       - 'packages/core/**'
       - 'packages/jpkg/**'
+      - '.github/workflows/publish-packages.yml'
   workflow_dispatch:
     inputs:
       package:
@@ -264,6 +265,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
       - name: Install tools
         run: apk add --no-cache curl github-cli zstd
 
@@ -304,7 +308,14 @@ jobs:
             license=$(printf '%s' "$meta" | grep '^license '     | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             arch=$(printf '%s' "$meta"    | grep '^arch '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            depends_arr=$(printf '%s' "$meta" | grep '^runtime = \[' | head -1 | sed 's/^runtime = //')
+            # Prefer recipe.toml (source of truth) for depends; fall back to .jpkg metadata
+            recipe_file="${GITHUB_WORKSPACE}/packages/core/${name}/recipe.toml"
+            if [ -f "$recipe_file" ]; then
+              depends_arr=$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')
+            else
+              depends_arr=$(printf '%s' "$meta" | grep '^runtime = \[' | head -1 | sed 's/^runtime = //')
+            fi
+            [ "$depends_arr" = "[]" ] && depends_arr=""
 
             sha256=$(sha256sum "$pkg" | cut -d' ' -f1)
             size_val=$(stat -c %s "$pkg" 2>/dev/null || echo 0)
