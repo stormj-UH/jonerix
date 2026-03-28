@@ -35,6 +35,7 @@ while [ $# -gt 0 ]; do
         --output)  OUTPUT="$2"; shift 2 ;;
         --force)   FORCE_PKG="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --continue-on-error) shift ;;  # default behavior, accepted for compat
         -h|--help)
             echo "Usage: $0 [--output DIR] [--force PKG] [--dry-run]"
             echo ""
@@ -80,7 +81,7 @@ get_deps() {
     _recipe="${RECIPE_DIR}/$1/recipe.toml"
     [ -f "$_recipe" ] || return
     grep '^runtime ' "$_recipe" 2>/dev/null | head -1 | \
-        sed 's/runtime = //' | tr -d '[]"' | tr ',' ' '
+        sed 's/runtime = //; s/[][]//g; s/"//g; s/,/ /g'
 }
 
 # Check if a .jpkg for this package already exists in OUTPUT
@@ -109,7 +110,7 @@ fi
 PACKAGES=""
 while IFS= read -r line; do
     # Strip comments and whitespace
-    line=$(printf '%s' "$line" | sed 's/#.*//' | tr -d ' \t')
+    line=$(printf '%s' "$line" | sed 's/#.*//; s/[ 	]//g')
     [ -z "$line" ] && continue
     PACKAGES="$PACKAGES $line"
 done < "$ORDER_FILE"
