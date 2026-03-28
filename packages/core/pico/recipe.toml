@@ -16,4 +16,4 @@ install = "make -C pico DESTDIR=$DESTDIR install"
 
 [depends]
 runtime = ["ncurses"]
-build = ["ncurses"]
+build = ["ncurses", "openssl"]
