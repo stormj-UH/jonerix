@@ -12,7 +12,7 @@ set -e
 # clang, lld, and llvm-libs are pre-installed in the Alpine build environment.
 # Package their files directly rather than building LLVM from source.
 for pkg in clang lld llvm-libs; do
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -v '/\$' | while IFS= read -r f; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -v '/$' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
     [ -e "$src" ] || continue
