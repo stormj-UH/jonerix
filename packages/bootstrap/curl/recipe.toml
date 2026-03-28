@@ -16,4 +16,4 @@ install = "DESTDIR=$DESTDIR cmake --install build"
 
 [depends]
 runtime = ["musl", "openssl"]
-build = ["clang", "openssl", "cmake"]
+build = ["clang", "openssl", "cmake", "samurai"]
