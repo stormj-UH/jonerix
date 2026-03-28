@@ -2,6 +2,7 @@
 name = "python3"
 version = "3.12.8"
 license = "PSF-2.0"
+pre_bootstrap = true
 description = "Python programming language interpreter"
 
 [build]

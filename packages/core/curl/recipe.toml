@@ -2,6 +2,7 @@
 name = "curl"
 version = "8.11.1"
 license = "MIT"
+pre_bootstrap = true
 description = "Command-line tool and library for transferring data with URLs"
 
 [build]

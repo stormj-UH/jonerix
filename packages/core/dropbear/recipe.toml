@@ -2,6 +2,7 @@
 name = "dropbear"
 version = "2024.86"
 license = "MIT"
+pre_bootstrap = true
 description = "Lightweight SSH server and client"
 
 [build]

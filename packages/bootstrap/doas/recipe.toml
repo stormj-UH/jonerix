@@ -1,0 +1,19 @@
+[package]
+name = "doas"
+version = "6.8.2"
+license = "ISC"
+description = "Lightweight privilege escalation tool (OpenDoas)"
+
+[source]
+url = "https://github.com/Duncaen/OpenDoas/releases/download/v6.8.2/opendoas-6.8.2.tar.gz"
+sha256 = "28dca29adec5f4336465812d9e2243f599e62a78903de71c24f0cd6fe667edac"
+
+[build]
+system = "configure"
+configure = "./configure --prefix=/ --with-timestamp --without-pam"
+build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

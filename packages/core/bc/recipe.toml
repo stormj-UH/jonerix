@@ -2,6 +2,7 @@
 name = "bc"
 version = "7.0.3"
 license = "BSD-2-Clause"
+pre_bootstrap = true
 description = "Implementation of the bc calculator language"
 
 [build]

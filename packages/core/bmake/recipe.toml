@@ -2,6 +2,7 @@
 name = "bmake"
 version = "20240808"
 license = "MIT"
+pre_bootstrap = true
 description = "Portable version of NetBSD make"
 
 [build]
