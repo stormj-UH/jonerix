@@ -100,16 +100,17 @@ jobs:
             [ -f "$pkg" ] || continue
             pkg_base="$(basename "$pkg")"
 
-            # Read metadata length from bytes 5-8 (4 bytes, little-endian).
-            # Use od to dump bytes then awk to decode.
-            meta_len=$(dd if="$pkg" bs=1 skip=4 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n')
+            # Read metadata length from bytes 9-12 (4 bytes, little-endian).
+            # The .jpkg format: 8-byte magic ("JPKG\x00\x01\x00\x00"), then 4-byte
+            # LE uint32 metadata length, then metadata bytes, then zstd payload.
+            meta_len=$(dd if="$pkg" bs=1 skip=8 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n')
             if [ -z "$meta_len" ] || [ "$meta_len" -eq 0 ] 2>/dev/null; then
               echo "WARNING: could not read metadata length from $pkg_base, skipping"
               continue
             fi
 
-            # Extract metadata block (skip 8-byte header)
-            meta=$(dd if="$pkg" bs=1 skip=8 count="$meta_len" 2>/dev/null)
+            # Extract metadata block (skip 12-byte header: 8 magic + 4 length)
+            meta=$(dd if="$pkg" bs=1 skip=12 count="$meta_len" 2>/dev/null)
 
             # Pull fields from the embedded TOML
             name=$(printf '%s' "$meta"    | grep '^name '    | head -1 | sed 's/.*= *"\(.*\)"/\1/')
