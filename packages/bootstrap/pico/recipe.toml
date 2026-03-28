@@ -16,4 +16,4 @@ install = "make -C pico DESTDIR=$DESTDIR install"
 
 [depends]
 runtime = ["ncurses"]
-build = ["ncurses", "openssl"]
+build = ["clang", "bmake", "ncurses", "openssl"]

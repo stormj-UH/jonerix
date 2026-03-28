@@ -15,4 +15,4 @@ install = "install -Dm755 snooze $DESTDIR/bin/snooze && install -Dm644 snooze.1 
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = ["clang", "bmake"]
