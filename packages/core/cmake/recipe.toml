@@ -24,6 +24,9 @@ if [ -d "${DESTDIR}/usr" ]; then
   cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
   rm -rf "${DESTDIR}/usr"
 fi
+# Strip documentation tree — the Help/ dir contains thousands of relative
+# symlinks that cause toybox tar to exit non-zero during jpkg install.
+rm -rf "${DESTDIR}/share/cmake/Help" 2>/dev/null || true
 """
 install = ""
 
