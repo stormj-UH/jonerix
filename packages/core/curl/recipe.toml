@@ -10,7 +10,7 @@ sha256 = "c7ca7db48b0909743eaef34250da02c19bc61d4f1dcedd6603f109409536ab56"
 
 [build]
 system = "configure"
-configure = "./configure --prefix=/ --with-openssl"
+configure = "./configure --prefix=/ --with-openssl --without-libpsl"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 

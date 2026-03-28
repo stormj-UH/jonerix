@@ -515,24 +515,18 @@ int cmd_build(int argc, char **argv) {
             return 1;
         }
 
-        /* Check that each declared build dependency is installed */
+        /* Warn if declared build dependencies are not installed.
+         * We check the jpkg db and PATH (for tool packages like cmake).
+         * Library packages (ncurses, openssl) may be installed by the base OS
+         * without a matching binary, so this is a warning, not a hard error. */
         jpkg_db_t *db_chk = db_open();
         for (size_t i = 0; i < recipe->build_dep_count; i++) {
             const char *dep = recipe->build_deps[i];
             bool installed = (db_chk && db_is_installed(db_chk, dep)) ||
                              tool_in_path(dep);
             if (!installed) {
-                if (db_chk) db_close(db_chk);
-                log_error("build requires '%s' — install it with: jpkg install %s",
-                          dep, dep);
-                recipe_free(recipe);
-                if (fetched_recipe_dir) {
-                    char cmd[512];
-                    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", fetched_recipe_dir);
-                    system(cmd);
-                    free(fetched_recipe_dir);
-                }
-                return 1;
+                log_warn("build dependency '%s' not found via jpkg"
+                         " — install it with: jpkg install %s", dep, dep);
             }
         }
         if (db_chk) db_close(db_chk);
