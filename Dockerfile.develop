@@ -8,6 +8,9 @@
 ARG MINIMAL_IMAGE=jonerix-minimal:latest
 FROM ${MINIMAL_IMAGE}
 
+# jonerix-minimal has mksh but no /bin/sh — tell Docker to use mksh
+SHELL ["/bin/mksh", "-c"]
+
 # Install dev tools via jpkg (pre-built binaries, zero source builds)
 RUN jpkg update && jpkg install \
     llvm \
@@ -17,7 +20,7 @@ RUN jpkg update && jpkg install \
     npm \
     python3 \
     pip \
-    bc bmake cmake flex lz4 mandoc ncurses perl pico pigz samurai
+    bc bmake cmake flex lz4 mandoc ncurses perl pico pigz
 
 ENV PATH=/bin
 ENV HOME=/root

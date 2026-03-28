@@ -81,6 +81,9 @@ RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg
 RUN apk add --no-cache ca-certificates && \
     cp /etc/ssl/certs/ca-certificates.crt /jonerix/etc/ssl/certs/
 
+# sh symlink: system() in jpkg (and other tools) requires /bin/sh
+RUN ln -sf mksh /jonerix/bin/sh
+
 # ssh symlink (dbclient is dropbear's SSH client)
 RUN ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
