@@ -28,5 +28,5 @@ fi
 install = ""
 
 [depends]
-runtime = ["musl", "libressl"]
+runtime = ["musl", "openssl"]
 build = []

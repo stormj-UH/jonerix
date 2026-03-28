@@ -1,16 +1,16 @@
 [package]
-name = "curl"
-version = "8.11.1"
-license = "MIT"
+name = "openssl"
+version = "3.4.1"
+license = "Apache-2.0"
 pre_bootstrap = true
-description = "Command-line tool and library for transferring data with URLs"
+description = "TLS/SSL and cryptography library"
 
 [build]
 system = "custom"
 build = """
 set -e
-apk add --no-cache curl
-for pkg in curl; do
+apk add --no-cache openssl
+for pkg in openssl; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
@@ -28,5 +28,5 @@ fi
 install = ""
 
 [depends]
-runtime = ["musl", "openssl"]
+runtime = ["musl"]
 build = []

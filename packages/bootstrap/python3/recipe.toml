@@ -15,5 +15,5 @@ build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 
 [depends]
-runtime = ["musl", "libressl"]
-build = ["clang", "make", "libressl"]
+runtime = ["musl", "openssl"]
+build = ["clang", "make", "openssl"]
