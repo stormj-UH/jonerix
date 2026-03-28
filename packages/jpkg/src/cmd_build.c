@@ -166,15 +166,19 @@ static int run_build_step(const char *step_name, const char *cmd,
 
     log_info("  %s: %s", step_name, cmd);
 
-    /* Set up environment */
+    /* Set up environment.
+     * Include both /include and /usr/include so builds work on jonerix
+     * (merged-usr: headers at /include/) and standard layouts (/usr/include/).
+     * Same for library paths. */
     char env_cc[64] = "CC=clang";
     char env_ld[64] = "LD=ld.lld";
-    char env_cflags[256];
+    char env_cflags[512];
     snprintf(env_cflags, sizeof(env_cflags),
-             "CFLAGS=-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2");
-    char env_ldflags[256];
+             "CFLAGS=-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+             " -I/include -I/usr/include");
+    char env_ldflags[512];
     snprintf(env_ldflags, sizeof(env_ldflags),
-             "LDFLAGS=-Wl,-z,relro,-z,now -pie");
+             "LDFLAGS=-Wl,-z,relro,-z,now -pie -L/lib -L/usr/lib");
     char env_destdir[512];
     snprintf(env_destdir, sizeof(env_destdir), "DESTDIR=%s", dest_dir);
 
