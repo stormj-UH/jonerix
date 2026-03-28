@@ -399,6 +399,18 @@ int repo_update(const repo_config_t *cfg) {
 
 repo_entry_t *repo_find_package(const repo_index_t *idx, const char *name) {
     if (!idx || !name) return NULL;
+
+    /* Try arch-qualified key first: "name-arch" (e.g. "rust-aarch64"). */
+    struct utsname uts;
+    if (uname(&uts) == 0) {
+        char arch_key[256];
+        snprintf(arch_key, sizeof(arch_key), "%s-%s", name, uts.machine);
+        for (repo_entry_t *e = idx->entries; e; e = e->next) {
+            if (strcmp(e->name, arch_key) == 0) return e;
+        }
+    }
+
+    /* Fall back to unqualified name for backward-compat. */
     for (repo_entry_t *e = idx->entries; e; e = e->next) {
         if (strcmp(e->name, name) == 0) return e;
     }
