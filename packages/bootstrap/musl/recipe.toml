@@ -9,10 +9,62 @@ url = "https://musl.libc.org/releases/musl-1.2.5.tar.gz"
 sha256 = "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4"
 
 [build]
-system = "configure"
-configure = "./configure --prefix=/"
-build = "make -j$(nproc)"
-install = "make install DESTDIR=$DESTDIR"
+# musl's Makefile requires GNU make (ifeq, % pattern rules, -include,
+# order-only prerequisites). We use a custom shell build that replicates
+# the configure+make steps to avoid the GNU make dependency.
+system = "custom"
+configure = "CC=clang AR=llvm-ar RANLIB=llvm-ranlib ./configure --prefix=/"
+build = """
+set -e
+. ./config.mak
+
+# Collect all C sources (same as musl Makefile glob)
+SRCS=$(find src -name '*.c' | sort)
+ARCH_SRCS=$(find arch/$ARCH -name '*.s' -o -name '*.S' -o -name '*.c' 2>/dev/null | sort)
+
+# Compile object files
+OBJS=""
+mkdir -p obj
+for f in $SRCS $ARCH_SRCS; do
+  obj="obj/${f%.*}.o"
+  mkdir -p "$(dirname "$obj")"
+  $CC $CPPFLAGS $CFLAGS -c -o "$obj" "$f"
+  OBJS="$OBJS $obj"
+done
+
+# Build crt files
+for f in crt/*.c crt/$ARCH/*.s crt/$ARCH/*.S; do
+  [ -f "$f" ] || continue
+  obj="obj/${f%.*}.o"
+  mkdir -p "$(dirname "$obj")"
+  $CC $CPPFLAGS $CFLAGS -c -o "$obj" "$f"
+done
+
+# Create static library
+$AR rc lib/libc.a $OBJS
+$RANLIB lib/libc.a
+
+# Create shared library
+$CC -nostdlib -shared -Wl,-e,_dlstart -o lib/libc.so $OBJS
+"""
+install = """
+set -e
+. ./config.mak
+mkdir -p "$DESTDIR/lib" "$DESTDIR/include" "$DESTDIR/bin"
+install -m644 lib/libc.a "$DESTDIR/lib/"
+install -m755 lib/libc.so "$DESTDIR/lib/ld-musl-$ARCH.so.1"
+ln -sf ld-musl-$ARCH.so.1 "$DESTDIR/lib/libc.so"
+ln -sf ../lib/ld-musl-$ARCH.so.1 "$DESTDIR/bin/ldd"
+cp -a include/* "$DESTDIR/include/"
+cp -a arch/$ARCH/bits "$DESTDIR/include/"
+cp -a arch/generic/bits/* "$DESTDIR/include/bits/"
+install -m644 obj/crt/crt1.o "$DESTDIR/lib/" 2>/dev/null || true
+install -m644 obj/crt/crti.o "$DESTDIR/lib/" 2>/dev/null || true
+install -m644 obj/crt/crtn.o "$DESTDIR/lib/" 2>/dev/null || true
+install -m644 obj/crt/rcrt1.o "$DESTDIR/lib/" 2>/dev/null || true
+install -m644 obj/crt/Scrt1.o "$DESTDIR/lib/" 2>/dev/null || true
+install -m644 lib/musl-gcc.specs "$DESTDIR/lib/" 2>/dev/null || true
+"""
 
 [depends]
 runtime = []
