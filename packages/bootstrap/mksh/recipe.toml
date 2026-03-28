@@ -10,7 +10,7 @@ sha256 = "e5942607eb930ba6ce3303c4a0db0733371f210c9ce6d5d4b9cc202c76360343"
 
 [build]
 system = "custom"
-build = "CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" sh Build.sh -r"
+build = "mkdir -p /tmp/mksh-stubs && printf '#pragma once\\n#include <termios.h>\\n' > /tmp/mksh-stubs/termio.h && CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE -I/tmp/mksh-stubs\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" sh Build.sh -r"
 install = "mkdir -p $DESTDIR/bin && install -m 755 mksh $DESTDIR/bin/mksh && ln -sf mksh $DESTDIR/bin/sh && mkdir -p $DESTDIR/share/man/man1 && install -m 644 mksh.1 $DESTDIR/share/man/man1/mksh.1"
 
 [depends]
