@@ -9,8 +9,8 @@ description = "Cross-platform build system generator"
 system = "custom"
 build = """
 set -e
-apk add --no-cache cmake
-for pkg in cmake; do
+apk add --no-cache cmake libarchive acl-libs libbz2 libexpat lz4-libs xz-libs zstd-libs libgcc rhash-libs libstdc++ libuv
+for pkg in cmake libarchive acl-libs libbz2 libexpat lz4-libs xz-libs zstd-libs libgcc rhash-libs libstdc++ libuv; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
@@ -28,5 +28,5 @@ fi
 install = ""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "openssl"]
 build = []
