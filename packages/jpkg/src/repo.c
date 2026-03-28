@@ -145,38 +145,52 @@ void repo_config_free(repo_config_t *cfg) {
  * ...
  */
 
-static repo_entry_t *parse_index_entry(toml_doc_t *doc, const char *name) {
+static repo_entry_t *parse_index_entry(toml_doc_t *doc, const char *section_key) {
     repo_entry_t *e = xcalloc(1, sizeof(repo_entry_t));
-    e->name = xstrdup(name);
 
     char key[256];
 
-    snprintf(key, sizeof(key), "%s.version", name);
+    snprintf(key, sizeof(key), "%s.version", section_key);
     const char *s = toml_get_string(doc, key);
     e->version = xstrdup(s ? s : "0");
 
-    snprintf(key, sizeof(key), "%s.license", name);
+    snprintf(key, sizeof(key), "%s.license", section_key);
     s = toml_get_string(doc, key);
     e->license = s ? xstrdup(s) : xstrdup("unknown");
 
-    snprintf(key, sizeof(key), "%s.description", name);
+    snprintf(key, sizeof(key), "%s.description", section_key);
     s = toml_get_string(doc, key);
     e->description = s ? xstrdup(s) : xstrdup("");
 
-    snprintf(key, sizeof(key), "%s.arch", name);
+    /* Parse arch first so we can strip it from the section key below. */
+    snprintf(key, sizeof(key), "%s.arch", section_key);
     s = toml_get_string(doc, key);
     e->arch = s ? xstrdup(s) : xstrdup("x86_64");
 
-    snprintf(key, sizeof(key), "%s.sha256", name);
+    /* Section key is "pkgname-arch" (e.g. "pico-aarch64").
+     * Store only the real package name so filenames are constructed correctly. */
+    {
+        size_t klen = strlen(section_key);
+        size_t alen = strlen(e->arch);
+        if (klen > alen + 1 &&
+            section_key[klen - alen - 1] == '-' &&
+            strcmp(section_key + klen - alen, e->arch) == 0) {
+            e->name = xstrndup(section_key, klen - alen - 1);
+        } else {
+            e->name = xstrdup(section_key);
+        }
+    }
+
+    snprintf(key, sizeof(key), "%s.sha256", section_key);
     s = toml_get_string(doc, key);
     e->sha256 = s ? xstrdup(s) : xstrdup("");
 
-    snprintf(key, sizeof(key), "%s.size", name);
+    snprintf(key, sizeof(key), "%s.size", section_key);
     int64_t size;
     if (toml_get_integer(doc, key, &size))
         e->size = (uint64_t)size;
 
-    snprintf(key, sizeof(key), "%s.depends", name);
+    snprintf(key, sizeof(key), "%s.depends", section_key);
     const toml_array_t *arr = toml_get_array(doc, key);
     if (arr && arr->count > 0) {
         e->runtime_deps = xcalloc(arr->count, sizeof(char *));
@@ -185,7 +199,7 @@ static repo_entry_t *parse_index_entry(toml_doc_t *doc, const char *name) {
             e->runtime_deps[i] = xstrdup(arr->items[i]);
     }
 
-    snprintf(key, sizeof(key), "%s.build-depends", name);
+    snprintf(key, sizeof(key), "%s.build-depends", section_key);
     arr = toml_get_array(doc, key);
     if (arr && arr->count > 0) {
         e->build_deps = xcalloc(arr->count, sizeof(char *));
@@ -400,17 +414,20 @@ int repo_update(const repo_config_t *cfg) {
 repo_entry_t *repo_find_package(const repo_index_t *idx, const char *name) {
     if (!idx || !name) return NULL;
 
-    /* Try arch-qualified key first: "name-arch" (e.g. "rust-aarch64"). */
+    /* Prefer an entry matching both name and the current arch. */
     struct utsname uts;
-    if (uname(&uts) == 0) {
-        char arch_key[256];
-        snprintf(arch_key, sizeof(arch_key), "%s-%s", name, uts.machine);
+    const char *my_arch = NULL;
+    if (uname(&uts) == 0) my_arch = uts.machine;
+
+    if (my_arch) {
         for (repo_entry_t *e = idx->entries; e; e = e->next) {
-            if (strcmp(e->name, arch_key) == 0) return e;
+            if (strcmp(e->name, name) == 0 &&
+                e->arch && strcmp(e->arch, my_arch) == 0)
+                return e;
         }
     }
 
-    /* Fall back to unqualified name for backward-compat. */
+    /* Fallback: any entry with the right name (any arch). */
     for (repo_entry_t *e = idx->entries; e; e = e->next) {
         if (strcmp(e->name, name) == 0) return e;
     }
