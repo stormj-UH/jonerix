@@ -12,7 +12,8 @@ sha256 = "8c29e06cf42aacc1eafc4077ae2ec6c6fcb96a626157e0593d5e82a34fd403c1"
 system = "cmake"
 configure = "cmake build/cmake -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/ -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=ON -DZSTD_BUILD_PROGRAMS=ON -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_CONTRIB=OFF"
 build = "ninja -j$(nproc)"
-install = "DESTDIR=$DESTDIR ninja install"
+install = """DESTDIR=$DESTDIR ninja install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
 
 [depends]
 runtime = ["musl"]

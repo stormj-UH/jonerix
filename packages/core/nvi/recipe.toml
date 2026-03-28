@@ -12,7 +12,8 @@ sha256 = "9f7c9aef3924c0e39ef96e1aadb8f5d396825b8251addab1290aa866cf3d5af4"
 system = "cmake"
 configure = "cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/"
 build = "cmake --build build -j$(nproc)"
-install = "DESTDIR=$DESTDIR cmake --install build"
+install = """DESTDIR=$DESTDIR cmake --install build
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
 
 [depends]
 runtime = ["musl"]
