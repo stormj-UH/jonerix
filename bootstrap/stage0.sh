@@ -40,10 +40,12 @@ msg "Installing build dependencies..."
 apk add --no-cache \
     clang \
     lld \
+    llvm \
     llvm-dev \
     musl-dev \
     cmake \
     samurai \
+    meson \
     git \
     curl \
     patch \
@@ -51,6 +53,8 @@ apk add --no-cache \
     xz \
     bzip2 \
     zstd \
+    zstd-dev \
+    zstd-static \
     make \
     pkgconf \
     linux-headers \
@@ -61,6 +65,7 @@ apk add --no-cache \
     bc \
     cpio \
     openssl-dev \
+    ncurses-dev \
     || die "apk add failed — are you running as root?"
 
 # =========================================================================
@@ -69,7 +74,7 @@ apk add --no-cache \
 
 msg "Verifying tool availability..."
 
-for tool in clang ld.lld llvm-ar cmake samu git curl patch tar sha256sum; do
+for tool in clang ld.lld llvm-ar llvm-nm llvm-strip llvm-objcopy cmake samu git curl patch tar sha256sum meson; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         die "Required tool not found: $tool"
     fi
