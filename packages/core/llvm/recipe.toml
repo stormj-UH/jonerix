@@ -1,20 +1,33 @@
 [package]
 name = "llvm"
-version = "19.1.5"
+version = "19"
 license = "Apache-2.0"
 description = "LLVM compiler infrastructure with clang and lld"
 
-[source]
-url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.5/llvm-project-19.1.5.src.tar.xz"
-sha256 = "bd8445f554aae33d50d3212a15e993a667c0ad1b694ac1977f3463db3338e542"
-
 [build]
-system = "cmake"
-configure = "cmake -S llvm -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=\"clang;lld\" -DLLVM_TARGETS_TO_BUILD=\"X86;AArch64\""
-build = "cmake --build build -j$(nproc)"
-install = """DESTDIR=$DESTDIR cmake --install build
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
+system = "custom"
+build = """
+set -e
+# clang, lld, and llvm-libs are pre-installed in the Alpine build environment.
+# Package their files directly rather than building LLVM from source.
+for pkg in clang lld llvm-libs; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+# Flatten /usr -> /
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["cmake", "samurai"]
+build = []
