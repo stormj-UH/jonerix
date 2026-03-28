@@ -4,11 +4,14 @@ name: Bootstrap packages (from source)
 # Run this after the minimal publish-packages CI is working and producing
 # a working jpkg binary. Bootstrap builds every package from source,
 # replacing the pre_bootstrap APK-extracted versions in the release.
+#
+# After successful builds, packages graduate: their packages/core/*/recipe.toml
+# gets pre_bootstrap set to false, and a PR is created with the changes.
 on:
   workflow_dispatch:
     inputs:
       package:
-        description: 'Package name to build (leave empty to build all)'
+        description: 'Package name to build (leave empty to build all in order)'
         required: false
         default: ''
 
@@ -22,6 +25,8 @@ jobs:
       options: --privileged
     permissions:
       contents: write
+    outputs:
+      built-packages: ${{ steps.build.outputs.built }}
 
     steps:
       - name: Checkout source
@@ -59,22 +64,51 @@ jobs:
             --dir /var/cache/jpkg 2>/dev/null || true
 
       - name: Build bootstrap packages from source
+        id: build
         run: |
           PKG_INPUT="${{ github.event.inputs.package }}"
+          BUILT=""
+          FAILED=""
+
+          build_one() {
+            _pkg="$1"
+            _recipe_dir="packages/bootstrap/${_pkg}"
+            [ -f "${_recipe_dir}/recipe.toml" ] || { echo "WARNING: no bootstrap recipe for ${_pkg}"; return 0; }
+            echo "=== Building ${_pkg} from source ==="
+            if timeout 3600 jpkg build "${_recipe_dir}" --build-jpkg --output /var/cache/jpkg; then
+              echo "SUCCESS: ${_pkg}"
+              BUILT="${BUILT:+${BUILT},}${_pkg}"
+            else
+              echo "FAILED: ${_pkg}"
+              FAILED="${FAILED:+${FAILED},}${_pkg}"
+            fi
+          }
+
           if [ -n "$PKG_INPUT" ]; then
-            recipe_dir="packages/bootstrap/${PKG_INPUT}"
-            [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no bootstrap recipe at ${recipe_dir}/recipe.toml"; exit 1; }
-            echo "=== Building ${PKG_INPUT} (forced) ==="
-            timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+            build_one "$PKG_INPUT"
+          elif [ -f bootstrap/build-order.txt ]; then
+            # Read build order from file (dependency-sorted)
+            while IFS= read -r line; do
+              line="$(echo "$line" | sed 's/#.*//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+              [ -z "$line" ] && continue
+              build_one "$line"
+            done < bootstrap/build-order.txt
           else
+            # Fallback: iterate bootstrap recipes alphabetically
+            echo "WARNING: bootstrap/build-order.txt not found, building in alphabetical order"
             for recipe in packages/bootstrap/*/recipe.toml; do
-              pkg_dir="$(dirname "$recipe")"
-              pkg_name="$(basename "$pkg_dir")"
-              pkg_ver=$(grep '^version' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-              echo "=== Building ${pkg_name}-${pkg_ver} from source ==="
-              timeout 3600 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+              pkg_name="$(basename "$(dirname "$recipe")")"
+              build_one "$pkg_name"
             done
           fi
+
+          echo "built=${BUILT}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$FAILED" ]; then
+            echo "::warning::Failed packages: ${FAILED}"
+          fi
+          echo "Built: ${BUILT:-none}"
+          echo "Failed: ${FAILED:-none}"
 
       - name: List built packages
         run: ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
@@ -95,6 +129,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: write
+    outputs:
+      built-packages: ${{ steps.build.outputs.built }}
 
     steps:
       - name: Checkout source
@@ -111,6 +147,7 @@ jobs:
             --dir /tmp/jpkg-output 2>/dev/null || true
 
       - name: Build bootstrap packages in Alpine container
+        id: build
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
@@ -137,24 +174,55 @@ jobs:
               make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
               install -m 755 jpkg /usr/local/bin/jpkg
 
+              BUILT=""
+              FAILED=""
+
+              build_one() {
+                _pkg="$1"
+                _recipe_dir="/workspace/packages/bootstrap/${_pkg}"
+                [ -f "${_recipe_dir}/recipe.toml" ] || { echo "WARNING: no bootstrap recipe for ${_pkg}"; return 0; }
+                echo "=== Building ${_pkg} from source ==="
+                if timeout 3600 jpkg build "${_recipe_dir}" --build-jpkg --output /var/cache/jpkg; then
+                  echo "SUCCESS: ${_pkg}"
+                  BUILT="${BUILT:+${BUILT},}${_pkg}"
+                else
+                  echo "FAILED: ${_pkg}"
+                  FAILED="${FAILED:+${FAILED},}${_pkg}"
+                fi
+              }
+
               if [ -n "$PKG_INPUT" ]; then
-                recipe_dir="/workspace/packages/bootstrap/${PKG_INPUT}"
-                [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no bootstrap recipe"; exit 1; }
-                echo "=== Building ${PKG_INPUT} (forced) ==="
-                timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+                build_one "$PKG_INPUT"
+              elif [ -f /workspace/bootstrap/build-order.txt ]; then
+                # Read build order from file (dependency-sorted)
+                while IFS= read -r line; do
+                  line="$(echo "$line" | sed '"'"'s/#.*//'"'"' | sed '"'"'s/^[[:space:]]*//;s/[[:space:]]*$//'"'"')"
+                  [ -z "$line" ] && continue
+                  build_one "$line"
+                done < /workspace/bootstrap/build-order.txt
               else
+                # Fallback: iterate bootstrap recipes alphabetically
+                echo "WARNING: bootstrap/build-order.txt not found, building in alphabetical order"
                 for recipe in /workspace/packages/bootstrap/*/recipe.toml; do
-                  pkg_dir="$(dirname "$recipe")"
-                  pkg_name="$(basename "$pkg_dir")"
-                  pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed '"'"'s/.*= *"\(.*\)"/\1/'"'"')
-                  echo "=== Building ${pkg_name}-${pkg_ver} from source ==="
-                  timeout 3600 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+                  pkg_name="$(basename "$(dirname "$recipe")")"
+                  build_one "$pkg_name"
                 done
               fi
 
-              echo "Bootstrap packages (aarch64):"
-              ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+              # Write built list to a file the host can read
+              echo "$BUILT" > /var/cache/jpkg/.built-list
+              if [ -n "$FAILED" ]; then
+                echo "WARNING: Failed packages: ${FAILED}" >&2
+              fi
+              echo "Built: ${BUILT:-none}"
+              echo "Failed: ${FAILED:-none}"
             '
+
+          # Read built list from container output
+          BUILT=""
+          [ -f /tmp/jpkg-output/.built-list ] && BUILT="$(cat /tmp/jpkg-output/.built-list)"
+          echo "built=${BUILT}" >> "$GITHUB_OUTPUT"
+          rm -f /tmp/jpkg-output/.built-list
 
       - name: Upload packages to release
         env:
@@ -166,8 +234,91 @@ jobs:
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (aarch64)."
 
-  # After bootstrap completes, trigger publish-packages to regenerate the INDEX
-  # (which will pick up the newly uploaded source-built packages).
+  # ── Graduate packages from pre_bootstrap ─────────────────────────────────
+  graduate:
+    name: Graduate packages (pre_bootstrap → false)
+    needs: [bootstrap-x86_64, bootstrap-aarch64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Determine successfully built packages
+        id: packages
+        run: |
+          # Intersect x86_64 and aarch64 built lists — only graduate if both succeeded
+          BUILT_X86="${{ needs.bootstrap-x86_64.outputs.built-packages }}"
+          BUILT_ARM="${{ needs.bootstrap-aarch64.outputs.built-packages }}"
+
+          echo "x86_64 built: ${BUILT_X86:-none}"
+          echo "aarch64 built: ${BUILT_ARM:-none}"
+
+          # Find packages that built on BOTH architectures
+          GRADUATED=""
+          IFS=',' read -ra X86_LIST <<< "$BUILT_X86"
+          for pkg in "${X86_LIST[@]}"; do
+            [ -z "$pkg" ] && continue
+            if echo ",$BUILT_ARM," | grep -q ",${pkg},"; then
+              GRADUATED="${GRADUATED:+${GRADUATED} }${pkg}"
+            fi
+          done
+
+          echo "Packages to graduate: ${GRADUATED:-none}"
+          echo "graduated=${GRADUATED}" >> "$GITHUB_OUTPUT"
+
+      - name: Update pre_bootstrap in core recipes
+        id: update
+        run: |
+          GRADUATED="${{ steps.packages.outputs.graduated }}"
+          [ -z "$GRADUATED" ] && { echo "No packages to graduate."; exit 0; }
+
+          CHANGED=false
+          for pkg in $GRADUATED; do
+            recipe="packages/core/${pkg}/recipe.toml"
+            if [ -f "$recipe" ] && grep -q 'pre_bootstrap = true' "$recipe"; then
+              sed -i 's/pre_bootstrap = true/pre_bootstrap = false/' "$recipe"
+              echo "Graduated: ${pkg}"
+              CHANGED=true
+            fi
+          done
+
+          echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR with graduation changes
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          GRADUATED="${{ steps.packages.outputs.graduated }}"
+          BRANCH="bootstrap/graduate-$(date +%Y%m%d-%H%M%S)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add packages/core/*/recipe.toml
+          git commit -m "Graduate bootstrap packages: set pre_bootstrap = false
+
+Packages successfully built from source on both x86_64 and aarch64:
+$(for pkg in $GRADUATED; do echo "  - ${pkg}"; done)
+
+These packages no longer need APK extraction — they are built from
+source in the bootstrap pipeline."
+
+          git push origin "$BRANCH"
+          # Build PR body with package list
+          PKG_LIST=""
+          for pkg in $GRADUATED; do PKG_LIST="${PKG_LIST}- ${pkg}\n"; done
+
+          gh pr create \
+            --title "Graduate bootstrap packages from pre_bootstrap" \
+            --body "$(printf '## Summary\nPackages built from source on both x86_64 and aarch64:\n\n%b\n## Effect\n- publish-packages.yml skips these (now handled by bootstrap-packages.yml)\n- Source-built versions replace the APK-extracted versions\n\nGenerated by bootstrap-packages.yml.' "$PKG_LIST")" \
+            --base master
+
+  # ── Regenerate INDEX ──────────────────────────────────────────────────────
   regenerate-index:
     name: Trigger INDEX regeneration
     needs: [bootstrap-x86_64, bootstrap-aarch64]
