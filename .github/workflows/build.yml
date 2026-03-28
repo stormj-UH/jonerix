@@ -41,10 +41,11 @@ jobs:
         run: |
           apk update
           apk add \
-            clang lld llvm-dev musl-dev \
-            cmake samurai git curl patch \
-            tar gzip zstd xz \
-            perl linux-headers \
+            clang lld llvm llvm-dev musl-dev \
+            cmake samurai meson git curl patch \
+            tar gzip zstd zstd-dev zstd-static xz bzip2 \
+            perl python3 linux-headers \
+            openssl-dev ncurses-dev \
             dosfstools e2fsprogs sgdisk \
             coreutils findutils file
 
