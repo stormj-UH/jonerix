@@ -1,0 +1,51 @@
+# Bootstrap build order — dependency-sorted
+# Packages are built top-to-bottom. Each package's build dependencies
+# must appear earlier in this list (or be provided by the Alpine host).
+#
+# Lines starting with # are comments, empty lines are ignored.
+# This file is consumed by bootstrap/build-all.sh and bootstrap-packages.yml.
+
+# Stage 1: C library (everything depends on this)
+musl
+
+# Stage 2: Compression libraries
+zstd
+lz4
+
+# Stage 3: TLS
+openssl
+
+# Stage 4: Core utilities and shell
+toybox
+mksh
+
+# Stage 5: Build tools (no runtime deps beyond musl)
+bmake
+cmake
+bc
+flex
+
+# Stage 6: Libraries
+ncurses
+
+# Stage 7: System services (depend on musl, optionally openssl)
+openrc
+dropbear
+curl
+dhcpcd
+unbound
+doas
+socklog
+snooze
+ifupdown-ng
+
+# Stage 8: Utilities
+mandoc
+pigz
+pico
+fastfetch
+
+# Stage 9: Language runtimes (large, build last per project philosophy)
+perl
+python3
+nodejs

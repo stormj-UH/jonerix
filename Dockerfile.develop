@@ -4,6 +4,10 @@
 # No source compilation during image build.
 #
 # Build: docker build -f Dockerfile.develop --tag jonerix-develop:latest .
+#
+# Bootstrap usage (build packages from source inside this container):
+#   docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
+#     sh bootstrap/build-all.sh --output /workspace/.build/pkgs --continue-on-error
 
 ARG MINIMAL_IMAGE=jonerix-minimal:latest
 FROM ${MINIMAL_IMAGE}
