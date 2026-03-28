@@ -22,6 +22,10 @@ RUN jpkg update && jpkg install \
     pip \
     bc bmake cmake flex lz4 mandoc ncurses perl pico pigz
 
+# Reinstall cmake: updated recipe now includes libarchive/libuv/rhash .so deps.
+# Remove then reinstall since the version number is unchanged (cache-bust).
+RUN jpkg remove cmake && jpkg install cmake
+
 ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/mksh
