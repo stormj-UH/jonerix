@@ -4,16 +4,28 @@ version = "5.40.0"
 license = "Artistic-2.0"
 description = "Practical Extraction and Report Language"
 
-[source]
-url = "https://www.cpan.org/src/5.0/perl-5.40.0.tar.gz"
-sha256 = "c740348f357396327a9795d3e8323bafd0fe8a5c7835fc1cbaba0cc8dfe7161f"
-
 [build]
 system = "custom"
-configure = "./Configure -des -Dprefix=/ -Duseshrplib"
-build = "make -j$(nproc)"
-install = "make install DESTDIR=$DESTDIR"
+build = """
+set -e
+apk add --no-cache perl
+for pkg in perl; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["make"]
+build = []

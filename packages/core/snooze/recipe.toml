@@ -4,15 +4,28 @@ version = "0.5"
 license = "CC0"
 description = "Lightweight cron alternative for running a command at a specific time"
 
-[source]
-url = "https://github.com/leahneukirchen/snooze/archive/v0.5.tar.gz"
-sha256 = "d63fde85d9333188bed5996baabd833eaa00842ce117443ffbf8719c094be414"
-
 [build]
-system = "make"
-build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
-install = "install -Dm755 snooze $DESTDIR/bin/snooze && install -Dm644 snooze.1 $DESTDIR/share/man/man1/snooze.1"
+system = "custom"
+build = """
+set -e
+apk add --no-cache snooze
+for pkg in snooze; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

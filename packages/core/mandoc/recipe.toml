@@ -4,16 +4,28 @@ version = "1.14.6"
 license = "ISC"
 description = "UNIX manpage compiler and viewer"
 
-[source]
-url = "https://mandoc.bsd.lv/snapshots/mandoc-1.14.6.tar.gz"
-sha256 = "8bf0d570f01e70a6e124884088870cbed7537f36328d512909eb10cd53179d9c"
-
 [build]
 system = "custom"
-configure = "printf 'PREFIX=/\\nBINDIR=/bin\\nSBINDIR=/bin\\nLIBDIR=/lib\\nMANDIR=/share/man\\nINCLUDEDIR=/include\\nMANPATH_DEFAULT=/share/man\\nHAVE_WCHAR=1\\nHAVE_SQLITE3=0\\nUTF8_LOCALE=C.UTF-8\\n' > configure.local && ./configure"
-build = "make -j$(nproc)"
-install = "make install DESTDIR=$DESTDIR"
+build = """
+set -e
+apk add --no-cache mandoc
+for pkg in mandoc; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

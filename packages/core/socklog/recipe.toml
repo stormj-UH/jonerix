@@ -4,27 +4,28 @@ version = "2.2.3"
 license = "BSD-3-Clause"
 description = "Small and secure syslogd replacement (DJB-style)"
 
-# Note: smarden.org serves this file as bzip2 despite the .tar.gz extension;
-# we handle extraction manually in the build script.
-
 [build]
 system = "custom"
 build = """
-curl -fsSL https://smarden.org/socklog/socklog-2.2.3.tar.gz -o socklog.tar.bz2
-printf '960410d2b54b165e636afc9fb201effdbf48aa032cbfefd544adf0b0656a91d3  socklog.tar.bz2\n' | sha256sum -c
-tar xjf socklog.tar.bz2
-cd socklog-2.2.3
-printf '%s\n' 'clang -Os -pipe -fstack-protector-strong -fPIE' > src/conf-cc
-printf '%s\n' 'clang -Wl,-z,relro,-z,now -pie' > src/conf-ld
-make -C src
-install -Dm755 src/socklog "${DESTDIR}/bin/socklog"
-install -Dm755 src/socklog-check "${DESTDIR}/bin/socklog-check"
-install -Dm755 src/tryto "${DESTDIR}/bin/tryto"
-install -Dm755 src/uncat "${DESTDIR}/bin/uncat"
-mkdir -p "${DESTDIR}/var/log/socklog"
+set -e
+apk add --no-cache socklog
+for pkg in socklog; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
 """
 install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

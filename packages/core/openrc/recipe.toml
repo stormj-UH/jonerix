@@ -4,16 +4,28 @@ version = "0.54"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
-[source]
-url = "https://github.com/OpenRC/openrc/archive/0.54.tar.gz"
-sha256 = "c84ff1d8e468c043fe136d11d3d34d6bb28328267d1352526a5d18cdf4c60fb0"
-
 [build]
-system = "meson"
-configure = "meson setup build --prefix=/"
-build = "ninja -C build"
-install = "DESTDIR=$DESTDIR ninja -C build install"
+system = "custom"
+build = """
+set -e
+apk add --no-cache openrc
+for pkg in openrc; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "meson", "samurai"]
+build = []
