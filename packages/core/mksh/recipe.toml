@@ -5,8 +5,8 @@ license = "MirOS"
 description = "MirBSD Korn Shell"
 
 [source]
-url = "https://www.mirbsd.org/MirOS/dist/mir/mksh/mksh-R59c.tgz"
-sha256 = "FIXME"
+url = "https://github.com/MirBSD/mksh/archive/refs/tags/mksh-R59c.tar.gz"
+sha256 = "e5942607eb930ba6ce3303c4a0db0733371f210c9ce6d5d4b9cc202c76360343"
 
 [build]
 system = "custom"

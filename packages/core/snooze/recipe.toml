@@ -6,7 +6,7 @@ description = "Lightweight cron alternative for running a command at a specific 
 
 [source]
 url = "https://github.com/leahneukirchen/snooze/archive/v0.5.tar.gz"
-sha256 = "FIXME"
+sha256 = "d63fde85d9333188bed5996baabd833eaa00842ce117443ffbf8719c094be414"
 
 [build]
 system = "make"

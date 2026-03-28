@@ -6,7 +6,7 @@ description = "Cross-platform build system generator"
 
 [source]
 url = "https://github.com/Kitware/CMake/releases/download/v4.1.0/cmake-4.1.0.tar.gz"
-sha256 = "FIXME"
+sha256 = "81ee8170028865581a8e10eaf055afb620fa4baa0beb6387241241a975033508"
 
 [build]
 system = "custom"

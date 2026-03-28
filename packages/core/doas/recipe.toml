@@ -1,12 +1,12 @@
 [package]
 name = "doas"
-version = "6.3p12"
+version = "6.8.2"
 license = "ISC"
 description = "Lightweight privilege escalation tool (OpenDoas)"
 
 [source]
-url = "https://github.com/Duncaen/OpenDoas/releases/download/v6.3p12/opendoas-6.3p12.tar.xz"
-sha256 = "FIXME"
+url = "https://github.com/Duncaen/OpenDoas/releases/download/v6.8.2/opendoas-6.8.2.tar.gz"
+sha256 = "28dca29adec5f4336465812d9e2243f599e62a78903de71c24f0cd6fe667edac"
 
 [build]
 system = "configure"
