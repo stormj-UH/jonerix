@@ -213,8 +213,11 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
       - name: Install tools
-        run: apk add --no-cache curl github-cli zstd
+        run: apk add --no-cache clang lld musl-dev make curl github-cli zstd linux-headers
 
       - name: Download all packages from release
         env:
@@ -287,12 +290,29 @@ jobs:
           zstd -19 -f -o "$INDEX_ZST" "$INDEX_PLAIN"
           echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
 
-      - name: Upload INDEX.zst
+      - name: Build jpkg (for signing)
+        run: |
+          cd packages/jpkg
+          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          install -m 755 jpkg /usr/local/bin/jpkg
+
+      - name: Sign INDEX.zst
+        env:
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
+        run: |
+          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > /tmp/jpkg-sign.sec
+          chmod 600 /tmp/jpkg-sign.sec
+          jpkg sign /var/cache/jpkg/INDEX.zst --key /tmp/jpkg-sign.sec
+          rm -f /tmp/jpkg-sign.sec
+          echo "INDEX.zst.sig: $(wc -c < /var/cache/jpkg/INDEX.zst.sig) bytes"
+
+      - name: Upload INDEX.zst and signature
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload packages \
             --repo "$GITHUB_REPOSITORY" \
             --clobber \
-            /var/cache/jpkg/INDEX.zst
-          echo "INDEX.zst uploaded."
+            /var/cache/jpkg/INDEX.zst \
+            /var/cache/jpkg/INDEX.zst.sig
+          echo "INDEX.zst and INDEX.zst.sig uploaded."

@@ -54,7 +54,9 @@ SRCS     = $(SRCDIR)/main.c \
            $(SRCDIR)/cmd_info.c \
            $(SRCDIR)/cmd_build.c \
            $(SRCDIR)/cmd_verify.c \
-           $(SRCDIR)/cmd_audit.c
+           $(SRCDIR)/cmd_audit.c \
+           $(SRCDIR)/cmd_keygen.c \
+           $(SRCDIR)/cmd_sign.c
 
 OBJS     = $(SRCS:.c=.o)
 DEPS     = $(SRCS:.c=.d)
