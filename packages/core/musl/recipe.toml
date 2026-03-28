@@ -9,8 +9,8 @@ description = "Lightweight, fast, and standards-conformant C library"
 system = "custom"
 build = """
 set -e
-apk add --no-cache musl
-for pkg in musl; do
+apk add --no-cache musl musl-dev linux-headers
+for pkg in musl musl-dev linux-headers; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
