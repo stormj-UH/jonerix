@@ -508,16 +508,38 @@ static const char *permissive_licenses[] = {
 
 bool license_is_permissive(const char *license) {
     if (!license) return false;
+
+    /* Exact match */
     for (int i = 0; permissive_licenses[i]; i++) {
         if (strcasecmp(license, permissive_licenses[i]) == 0)
             return true;
     }
-    /* Also check for common compound licenses like "MIT OR Apache-2.0" */
-    /* If it contains GPL/LGPL/AGPL, it's not permissive */
-    if (str_contains(license, "GPL") || str_contains(license, "LGPL") ||
-        str_contains(license, "AGPL") || str_contains(license, "SSPL") ||
-        str_contains(license, "EUPL")) {
-        return false;
+
+    /* SPDX OR: "MIT OR Apache-2.0" — permissive if any component is */
+    const char *or_pos = strstr(license, " OR ");
+    if (or_pos) {
+        char left[128];
+        size_t llen = (size_t)(or_pos - license);
+        if (llen < sizeof(left)) {
+            memcpy(left, license, llen);
+            left[llen] = '\0';
+            if (license_is_permissive(left)) return true;
+        }
+        return license_is_permissive(or_pos + 4);
     }
+
+    /* SPDX AND: "MIT AND GPL-2.0" — permissive only if all components are */
+    const char *and_pos = strstr(license, " AND ");
+    if (and_pos) {
+        char left[128];
+        size_t llen = (size_t)(and_pos - license);
+        if (llen < sizeof(left)) {
+            memcpy(left, license, llen);
+            left[llen] = '\0';
+            if (!license_is_permissive(left)) return false;
+        }
+        return license_is_permissive(and_pos + 5);
+    }
+
     return false;
 }
