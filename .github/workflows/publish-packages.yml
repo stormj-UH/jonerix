@@ -253,6 +253,7 @@ jobs:
             license=$(printf '%s' "$meta" | grep '^license '     | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             arch=$(printf '%s' "$meta"    | grep '^arch '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            depends_arr=$(printf '%s' "$meta" | grep '^runtime = \[' | head -1 | sed 's/^runtime = //')
 
             sha256=$(sha256sum "$pkg" | cut -d' ' -f1)
             size_val=$(stat -c %s "$pkg" 2>/dev/null || echo 0)
@@ -268,10 +269,11 @@ jobs:
             {
               printf '[%s]\n' "$section"
               printf 'version = "%s"\n' "$version"
-              [ -n "$license" ] && printf 'license = "%s"\n' "$license"
-              [ -n "$desc" ]    && printf 'description = "%s"\n' "$desc"
+              [ -n "$license" ]     && printf 'license = "%s"\n' "$license"
+              [ -n "$desc" ]        && printf 'description = "%s"\n' "$desc"
               printf 'arch = "%s"\n' "$arch"
-              [ -n "$sha256" ]  && printf 'sha256 = "%s"\n' "$sha256"
+              [ -n "$depends_arr" ] && printf 'depends = %s\n' "$depends_arr"
+              [ -n "$sha256" ]      && printf 'sha256 = "%s"\n' "$sha256"
               printf 'size = %s\n' "$size_val"
               printf '\n'
             } >> "$INDEX_PLAIN"
