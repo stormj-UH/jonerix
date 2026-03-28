@@ -9,21 +9,8 @@ description = "Easy text editor from the Alpine email suite"
 system = "custom"
 build = """
 set -e
-apk add --no-cache pico
-for pkg in pico; do
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
-    f="${f%/}"
-    src="/${f}"
-    [ -e "$src" ] || continue
-    dst="${DESTDIR}/${f}"
-    mkdir -p "$(dirname "$dst")"
-    cp -aP "$src" "$dst" 2>/dev/null || true
-  done
-done
-if [ -d "${DESTDIR}/usr" ]; then
-  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
-  rm -rf "${DESTDIR}/usr"
-fi
+apk add --no-cache alpine
+install -Dm755 /usr/bin/pico "${DESTDIR}/bin/pico"
 """
 install = ""
 

@@ -101,12 +101,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p /var/cache/jpkg
+          mkdir -p /var/cache/jpkg-published /var/cache/jpkg
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.jpkg" \
-            --dir /var/cache/jpkg 2>/dev/null || true
-          echo "Existing x86_64 packages: $(ls /var/cache/jpkg/*.jpkg 2>/dev/null | wc -l)"
+            --dir /var/cache/jpkg-published 2>/dev/null || true
+          echo "Existing x86_64 packages: $(ls /var/cache/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
 
       - name: Build packages
         run: |
@@ -121,8 +121,8 @@ jobs:
               pkg_dir="$(dirname "$recipe")"
               pkg_name="$(basename "$pkg_dir")"
               pkg_ver=$(grep '^version' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-              expected="/var/cache/jpkg/${pkg_name}-${pkg_ver}-x86_64.jpkg"
-              legacy="/var/cache/jpkg/${pkg_name}-${pkg_ver}.jpkg"
+              expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-x86_64.jpkg"
+              legacy="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
               if [ -f "$expected" ] || [ -f "$legacy" ]; then
                 echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
                 continue
@@ -141,7 +141,7 @@ jobs:
         run: |
           count=0
           for pkg in /var/cache/jpkg/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
-          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          [ "$count" -eq 0 ] && { echo "No new packages to upload."; exit 0; }
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /var/cache/jpkg/*.jpkg
           echo "Uploaded $count package(s) (x86_64)."
 
@@ -177,12 +177,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p /tmp/jpkg-output
+          mkdir -p /tmp/jpkg-published /tmp/jpkg-output
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.jpkg" \
-            --dir /tmp/jpkg-output 2>/dev/null || true
-          echo "Existing aarch64 packages: $(ls /tmp/jpkg-output/*.jpkg 2>/dev/null | wc -l)"
+            --dir /tmp/jpkg-published 2>/dev/null || true
+          echo "Existing aarch64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
 
       - name: Build packages in Alpine container
         env:
@@ -224,20 +224,20 @@ jobs:
                 recipe_dir="/workspace/packages/core/${PKG_INPUT}"
                 [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}/recipe.toml"; exit 1; }
                 echo "=== Building ${PKG_INPUT} (forced) ==="
-                timeout 600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+                timeout 600 jpkg build "${recipe_dir}" --build-jpkg --output /tmp/jpkg-output || echo "FAILED: ${PKG_INPUT}"
               else
                 for recipe in /workspace/packages/core/*/recipe.toml; do
                   pkg_dir="$(dirname "$recipe")"
                   pkg_name="$(basename "$pkg_dir")"
                   pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed '"'"'s/.*= *"\(.*\)"/\1/'"'"')
-                  expected="/var/cache/jpkg/${pkg_name}-${pkg_ver}-aarch64.jpkg"
-                  legacy="/var/cache/jpkg/${pkg_name}-${pkg_ver}.jpkg"
+                  expected="/tmp/jpkg-published/${pkg_name}-${pkg_ver}-aarch64.jpkg"
+                  legacy="/tmp/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
                   if [ -f "$expected" ] || [ -f "$legacy" ]; then
                     echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
                     continue
                   fi
                   echo "=== Building ${pkg_name} ==="
-                  timeout 300 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+                  timeout 300 jpkg build "${pkg_dir}" --build-jpkg --output /tmp/jpkg-output || echo "FAILED: ${pkg_name}"
                 done
               fi
 
@@ -251,7 +251,7 @@ jobs:
         run: |
           count=0
           for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
-          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          [ "$count" -eq 0 ] && { echo "No new packages to upload."; exit 0; }
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (aarch64)."
 
