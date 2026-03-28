@@ -1,5 +1,5 @@
 --- var.c.orig	2026-03-28 13:01:22
-+++ var.c	2026-03-28 13:08:51
++++ var.c	2026-03-28 13:14:00
 @@ -133,6 +133,7 @@
  #include <limits.h>
  #endif
@@ -8,7 +8,7 @@
  
  #include "dir.h"
  #include "job.h"
-@@ -4206,8 +4207,801 @@
+@@ -4206,6 +4207,800 @@
  		}
  	}
  	return NULL;
@@ -147,14 +147,15 @@
 +
 +	/* simple insertion sort + dedup */
 +	/* first, convert to C strings for qsort */
-+	char **strs = bmake_malloc(words.len * sizeof(char *));
-+	for (size_t i = 0; i < words.len; i++)
++	size_t nwords = words.len;
++	char **strs = bmake_malloc(nwords * sizeof(char *));
++	for (size_t i = 0; i < nwords; i++)
 +		strs[i] = bmake_strldup(words.words[i].start,
 +			Substring_Length(words.words[i]));
 +	SubstringWords_Free(words);
 +
 +	/* sort */
-+	for (size_t i = 1; i < words.len; i++) {
++	for (size_t i = 1; i < nwords; i++) {
 +		char *key = strs[i];
 +		size_t j = i;
 +		while (j > 0 && strcmp(strs[j - 1], key) > 0) {
@@ -167,7 +168,7 @@
 +	/* join + dedup */
 +	Buffer buf;
 +	Buf_Init(&buf);
-+	for (size_t i = 0; i < words.len; i++) {
++	for (size_t i = 0; i < nwords; i++) {
 +		if (i > 0 && strcmp(strs[i], strs[i - 1]) == 0) {
 +			free(strs[i]);
 +			continue;
@@ -243,8 +244,8 @@
 +	SubstringWords_Free(pats);
 +	SubstringWords_Free(words);
 +	return Buf_DoneData(&buf);
- }
- 
++}
++
 +/* $(patsubst pattern,replacement,text) */
 +static char *
 +gnufunc_patsubst(const char *pattern, const char *repl, const char *text)
@@ -676,10 +677,10 @@
 +	size_t rawArgsLen = nameLen - funcLen - 1;
 +
 +	/* Split raw args by commas */
-+	const char *argStarts[10];
-+	size_t argLens[10];
++	const char *argStarts[64];
++	size_t argLens[64];
 +	int nargs = gnufunc_split_args(rawArgs, rawArgsLen,
-+			argStarts, argLens, 10);
++			argStarts, argLens, 64);
 +
 +#define FUNC_IS(s) (funcLen == sizeof(s) - 1 && memcmp(name, s, funcLen) == 0)
 +#define ARG(i) gnufunc_strip_dup(argStarts[i], argLens[i])
@@ -805,12 +806,10 @@
 +#undef ARG
 +
 +	return result;
-+}
-+
+ }
+ 
  /*
-  * Parse a variable name, until the end character or a colon, whichever
-  * comes first.
-@@ -4420,7 +5214,18 @@
+@@ -4420,7 +5215,18 @@
  	} else if (v == NULL)
  		v = FindLocalLegacyVar(name, scope, out_true_extraModifiers);
  
