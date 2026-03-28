@@ -59,7 +59,8 @@ jobs:
             linux-headers git \
             github-cli \
             cmake samurai \
-            ncurses-dev openssl-dev && \
+            ncurses-dev openssl-dev \
+            zlib-dev byacc m4 meson py3-meson && \
           ln -sf /usr/bin/samu /usr/local/bin/ninja
 
       - name: Build jpkg
@@ -132,7 +133,8 @@ jobs:
                 zstd-dev zstd-static \
                 linux-headers git \
                 cmake samurai \
-                ncurses-dev openssl-dev
+                ncurses-dev openssl-dev \
+                zlib-dev byacc m4 meson py3-meson
               ln -sf /usr/bin/samu /usr/local/bin/ninja
 
               cd /workspace/packages/jpkg

@@ -10,7 +10,7 @@ sha256 = "8bf0d570f01e70a6e124884088870cbed7537f36328d512909eb10cd53179d9c"
 
 [build]
 system = "custom"
-configure = "echo 'PREFIX=/\nBINDIR=/bin\nSBINDIR=/bin\nLIBDIR=/lib\nMANDIR=/share/man\nINCLUDEDIR=/include\nMANPATH_DEFAULT=\"/share/man\"\nHAVE_WCHAR=1\nHAVE_SQLITE3=0\nUTF8_LOCALE=\"C.UTF-8\"' > configure.local && ./configure"
+configure = "printf 'PREFIX=/\\nBINDIR=/bin\\nSBINDIR=/bin\\nLIBDIR=/lib\\nMANDIR=/share/man\\nINCLUDEDIR=/include\\nMANPATH_DEFAULT=/share/man\\nHAVE_WCHAR=1\\nHAVE_SQLITE3=0\\nUTF8_LOCALE=C.UTF-8\\n' > configure.local && ./configure"
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 
