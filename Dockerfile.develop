@@ -43,12 +43,36 @@ RUN jpkg --root /jonerix update && \
         mksh musl ncurses nodejs npm perl pico pigz \
         python3 zstd openssl
 
-# Alpine dev tools: compiler toolchain headers + pkgconf
-# (binaries come from jpkg; we only need headers/libs from Alpine)
+# Alpine dev tools: compiler toolchain + runtime packages for dynamic binaries
 RUN apk add --no-cache \
     clang lld musl-dev linux-headers libstdc++-dev pkgconf \
-    python3-dev ca-certificates && \
+    python3 python3-dev nodejs npm \
+    libarchive libuv rhash-libs \
+    ca-certificates && \
     ln -sf /usr/bin/samu /usr/local/bin/ninja 2>/dev/null || true
+
+# Copy Alpine's clang/lld/python3/node binaries into /jonerix (overrides broken jpkg versions)
+# and resolve + copy ALL their transitive shared library dependencies
+RUN MUSL_LD=$(find /lib -name 'ld-musl-*.so.1' | head -1) && \
+    for bin in \
+        $(find /usr/bin /usr/lib/llvm*/bin -maxdepth 1 \
+               -name 'clang*' -o -name 'lld*' -o -name 'llvm-*' -o -name 'llc' \
+               -o -name 'opt' -o -name 'bugpoint' 2>/dev/null) \
+        /usr/bin/python3 /usr/bin/node /usr/bin/npm \
+        $(which perl 2>/dev/null); do \
+      [ -f "$bin" ] || continue; \
+      install -m755 "$bin" "/jonerix/bin/$(basename "$bin")" 2>/dev/null || true; \
+    done && \
+    for bin in /jonerix/bin/*; do \
+      [ -f "$bin" ] && [ -x "$bin" ] || continue; \
+      "$MUSL_LD" --list "$bin" 2>/dev/null | grep ' => ' | grep -v 'not found' | \
+        awk '{print $3}' | while read lib; do \
+          [ -f "$lib" ] || continue; \
+          cp -aP "$lib" /jonerix/lib/ 2>/dev/null || true; \
+          real=$(readlink -f "$lib" 2>/dev/null); \
+          [ -f "$real" ] && cp -aP "$real" /jonerix/lib/ 2>/dev/null || true; \
+        done; \
+    done
 
 # C/C++ headers and CRT objects
 RUN mkdir -p /jonerix/include && cp -r /usr/include/* /jonerix/include/ 2>/dev/null || true
@@ -78,6 +102,9 @@ RUN mkdir -p /jonerix/lib/clang /jonerix/etc/clang && \
     (cat /etc/clang*/*.cfg 2>/dev/null; \
      [ -n "$GCC_VER" ] && echo "--gcc-install-dir=/usr/lib/gcc/${TRIPLE}/${GCC_VER}"; \
     ) > /jonerix/etc/clang/${TRIPLE}.cfg
+
+# ld symlink (clang invokes "ld" which must resolve to lld's ELF linker)
+RUN ln -sf ld.lld /jonerix/bin/ld 2>/dev/null || true
 
 # pkgconf + .pc files
 RUN mkdir -p /jonerix/lib/pkgconfig && \
