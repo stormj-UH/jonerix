@@ -9,8 +9,8 @@ description = "TLS/SSL and cryptography library"
 system = "custom"
 build = """
 set -e
-apk add --no-cache openssl
-for pkg in openssl; do
+apk add --no-cache openssl libssl3 libcrypto3 zlib
+for pkg in openssl libssl3 libcrypto3 zlib; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"

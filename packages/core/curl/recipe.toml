@@ -9,8 +9,8 @@ description = "Command-line tool and library for transferring data with URLs"
 system = "custom"
 build = """
 set -e
-apk add --no-cache curl
-for pkg in curl; do
+apk add --no-cache curl libcurl brotli-libs c-ares libunistring libidn2 nghttp2-libs nghttp3 libpsl
+for pkg in curl libcurl brotli-libs c-ares libunistring libidn2 nghttp2-libs nghttp3 libpsl; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
