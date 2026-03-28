@@ -34,7 +34,10 @@ jobs:
             curl patch tar xz bash \
             zstd-dev zstd-static \
             linux-headers git \
-            github-cli
+            github-cli \
+            cmake samurai \
+            ncurses-dev && \
+          ln -sf /usr/bin/samu /usr/local/bin/ninja
 
       - name: Build jpkg
         run: |

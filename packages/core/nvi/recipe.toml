@@ -6,7 +6,7 @@ description = "nvi2 text editor (reimplementation of Berkeley vi)"
 
 [source]
 url = "https://github.com/lichray/nvi2/archive/refs/tags/v2.2.1.tar.gz"
-sha256 = "FIXME"
+sha256 = "9f7c9aef3924c0e39ef96e1aadb8f5d396825b8251addab1290aa866cf3d5af4"
 
 [build]
 system = "cmake"
