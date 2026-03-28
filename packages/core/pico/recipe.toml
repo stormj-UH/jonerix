@@ -2,18 +2,31 @@
 name = "pico"
 version = "2.26"
 license = "Apache-2.0"
+pre_bootstrap = true
 description = "Easy text editor from the Alpine email suite"
 
-[source]
-url = "https://alpineapp.email/alpine/release/src/alpine-2.26.tar.xz"
-sha256 = "c0779c2be6c47d30554854a3e14ef5e36539502b331068851329275898a9baba"
-
 [build]
-system = "autoconf"
-configure = "./configure --prefix=/ --without-ldap --without-krb5 --without-tcl CC=clang CFLAGS=-Os"
-build = "make -C imap lnx && make -C pico"
-install = "make -C pico DESTDIR=$DESTDIR install"
+system = "custom"
+build = """
+set -e
+apk add --no-cache pico
+for pkg in pico; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["ncurses"]
-build = ["ncurses", "openssl"]
+build = []
