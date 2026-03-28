@@ -13,6 +13,12 @@ on:
         required: false
         default: ''
 
+# Cancel in-progress runs when a new commit arrives — safe because
+# skip-if-published means the next run picks up where this one left off.
+concurrency:
+  group: publish-packages
+  cancel-in-progress: true
+
 jobs:
   # ── Create the packages release once ──────────────────────────────────────
   create-release:
@@ -49,8 +55,16 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Restore apk cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apk
+          key: apk-x86_64-${{ hashFiles('.github/workflows/publish-packages.yml') }}
+          restore-keys: apk-x86_64-
+
       - name: Install build dependencies
         run: |
+          mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
           apk update
           apk add \
             clang lld musl-dev make \
@@ -63,11 +77,24 @@ jobs:
             zlib-dev byacc m4 meson && \
           ln -sf /usr/bin/samu /usr/local/bin/ninja
 
+      - name: Restore jpkg build cache
+        uses: actions/cache@v4
+        with:
+          path: packages/jpkg/src/*.o
+          key: jpkg-obj-x86_64-${{ hashFiles('packages/jpkg/src/**') }}
+
       - name: Build jpkg
         run: |
           cd packages/jpkg
           make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
           install -m 755 jpkg /usr/local/bin/jpkg
+
+      - name: Upload jpkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jpkg-x86_64
+          path: packages/jpkg/jpkg
+          retention-days: 1
 
       - name: Download existing packages from release
         env:
@@ -130,6 +157,20 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Restore apk cache (aarch64)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/apk-cache
+          key: apk-aarch64-${{ hashFiles('.github/workflows/publish-packages.yml') }}
+          restore-keys: apk-aarch64-
+
+      - name: Restore jpkg binary cache (aarch64)
+        uses: actions/cache@v4
+        id: jpkg-cache-aarch64
+        with:
+          path: /tmp/jpkg-bin-aarch64
+          key: jpkg-bin-aarch64-${{ hashFiles('packages/jpkg/src/**') }}
+
       - name: Download existing aarch64 packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -145,13 +186,17 @@ jobs:
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
+          mkdir -p /tmp/apk-cache /tmp/jpkg-bin-aarch64
           docker run --rm --privileged \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
+            -v "/tmp/apk-cache:/var/cache/apk" \
+            -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
             alpine:latest sh -c '
               set -e
+              mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
               apk update -q
               apk add -q \
                 clang lld musl-dev make \
@@ -163,9 +208,15 @@ jobs:
                 zlib-dev byacc m4 meson
               ln -sf /usr/bin/samu /usr/local/bin/ninja
 
-              cd /workspace/packages/jpkg
-              make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
-              install -m 755 jpkg /usr/local/bin/jpkg
+              if [ -f /jpkg-bin/jpkg ]; then
+                install -m 755 /jpkg-bin/jpkg /usr/local/bin/jpkg
+                echo "jpkg: using cached binary"
+              else
+                cd /workspace/packages/jpkg
+                make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+                install -m 755 jpkg /usr/local/bin/jpkg
+                cp jpkg /jpkg-bin/jpkg
+              fi
 
               if [ -n "$PKG_INPUT" ]; then
                 recipe_dir="/workspace/packages/core/${PKG_INPUT}"
@@ -213,11 +264,8 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
       - name: Install tools
-        run: apk add --no-cache clang lld musl-dev make curl github-cli zstd linux-headers
+        run: apk add --no-cache curl github-cli zstd
 
       - name: Download all packages from release
         env:
@@ -290,11 +338,13 @@ jobs:
           zstd -19 -f -o "$INDEX_ZST" "$INDEX_PLAIN"
           echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
 
-      - name: Build jpkg (for signing)
-        run: |
-          cd packages/jpkg
-          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
-          install -m 755 jpkg /usr/local/bin/jpkg
+      - name: Download jpkg artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: jpkg-x86_64
+          path: /usr/local/bin
+      - name: Fix jpkg permissions
+        run: chmod 755 /usr/local/bin/jpkg
 
       - name: Sign INDEX.zst
         env:
