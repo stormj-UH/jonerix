@@ -10,10 +10,10 @@ sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6"
 
 [build]
 system = "autoconf"
-configure = "./configure --prefix=/ --with-shared --without-static --enable-widec --without-normal --without-debug --without-manpages --without-tests --with-default-terminfo-dir=/lib/terminfo --disable-nls"
+configure = "CC=clang ./configure --prefix=/ --with-shared --without-static --enable-widec --without-normal --without-debug --without-manpages --without-tests --with-default-terminfo-dir=/lib/terminfo --disable-nls --without-cxx-shared --without-cxx-binding"
 build = "make -j$(nproc)"
 install = "make DESTDIR=$DESTDIR install"
 
 [depends]
 runtime = []
-build = []
+build = ["clang", "make"]
