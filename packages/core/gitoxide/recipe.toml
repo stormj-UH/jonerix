@@ -1,0 +1,27 @@
+[package]
+name = "gitoxide"
+version = "0.52.0"
+license = "MIT OR Apache-2.0"
+description = "Pure Rust implementation of git (gix + ein)"
+
+[build]
+system = "custom"
+build = """
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)  SHA=a0a3a30c3f7bf139944e2bb33451997ea83fa03d06d2afccafa33588e497df93; TRIPLE=x86_64-unknown-linux-musl ;;
+  aarch64) SHA=72db9e21b006e0966ada390623cf1824d9208f3a7b0caae1369733792dfc9e18; TRIPLE=aarch64-unknown-linux-musl ;;
+  *) echo "Unsupported arch: $ARCH"; exit 1 ;;
+esac
+TARBALL="gitoxide-max-pure-v0.52.0-${TRIPLE}.tar.gz"
+curl -fsSL "https://github.com/Byron/gitoxide/releases/download/v0.52.0/${TARBALL}" -o gitoxide.tar.gz
+printf '%s  gitoxide.tar.gz\n' "$SHA" | sha256sum -c
+tar xzf gitoxide.tar.gz
+install -Dm755 "gitoxide-max-pure-v0.52.0-${TRIPLE}/gix" "${DESTDIR}/bin/gix"
+install -Dm755 "gitoxide-max-pure-v0.52.0-${TRIPLE}/ein" "${DESTDIR}/bin/ein"
+"""
+install = ""
+
+[depends]
+runtime = []
+build = []
