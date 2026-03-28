@@ -36,7 +36,7 @@ jobs:
             linux-headers git \
             github-cli \
             cmake samurai \
-            ncurses-dev && \
+            ncurses-dev openssl-dev && \
           ln -sf /usr/bin/samu /usr/local/bin/ninja
 
       - name: Build jpkg
@@ -118,13 +118,15 @@ jobs:
             license=$(printf '%s' "$meta" | grep '^license ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             arch=$(printf '%s' "$meta"    | grep '^arch '    | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            sha256=$(printf '%s' "$meta"  | grep '^sha256 '  | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            size_val=$(printf '%s' "$meta"  | grep '^size '    | head -1 | sed 's/.*= *//')
+
+            # sha256 and size must reflect the whole .jpkg file (what jpkg
+            # downloads and verifies), not just the embedded payload hash.
+            sha256=$(sha256sum "$pkg" | cut -d' ' -f1)
+            size_val=$(stat -c %s "$pkg" 2>/dev/null || echo 0)
 
             [ -z "$name" ]    && name="$(echo "$pkg_base" | sed 's/-[^-]*\.jpkg$//')"
             [ -z "$version" ] && version="0"
             [ -z "$arch" ]    && arch="x86_64"
-            [ -z "$size_val" ] && size_val="$(stat -c %s "$pkg" 2>/dev/null || echo 0)"
 
             {
               printf '[%s]\n' "$name"
