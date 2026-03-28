@@ -1,0 +1,50 @@
+# Bootstrap build order — dependency + size ordered
+#
+# Dependency rules:
+#   musl    → (no deps, must be first)
+#   ncurses → (no deps)
+#   openssl → musl
+#   zstd    → musl
+#   pico    → ncurses
+#   curl    → musl, openssl
+#   python3 → musl, openssl
+#   unbound → musl, openssl
+#   nodejs  → musl, zlib (zlib from pre-bootstrap)
+#   pigz    → musl, zlib (zlib from pre-bootstrap)
+#
+# Within each dependency tier, packages are ordered smallest-first
+# so that interrupted builds leave the most useful artifacts.
+#
+# Tier 0: no dependencies
+musl
+ncurses
+# Tier 1: depends on musl only (tiny)
+snooze
+doas
+socklog
+pico
+pigz
+lz4
+# Tier 2: depends on musl only (small)
+mandoc
+bc
+dhcpcd
+mksh
+bmake
+ifupdown-ng
+# Tier 3: depends on musl only (medium)
+toybox
+zstd
+openssl
+dropbear
+openrc
+flex
+fastfetch
+# Tier 4: depends on openssl or other tier-3 packages
+unbound
+curl
+cmake
+perl
+python3
+# Tier 5: depends on multiple tier-3/4 packages (large)
+nodejs
