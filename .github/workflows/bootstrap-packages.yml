@@ -300,13 +300,14 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add packages/core/*/recipe.toml
-          git commit -m "Graduate bootstrap packages: set pre_bootstrap = false
+          COMMIT_BODY="Packages built from source on both x86_64 and aarch64:"
+          for pkg in $GRADUATED; do COMMIT_BODY="${COMMIT_BODY}
+            - ${pkg}"; done
+          COMMIT_BODY="${COMMIT_BODY}
 
-Packages successfully built from source on both x86_64 and aarch64:
-$(for pkg in $GRADUATED; do echo "  - ${pkg}"; done)
-
-These packages no longer need APK extraction — they are built from
-source in the bootstrap pipeline."
+          These packages no longer need APK extraction — they are built from
+          source in the bootstrap pipeline."
+          git commit -m "Graduate bootstrap packages: set pre_bootstrap = false" -m "$COMMIT_BODY"
 
           git push origin "$BRANCH"
           # Build PR body with package list
