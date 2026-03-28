@@ -1,0 +1,19 @@
+[package]
+name = "pico"
+version = "2.26"
+license = "Apache-2.0"
+description = "Easy text editor from the Alpine email suite"
+
+[source]
+url = "https://alpineapp.email/alpine/release/src/alpine-2.26.tar.xz"
+sha256 = "c0779c2be6c47d30554854a3e14ef5e36539502b331068851329275898a9baba"
+
+[build]
+system = "autoconf"
+configure = "./configure --prefix=/ --without-ldap --without-krb5 --without-tcl CC=clang CFLAGS=-Os"
+build = "make -C imap lnx && make -C pico"
+install = "make -C pico DESTDIR=$DESTDIR install"
+
+[depends]
+runtime = ["ncurses"]
+build = ["ncurses", "openssl"]
