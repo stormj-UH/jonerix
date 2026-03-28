@@ -104,7 +104,7 @@ jobs:
           mkdir -p /var/cache/jpkg
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "*-x86_64.jpkg" \
+            --pattern "*.jpkg" \
             --dir /var/cache/jpkg 2>/dev/null || true
           echo "Existing x86_64 packages: $(ls /var/cache/jpkg/*.jpkg 2>/dev/null | wc -l)"
 
@@ -122,7 +122,8 @@ jobs:
               pkg_name="$(basename "$pkg_dir")"
               pkg_ver=$(grep '^version' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
               expected="/var/cache/jpkg/${pkg_name}-${pkg_ver}-x86_64.jpkg"
-              if [ -f "$expected" ]; then
+              legacy="/var/cache/jpkg/${pkg_name}-${pkg_ver}.jpkg"
+              if [ -f "$expected" ] || [ -f "$legacy" ]; then
                 echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
                 continue
               fi
@@ -179,7 +180,7 @@ jobs:
           mkdir -p /tmp/jpkg-output
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "*-aarch64.jpkg" \
+            --pattern "*.jpkg" \
             --dir /tmp/jpkg-output 2>/dev/null || true
           echo "Existing aarch64 packages: $(ls /tmp/jpkg-output/*.jpkg 2>/dev/null | wc -l)"
 
@@ -230,7 +231,8 @@ jobs:
                   pkg_name="$(basename "$pkg_dir")"
                   pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed '"'"'s/.*= *"\(.*\)"/\1/'"'"')
                   expected="/var/cache/jpkg/${pkg_name}-${pkg_ver}-aarch64.jpkg"
-                  if [ -f "$expected" ]; then
+                  legacy="/var/cache/jpkg/${pkg_name}-${pkg_ver}.jpkg"
+                  if [ -f "$expected" ] || [ -f "$legacy" ]; then
                     echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
                     continue
                   fi
