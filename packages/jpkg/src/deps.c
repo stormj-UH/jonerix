@@ -124,9 +124,16 @@ static int topo_visit(dep_graph_t *g, dep_node_t *node,
             /* Find dependency in index */
             repo_entry_t *dep_entry = repo_find_package(idx, dep_name);
             if (!dep_entry) {
-                log_error("missing dependency: %s (required by %s)",
-                          dep_name, node->name);
-                return -1;
+                /* Not in index — if already installed in jpkg db, skip it.
+                 * Otherwise warn and continue: it may be a base system package
+                 * (e.g. musl on Alpine) not tracked by our repository. */
+                if (db && db_is_installed(db, dep_name)) {
+                    continue;
+                }
+                log_warn("dependency '%s' (required by %s) not found in index"
+                         " — assuming provided by the base system",
+                         dep_name, node->name);
+                continue;
             }
 
             dep_node_t *dep_node = graph_add(g, dep_entry->name, dep_entry);
