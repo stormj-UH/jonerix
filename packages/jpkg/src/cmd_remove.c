@@ -59,7 +59,7 @@ int cmd_remove(int argc, char **argv) {
     }
 
     /* Parse options */
-    bool remove_orphans = false;
+    bool remove_orphans = true;
     bool force = false;
     int pkg_start = 0;
 
