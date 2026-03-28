@@ -16,4 +16,4 @@ install = "make install DESTDIR=$DESTDIR"
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "make"]
+build = ["clang", "bmake"]
