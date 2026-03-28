@@ -462,7 +462,9 @@ void repo_search_free(repo_entry_t **results) {
 char *repo_fetch_package(const repo_config_t *cfg, const repo_entry_t *entry) {
     if (!cfg || !entry || !cfg->mirrors) return NULL;
 
-    /* Package filename: name-version.jpkg */
+    /* Package filename: name-version-arch.jpkg (current format).
+     * Also keep a legacy fallback name-version.jpkg for packages built
+     * before arch was included in filenames. */
     char *filename = pkg_filename(entry->name, entry->version);
     char *local_path = path_join(cfg->cache_dir, filename);
 
@@ -512,8 +514,55 @@ char *repo_fetch_package(const repo_config_t *cfg, const repo_entry_t *entry) {
         }
     }
 
-    log_error("failed to download %s from any mirror", filename);
+    /* All mirrors failed with arch-qualified name. Try legacy name-version.jpkg. */
     free(filename);
     free(local_path);
+
+    char *legacy_name = NULL;
+    size_t ln = strlen(entry->name) + strlen(entry->version) + 7;
+    legacy_name = xmalloc(ln);
+    snprintf(legacy_name, ln, "%s-%s.jpkg", entry->name, entry->version);
+    char *legacy_path = path_join(cfg->cache_dir, legacy_name);
+
+    if (file_exists(legacy_path)) {
+        if (entry->sha256 && entry->sha256[0]) {
+            char hash[65];
+            if (sha256_file(legacy_path, hash) == 0 &&
+                strcmp(hash, entry->sha256) == 0) {
+                log_debug("using cached legacy %s", legacy_name);
+                free(legacy_name);
+                return legacy_path;
+            }
+        } else {
+            free(legacy_name);
+            return legacy_path;
+        }
+    }
+
+    for (repo_mirror_t *m = cfg->mirrors; m; m = m->next) {
+        if (!m->enabled) continue;
+        char url[2048];
+        snprintf(url, sizeof(url), "%s/%s", m->url, legacy_name);
+        log_info("retrying with legacy name: %s", legacy_name);
+        if (fetch_to_file(url, legacy_path) == 0) {
+            if (entry->sha256 && entry->sha256[0]) {
+                char hash[65];
+                if (sha256_file(legacy_path, hash) == 0 &&
+                    strcmp(hash, entry->sha256) == 0) {
+                    free(legacy_name);
+                    return legacy_path;
+                }
+                log_error("hash mismatch for %s", legacy_name);
+                unlink(legacy_path);
+                continue;
+            }
+            free(legacy_name);
+            return legacy_path;
+        }
+    }
+
+    log_error("failed to download %s from any mirror", legacy_name);
+    free(legacy_name);
+    free(legacy_path);
     return NULL;
 }
