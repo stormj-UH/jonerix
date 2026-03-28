@@ -26,6 +26,8 @@ extern int cmd_build(int argc, char **argv);
 extern int cmd_build_world(int argc, char **argv);
 extern int cmd_verify(int argc, char **argv);
 extern int cmd_license_audit(int argc, char **argv);
+extern int cmd_keygen(int argc, char **argv);
+extern int cmd_sign(int argc, char **argv);
 
 /* ========== Command Table ========== */
 
@@ -48,6 +50,8 @@ static const command_t commands[] = {
     { "build-world",   NULL,  "Rebuild entire system from source",       cmd_build_world,   false },
     { "verify",        NULL,  "Verify installed files against manifests", cmd_verify,       false },
     { "license-audit", NULL,  "Audit licenses of installed packages",    cmd_license_audit, false },
+    { "keygen",        NULL,  "Generate Ed25519 signing keypair",        cmd_keygen,        false },
+    { "sign",          NULL,  "Sign a file with an Ed25519 secret key",  cmd_sign,          false },
     { NULL, NULL, NULL, NULL, false }
 };
 
