@@ -10,7 +10,7 @@
   ========= permissive + linux =========
 ```
 
-**A Linux distribution with a strictly permissive userland.**
+**A Linux distribution with a strictly permissive userland. For when freedom isn't free.**
 
 ## Overview
 
