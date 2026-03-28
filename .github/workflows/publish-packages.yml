@@ -69,19 +69,35 @@ jobs:
           make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
           install -m 755 jpkg /usr/local/bin/jpkg
 
-      - name: Build packages
+      - name: Download existing packages from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p /var/cache/jpkg
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*-x86_64.jpkg" \
+            --dir /var/cache/jpkg 2>/dev/null || true
+          echo "Existing x86_64 packages: $(ls /var/cache/jpkg/*.jpkg 2>/dev/null | wc -l)"
+
+      - name: Build packages
+        run: |
           PKG_INPUT="${{ github.event.inputs.package }}"
           if [ -n "$PKG_INPUT" ]; then
             recipe_dir="packages/core/${PKG_INPUT}"
             [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}/recipe.toml"; exit 1; }
-            echo "=== Building ${PKG_INPUT} ==="
+            echo "=== Building ${PKG_INPUT} (forced) ==="
             timeout 600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
           else
             for recipe in packages/core/*/recipe.toml; do
               pkg_dir="$(dirname "$recipe")"
               pkg_name="$(basename "$pkg_dir")"
+              pkg_ver=$(grep '^version' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+              expected="/var/cache/jpkg/${pkg_name}-${pkg_ver}-x86_64.jpkg"
+              if [ -f "$expected" ]; then
+                echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
+                continue
+              fi
               echo "=== Building ${pkg_name} ==="
               timeout 300 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
             done
@@ -114,11 +130,21 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Download existing aarch64 packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/jpkg-output
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*-aarch64.jpkg" \
+            --dir /tmp/jpkg-output 2>/dev/null || true
+          echo "Existing aarch64 packages: $(ls /tmp/jpkg-output/*.jpkg 2>/dev/null | wc -l)"
+
       - name: Build packages in Alpine container
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
-          mkdir -p /tmp/jpkg-output
           docker run --rm --privileged \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
@@ -141,22 +167,27 @@ jobs:
               make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
               install -m 755 jpkg /usr/local/bin/jpkg
 
-              mkdir -p /var/cache/jpkg
               if [ -n "$PKG_INPUT" ]; then
                 recipe_dir="/workspace/packages/core/${PKG_INPUT}"
                 [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}/recipe.toml"; exit 1; }
-                echo "=== Building ${PKG_INPUT} ==="
+                echo "=== Building ${PKG_INPUT} (forced) ==="
                 timeout 600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
               else
                 for recipe in /workspace/packages/core/*/recipe.toml; do
                   pkg_dir="$(dirname "$recipe")"
                   pkg_name="$(basename "$pkg_dir")"
+                  pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed '"'"'s/.*= *"\(.*\)"/\1/'"'"')
+                  expected="/var/cache/jpkg/${pkg_name}-${pkg_ver}-aarch64.jpkg"
+                  if [ -f "$expected" ]; then
+                    echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
+                    continue
+                  fi
                   echo "=== Building ${pkg_name} ==="
                   timeout 300 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
                 done
               fi
 
-              echo "Built packages (aarch64):"
+              echo "Built/cached packages (aarch64):"
               ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
             '
 
