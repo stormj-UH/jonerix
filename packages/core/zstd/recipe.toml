@@ -11,7 +11,7 @@ build = """
 set -e
 apk add --no-cache zstd zstd-libs
 for pkg in zstd zstd-libs; do
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -v '/$' | while IFS= read -r f; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
     [ -e "$src" ] || continue
