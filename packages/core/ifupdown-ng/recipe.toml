@@ -4,15 +4,28 @@ version = "0.12.1"
 license = "ISC"
 description = "Next-generation network interface configuration tool"
 
-[source]
-url = "https://github.com/ifupdown-ng/ifupdown-ng/archive/ifupdown-ng-0.12.1.tar.gz"
-sha256 = "d42c8c18222efbce0087b92a14ea206de4e865d5c9dde6c0864dcbb2b45f2d85"
-
 [build]
-system = "make"
-build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" PREFIX=/ SYSCONFDIR=/etc -j$(nproc)"
-install = "make install PREFIX=/ SYSCONFDIR=/etc DESTDIR=$DESTDIR"
+system = "custom"
+build = """
+set -e
+apk add --no-cache ifupdown-ng
+for pkg in ifupdown-ng; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []

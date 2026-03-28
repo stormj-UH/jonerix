@@ -4,16 +4,28 @@ version = "2024.86"
 license = "MIT"
 description = "Lightweight SSH server and client"
 
-[source]
-url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.86.tar.bz2"
-sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
-
 [build]
-system = "configure"
-configure = "./configure --prefix=/ --disable-wtmp --disable-lastlog"
-build = "make PROGRAMS=\"dropbear dbclient dropbearkey scp\" -j$(nproc)"
-install = "make install DESTDIR=$DESTDIR"
+system = "custom"
+build = """
+set -e
+apk add --no-cache dropbear
+for pkg in dropbear; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = []
