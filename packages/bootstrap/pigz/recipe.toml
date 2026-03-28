@@ -15,4 +15,4 @@ install = "install -Dm755 pigz $DESTDIR/bin/pigz && ln -s pigz $DESTDIR/bin/gzip
 
 [depends]
 runtime = ["musl", "zlib"]
-build = ["clang"]
+build = ["clang", "bmake"]
