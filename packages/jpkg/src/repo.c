@@ -388,10 +388,10 @@ int repo_update(const repo_config_t *cfg) {
         free(raw_data);
     }
 
-    /* Optionally verify signature */
+    /* Optionally verify signature (only if keys are configured) */
     uint8_t *sig_data = NULL;
     ssize_t sig_len = file_read(sig_path, &sig_data);
-    if (sig_len > 0 && sig_data) {
+    if (sig_len > 0 && sig_data && sign_has_keys()) {
         uint8_t *idx_data = NULL;
         ssize_t idx_len = file_read(index_path, &idx_data);
         if (idx_len > 0 && idx_data) {
