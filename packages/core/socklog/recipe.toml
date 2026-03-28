@@ -6,7 +6,7 @@ description = "Small and secure syslogd replacement (DJB-style)"
 
 [source]
 url = "https://smarden.org/socklog/socklog-2.2.3.tar.gz"
-sha256 = "FIXME"
+sha256 = "960410d2b54b165e636afc9fb201effdbf48aa032cbfefd544adf0b0656a91d3"
 
 [build]
 system = "custom"

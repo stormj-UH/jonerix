@@ -6,7 +6,7 @@ description = "Python programming language interpreter"
 
 [source]
 url = "https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tar.xz"
-sha256 = "FIXME"
+sha256 = "c909157bb25ec114e5869124cc2a9c4a4d4c1e957ca4ff553f1edc692101154e"
 
 [build]
 system = "configure"
