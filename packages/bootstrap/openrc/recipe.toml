@@ -10,7 +10,7 @@ sha256 = "c84ff1d8e468c043fe136d11d3d34d6bb28328267d1352526a5d18cdf4c60fb0"
 
 [build]
 system = "meson"
-configure = "meson setup build --prefix=/"
+configure = "meson setup build --prefix=/ -Dpam=false -Dselinux=disabled -Daudit=disabled"
 build = "ninja -C build"
 install = "DESTDIR=$DESTDIR ninja -C build install"
 

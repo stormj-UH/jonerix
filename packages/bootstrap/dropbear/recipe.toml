@@ -10,7 +10,7 @@ sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 
 [build]
 system = "configure"
-configure = "./configure --prefix=/ --disable-wtmp --disable-lastlog"
+configure = "CC=clang ./configure --prefix=/ --disable-wtmp --disable-lastlog --disable-zlib"
 build = "make PROGRAMS=\"dropbear dbclient dropbearkey scp\" -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 
