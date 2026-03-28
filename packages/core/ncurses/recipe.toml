@@ -9,8 +9,8 @@ description = "Terminal handling library"
 system = "custom"
 build = """
 set -e
-apk add --no-cache ncurses-libs ncurses-terminfo
-for pkg in ncurses-libs ncurses-terminfo; do
+apk add --no-cache libncursesw ncurses-terminfo-base
+for pkg in libncursesw ncurses-terminfo-base; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
