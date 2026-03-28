@@ -12,7 +12,8 @@ sha256 = "bd8445f554aae33d50d3212a15e993a667c0ad1b694ac1977f3463db3338e542"
 system = "cmake"
 configure = "cmake -S llvm -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=\"clang;lld\" -DLLVM_TARGETS_TO_BUILD=\"X86;AArch64\""
 build = "cmake --build build -j$(nproc)"
-install = "DESTDIR=$DESTDIR cmake --install build"
+install = """DESTDIR=$DESTDIR cmake --install build
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
 
 [depends]
 runtime = ["musl"]

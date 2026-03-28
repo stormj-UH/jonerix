@@ -12,7 +12,8 @@ sha256 = "490d5b971dd7fac4c31018354904fdd5e2c409924ba868157bda3bfe1fb5c485"
 system = "cmake"
 configure = "cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/ -DENABLE_VULKAN=OFF -DENABLE_WAYLAND=OFF -DENABLE_XCB=OFF -DENABLE_XRANDR=OFF -DENABLE_X11=OFF -DENABLE_GIO=OFF -DENABLE_DCONF=OFF -DENABLE_DBUS=OFF -DENABLE_EGL=OFF -DENABLE_GLX=OFF -DENABLE_OPENCL=OFF -DENABLE_DRM=OFF"
 build = "cmake --build build -j$(nproc)"
-install = "DESTDIR=$DESTDIR cmake --install build"
+install = """DESTDIR=$DESTDIR cmake --install build
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
 
 [depends]
 runtime = ["musl"]
