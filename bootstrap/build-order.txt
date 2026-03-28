@@ -1,51 +1,50 @@
-# Bootstrap build order — dependency-sorted
-# Packages are built top-to-bottom. Each package's build dependencies
-# must appear earlier in this list (or be provided by the Alpine host).
+# Bootstrap build order — dependency + size ordered
 #
-# Lines starting with # are comments, empty lines are ignored.
-# This file is consumed by bootstrap/build-all.sh and bootstrap-packages.yml.
-
-# Stage 1: C library (everything depends on this)
+# Dependency rules:
+#   musl    → (no deps, must be first)
+#   ncurses → (no deps)
+#   openssl → musl
+#   zstd    → musl
+#   pico    → ncurses
+#   curl    → musl, openssl
+#   python3 → musl, openssl
+#   unbound → musl, openssl
+#   nodejs  → musl, zlib (zlib from pre-bootstrap)
+#   pigz    → musl, zlib (zlib from pre-bootstrap)
+#
+# Within each dependency tier, packages are ordered smallest-first
+# so that interrupted builds leave the most useful artifacts.
+#
+# Tier 0: no dependencies
 musl
-
-# Stage 2: Compression libraries
-zstd
-lz4
-
-# Stage 3: TLS
-openssl
-
-# Stage 4: Core utilities and shell
-toybox
-mksh
-
-# Stage 5: Build tools (no runtime deps beyond musl)
-bmake
-cmake
-bc
-flex
-
-# Stage 6: Libraries
 ncurses
-
-# Stage 7: System services (depend on musl, optionally openssl)
-openrc
-dropbear
-curl
-dhcpcd
-unbound
+# Tier 1: depends on musl only (tiny)
+snooze
 doas
 socklog
-snooze
-ifupdown-ng
-
-# Stage 8: Utilities
-mandoc
-pigz
 pico
+pigz
+lz4
+# Tier 2: depends on musl only (small)
+mandoc
+bc
+dhcpcd
+mksh
+bmake
+ifupdown-ng
+# Tier 3: depends on musl only (medium)
+toybox
+zstd
+openssl
+dropbear
+openrc
+flex
 fastfetch
-
-# Stage 9: Language runtimes (large, build last per project philosophy)
+# Tier 4: depends on openssl or other tier-3 packages
+unbound
+curl
+cmake
 perl
 python3
+# Tier 5: depends on multiple tier-3/4 packages (large)
 nodejs
