@@ -91,9 +91,11 @@ apply_patches "${SRCDIR}/musl-${MUSL_VERSION}" "${PATCHDIR}/musl"
     make install || die "musl install failed"
 )
 
-# Set up the sysroot so subsequent builds link against our musl
-export CFLAGS="${CFLAGS} --sysroot=${SYSROOT}"
-export LDFLAGS="${LDFLAGS} --sysroot=${SYSROOT} -L${SYSROOT}/lib"
+# Set up include/library paths so subsequent builds find our musl.
+# Note: we use -I/-L instead of --sysroot because --sysroot expects
+# headers at ${SYSROOT}/usr/include/ but musl installs to ${SYSROOT}/include/.
+export CFLAGS="${CFLAGS} -I${SYSROOT}/include"
+export LDFLAGS="${LDFLAGS} -L${SYSROOT}/lib"
 export PKG_CONFIG_PATH="${SYSROOT}/lib/pkgconfig:${SYSROOT}/share/pkgconfig"
 export PKG_CONFIG_SYSROOT_DIR="${SYSROOT}"
 
