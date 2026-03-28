@@ -14,7 +14,7 @@ on:
         default: ''
 
 jobs:
-  # ── Create the packages release once (both build jobs need it to exist) ──
+  # ── Create the packages release once ──────────────────────────────────────
   create-release:
     name: Create packages release
     runs-on: ubuntu-latest
@@ -34,19 +34,11 @@ jobs:
               --prerelease
           fi
 
-  # ── Build packages on each architecture ──
-  build:
-    name: Build packages (${{ matrix.arch }})
+  # ── x86_64: build inside Alpine container (JS actions work on x64) ────────
+  build-x86_64:
+    name: Build packages (x86_64)
     needs: create-release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            arch: aarch64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     container:
       image: alpine:latest
       options: --privileged
@@ -75,68 +67,111 @@ jobs:
           cd packages/jpkg
           make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
           install -m 755 jpkg /usr/local/bin/jpkg
-          jpkg --version || jpkg --help || true
-
-      - name: Prepare output directory
-        run: mkdir -p /var/cache/jpkg
 
       - name: Build packages
         run: |
-          set -e
-
+          mkdir -p /var/cache/jpkg
           PKG_INPUT="${{ github.event.inputs.package }}"
-
           if [ -n "$PKG_INPUT" ]; then
             recipe_dir="packages/core/${PKG_INPUT}"
-            if [ ! -f "${recipe_dir}/recipe.toml" ]; then
-              echo "ERROR: no recipe.toml found at ${recipe_dir}/recipe.toml"
-              exit 1
-            fi
+            [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}/recipe.toml"; exit 1; }
             echo "=== Building ${PKG_INPUT} ==="
-            jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || \
-              echo "FAILED: ${PKG_INPUT}"
+            timeout 600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
           else
             for recipe in packages/core/*/recipe.toml; do
               pkg_dir="$(dirname "$recipe")"
               pkg_name="$(basename "$pkg_dir")"
               echo "=== Building ${pkg_name} ==="
-              jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || \
-                echo "FAILED: ${pkg_name}"
+              timeout 300 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
             done
           fi
 
       - name: List built packages
-        run: |
-          echo "Built packages (${{ matrix.arch }}):"
-          ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+        run: ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
 
       - name: Upload packages to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
-
           count=0
-          for pkg in /var/cache/jpkg/*.jpkg; do
-            [ -f "$pkg" ] && count=$((count + 1))
-          done
+          for pkg in /var/cache/jpkg/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /var/cache/jpkg/*.jpkg
+          echo "Uploaded $count package(s) (x86_64)."
 
-          if [ "$count" -eq 0 ]; then
-            echo "No .jpkg files to upload."
-            exit 0
-          fi
+  # ── aarch64: checkout on Ubuntu host, build inside docker alpine ──────────
+  # JS GitHub Actions (checkout@v4) don't work in Alpine containers on ARM64;
+  # run bare on ubuntu-24.04-arm and exec the Alpine build via docker run.
+  build-aarch64:
+    name: Build packages (aarch64)
+    needs: create-release
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
 
-          gh release upload packages \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber \
-            /var/cache/jpkg/*.jpkg
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-          echo "Uploaded $count package(s) for ${{ matrix.arch }}."
+      - name: Build packages in Alpine container
+        env:
+          PKG_INPUT: ${{ github.event.inputs.package }}
+        run: |
+          mkdir -p /tmp/jpkg-output
+          docker run --rm --privileged \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "/tmp/jpkg-output:/var/cache/jpkg" \
+            -w /workspace \
+            -e PKG_INPUT="$PKG_INPUT" \
+            alpine:latest sh -c '
+              set -e
+              apk update -q
+              apk add -q \
+                clang lld musl-dev make \
+                curl patch tar xz bash \
+                zstd-dev zstd-static \
+                linux-headers git \
+                cmake samurai \
+                ncurses-dev openssl-dev
+              ln -sf /usr/bin/samu /usr/local/bin/ninja
 
-  # ── Generate combined INDEX from all uploaded packages ──
+              cd /workspace/packages/jpkg
+              make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+              install -m 755 jpkg /usr/local/bin/jpkg
+
+              mkdir -p /var/cache/jpkg
+              if [ -n "$PKG_INPUT" ]; then
+                recipe_dir="/workspace/packages/core/${PKG_INPUT}"
+                [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}/recipe.toml"; exit 1; }
+                echo "=== Building ${PKG_INPUT} ==="
+                timeout 600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+              else
+                for recipe in /workspace/packages/core/*/recipe.toml; do
+                  pkg_dir="$(dirname "$recipe")"
+                  pkg_name="$(basename "$pkg_dir")"
+                  echo "=== Building ${pkg_name} ==="
+                  timeout 300 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+                done
+              fi
+
+              echo "Built packages (aarch64):"
+              ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+            '
+
+      - name: Upload packages to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=0
+          for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
+          echo "Uploaded $count package(s) (aarch64)."
+
+  # ── Generate combined INDEX from all uploaded packages ────────────────────
   index:
     name: Generate combined INDEX
-    needs: build
+    needs: [build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
     container:
       image: alpine:latest
@@ -152,7 +187,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
           mkdir -p /var/cache/jpkg
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
@@ -164,7 +198,6 @@ jobs:
       - name: Generate INDEX.zst
         run: |
           set -e
-
           INDEX_PLAIN=/var/cache/jpkg/INDEX
           INDEX_ZST=/var/cache/jpkg/INDEX.zst
 
@@ -174,14 +207,12 @@ jobs:
             [ -f "$pkg" ] || continue
             pkg_base="$(basename "$pkg")"
 
-            # Read metadata length (bytes 9-12, 4-byte LE uint32 after 8-byte magic)
             meta_len=$(dd if="$pkg" bs=1 skip=8 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n')
             if [ -z "$meta_len" ] || [ "$meta_len" -eq 0 ] 2>/dev/null; then
               echo "WARNING: could not read metadata from $pkg_base, skipping"
               continue
             fi
 
-            # Extract embedded TOML (skip 12-byte header: 8 magic + 4 length)
             meta=$(dd if="$pkg" bs=1 skip=12 count="$meta_len" 2>/dev/null)
 
             name=$(printf '%s' "$meta"    | grep '^name '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
@@ -190,7 +221,6 @@ jobs:
             desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             arch=$(printf '%s' "$meta"    | grep '^arch '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
 
-            # sha256/size must be of the whole .jpkg file (what jpkg verifies on download)
             sha256=$(sha256sum "$pkg" | cut -d' ' -f1)
             size_val=$(stat -c %s "$pkg" 2>/dev/null || echo 0)
 
@@ -213,7 +243,7 @@ jobs:
               printf '\n'
             } >> "$INDEX_PLAIN"
 
-            echo "  indexed: $section-$version"
+            echo "  indexed: ${section}-${version}"
           done
 
           echo "Generated INDEX:"
