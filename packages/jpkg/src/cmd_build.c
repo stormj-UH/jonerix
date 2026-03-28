@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/utsname.h>
 #include <dirent.h>
 
 /* Build recipe is a directory containing:
@@ -282,7 +283,15 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
         toml_set_string(doc, "package.license", recipe->license);
     if (recipe->description)
         toml_set_string(doc, "package.description", recipe->description);
-    toml_set_string(doc, "package.arch", recipe->arch ? recipe->arch : "x86_64");
+    if (!recipe->arch) {
+        struct utsname uts;
+        char auto_arch[32] = "x86_64";
+        if (uname(&uts) == 0)
+            snprintf(auto_arch, sizeof(auto_arch), "%s", uts.machine);
+        toml_set_string(doc, "package.arch", auto_arch);
+    } else {
+        toml_set_string(doc, "package.arch", recipe->arch);
+    }
 
     if (recipe->runtime_dep_count > 0)
         toml_set_array(doc, "depends.runtime",

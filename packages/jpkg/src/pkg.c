@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -318,8 +319,13 @@ char *pkg_meta_to_toml(const pkg_meta_t *meta) {
 
 char *pkg_filename(const char *name, const char *version) {
     if (!name || !version) return NULL;
-    size_t len = strlen(name) + strlen(version) + 7; /* name-version.jpkg\0 */
+    /* Include arch so x86_64 and aarch64 packages coexist in the same release.
+     * Auto-detect from uname() when building; fallback to x86_64. */
+    struct utsname uts;
+    const char *arch = "x86_64";
+    if (uname(&uts) == 0) arch = uts.machine;
+    size_t len = strlen(name) + strlen(version) + strlen(arch) + 8; /* name-version-arch.jpkg\0 */
     char *buf = xmalloc(len);
-    snprintf(buf, len, "%s-%s.jpkg", name, version);
+    snprintf(buf, len, "%s-%s-%s.jpkg", name, version, arch);
     return buf;
 }

@@ -1,0 +1,30 @@
+[package]
+name = "rust"
+version = "1.94.1"
+license = "MIT"
+description = "Systems programming language with memory safety guarantees"
+
+# No [source] section: the build step downloads the arch-appropriate prebuilt
+# toolchain directly from static.rust-lang.org and verifies its sha256.
+
+[build]
+system = "custom"
+build = """
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+  URL="https://static.rust-lang.org/dist/2026-03-26/rust-1.94.1-aarch64-unknown-linux-musl.tar.gz"
+  SHA="caa1d50676518532cc9b4c4c491f219edbdcb9ebf9e6624432b5b43b87d8cc0a"
+else
+  URL="https://static.rust-lang.org/dist/2026-03-26/rust-1.94.1-x86_64-unknown-linux-musl.tar.gz"
+  SHA="5568d1b7992dcb0cabc9936476a0569ff314a3f1322886b4f414eb2d07b0ffd6"
+fi
+curl -fsSL "$URL" -o rust.tar.gz
+printf '%s  rust.tar.gz\n' "$SHA" | sha256sum -c
+tar xf rust.tar.gz --strip-components=1
+./install.sh --prefix=/ --destdir="$DESTDIR" --disable-ldconfig --components=rustc,cargo,rust-std-${ARCH}-unknown-linux-musl
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []
