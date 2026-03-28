@@ -2,6 +2,7 @@
 name = "pip"
 version = "24.3.1"
 license = "MIT"
+pre_bootstrap = true
 description = "Python package installer"
 
 [build]

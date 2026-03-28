@@ -1,0 +1,184 @@
+name: Bootstrap packages (from source)
+
+# Manually triggered ONLY.
+# Run this after the minimal publish-packages CI is working and producing
+# a working jpkg binary. Bootstrap builds every package from source,
+# replacing the pre_bootstrap APK-extracted versions in the release.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package name to build (leave empty to build all)'
+        required: false
+        default: ''
+
+jobs:
+  # ── x86_64 bootstrap ───────────────────────────────────────────────────────
+  bootstrap-x86_64:
+    name: Bootstrap packages (x86_64)
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+      options: --privileged
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apk update
+          apk add \
+            clang lld musl-dev make \
+            curl patch tar xz bash \
+            zstd-dev zstd-static \
+            linux-headers git \
+            github-cli \
+            cmake samurai \
+            ncurses-dev openssl-dev \
+            zlib-dev byacc m4 meson \
+            python3 perl && \
+          ln -sf /usr/bin/samu /usr/local/bin/ninja
+
+      - name: Build jpkg
+        run: |
+          cd packages/jpkg
+          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          install -m 755 jpkg /usr/local/bin/jpkg
+
+      - name: Download existing packages from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /var/cache/jpkg
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.jpkg" \
+            --dir /var/cache/jpkg 2>/dev/null || true
+
+      - name: Build bootstrap packages from source
+        run: |
+          PKG_INPUT="${{ github.event.inputs.package }}"
+          if [ -n "$PKG_INPUT" ]; then
+            recipe_dir="packages/bootstrap/${PKG_INPUT}"
+            [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no bootstrap recipe at ${recipe_dir}/recipe.toml"; exit 1; }
+            echo "=== Building ${PKG_INPUT} (forced) ==="
+            timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+          else
+            for recipe in packages/bootstrap/*/recipe.toml; do
+              pkg_dir="$(dirname "$recipe")"
+              pkg_name="$(basename "$pkg_dir")"
+              pkg_ver=$(grep '^version' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+              echo "=== Building ${pkg_name}-${pkg_ver} from source ==="
+              timeout 3600 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+            done
+          fi
+
+      - name: List built packages
+        run: ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Upload packages to release (replaces pre-bootstrap versions)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=0
+          for pkg in /var/cache/jpkg/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /var/cache/jpkg/*.jpkg
+          echo "Uploaded $count package(s) (x86_64)."
+
+  # ── aarch64 bootstrap ──────────────────────────────────────────────────────
+  bootstrap-aarch64:
+    name: Bootstrap packages (aarch64)
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download existing packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/jpkg-output
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.jpkg" \
+            --dir /tmp/jpkg-output 2>/dev/null || true
+
+      - name: Build bootstrap packages in Alpine container
+        env:
+          PKG_INPUT: ${{ github.event.inputs.package }}
+        run: |
+          docker run --rm --privileged \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "/tmp/jpkg-output:/var/cache/jpkg" \
+            -w /workspace \
+            -e PKG_INPUT="$PKG_INPUT" \
+            alpine:latest sh -c '
+              set -e
+              apk update -q
+              apk add -q \
+                clang lld musl-dev make \
+                curl patch tar xz bash \
+                zstd-dev zstd-static \
+                linux-headers git \
+                cmake samurai \
+                ncurses-dev openssl-dev \
+                zlib-dev byacc m4 meson \
+                python3 perl
+              ln -sf /usr/bin/samu /usr/local/bin/ninja
+
+              cd /workspace/packages/jpkg
+              make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+              install -m 755 jpkg /usr/local/bin/jpkg
+
+              if [ -n "$PKG_INPUT" ]; then
+                recipe_dir="/workspace/packages/bootstrap/${PKG_INPUT}"
+                [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no bootstrap recipe"; exit 1; }
+                echo "=== Building ${PKG_INPUT} (forced) ==="
+                timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+              else
+                for recipe in /workspace/packages/bootstrap/*/recipe.toml; do
+                  pkg_dir="$(dirname "$recipe")"
+                  pkg_name="$(basename "$pkg_dir")"
+                  pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed '"'"'s/.*= *"\(.*\)"/\1/'"'"')
+                  echo "=== Building ${pkg_name}-${pkg_ver} from source ==="
+                  timeout 3600 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+                done
+              fi
+
+              echo "Bootstrap packages (aarch64):"
+              ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+            '
+
+      - name: Upload packages to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=0
+          for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
+          echo "Uploaded $count package(s) (aarch64)."
+
+  # After bootstrap completes, trigger publish-packages to regenerate the INDEX
+  # (which will pick up the newly uploaded source-built packages).
+  regenerate-index:
+    name: Trigger INDEX regeneration
+    needs: [bootstrap-x86_64, bootstrap-aarch64]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch publish-packages to rebuild INDEX
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run publish-packages.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --field package=""

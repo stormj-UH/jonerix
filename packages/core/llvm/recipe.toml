@@ -2,6 +2,7 @@
 name = "llvm"
 version = "19"
 license = "Apache-2.0"
+pre_bootstrap = true
 description = "LLVM compiler infrastructure with clang and lld"
 
 [build]

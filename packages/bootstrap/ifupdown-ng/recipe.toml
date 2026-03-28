@@ -1,0 +1,18 @@
+[package]
+name = "ifupdown-ng"
+version = "0.12.1"
+license = "ISC"
+description = "Next-generation network interface configuration tool"
+
+[source]
+url = "https://github.com/ifupdown-ng/ifupdown-ng/archive/ifupdown-ng-0.12.1.tar.gz"
+sha256 = "d42c8c18222efbce0087b92a14ea206de4e865d5c9dde6c0864dcbb2b45f2d85"
+
+[build]
+system = "make"
+build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" PREFIX=/ SYSCONFDIR=/etc -j$(nproc)"
+install = "make install PREFIX=/ SYSCONFDIR=/etc DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]
