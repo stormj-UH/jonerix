@@ -9,20 +9,31 @@ url = "https://nodejs.org/dist/v22.12.0/node-v22.12.0.tar.gz"
 sha256 = "3157e7c002b6e964bdbefb331ec38db1e2dceb064ab11c038275155461b22ce3"
 
 [build]
-# Node.js Makefile is heavily GNU make-specific. Use ninja directly since
-# --ninja flag already generates build.ninja files.
 system = "custom"
-configure = "CC=clang CXX=clang++ python3 configure.py --prefix=/ --ninja --partly-static --with-intl=none --shared-zlib"
-build = "ninja -C out/Release -j$(nproc)"
-install = """
-set -e
-mkdir -p "$DESTDIR/bin" "$DESTDIR/lib/node_modules"
-install -m755 out/Release/node "$DESTDIR/bin/node"
-cp -a deps/npm "$DESTDIR/lib/node_modules/npm"
-ln -sf ../lib/node_modules/npm/bin/npm-cli.js "$DESTDIR/bin/npm"
-ln -sf ../lib/node_modules/npm/bin/npx-cli.js "$DESTDIR/bin/npx"
+configure = """
+# V8 on aarch64 needs libatomic — provide via compiler-rt or stub
+if [ "$(uname -m)" = "aarch64" ]; then
+  ATOMIC_FLAG="-latomic"
+  # Create stub libatomic if not available (musl has builtins)
+  if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
+    echo 'void __atomic_stub(void){}' | clang -shared -o /lib/libatomic.so -x c - 2>/dev/null || true
+  fi
+else
+  ATOMIC_FLAG=""
+fi
+CC=clang CXX=clang++ \
+LDFLAGS="$LDFLAGS $ATOMIC_FLAG" \
+python3 configure.py \
+  --prefix=/ \
+  --ninja \
+  --partly-static \
+  --with-intl=none \
+  --shared-zlib \
+  --without-node-snapshot
 """
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
 
 [depends]
 runtime = ["musl", "zlib"]
-build = ["clang", "python3", "samurai"]
+build = ["clang", "python3", "make", "samurai"]
