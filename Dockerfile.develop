@@ -149,6 +149,15 @@ ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/mksh
 ENV TERM=xterm
+# Ensure overlay tools override toybox symlinks
+RUN for cmd in grep egrep fgrep tar; do \
+      [ -L "/bin/$cmd" ] && rm -f "/bin/$cmd"; \
+    done && \
+    # cc symlink for configure scripts
+    [ -f /bin/cc ] || ln -sf clang /bin/cc && \
+    # Copy clang intrinsic headers to /include so they're found
+    CLANG_INC=$(find /lib -path '*/clang/*/include' -type d 2>/dev/null | head -1) && \
+    if [ -n "$CLANG_INC" ]; then cp -a "$CLANG_INC"/* /include/ 2>/dev/null || true; fi
 
 WORKDIR /root
 
