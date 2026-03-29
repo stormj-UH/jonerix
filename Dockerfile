@@ -161,8 +161,7 @@ RUN cp /bin/mksh bin/mksh && \
     # --- Perl (Artistic-2.0) ---
     cp /usr/bin/perl bin/perl && \
     cp -r /usr/lib/perl5 lib/perl5 2>/dev/null || true && \
-    # --- Pico (Apache-2.0) + terminfo ---
-    cp /usr/bin/pico bin/pico 2>/dev/null || true && \
+    # --- terminfo (for terminal editors/tools) ---
     mkdir -p etc/terminfo lib/terminfo && \
     cp -r /etc/terminfo/* etc/terminfo/ 2>/dev/null || true && \
     cp -r /usr/share/terminfo/* lib/terminfo/ 2>/dev/null || true && \
@@ -189,7 +188,7 @@ RUN cp /bin/mksh bin/mksh && \
     cp /usr/bin/scp bin/scp 2>/dev/null || true && \
     # --- All shared libraries: use ldd to find everything needed ---
     for bin in bin/python3 bin/node bin/clang bin/ld.lld bin/mksh \
-               bin/dropbear bin/dbclient bin/perl bin/pico bin/curl bin/zstd bin/cmake; do \
+               bin/dropbear bin/dbclient bin/perl bin/curl bin/zstd bin/cmake; do \
         [ -f "$bin" ] && ldd "$bin" 2>/dev/null | awk '/=>/{print $3}' | while read so; do \
             [ -f "$so" ] && cp -n "$so" lib/ 2>/dev/null || true; \
         done; \
@@ -227,7 +226,7 @@ RUN chmod 755 etc/init.d/* 2>/dev/null || true
 # --- Package database ---
 RUN for pkg in \
     "toybox 0.8.11 0BSD" "mksh R59c MirOS" "jpkg 0.1.0 MIT" "musl 1.2.5 MIT" \
-    "python3 3.12 PSF-2.0" "nodejs 22 MIT" "zlib 1.3 Zlib" "pico 2.26 Apache-2.0" \
+    "python3 3.12 PSF-2.0" "nodejs 22 MIT" "zlib 1.3 Zlib" "micro 2.0.15 MIT" \
     "dropbear 2024.86 MIT" "llvm 21.1.2 Apache-2.0" "clang 21.1.2 Apache-2.0" \
     "lld 21.1.2 Apache-2.0" "bmake 20240808 MIT" "flex 2.6.4 BSD-2-Clause" \
     "perl 5.40 Artistic-2.0" "bc 7.0.3 BSD-2-Clause" "curl 8.17 MIT" "zstd 1.5.7 BSD" \

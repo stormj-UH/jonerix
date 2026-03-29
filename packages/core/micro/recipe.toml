@@ -23,6 +23,8 @@ curl -fsSL "$URL" -o micro.tar.gz
 printf '%s  micro.tar.gz\n' "$SHA" | sha256sum -c
 tar xzf micro.tar.gz
 install -Dm755 micro-*/micro "$DESTDIR/bin/micro"
+ln -sf micro "$DESTDIR/bin/editor"
+ln -sf micro "$DESTDIR/bin/vi"
 """
 install = ""
 

@@ -89,7 +89,7 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     cp -aL /usr/lib/libz.so* /overlay/lib/ && \
     cp -aL /usr/lib/libssl.so* /overlay/lib/ 2>/dev/null || true && \
     cp -aL /usr/lib/libcrypto.so* /overlay/lib/ 2>/dev/null || true && \
-    # ncurses dev (needed by pico, dropbear)
+    # ncurses dev (needed by dropbear)
     cp -aL /usr/lib/libncurses*.so* /overlay/lib/ 2>/dev/null || true && \
     cp -aL /usr/lib/libform*.so* /overlay/lib/ 2>/dev/null || true && \
     cp -aL /usr/lib/libpanel*.so* /overlay/lib/ 2>/dev/null || true && \
