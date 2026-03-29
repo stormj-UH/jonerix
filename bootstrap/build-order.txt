@@ -16,7 +16,7 @@
 # so that interrupted builds leave the most useful artifacts.
 #
 # Tier 0: no dependencies
-musl
+# musl  — SKIP: from-source build contaminates system; use pre-bootstrap musl
 ncurses
 # Tier 1: depends on musl only (tiny)
 snooze
