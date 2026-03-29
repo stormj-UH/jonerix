@@ -10,18 +10,15 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 
 [build]
 system = "custom"
-configure = "HOSTCC=clang CC=clang make defconfig"
-build = """
-CC=clang CFLAGS="-Os -pipe -fstack-protector-strong -fPIE" LDFLAGS="-Wl,-z,relro,-z,now -pie" \
-  scripts/make.sh
+configure = """
+# toybox scripts use #!/bin/bash — ensure bash is available or use sh
+if ! command -v bash >/dev/null 2>&1; then
+  ln -sf sh /bin/bash 2>/dev/null || true
+fi
+make defconfig
 """
-install = """
-mkdir -p "$DESTDIR/bin"
-install -m755 generated/unstripped/toybox "$DESTDIR/bin/toybox"
-for cmd in $(./generated/unstripped/toybox --long); do
-  ln -sf toybox "$DESTDIR/bin/$cmd"
-done
-"""
+build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
+install = "make PREFIX=$DESTDIR install"
 
 [depends]
 runtime = ["musl"]
