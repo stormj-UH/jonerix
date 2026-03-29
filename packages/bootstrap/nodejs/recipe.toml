@@ -29,7 +29,6 @@ LDFLAGS="-L/lib $LDFLAGS $ATOMIC_FLAG" \
 python3 configure.py \
   --prefix=/ \
   --ninja \
-  --partly-static \
   --with-intl=none \
   --shared-zlib \
   --without-node-snapshot
