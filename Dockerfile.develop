@@ -179,7 +179,10 @@ RUN \
     # Link clang resource dir so intrinsics (arm_neon.h, emmintrin.h) are found.
     # Don't copy to /include/ — clang wrapper headers shadow musl via #include_next.
     mkdir -p /bin/../lib/clang/21 && \
-    ln -sf /lib/llvm21/lib/clang/21/include /bin/../lib/clang/21/include 2>/dev/null || true
+    ln -sf /lib/llvm21/lib/clang/21/include /bin/../lib/clang/21/include 2>/dev/null || true && \
+    # Remove Alpine fortify headers — they use #include_next which breaks
+    # when fortify dir is searched before musl headers in clang's search path
+    rm -rf /include/fortify /usr/include/fortify
 
 WORKDIR /root
 
