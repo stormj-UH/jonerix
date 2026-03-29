@@ -21,7 +21,8 @@ RUN apk add --no-cache \
     musl-dev linux-headers \
     perl python3 \
     make xz bzip2 \
-    libarchive libuv rhash
+    libarchive libuv rhash \
+    libarchive-tools byacc ripgrep
 
 # Build jpkg for use in the final image
 COPY packages/jpkg/ /src/
@@ -96,6 +97,15 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     for cmd in tr expr awk nproc patch; do \
         p=$(which $cmd 2>/dev/null) && cp -aL "$p" /overlay/bin/ || true; \
     done && \
+    # bsdtar (replaces toybox tar — handles symlinks correctly)
+    cp -aL /usr/bin/bsdtar /overlay/bin/ && \
+    cp -aL /usr/bin/bsdcpio /overlay/bin/ 2>/dev/null || true && \
+    ln -sf bsdtar /overlay/bin/tar && \
+    # byacc (BSD yacc — needed by doas and others)
+    cp -aL /usr/bin/byacc /overlay/bin/ && \
+    ln -sf byacc /overlay/bin/yacc && \
+    # ripgrep (autoconf-compatible grep replacement)
+    cp -aL /usr/bin/rg /overlay/bin/ && \
     # bmake (from Alpine's bmake package if available, otherwise skip)
     apk add --no-cache bmake 2>/dev/null && \
     cp -a /usr/bin/bmake /overlay/bin/ 2>/dev/null || true && \

@@ -1,0 +1,32 @@
+[package]
+name = "ripgrep"
+version = "15.1.0"
+license = "MIT"
+pre_bootstrap = true
+description = "Fast line-oriented search tool (grep replacement)"
+
+[build]
+system = "custom"
+build = """
+set -e
+apk add --no-cache ripgrep
+for pkg in ripgrep; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []
