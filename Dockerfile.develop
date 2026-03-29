@@ -154,8 +154,14 @@ ENV SHELL=/bin/mksh
 ENV TERM=xterm
 # Post-overlay fixups
 RUN \
-    # cc symlink for configure scripts
+    # Symlinks for configure scripts that expect standard tool names
     ln -sf clang /bin/cc 2>/dev/null || true && \
+    ln -sf llvm-ar /bin/ar 2>/dev/null || true && \
+    ln -sf llvm-nm /bin/nm 2>/dev/null || true && \
+    ln -sf llvm-ranlib /bin/ranlib 2>/dev/null || true && \
+    ln -sf llvm-strip /bin/strip 2>/dev/null || true && \
+    ln -sf llvm-objcopy /bin/objcopy 2>/dev/null || true && \
+    ln -sf llvm-objdump /bin/objdump 2>/dev/null || true && \
     # Ensure clang intrinsic headers (emmintrin.h, cpuid.h) are findable
     CLANG_INC=$(find /lib -path '*/clang/*/include' -type d 2>/dev/null | head -1) && \
     if [ -n "$CLANG_INC" ]; then cp -a "$CLANG_INC"/* /include/ 2>/dev/null || true; fi
