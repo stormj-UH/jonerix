@@ -1,0 +1,29 @@
+[package]
+name = "nerdctl"
+version = "2.2.1"
+license = "Apache-2.0"
+pre_bootstrap = true
+description = "Docker-compatible CLI for containerd"
+# From-source build requires Go compiler (not yet bootstrapped on jonerix)
+
+[build]
+system = "custom"
+build = """
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+  URL="https://github.com/containerd/nerdctl/releases/download/v2.2.1/nerdctl-2.2.1-linux-arm64.tar.gz"
+  SHA="abc83c9ac3d843c3442eedfb61c6456b8b59b1e4cd69f69598ca1582acc7c094"
+else
+  URL="https://github.com/containerd/nerdctl/releases/download/v2.2.1/nerdctl-2.2.1-linux-amd64.tar.gz"
+  SHA="34144de7f12756aa4b9dc42a907fd95b0c5eb82a63566a650ca10c8abe7a26a0"
+fi
+curl -fsSL "$URL" -o nerdctl.tar.gz
+printf '%s  nerdctl.tar.gz\n' "$SHA" | sha256sum -c
+mkdir -p "$DESTDIR/bin"
+tar xf nerdctl.tar.gz -C "$DESTDIR/bin" nerdctl
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "containerd", "runc", "cni-plugins"]
+build = []
