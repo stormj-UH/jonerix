@@ -121,7 +121,12 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
                 real=$(readlink -f "$lib" 2>/dev/null); \
                 [ -f "$real" ] && cp -anP "$real" /overlay/lib/ 2>/dev/null || true; \
             done; \
-    done
+    done && \
+    # Remove GCC compiler libs pulled in transitively via libstdc++.
+    # These are only needed by GCC's compiler passes, not at runtime.
+    # Their presence confuses Perl's Configure and other build systems.
+    rm -f /overlay/lib/libgmp* /overlay/lib/libisl* \
+          /overlay/lib/libmpc* /overlay/lib/libmpfr*
 
 # ============================================================
 # Stage 1: Assemble develop image
