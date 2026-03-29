@@ -46,6 +46,9 @@ fi
 # ld symlink: clang invokes bare 'ld' which must resolve to lld
 ln -sf ld.lld "${DESTDIR}/bin/ld" 2>/dev/null || true
 
+# cc symlink: many configure scripts look for 'cc'
+ln -sf clang "${DESTDIR}/bin/cc" 2>/dev/null || true
+
 # ar/nm/ranlib symlinks: point to llvm binutils (Apache-2.0, not GPL)
 # llvm-ar etc. are installed as llvm21-ar, llvm21-nm, etc.
 LLVM_VER=$(ls "${DESTDIR}/bin/" 2>/dev/null | grep '^llvm[0-9]*-ar$' | sed 's/llvm\([0-9]*\)-ar/\1/' | head -1)

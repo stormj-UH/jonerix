@@ -24,6 +24,17 @@ if [ -d "${DESTDIR}/usr" ]; then
   cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
   rm -rf "${DESTDIR}/usr"
 fi
+
+# Create musl stub library symlinks (musl includes these in libc)
+LIBC=$(ls ${DESTDIR}/lib/libc.musl-*.so.1 2>/dev/null | head -1)
+if [ -n "$LIBC" ]; then
+  LIBC_NAME=$(basename "$LIBC")
+  for stub in libm libpthread libcrypt librt libdl libutil libresolv libxnet; do
+    ln -sf "$LIBC_NAME" "${DESTDIR}/lib/${stub}.so"
+    ln -sf "$LIBC_NAME" "${DESTDIR}/lib/${stub}.so.1"
+  done
+  ln -sf "$LIBC_NAME" "${DESTDIR}/lib/libc.so"
+fi
 """
 install = ""
 
