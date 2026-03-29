@@ -24,7 +24,8 @@ RUN apk add --no-cache \
     libarchive libuv rhash \
     libarchive-tools byacc ripgrep \
     zlib-dev openssl-dev \
-    grep m4 bash
+    grep m4 bash \
+    ncurses-dev expat-dev
 
 # Build jpkg for use in the final image
 COPY packages/jpkg/ /src/
@@ -72,6 +73,13 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     cp -aL /usr/lib/libz.so* /overlay/lib/ && \
     cp -aL /usr/lib/libssl.so* /overlay/lib/ 2>/dev/null || true && \
     cp -aL /usr/lib/libcrypto.so* /overlay/lib/ 2>/dev/null || true && \
+    # ncurses dev (needed by pico, dropbear)
+    cp -aL /usr/lib/libncurses*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libform*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libpanel*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libmenu*.so* /overlay/lib/ 2>/dev/null || true && \
+    # expat (needed by unbound)
+    cp -aL /usr/lib/libexpat.so* /overlay/lib/ && \
     cp -aL /usr/share/cmake/ /overlay/share/cmake/ 2>/dev/null || true && \
     # samurai (ninja-compatible build tool)
     cp -a /usr/bin/samu /overlay/bin/ && \
@@ -84,6 +92,8 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     # perl (needed by many configure scripts)
     cp -aL /usr/bin/perl /overlay/bin/ && \
     cp -aL /usr/lib/perl5/ /overlay/lib/perl5/ 2>/dev/null || true && \
+    mkdir -p /overlay/share && \
+    cp -aL /usr/share/perl5/ /overlay/share/perl5/ 2>/dev/null || true && \
     # python3
     cp -aL /usr/bin/python3 /overlay/bin/ && \
     cp -aL /usr/lib/python3* /overlay/lib/ 2>/dev/null || true && \
