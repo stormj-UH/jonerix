@@ -22,7 +22,7 @@ else
   ATOMIC_FLAG=""
 fi
 CC=clang CXX=clang++ \
-LDFLAGS="$LDFLAGS $ATOMIC_FLAG" \
+LDFLAGS="-L/lib $LDFLAGS $ATOMIC_FLAG" \
 python3 configure.py \
   --prefix=/ \
   --ninja \
