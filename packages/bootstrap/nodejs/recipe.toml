@@ -11,28 +11,25 @@ sha256 = "3157e7c002b6e964bdbefb331ec38db1e2dceb064ab11c038275155461b22ce3"
 [build]
 system = "custom"
 configure = """
-# gyp looks for -lstdc++ in /usr/lib/ but merged-usr has it at /lib/
-if [ -f /lib/libstdc++.so.6 ] && ! [ -f /usr/lib/libstdc++.so ]; then
-  mkdir -p /usr/lib
-  ln -sf /lib/libstdc++.so.6 /usr/lib/libstdc++.so
-fi
 # V8 on aarch64 needs libatomic — provide via compiler-rt or stub
 if [ "$(uname -m)" = "aarch64" ]; then
   ATOMIC_FLAG="-latomic"
-  # Create stub libatomic if not available (musl has builtins)
   if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
     echo 'void __atomic_stub(void){}' | clang -shared -o /lib/libatomic.so -x c - 2>/dev/null || true
   fi
 else
   ATOMIC_FLAG=""
 fi
-# Ensure libstdc++ is findable by gyp/ninja (which ignore LIBRARY_PATH)
-mkdir -p /usr/lib
-for lib in /lib/libstdc++* /lib/libgcc_s*; do
-  [ -f "$lib" ] && ln -sf "$lib" /usr/lib/ 2>/dev/null || true
-done
+# Only create /usr/lib symlinks if /usr/lib and /lib are different directories
+# (on merged-usr systems they resolve to the same path, creating symlink loops)
+if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
+  mkdir -p /usr/lib
+  for lib in /lib/libstdc++* /lib/libgcc_s*; do
+    [ -f "$lib" ] && ln -sf "$lib" /usr/lib/ 2>/dev/null || true
+  done
+fi
 CC=clang CXX=clang++ \
-LDFLAGS="-L/lib -L/usr/lib $LDFLAGS $ATOMIC_FLAG" \
+LDFLAGS="-L/lib $LDFLAGS $ATOMIC_FLAG" \
 python3 configure.py \
   --prefix=/ \
   --ninja \
