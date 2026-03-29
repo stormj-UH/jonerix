@@ -167,33 +167,36 @@ static int run_build_step(const char *step_name, const char *cmd,
     log_info("  %s: %s", step_name, cmd);
 
     /* Set up environment.
-     * C_INCLUDE_PATH and LIBRARY_PATH are critical: they ensure clang finds
-     * headers at /include/ (jonerix merged-usr) even when recipes override
-     * CFLAGS or bmake's suffix rules inject -nostdinc. These env vars are
-     * respected by clang regardless of command-line flags. */
+     * Use C_INCLUDE_PATH / LIBRARY_PATH instead of -I/-L in CFLAGS/LDFLAGS.
+     * This is additive — recipes that set their own CFLAGS won't lose the
+     * include paths. Only add /include (jonerix merged-usr), not /usr/include
+     * which may contain Alpine fortify wrapper headers that cause circular
+     * #include_next failures. */
     char env_cc[64] = "CC=clang";
     char env_ld[64] = "LD=ld.lld";
-    char env_cflags[512];
+    char env_ar[64] = "AR=llvm-ar";
+    char env_nm[64] = "NM=llvm-nm";
+    char env_ranlib[64] = "RANLIB=llvm-ranlib";
+    char env_cflags[256];
     snprintf(env_cflags, sizeof(env_cflags),
-             "CFLAGS=-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
-             " -I/include -I/usr/include");
-    char env_ldflags[512];
+             "CFLAGS=-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2");
+    char env_ldflags[256];
     snprintf(env_ldflags, sizeof(env_ldflags),
-             "LDFLAGS=-Wl,-z,relro,-z,now -pie -L/lib -L/usr/lib");
+             "LDFLAGS=-Wl,-z,relro,-z,now -pie");
     char env_destdir[512];
     snprintf(env_destdir, sizeof(env_destdir), "DESTDIR=%s", dest_dir);
+    char env_cinclude[128] = "C_INCLUDE_PATH=/include";
+    char env_libpath[128] = "LIBRARY_PATH=/lib";
 
     /* Build the full command with environment and working directory */
     char full_cmd[4096];
     snprintf(full_cmd, sizeof(full_cmd),
-             "cd '%s' && export %s && export %s && export '%s' && export '%s' && "
-             "export '%s' && "
-             "export C_INCLUDE_PATH=/include:/usr/include && "
-             "export CPLUS_INCLUDE_PATH=/include:/usr/include && "
-             "export LIBRARY_PATH=/lib:/usr/lib && "
-             "export AR=llvm-ar && export NM=llvm-nm && export RANLIB=llvm-ranlib && "
-             "%s",
-             work_dir, env_cc, env_ld, env_cflags, env_ldflags, env_destdir, cmd);
+             "cd '%s' && export %s && export %s && export %s && export %s && "
+             "export %s && export '%s' && export '%s' && "
+             "export '%s' && export %s && export %s && %s",
+             work_dir, env_cc, env_ld, env_ar, env_nm, env_ranlib,
+             env_cflags, env_ldflags, env_destdir,
+             env_cinclude, env_libpath, cmd);
 
     int rc = system(full_cmd);
     if (rc != 0) {
