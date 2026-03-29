@@ -22,7 +22,8 @@ RUN apk add --no-cache \
     perl python3 \
     make xz bzip2 \
     libarchive libuv rhash \
-    libarchive-tools byacc ripgrep
+    libarchive-tools byacc ripgrep \
+    zlib-dev openssl-dev
 
 # Build jpkg for use in the final image
 COPY packages/jpkg/ /src/
