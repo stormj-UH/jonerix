@@ -10,9 +10,10 @@ sha256 = "a889ac9dbba3644271bd9d1302b5c22a088893719b72be3487bc3d401e5c4e80"
 
 [build]
 system = "cmake"
-configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_C_COMPILER=clang -DCURL_USE_OPENSSL=ON -DCURL_USE_LIBPSL=OFF -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release"
+configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_C_COMPILER=clang -DCURL_USE_OPENSSL=ON -DOPENSSL_ROOT_DIR=/ -DCURL_USE_LIBPSL=OFF -DCURL_USE_LIBSSH2=OFF -DCURL_DISABLE_LDAP=ON -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release"
 build = "cmake --build build -j$(nproc)"
-install = "DESTDIR=$DESTDIR cmake --install build"
+install = """DESTDIR=$DESTDIR cmake --install build
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
 
 [depends]
 runtime = ["musl", "openssl"]

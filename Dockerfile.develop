@@ -48,6 +48,9 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     cp -aL /usr/bin/llvm-objdump /overlay/bin/ && \
     cp -aL /usr/bin/llvm-strip /overlay/bin/ && \
     cp -aL /usr/bin/llvm-readelf /overlay/bin/ && \
+    # clang resource dir (intrinsics headers: emmintrin.h, cpuid.h, etc.)
+    mkdir -p /overlay/lib/llvm21/lib/clang && \
+    cp -a /usr/lib/llvm21/lib/clang/21 /overlay/lib/llvm21/lib/clang/21 && \
     # LLVM shared libs — use -L to follow symlinks to real files
     cp -aL /usr/lib/llvm21/lib/libclang-cpp.so* /overlay/lib/ && \
     cp -aL /usr/lib/llvm21/lib/libLLVM.so* /overlay/lib/ && \
