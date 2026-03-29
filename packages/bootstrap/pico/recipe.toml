@@ -11,7 +11,9 @@ sha256 = "c0779c2be6c47d30554854a3e14ef5e36539502b331068851329275898a9baba"
 [build]
 system = "autoconf"
 configure = "./configure --prefix=/ --without-ldap --without-krb5 --without-tcl --without-ssl CC=clang CFLAGS=-Os"
-build = "make -C pico"
+build = """# Build imap c-client without SSL (pico/browse.c needs ../c-client/mail.h)
+echo y | make -C imap slx EXTRAAUTHENTICATORS=gss EXTRACFLAGS=-DIGNSTRSTRJONERIX SSLTYPE=none
+make -C pico"""
 install = "make -C pico DESTDIR=$DESTDIR install"
 
 [depends]
