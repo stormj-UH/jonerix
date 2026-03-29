@@ -9,6 +9,7 @@ description = "OCI container runtime"
 [build]
 system = "custom"
 build = """
+set -e
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
   URL="https://github.com/opencontainers/runc/releases/download/v1.4.1/runc.arm64"

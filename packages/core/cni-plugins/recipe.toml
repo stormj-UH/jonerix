@@ -9,6 +9,7 @@ description = "CNI network plugins for container networking"
 [build]
 system = "custom"
 build = """
+set -e
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
   URL="https://github.com/containernetworking/plugins/releases/download/v1.9.1/cni-plugins-linux-arm64-v1.9.1.tgz"
