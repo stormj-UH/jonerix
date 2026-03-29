@@ -24,7 +24,7 @@ RUN apk add --no-cache \
     libarchive libuv rhash \
     libarchive-tools byacc ripgrep \
     zlib-dev openssl-dev \
-    grep
+    grep m4 bash
 
 # Build jpkg for use in the final image
 COPY packages/jpkg/ /src/
@@ -115,6 +115,10 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     ln -sf byacc /overlay/bin/yacc && \
     # ripgrep (autoconf-compatible grep replacement)
     cp -aL /usr/bin/rg /overlay/bin/ && \
+    # m4 (needed by flex, autoconf)
+    cp -aL /usr/bin/m4 /overlay/bin/ && \
+    # bash (needed by toybox genconfig.sh and some configure scripts)
+    cp -aL /bin/bash /overlay/bin/ 2>/dev/null || cp -aL /usr/bin/bash /overlay/bin/ 2>/dev/null || true && \
     # bmake (from Alpine's bmake package if available, otherwise skip)
     apk add --no-cache bmake 2>/dev/null && \
     cp -a /usr/bin/bmake /overlay/bin/ 2>/dev/null || true && \

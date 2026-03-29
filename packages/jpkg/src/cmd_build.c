@@ -191,6 +191,7 @@ static int run_build_step(const char *step_name, const char *cmd,
              "export C_INCLUDE_PATH=/include:/usr/include && "
              "export CPLUS_INCLUDE_PATH=/include:/usr/include && "
              "export LIBRARY_PATH=/lib:/usr/lib && "
+             "export AR=llvm-ar && export NM=llvm-nm && export RANLIB=llvm-ranlib && "
              "%s",
              work_dir, env_cc, env_ld, env_cflags, env_ldflags, env_destdir, cmd);
 
