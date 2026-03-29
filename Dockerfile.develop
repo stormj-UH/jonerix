@@ -154,7 +154,7 @@ RUN for cmd in grep egrep fgrep; do \
       [ -L "/bin/$cmd" ] && rm -f "/bin/$cmd"; \
     done && \
     # Replace toybox tar with bsdtar (handles symlinks correctly)
-    rm -f /bin/tar && ln -sf bsdtar /bin/tar && \
+    rm -f /bin/tar 2>/dev/null; cp -f /bin/bsdtar /bin/tar 2>/dev/null || ln -sf bsdtar /bin/tar && \
     # cc symlink for configure scripts
     [ -f /bin/cc ] || ln -sf clang /bin/cc && \
     # Copy clang intrinsic headers to /include so they're found
