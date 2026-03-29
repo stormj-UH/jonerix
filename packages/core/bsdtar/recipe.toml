@@ -1,0 +1,33 @@
+[package]
+name = "bsdtar"
+version = "3.8.5"
+license = "Apache-2.0"
+pre_bootstrap = true
+description = "BSD tar from libarchive (handles symlinks correctly)"
+
+[build]
+system = "custom"
+build = """
+set -e
+apk add --no-cache libarchive-tools libarchive
+for pkg in libarchive-tools libarchive; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+ln -sf bsdtar "${DESTDIR}/bin/tar"
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []
