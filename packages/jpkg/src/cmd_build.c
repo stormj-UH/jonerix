@@ -167,9 +167,10 @@ static int run_build_step(const char *step_name, const char *cmd,
     log_info("  %s: %s", step_name, cmd);
 
     /* Set up environment.
-     * Include both /include and /usr/include so builds work on jonerix
-     * (merged-usr: headers at /include/) and standard layouts (/usr/include/).
-     * Same for library paths. */
+     * C_INCLUDE_PATH and LIBRARY_PATH are critical: they ensure clang finds
+     * headers at /include/ (jonerix merged-usr) even when recipes override
+     * CFLAGS or bmake's suffix rules inject -nostdinc. These env vars are
+     * respected by clang regardless of command-line flags. */
     char env_cc[64] = "CC=clang";
     char env_ld[64] = "LD=ld.lld";
     char env_cflags[512];
@@ -186,7 +187,11 @@ static int run_build_step(const char *step_name, const char *cmd,
     char full_cmd[4096];
     snprintf(full_cmd, sizeof(full_cmd),
              "cd '%s' && export %s && export %s && export '%s' && export '%s' && "
-             "export '%s' && %s",
+             "export '%s' && "
+             "export C_INCLUDE_PATH=/include:/usr/include && "
+             "export CPLUS_INCLUDE_PATH=/include:/usr/include && "
+             "export LIBRARY_PATH=/lib:/usr/lib && "
+             "%s",
              work_dir, env_cc, env_ld, env_cflags, env_ldflags, env_destdir, cmd);
 
     int rc = system(full_cmd);
