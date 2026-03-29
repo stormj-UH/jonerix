@@ -1,0 +1,29 @@
+[package]
+name = "containerd"
+version = "2.2.2"
+license = "Apache-2.0"
+pre_bootstrap = true
+description = "Industry-standard container runtime"
+# From-source build requires Go compiler (not yet bootstrapped on jonerix)
+
+[build]
+system = "custom"
+build = """
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+  URL="https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-arm64.tar.gz"
+  SHA="f22e03e12edd08dc49e139fec1fb0e0571950df0b6275577bbca718733acea9d"
+else
+  URL="https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz"
+  SHA="5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27"
+fi
+curl -fsSL "$URL" -o containerd.tar.gz
+printf '%s  containerd.tar.gz\n' "$SHA" | sha256sum -c
+mkdir -p "$DESTDIR/bin"
+tar xf containerd.tar.gz --strip-components=1 -C "$DESTDIR/bin"
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []
