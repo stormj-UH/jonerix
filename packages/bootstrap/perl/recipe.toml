@@ -27,7 +27,8 @@ configure = """./Configure -des \
   -Uuseshrplib \
   -Uusenm \
   -Dusethreads=n \
-  -Doptimize='-Os'"""
+  -Doptimize='-Os' \
+  -Dd_eaccess=undef"""
 build = "make -j$(nproc)"
 install = "make install DESTDIR=$DESTDIR"
 
