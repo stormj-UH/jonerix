@@ -11,6 +11,11 @@ sha256 = "3157e7c002b6e964bdbefb331ec38db1e2dceb064ab11c038275155461b22ce3"
 [build]
 system = "custom"
 configure = """
+# gyp looks for -lstdc++ in /usr/lib/ but merged-usr has it at /lib/
+if [ -f /lib/libstdc++.so.6 ] && ! [ -f /usr/lib/libstdc++.so ]; then
+  mkdir -p /usr/lib
+  ln -sf /lib/libstdc++.so.6 /usr/lib/libstdc++.so
+fi
 # V8 on aarch64 needs libatomic — provide via compiler-rt or stub
 if [ "$(uname -m)" = "aarch64" ]; then
   ATOMIC_FLAG="-latomic"
