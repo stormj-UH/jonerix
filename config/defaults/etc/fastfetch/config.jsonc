@@ -35,7 +35,7 @@
         {
             "type": "command",
             "key": "Editor",
-            "text": "echo pico"
+            "text": "echo micro"
         },
         "cpu",
         "memory",
