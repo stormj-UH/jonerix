@@ -9,6 +9,7 @@ description = "Industry-standard container runtime"
 [build]
 system = "custom"
 build = """
+set -e
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
   URL="https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-arm64.tar.gz"
