@@ -18,13 +18,7 @@ CC=clang
 CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -Wall"
 LDFLAGS="-Wl,-z,relro,-z,now -pie"
 
-CPPFLAGS="-DINTERFACES_FILE=\\\"/etc/network/interfaces\\\" \
-  -DSTATE_FILE=\\\"/run/ifstate\\\" \
-  -DCONFIG_FILE=\\\"/etc/network/ifupdown-ng.conf\\\" \
-  -DEXECUTOR_PATH=\\\"/lib/ifupdown-ng\\\" \
-  -DPACKAGE_NAME=\\\"ifupdown-ng\\\" \
-  -DPACKAGE_VERSION=\\\"0.12.1\\\" \
-  -DPACKAGE_BUGREPORT=\\\"https://github.com/ifupdown-ng/ifupdown-ng/issues\\\""
+CPPFLAGS='-DINTERFACES_FILE="/etc/network/interfaces" -DSTATE_FILE="/run/ifstate" -DCONFIG_FILE="/etc/network/ifupdown-ng.conf" -DEXECUTOR_PATH="/lib/ifupdown-ng" -DPACKAGE_NAME="ifupdown-ng" -DPACKAGE_VERSION="0.12.1" -DPACKAGE_BUGREPORT="https://github.com/ifupdown-ng/ifupdown-ng/issues"'
 
 # Compile libifupdown
 LIBOBJS=""
