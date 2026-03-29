@@ -11,7 +11,7 @@ sha256 = "c0779c2be6c47d30554854a3e14ef5e36539502b331068851329275898a9baba"
 [build]
 system = "autoconf"
 configure = "./configure --prefix=/ --without-ldap --without-krb5 --without-tcl CC=clang CFLAGS=-Os"
-build = "echo y | make -C imap slx && make -C pico"
+build = "echo y | make -C imap slx EXTRASPECIALS=\"SSLDIR=/\" && make -C pico"
 install = "make -C pico DESTDIR=$DESTDIR install"
 
 [depends]
