@@ -23,7 +23,8 @@ RUN apk add --no-cache \
     make xz bzip2 \
     libarchive libuv rhash \
     libarchive-tools byacc ripgrep \
-    zlib-dev openssl-dev
+    zlib-dev openssl-dev \
+    grep
 
 # Build jpkg for use in the final image
 COPY packages/jpkg/ /src/
@@ -64,6 +65,10 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     cp -aL /usr/lib/libuv*.so* /overlay/lib/ && \
     cp -aL /usr/lib/librhash*.so* /overlay/lib/ && \
     cp -aL /usr/lib/libexpat*.so* /overlay/lib/ 2>/dev/null || true && \
+    # zlib and openssl dev libs (needed by pigz, nodejs, etc.)
+    cp -aL /usr/lib/libz.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libssl.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libcrypto.so* /overlay/lib/ 2>/dev/null || true && \
     cp -aL /usr/share/cmake/ /overlay/share/cmake/ 2>/dev/null || true && \
     # samurai (ninja-compatible build tool)
     cp -a /usr/bin/samu /overlay/bin/ && \
@@ -95,7 +100,7 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     cp -aL /usr/lib/libssp*.so* /overlay/lib/ 2>/dev/null || true && \
     cp -aL /usr/lib/gcc/ /overlay/lib/gcc/ 2>/dev/null || true && \
     # POSIX tools missing from toybox (busybox provides these in Alpine)
-    for cmd in tr expr awk nproc patch; do \
+    for cmd in tr expr awk nproc patch grep egrep fgrep; do \
         p=$(which $cmd 2>/dev/null) && cp -aL "$p" /overlay/bin/ || true; \
     done && \
     # bsdtar (replaces toybox tar — handles symlinks correctly)
