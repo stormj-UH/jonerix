@@ -13,7 +13,14 @@ system = "custom"
 configure = ""
 build = """set -e
 export CARGO_HOME=/tmp/cargo-home
-export RUSTFLAGS="-C target-feature=-crt-static"
+export CC=clang
+export CXX=clang++
+export AR=llvm-ar
+export RANLIB=llvm-ranlib
+export RUSTFLAGS="-C target-feature=-crt-static -C linker=clang -C link-arg=-fuse-ld=lld"
+# Override release profile to disable LTO (requires too much RAM for linking)
+mkdir -p .cargo
+printf '[profile.release]\nlto = false\ncodegen-units = 4\n' > .cargo/config.toml
 cargo build --release --features unix --no-default-features --bin coreutils
 """
 install = """set -e
