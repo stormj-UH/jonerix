@@ -25,7 +25,7 @@ RUN apk add --no-cache \
     libarchive-tools byacc ripgrep \
     zlib-dev openssl-dev \
     grep m4 bash gzip \
-    ncurses-dev expat-dev
+    ncurses-dev expat-dev curl
 
 # Build jpkg for use in the final image
 COPY packages/jpkg/ /src/
