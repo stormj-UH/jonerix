@@ -24,7 +24,7 @@ RUN apk add --no-cache \
     libarchive libuv rhash \
     libarchive-tools byacc ripgrep \
     zlib-dev openssl-dev \
-    grep m4 bash \
+    grep m4 bash gzip \
     ncurses-dev expat-dev
 
 # Build jpkg for use in the final image
@@ -113,7 +113,7 @@ RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
     cp -aL /usr/lib/libssp*.so* /overlay/lib/ 2>/dev/null || true && \
     cp -aL /usr/lib/gcc/ /overlay/lib/gcc/ 2>/dev/null || true && \
     # POSIX tools missing from toybox (busybox provides these in Alpine)
-    for cmd in tr expr awk nproc patch grep egrep fgrep; do \
+    for cmd in tr expr awk nproc patch grep egrep fgrep gzip gunzip; do \
         p=$(which $cmd 2>/dev/null) && cp -aL "$p" /overlay/bin/ || true; \
     done && \
     # bsdtar (replaces toybox tar — handles symlinks correctly)
@@ -175,11 +175,11 @@ RUN \
     ln -sf llvm-ranlib /bin/ranlib 2>/dev/null || true && \
     ln -sf llvm-strip /bin/strip 2>/dev/null || true && \
     ln -sf llvm-objcopy /bin/objcopy 2>/dev/null || true && \
-    ln -sf llvm-objdump /bin/objdump 2>/dev/null || true
-    # Clang already finds its own resource dir (intrinsics like emmintrin.h).
-    # Do NOT copy clang headers to /include/ — clang's wrapper headers
-    # (inttypes.h, stdint.h) use #include_next and shadow musl, creating
-    # circular includes. Clang handles this internally.
+    ln -sf llvm-objdump /bin/objdump 2>/dev/null || true && \
+    # Link clang resource dir so intrinsics (arm_neon.h, emmintrin.h) are found.
+    # Don't copy to /include/ — clang wrapper headers shadow musl via #include_next.
+    mkdir -p /bin/../lib/clang/21 && \
+    ln -sf /lib/llvm21/lib/clang/21/include /bin/../lib/clang/21/include 2>/dev/null || true
 
 WORKDIR /root
 
