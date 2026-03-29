@@ -21,8 +21,13 @@ if [ "$(uname -m)" = "aarch64" ]; then
 else
   ATOMIC_FLAG=""
 fi
+# Ensure libstdc++ is findable by gyp/ninja (which ignore LIBRARY_PATH)
+mkdir -p /usr/lib
+for lib in /lib/libstdc++* /lib/libgcc_s*; do
+  [ -f "$lib" ] && ln -sf "$lib" /usr/lib/ 2>/dev/null || true
+done
 CC=clang CXX=clang++ \
-LDFLAGS="-L/lib $LDFLAGS $ATOMIC_FLAG" \
+LDFLAGS="-L/lib -L/usr/lib $LDFLAGS $ATOMIC_FLAG" \
 python3 configure.py \
   --prefix=/ \
   --ninja \
