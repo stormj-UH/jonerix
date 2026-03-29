@@ -11,14 +11,10 @@ sha256 = "3157e7c002b6e964bdbefb331ec38db1e2dceb064ab11c038275155461b22ce3"
 [build]
 system = "custom"
 configure = """
-# V8 on aarch64 needs libatomic — provide via compiler-rt or stub
-if [ "$(uname -m)" = "aarch64" ]; then
-  ATOMIC_FLAG="-latomic"
-  if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
-    echo 'void __atomic_stub(void){}' | clang -shared -o /lib/libatomic.so -x c - 2>/dev/null || true
-  fi
-else
-  ATOMIC_FLAG=""
+# Node.js links -latomic on all platforms — provide stub if missing
+# (musl has atomic builtins, so the stub just needs to exist)
+if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
+  echo 'void __atomic_stub(void){}' | clang -shared -o /lib/libatomic.so -x c - 2>/dev/null || true
 fi
 # Only create /usr/lib symlinks if /usr/lib and /lib are different directories
 # (on merged-usr systems they resolve to the same path, creating symlink loops)
