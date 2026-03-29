@@ -149,15 +149,11 @@ ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/mksh
 ENV TERM=xterm
-# Ensure overlay tools override toybox symlinks
-RUN for cmd in grep egrep fgrep; do \
-      [ -L "/bin/$cmd" ] && rm -f "/bin/$cmd"; \
-    done && \
-    # Replace toybox tar with bsdtar (handles symlinks correctly)
-    rm -f /bin/tar 2>/dev/null; cp -f /bin/bsdtar /bin/tar 2>/dev/null || ln -sf bsdtar /bin/tar && \
+# Post-overlay fixups
+RUN \
     # cc symlink for configure scripts
-    [ -f /bin/cc ] || ln -sf clang /bin/cc && \
-    # Copy clang intrinsic headers to /include so they're found
+    ln -sf clang /bin/cc 2>/dev/null || true && \
+    # Ensure clang intrinsic headers (emmintrin.h, cpuid.h) are findable
     CLANG_INC=$(find /lib -path '*/clang/*/include' -type d 2>/dev/null | head -1) && \
     if [ -n "$CLANG_INC" ]; then cp -a "$CLANG_INC"/* /include/ 2>/dev/null || true; fi
 
