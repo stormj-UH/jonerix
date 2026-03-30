@@ -1,12 +1,14 @@
 name: Publish packages
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'packages/core/**'
-      - 'packages/jpkg/**'
-      - '.github/workflows/publish-packages.yml'
+  # Push trigger disabled — building locally and uploading manually.
+  # Re-enable when ready to use CI for package builds.
+  # push:
+  #   branches: [master]
+  #   paths:
+  #     - 'packages/core/**'
+  #     - 'packages/jpkg/**'
+  #     - '.github/workflows/publish-packages.yml'
   workflow_dispatch:
     inputs:
       package:
