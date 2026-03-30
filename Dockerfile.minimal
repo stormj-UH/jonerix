@@ -64,13 +64,14 @@ COPY config/defaults/etc/jpkg/keys/ /jonerix/etc/jpkg/keys/
 RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/download/packages"\n' \
         > /jonerix/etc/jpkg/repos.conf
 
-# Install bsdtar FIRST (static binary, no symlink deps — toybox tar can extract it)
-# Then replace tar with bsdtar so subsequent jpkg installs handle symlinks correctly
+# Install bsdtar on Alpine HOST first so jpkg can use it for extraction.
+# Alpine's tar can't handle symlinks in jpkg archives, causing broken packages.
+RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
+
+# Install all packages via jpkg (now using bsdtar for extraction)
 RUN jpkg --root /jonerix update && \
-    jpkg --root /jonerix install bsdtar && \
-    ln -sf bsdtar /jonerix/bin/tar && \
     jpkg --root /jonerix install \
-        musl mksh toybox dropbear openrc openssl curl zstd
+        musl mksh toybox bsdtar dropbear openrc openssl curl zstd
 
 # Flatten usr/ into / (merged-usr layout), then add the symlink
 RUN if [ -d /jonerix/usr ]; then \
