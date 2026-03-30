@@ -46,57 +46,33 @@ FreeBSD/OpenBSD are excellent. jonerix targets a different niche:
 
 ## 2. Multi-Stage Bootstrap
 
-jonerix is bootstrapped from Alpine Linux. Alpine already uses musl and OpenRC, making it the ideal host for cross-compiling a permissive userland. The bootstrap has four stages:
+jonerix is bootstrapped from Alpine Linux using jpkg (the custom package manager) and per-package `recipe.toml` build recipes. Alpine is used only as a build host — nothing from it enters the final image.
 
 ```
-Stage 0 (Alpine host)        Stage 1 (cross-build)        Stage 2 (jonerix rootfs)
-┌──────────────────┐         ┌───────────────────┐        ┌───────────────────┐
-│ Alpine minimal   │──build──▶│ clang/musl sysroot│──pack──▶│ Pure permissive  │
-│ apk, busybox,    │         │ toybox, mksh,      │        │ system. No GPL.  │
-│ gcc, abuild      │         │ OpenRC, LibreSSL...│        │ Self-hosting.    │
-└──────────────────┘         └───────────────────┘        └───────────────────┘
-       GPL is OK                  mixed toolchain               no GPL at all
+Alpine build host              jpkg packages              Final rootfs
+┌──────────────────┐         ┌───────────────────┐      ┌───────────────────┐
+│ Alpine + clang   │──build──▶│ .jpkg archives    │──install──▶│ Pure permissive  │
+│ jpkg, build deps │         │ both arches, signed│      │ system. No GPL.  │
+└──────────────────┘         └───────────────────┘      └───────────────────┘
+       GPL is OK                 from-source builds           no GPL at all
 ```
 
-### Stage 0 — Alpine Build Host
+### Build Pipeline
 
-Pull `alpine:latest` (Docker or raw rootfs). Install build dependencies:
+1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
+2. **Packages** are built from source using `bootstrap/build-all.sh` and per-package `packages/bootstrap/*/recipe.toml` recipes inside a jonerix-develop container
+3. **Images** are assembled using Dockerfiles that install packages via `jpkg install`
 
-```sh
-apk add clang lld llvm-dev musl-dev cmake samurai git curl patch
-```
+### From-Source Builds
 
-This stage is throwaway. Nothing from it enters the final image.
+All 40+ packages build from source on jonerix itself (both x86_64 and aarch64):
 
-### Stage 1 — Cross-Compile the Permissive World
-
-Using Alpine's tools, build every jonerix component from source into a staging sysroot (`/jonerix-sysroot`). Build order matters — dependencies first:
-
-```
-1. musl              (C library — everything links against this)
-2. zstd, lz4         (compression — needed by jpkg and kernel)
-3. zlib              (compression — needed by Python, Node.js, pigz, etc.)
-4. LibreSSL          (TLS — needed by curl, dropbear, Python, Node.js)
-5. toybox            (coreutils — ls, cp, cat, grep, sed, awk, tar, ...)
-6. mksh              (shell)
-7. samurai           (ninja-compatible build tool, Apache-2.0)
-8. LLVM/Clang/lld/libc++/libc++abi (compiler + linker + C++ stdlib)
-9. OpenRC            (init system)
-10. dropbear         (SSH)
-11. curl             (HTTP client)
-12. dhcpcd           (DHCP)
-13. unbound          (DNS resolver)
-14. doas             (privilege escalation)
-15. socklog          (logging)
-16. snooze           (cron)
-17. mandoc           (man pages)
-18. ifupdown-ng      (network config)
-19. jpkg             (package manager)
-20. pigz             (parallel gzip, zlib license)
-21. nvi              (text editor)
-22. Python 3         (interpreter + build dep for Node.js)
-23. Node.js          (JavaScript runtime — needs Python 3, libc++)
-```
+- **C/C++**: musl, toybox, OpenSSL, curl, dropbear, OpenRC, ncurses, etc.
+- **LLVM/Clang/LLD**: Full compiler toolchain from source
+- **Go chain**: C → Go 1.4 → 1.17 → 1.20 → 1.22 → 1.24 → 1.26 (bootstrapped from C)
+- **Go packages**: containerd, runc, nerdctl, CNI plugins (CGO_ENABLED=0)
+- **Rust packages**: uutils, gitoxide, ripgrep (via system LLVM + bootstrap rustc)
+- **Scripting**: Python 3, Node.js, Perl (from source with Clang/musl)
 
 All components are compiled with:
 ```sh
@@ -106,25 +82,7 @@ CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
 LDFLAGS="-Wl,-z,relro,-z,now -pie"
 ```
 
-### Stage 2 — Assemble the Root Filesystem
-
-Copy Stage 1 artifacts into a clean rootfs. Create directory structure, install configs, set permissions. Generate the jpkg package database. Produce:
-
-- A root filesystem tarball (`jonerix-rootfs-<version>.tar.zst`)
-- A bootable disk image (`jonerix-<version>.img`) with EFISTUB
-- An OCI container image (`jonerix-<version>-oci.tar`)
-
-No Alpine bits carry over. Verification: `find /jonerix-rootfs -type f -exec file {} \;` should show only musl-linked ELF binaries and plain text configs.
-
-### Stage 3 — Self-Hosting Verification
-
-Boot the Stage 2 image. From within jonerix, rebuild the entire system from source:
-
-```sh
-jpkg build-world
-```
-
-If the output is bit-for-bit identical to the Stage 2 rootfs (reproducible build), the bootstrap is proven and the system is fully self-hosting with zero GPL runtime dependencies.
+Packages are uploaded to GitHub Releases and installed via jpkg into clean rootfs images.
 
 ---
 
@@ -139,7 +97,7 @@ If the output is bit-for-bit identical to the Stage 2 rootfs (reproducible build
 | Shell | mksh | MirOS (ISC-like) | bash (GPL) |
 | Init system | OpenRC | BSD-2-Clause | systemd (LGPL) |
 | Privilege escalation | doas | ISC | sudo |
-| TLS library | LibreSSL | ISC + OpenSSL legacy | — |
+| TLS library | OpenSSL | Apache-2.0 | — |
 | SSH server | dropbear | MIT | — |
 | HTTP client | curl | curl license (MIT-like) | wget (GPL) |
 | DNS resolver | unbound | BSD-3-Clause | — |
@@ -155,7 +113,7 @@ If the output is bit-for-bit identical to the Stage 2 rootfs (reproducible build
 | Scripting / build tool | Python 3 | PSF-2.0 | — |
 | JavaScript runtime | Node.js | MIT | — |
 | Build tool | samurai | Apache-2.0 | GNU make (GPL) |
-| Text editor | nvi | BSD | vim |
+| Text editor | micro | MIT | vim |
 | grep/sed/awk | toybox builtins | 0BSD | GNU versions (GPL) |
 
 ### Notable Absences and Why
@@ -240,11 +198,11 @@ jpkg license-audit           # verify all installed packages are permissive
 
 ### Signing
 
-Packages and the INDEX manifest are signed with Ed25519 using `tweetnacl` (public domain) or LibreSSL. The distribution's public key is embedded in jpkg at compile time.
+Packages and the INDEX manifest are signed with Ed25519 using `tweetnacl` (public domain) or OpenSSL. The distribution's public key is embedded in jpkg at compile time.
 
 ### Implementation
 
-Written in C, linked statically against musl. Dependencies: LibreSSL (for HTTPS fetches), zstd (decompression), tweetnacl (signature verification). Total binary size target: < 500KB.
+Written in C, linked statically against musl. Dependencies: OpenSSL (for HTTPS fetches), zstd (decompression), tweetnacl (signature verification).
 
 ---
 
@@ -259,7 +217,7 @@ Merged `/usr` — all binaries live in `/bin`, all libraries in `/lib`. Symlinks
 ├── etc/              ← system configuration
 │   ├── init.d/       ← OpenRC service scripts
 │   ├── conf.d/       ← OpenRC service config
-│   ├── ssl/          ← LibreSSL certificates
+│   ├── ssl/          ← TLS certificates
 │   ├── network/      ← ifupdown-ng interfaces
 │   └── jpkg/         ← package manager config + keys
 ├── var/
@@ -370,7 +328,7 @@ ADD jonerix-rootfs.tar.zst /
 ENTRYPOINT ["/bin/mksh"]
 ```
 
-The OCI image includes: musl, toybox, mksh, curl, LibreSSL certs, jpkg. Everything needed to `jpkg install` additional packages.
+The OCI image includes: musl, toybox, mksh, curl, OpenSSL, ca-certificates, jpkg. Everything needed to `jpkg install` additional packages.
 
 Target sizes:
 - **Minimal rootfs**: ~8 MB (toybox + mksh + musl + jpkg)
@@ -389,24 +347,7 @@ Target sizes:
 
 ### GitHub Actions CI
 
-```yaml
-# .github/workflows/build.yml
-name: Build jonerix
-on: [push, pull_request]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    container: alpine:latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: sh bootstrap/stage0.sh
-      - run: sh bootstrap/stage1.sh
-      - run: sh bootstrap/stage2.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: jonerix-rootfs
-          path: output/jonerix-rootfs-*.tar.zst
-```
+CI builds packages from source using `bootstrap/build-all.sh` inside a jonerix-develop container, then uploads `.jpkg` archives to GitHub Releases for both x86_64 and aarch64.
 
 ---
 
@@ -416,89 +357,50 @@ jobs:
 jonerix/
 ├── DESIGN.md                ← this document
 ├── LICENSE                  ← MIT
-├── Makefile                 ← top-level: make bootstrap, make image, make oci
+├── Dockerfile               ← full image (jpkg-based assembly)
+├── Dockerfile.minimal       ← minimal runtime (shell, init, SSH)
+├── Dockerfile.develop       ← development environment (compilers, languages)
 │
 ├── bootstrap/
-│   ├── stage0.sh            ← install Alpine build deps
-│   ├── stage1.sh            ← cross-compile all components
-│   ├── stage2.sh            ← assemble clean rootfs
-│   ├── stage3-verify.sh     ← self-hosting rebuild check
-│   └── config.sh            ← shared vars: versions, hashes, flags
+│   ├── build-all.sh         ← build all packages from source in dependency order
+│   └── JONERIX-BUILD-ENVIRONMENT.md
 │
 ├── packages/
-│   ├── rules.mk             ← shared build rules (fetch, extract, patch)
 │   ├── core/
 │   │   ├── musl/
-│   │   │   ├── Makefile      ← build recipe
-│   │   │   └── patches/      ← any needed patches
+│   │   │   └── recipe.toml  ← package metadata + deps
 │   │   ├── toybox/
-│   │   │   ├── Makefile
-│   │   │   └── toybox.config ← enabled applets
 │   │   ├── mksh/
 │   │   ├── openrc/
 │   │   ├── llvm/
-│   │   ├── libressl/
-│   │   ├── dropbear/
-│   │   ├── curl/
-│   │   ├── dhcpcd/
-│   │   ├── unbound/
-│   │   ├── doas/
-│   │   ├── socklog/
-│   │   ├── snooze/
-│   │   ├── mandoc/
-│   │   ├── ifupdown-ng/
-│   │   ├── pigz/
-│   │   ├── zstd/
-│   │   ├── zlib/
-│   │   ├── lz4/
-│   │   ├── samurai/
-│   │   ├── nvi/
-│   │   ├── python3/
-│   │   ├── nodejs/
-│   │   └── linux/            ← kernel config + build
-│   └── jpkg/                 ← the package manager source code
-│       ├── src/
-│       ├── Makefile
-│       └── tests/
+│   │   ├── openssl/
+│   │   ├── ... (40+ packages)
+│   │   └── ca-certificates/
+│   ├── bootstrap/
+│   │   ├── musl/
+│   │   │   └── recipe.toml  ← from-source build recipe
+│   │   ├── toybox/
+│   │   ├── llvm/
+│   │   ├── go/
+│   │   ├── ... (40+ packages)
+│   │   └── cni-plugins/
+│   └── jpkg/                ← the package manager source code
+│       ├── *.c / *.h
+│       └── Makefile
 │
 ├── config/
-│   ├── kernel/
-│   │   ├── x86_64.config     ← minimal server kernel config
-│   │   └── aarch64.config
 │   ├── openrc/
-│   │   ├── inittab
-│   │   └── init.d/           ← service scripts (sshd, socklog, etc.)
+│   │   └── init.d/          ← service scripts (sshd, socklog, etc.)
 │   └── defaults/
-│       ├── etc/
-│       │   ├── hostname
-│       │   ├── resolv.conf
-│       │   ├── passwd
-│       │   ├── group
-│       │   ├── shadow
-│       │   ├── shells
-│       │   ├── profile       ← mksh login profile
-│       │   ├── doas.conf
-│       │   └── ssl/
-│       │       └── cert.pem  ← CA bundle (Mozilla, MPL — data not code)
-│       └── var/
-│           └── db/jpkg/
-│
-├── image/
-│   ├── mkimage.sh            ← bootable disk image (GPT + ESP + root)
-│   ├── oci.sh                ← OCI container image
-│   └── cloud/
-│       ├── aws-ami.sh
-│       ├── gcp-image.sh
-│       └── cloud-init-lite.sh
+│       └── etc/             ← hostname, passwd, group, profile, etc.
 │
 ├── scripts/
-│   ├── license-audit.sh      ← verify all components are permissive
-│   └── size-report.sh        ← measure rootfs size breakdown
+│   └── license-audit.sh     ← verify all components are permissive
 │
 ├── .github/
 │   └── workflows/
-│       ├── build.yml          ← CI: full bootstrap
-│       └── license-check.yml  ← CI: automated license audit
+│       ├── publish-packages.yml  ← CI: build + upload jpkg packages
+│       └── bootstrap-packages.yml
 │
 └── docs/
     ├── bootstrapping.md
@@ -510,46 +412,32 @@ jonerix/
 
 ## 11. Build Recipe Format
 
-Each package under `packages/core/` has a `Makefile` that follows a standard pattern:
+Each package has a `recipe.toml` file. Core recipes (`packages/core/`) hold metadata and dependencies. Bootstrap recipes (`packages/bootstrap/`) contain from-source build instructions.
 
-```makefile
-# packages/core/toybox/Makefile
-PKG_NAME     = toybox
-PKG_VERSION  = 0.8.11
-PKG_LICENSE  = 0BSD
-PKG_SOURCE   = https://github.com/landley/toybox/archive/$(PKG_VERSION).tar.gz
-PKG_SHA256   = <sha256-of-tarball>
+```toml
+# packages/bootstrap/toybox/recipe.toml
+[package]
+name = "toybox"
+version = "0.8.11"
+license = "0BSD"
+description = "BSD-licensed replacement for BusyBox"
 
-include ../../rules.mk
+[source]
+url = "https://github.com/landley/toybox/archive/refs/tags/0.8.11.tar.gz"
+sha256 = "..."
 
-configure:
-	cp $(PKG_DIR)/toybox.config $(SRC_DIR)/.config
+[build]
+system = "custom"
+configure = "..."
+build = "CC=clang make -j$(nproc)"
+install = "make PREFIX=$DESTDIR install"
 
-build:
-	$(MAKE) -C $(SRC_DIR) CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
-
-install:
-	$(MAKE) -C $(SRC_DIR) PREFIX=$(DESTDIR) install
+[depends]
+runtime = ["musl"]
+build = ["clang"]
 ```
 
-`rules.mk` provides:
-- `fetch` — download + verify SHA256
-- `extract` — unpack tarball
-- `patch` — apply patches from `patches/` directory
-- `clean` — remove build artifacts
-- Variables: `$(CC)`, `$(CFLAGS)`, `$(LDFLAGS)`, `$(DESTDIR)`, `$(SRC_DIR)`
-
-### License Gate
-
-`rules.mk` includes an automatic license check. If `PKG_LICENSE` contains `GPL`, `LGPL`, or `AGPL`, the build aborts:
-
-```makefile
-# rules.mk (excerpt)
-FORBIDDEN_LICENSES = GPL LGPL AGPL
-$(foreach lic,$(FORBIDDEN_LICENSES),\
-  $(if $(findstring $(lic),$(PKG_LICENSE)),\
-    $(error BLOCKED: $(PKG_NAME) is $(PKG_LICENSE) — not permitted in jonerix)))
-```
+`bootstrap/build-all.sh` processes recipes in dependency order, building each package inside a jonerix-develop container with `CC=clang`, `LD=ld.lld`, and hardening flags.
 
 ---
 
@@ -557,17 +445,17 @@ $(foreach lic,$(FORBIDDEN_LICENSES),\
 
 ### v1 Scope (server-focused)
 
-- [ ] Write `jpkg` — the custom package manager (~3-5K lines of C)
+- [x] Write `jpkg` — custom package manager (C, MIT)
 - [ ] Write `jnft` — minimal netlink-based firewall CLI (~2-3K lines of C)
 - [ ] Write `cloud-init-lite` — metadata-driven instance setup (~500 lines of sh)
-- [ ] Produce working Stage 0→2 bootstrap scripts
-- [ ] Achieve self-hosting (Stage 3)
-- [ ] Publish OCI base image
-- [ ] CI pipeline on GitHub Actions
+- [x] Full from-source bootstrap (40+ packages, both arches)
+- [x] Self-hosting (jonerix rebuilds itself from source)
+- [x] Publish OCI base images (minimal, develop)
+- [x] CI pipeline on GitHub Actions
+- [x] aarch64 support (all packages build on both x86_64 and aarch64)
 
 ### Future
 
-- **aarch64 support** — LLVM cross-compilation makes this straightforward.
 - **Desktop variant** — Wayland (MIT) + wlroots (MIT) + foot terminal (MIT) + Sway (MIT). All permissive.
 - **Rust/Zig ecosystem** — Many modern CLI tools (ripgrep, fd, bat, tokei) are MIT-licensed. Could offer a `jonerix-extras` package set.
 - **Secure Boot** — Sign the EFISTUB kernel with a custom MOK key. No GPL bootloader needed.
@@ -580,7 +468,7 @@ $(foreach lic,$(FORBIDDEN_LICENSES),\
 | Linux kernel | GPLv2 — accepted | No permissive OS kernel with equivalent hardware/container support exists |
 | CA certificates | Mozilla bundle, MPL-2.0 | This is *data*, not *code*. Widely considered acceptable. |
 | BIOS bootloader | syslinux (GPL) on boot media only | Not installed to rootfs. UEFI EFISTUB avoids this entirely. |
-| LibreSSL legacy code | OpenSSL/SSLeay license (permissive but quirky) | New code is ISC. The legacy license is functionally permissive. |
+| OpenSSL | Apache-2.0 (since v3.0) | Fully permissive. |
 
 ---
 
