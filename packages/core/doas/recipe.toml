@@ -2,7 +2,7 @@
 name = "doas"
 version = "6.8.2"
 license = "ISC"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Lightweight privilege escalation tool (OpenDoas)"
 
 [build]

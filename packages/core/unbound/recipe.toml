@@ -2,7 +2,7 @@
 name = "unbound"
 version = "1.22.0"
 license = "BSD-3-Clause"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Validating, recursive, and caching DNS resolver"
 
 [build]

@@ -2,7 +2,7 @@
 name = "flex"
 version = "2.6.4"
 license = "BSD-2-Clause"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Fast lexical analyzer generator"
 
 [build]

@@ -2,7 +2,7 @@
 name = "containerd"
 version = "2.2.2"
 license = "Apache-2.0"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Industry-standard container runtime"
 # From-source build requires Go compiler (not yet bootstrapped on jonerix)
 

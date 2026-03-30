@@ -2,7 +2,7 @@
 name = "dhcpcd"
 version = "10.1.0"
 license = "BSD-2-Clause"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "RFC2131-compliant DHCP client daemon"
 
 [build]

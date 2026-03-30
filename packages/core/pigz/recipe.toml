@@ -2,7 +2,7 @@
 name = "pigz"
 version = "2.8"
 license = "Zlib"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Parallel implementation of gzip"
 
 [build]

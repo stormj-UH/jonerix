@@ -2,7 +2,7 @@
 name = "perl"
 version = "5.40.0"
 license = "Artistic-2.0"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Practical Extraction and Report Language"
 
 [build]

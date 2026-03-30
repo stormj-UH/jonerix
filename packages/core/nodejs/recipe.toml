@@ -2,7 +2,7 @@
 name = "nodejs"
 version = "24.14.1"
 license = "MIT"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "JavaScript runtime built on V8"
 
 [build]
