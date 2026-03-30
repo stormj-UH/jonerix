@@ -2,12 +2,12 @@
 name = "go-current"
 version = "1.26.1"
 license = "BSD-3-Clause"
-description = "Go programming language (current release, built from Go 1.17)"
+description = "Go programming language (current release, multi-stage bootstrap)"
 
-# Final stage of the Go bootstrap chain:
-#   C (clang) → Go 1.4 → Go 1.17 → Go 1.26.1
-# This produces the production Go compiler for building containerd,
-# runc, nerdctl, micro, and other Go software from source.
+# Full Go bootstrap chain from Go 1.17:
+#   Go 1.17 → Go 1.20 → Go 1.22 → Go 1.24 → Go 1.26
+# Each version requires the previous as GOROOT_BOOTSTRAP.
+# The entire chain runs in a single build step (~15 min on 12 cores).
 
 [source]
 url = "https://go.dev/dl/go1.26.1.src.tar.gz"
@@ -20,22 +20,67 @@ build = """
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
   echo "SKIP: Full from-C chain is x86_64-only (Go 1.4 lacks arm64)."
-  echo "On aarch64, use prebuilt Go (core/go) or cross-bootstrap."
+  echo "On aarch64, use prebuilt Go (core/go)."
   exit 1
 fi
-# Ensure Go 1.17 is available as bootstrap
 if [ ! -x /lib/go/bin/go ]; then
   echo "ERROR: Go 1.17 not found at /lib/go/bin/go"
   echo "Build go (1.17) first: jpkg build packages/bootstrap/go"
   exit 1
 fi
+
 mkdir -p /var/tmp /tmp
-cd src
-CGO_ENABLED=0 \
-GOROOT_BOOTSTRAP=/lib/go \
-GOROOT_FINAL=/lib/go-current \
-TMPDIR=/tmp \
+export TMPDIR=/tmp
+NPROC=$(nproc 2>/dev/null || echo 4)
+
+# Save the final Go 1.26 source (already extracted by jpkg)
+FINAL_SRC="$(pwd)"
+
+# Helper: download, extract, build one Go version
+build_intermediate() {
+  _ver="$1" _url="$2" _sha="$3" _bootstrap="$4" _dest="$5"
+  echo "=== Building Go ${_ver} (bootstrap: ${_bootstrap}) ==="
+  cd /tmp
+  curl -fsSL "$_url" -o "go-${_ver}.tar.gz"
+  printf '%s  go-%s.tar.gz\n' "$_sha" "$_ver" | sha256sum -c
+  rm -rf "go-${_ver}-src" && mkdir "go-${_ver}-src"
+  tar xf "go-${_ver}.tar.gz" --strip-components=1 -C "go-${_ver}-src"
+  cd "go-${_ver}-src/src"
+  CGO_ENABLED=0 GOROOT_BOOTSTRAP="$_bootstrap" GOROOT_FINAL="$_dest" \
+    bash ./make.bash
+  # Install to destination
+  mkdir -p "$_dest"
+  cp -a /tmp/go-${_ver}-src/bin /tmp/go-${_ver}-src/pkg /tmp/go-${_ver}-src/src "$_dest/"
+  rm -rf /tmp/go-${_ver}-src /tmp/go-${_ver}.tar.gz
+  echo "=== Go ${_ver} installed at ${_dest} ==="
+}
+
+# Step 1: Go 1.20 from Go 1.17
+build_intermediate "1.20.14" \
+  "https://go.dev/dl/go1.20.14.src.tar.gz" \
+  "1aef321a0e3e38b7e91d2d7eb64040666cabdcc77d383de3c9522d0d69b67f4e" \
+  "/lib/go" "/tmp/go120"
+
+# Step 2: Go 1.22 from Go 1.20
+build_intermediate "1.22.12" \
+  "https://go.dev/dl/go1.22.12.src.tar.gz" \
+  "012a7e1f37f362c0918c1dfa3334458ac2da1628c4b9cf4d9ca02db986e17d71" \
+  "/tmp/go120" "/tmp/go122"
+rm -rf /tmp/go120
+
+# Step 3: Go 1.24 from Go 1.22
+build_intermediate "1.24.13" \
+  "https://go.dev/dl/go1.24.13.src.tar.gz" \
+  "639a6204c2486b137df1eb6e78ee3ed038f9877d0e4b5a465e796a2153f858d7" \
+  "/tmp/go122" "/tmp/go124"
+rm -rf /tmp/go122
+
+# Step 4: Go 1.26 from Go 1.24 (using the source jpkg already extracted)
+echo "=== Building Go 1.26.1 (bootstrap: /tmp/go124) ==="
+cd "$FINAL_SRC/src"
+CGO_ENABLED=0 GOROOT_BOOTSTRAP=/tmp/go124 GOROOT_FINAL=/lib/go-current \
   bash ./make.bash
+rm -rf /tmp/go124
 """
 install = """
 mkdir -p "$DESTDIR/lib/go-current"
