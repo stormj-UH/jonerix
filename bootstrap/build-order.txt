@@ -48,5 +48,8 @@ perl
 python3
 # Tier 5: depends on multiple tier-3/4 packages (large)
 nodejs
+# Tier 5b: package managers (pure JS/Python, no compilation)
+npm
+pip
 # Tier 6: Rust-based packages (requires prebuilt Rust toolchain)
 uutils
