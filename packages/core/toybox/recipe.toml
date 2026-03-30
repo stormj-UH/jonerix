@@ -7,27 +7,7 @@ description = "BSD-licensed coreutils replacement"
 
 [build]
 system = "custom"
-build = """
-set -e
-apk add --no-cache make
-curl -fsSL --connect-timeout 30 --max-time 120 \
-  https://landley.net/toybox/downloads/toybox-0.8.11.tar.gz -o toybox.tar.gz
-printf '15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc  toybox.tar.gz\n' | sha256sum -c
-tar xzf toybox.tar.gz
-cd toybox-0.8.11
-make defconfig
-# Enable pending toys needed for bootstrap builds (configure scripts need tr/expr)
-sed -i 's/# CONFIG_TR is not set/CONFIG_TR=y/' .config
-sed -i 's/# CONFIG_EXPR is not set/CONFIG_EXPR=y/' .config
-yes '' | make oldconfig
-make CC=clang -j$(nproc)
-make PREFIX=${DESTDIR} install
-
-# toybox has no awk — install mawk (permissive license) and symlink as awk
-apk add --no-cache mawk
-install -Dm755 /usr/bin/mawk "${DESTDIR}/bin/mawk"
-ln -sf mawk "${DESTDIR}/bin/awk"
-"""
+build = ""
 install = ""
 
 [depends]
