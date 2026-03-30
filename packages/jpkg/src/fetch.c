@@ -236,7 +236,7 @@ static int https_fetch_curl(const char *url, fetch_buf_t *buf) {
 
     char cmd[4096];
     snprintf(cmd, sizeof(cmd),
-             "curl -fsSL --connect-timeout 30 --max-time 300 -o '%s' '%s' 2>/dev/null",
+             "curl -fsSL --connect-timeout 30 --max-time 3600 -o '%s' '%s' 2>/dev/null",
              tmppath, url);
 
     int rc = system(cmd);
