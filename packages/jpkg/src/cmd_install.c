@@ -88,11 +88,10 @@ static int install_files(const char *stage_dir, const char *dest_root) {
              /* Flatten usr/ in staging (belt-and-suspenders with pkg_extract) */
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
              "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi && "
-             /* Copy staging to root. Since staging is flattened (no usr/),
-              * tar won't encounter usr/ paths. But dest may have /usr -> /
-              * symlink — tar doesn't follow it for files WITHOUT usr/ prefix.
-              * This is safe because our staging has /bin/, /lib/ etc directly. */
-             "cd '%s' && tar cf - . | tar xf - -C '%s'",
+             /* Copy staging to root. Use cp -a with trailing /. to merge
+              * directory contents rather than replace directories.
+              * This avoids bsdtar pipe issues and doesn't follow dest symlinks. */
+             "cp -a '%s'/. '%s/'",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
              stage_dir, dest_root);
