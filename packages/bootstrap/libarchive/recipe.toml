@@ -1,0 +1,36 @@
+[package]
+name = "libarchive"
+version = "3.8.5"
+license = "Apache-2.0"
+description = "Multi-format archive and compression library with bsdtar"
+
+[source]
+url = "https://github.com/libarchive/libarchive/releases/download/v3.8.5/libarchive-3.8.5.tar.gz"
+sha256 = "8a60f3a7bfd59c54ce82ae805a93dba65defd04148c3333b7eaa2102f03b7ffd"
+
+[build]
+system = "cmake"
+configure = """cmake -B build -G Ninja \
+  -DCMAKE_INSTALL_PREFIX=/ \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_TAR=ON \
+  -DENABLE_CPIO=ON \
+  -DENABLE_CAT=ON \
+  -DENABLE_TEST=OFF \
+  -DENABLE_OPENSSL=ON \
+  -DENABLE_ZLIB=ON \
+  -DENABLE_LZMA=ON \
+  -DENABLE_ZSTD=ON \
+  -DENABLE_LZ4=ON \
+  -DENABLE_BZip2=OFF"""
+build = "cmake --build build -j$(nproc)"
+install = """DESTDIR=$DESTDIR cmake --install build
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+ln -sf bsdtar "$DESTDIR/bin/tar"
+ln -sf bsdcpio "$DESTDIR/bin/cpio"
+"""
+
+[depends]
+runtime = ["musl", "openssl", "zstd", "lz4", "xz"]
+build = ["clang", "cmake", "samurai"]
