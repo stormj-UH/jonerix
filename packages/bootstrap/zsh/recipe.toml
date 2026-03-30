@@ -12,7 +12,7 @@ sha256 = "9b8d1ecedd5b5e81fbf1918e876752a7dd948e05c1a0dba10ab863842d45acd5"
 system = "custom"
 build = """
 set -e
-CC=clang ./configure --prefix=/ --enable-multibyte --disable-gdbm --without-tcsetpgrp
+CC=clang ./configure --prefix=/ --enable-multibyte --enable-pcre --disable-gdbm --without-tcsetpgrp
 make -j$(nproc)
 make DESTDIR=$DESTDIR install
 # Symlink as bash — enables #!/bin/bash scripts to run via zsh
