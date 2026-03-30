@@ -91,7 +91,7 @@ static int install_files(const char *stage_dir, const char *dest_root) {
              /* Copy staging to root. Use cp -a with trailing /. to merge
               * directory contents rather than replace directories.
               * This avoids bsdtar pipe issues and doesn't follow dest symlinks. */
-             "cp -a '%s'/. '%s/'",
+             "cd '%s' && cp -a . '%s'",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
              stage_dir, dest_root);
