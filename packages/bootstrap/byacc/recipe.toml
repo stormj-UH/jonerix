@@ -1,0 +1,21 @@
+[package]
+name = "byacc"
+version = "20241231"
+license = "Public-Domain"
+description = "Berkeley Yacc parser generator"
+
+[source]
+url = "https://invisible-island.net/archives/byacc/byacc-20241231.tgz"
+sha256 = "192c2fae048d4e7f514ba451627f9c4e612765099f819c19191f9fde3e609673"
+
+[build]
+system = "configure"
+configure = "CC=clang ./configure --prefix=/"
+build = "make -j$(nproc)"
+install = """make install DESTDIR=$DESTDIR
+ln -sf byacc "$DESTDIR/bin/yacc"
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]
