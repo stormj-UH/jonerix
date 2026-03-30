@@ -11,9 +11,15 @@ sha256 = "046fa01a216793b8bd2750f9d68d4ad43986eb9c0d6122600f993906012972e8"
 [build]
 system = "custom"
 configure = ""
-build = """
-set -e
+build = """set -e
+export CARGO_HOME=/tmp/cargo-home
 export CC=clang
+export CXX=clang++
+export AR=llvm-ar
+export RANLIB=llvm-ranlib
+export RUSTFLAGS="-C target-feature=-crt-static -C linker=clang -C link-arg=-fuse-ld=lld"
+mkdir -p .cargo
+printf '[profile.release]\nlto = false\ncodegen-units = 4\n' > .cargo/config.toml
 cargo build --release --features pcre2 2>/dev/null || cargo build --release
 """
 install = """
