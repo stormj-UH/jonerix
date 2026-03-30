@@ -31,26 +31,23 @@ Before adding a new package or dependency:
 git clone https://github.com/jonerix/jonerix.git
 cd jonerix
 
-# Option 1: Docker-based development (recommended)
-docker run -it --privileged -v $(pwd):/jonerix alpine:latest sh
-cd /jonerix
-sh bootstrap/stage0.sh
-
-# Option 2: Native Alpine installation
-# Follow docs/bootstrapping.md
+# Docker-based development (recommended)
+docker build -f Dockerfile.develop --tag jonerix-develop:latest .
+docker run -it -v $(pwd):/workspace -w /workspace jonerix-develop:latest
 ```
 
 ### Repository Structure
 
 ```
 jonerix/
-  bootstrap/        Stage 0-3 bootstrap scripts
-  packages/core/    Package build recipes (one directory per package)
-  config/           Kernel configs, OpenRC services, system defaults
-  image/            Disk image and OCI image build scripts
-  scripts/          Utility scripts (license audit, size report)
-  docs/             Documentation
-  .github/          CI workflows
+  bootstrap/            build-all.sh and build environment docs
+  packages/core/        Package metadata (recipe.toml per package)
+  packages/bootstrap/   From-source build recipes (recipe.toml per package)
+  packages/jpkg/        Package manager source code (C)
+  config/               OpenRC services, system defaults
+  scripts/              Utility scripts (license audit)
+  docs/                 Documentation
+  .github/              CI workflows
 ```
 
 ## Types of Contributions
@@ -63,8 +60,8 @@ Quick checklist:
 - [ ] License is permissive (run `scripts/license-audit.sh`)
 - [ ] Source URL is stable (prefer tagged releases, not `master` branches)
 - [ ] SHA256 hash is correct
-- [ ] Package builds cleanly with `make fetch extract patch configure build install`
-- [ ] Package installs to `$(DESTDIR)` correctly (no hardcoded paths)
+- [ ] Package builds cleanly with `bootstrap/build-all.sh`
+- [ ] Package installs to `$DESTDIR` correctly (no hardcoded paths)
 - [ ] Patches are minimal and well-documented
 
 ### 2. Bug Fixes
@@ -75,7 +72,7 @@ Quick checklist:
 
 ### 3. Bootstrap Improvements
 
-The bootstrap scripts (`bootstrap/stage0.sh` through `stage3-verify.sh`) are critical paths. Changes here should be:
+The build system (`bootstrap/build-all.sh` and `packages/bootstrap/*/recipe.toml`) is a critical path. Changes here should be:
 - Well-tested (ideally in CI)
 - Backward-compatible where possible
 - Documented if they change the build process
@@ -142,7 +139,7 @@ Guidelines:
 
 - C11 standard
 - musl-compatible (no glibc extensions)
-- No external dependencies beyond musl and LibreSSL
+- No external dependencies beyond musl and OpenSSL
 - Compile with `-Wall -Wextra -Werror`
 - Use static analysis: `clang --analyze`
 - Follow the existing code style in `packages/jpkg/src/`
@@ -187,13 +184,12 @@ Guidelines:
 
 3. **Test locally**:
    ```sh
-   # For package recipes
-   cd packages/core/mypackage
-   make fetch extract patch configure build install
+   # Build inside develop container
+   docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
+     sh bootstrap/build-all.sh --package mypackage
 
-   # For scripts
+   # License audit
    sh scripts/license-audit.sh --recipes --verbose
-   shellcheck scripts/*.sh  # optional but recommended
    ```
 
 4. **Open a Pull Request**:
