@@ -4,25 +4,10 @@ version = "1.4.1"
 license = "Apache-2.0"
 pre_bootstrap = false
 description = "OCI container runtime"
-# From-source build requires Go compiler (not yet bootstrapped on jonerix)
 
 [build]
 system = "custom"
-build = """
-set -e
-ARCH=$(uname -m)
-if [ "$ARCH" = "aarch64" ]; then
-  URL="https://github.com/opencontainers/runc/releases/download/v1.4.1/runc.arm64"
-  SHA="80d5757c46152c35151621cf394ee08cec881716169d0fdd40f9ce124d3c85f5"
-else
-  URL="https://github.com/opencontainers/runc/releases/download/v1.4.1/runc.amd64"
-  SHA="b6d50dad89a420cafcdc0eebf4bed132a45b161d5bc1ba4ddd8cc4422d24a983"
-fi
-curl -fsSL "$URL" -o runc
-printf '%s  runc\n' "$SHA" | sha256sum -c
-mkdir -p "$DESTDIR/bin"
-install -m755 runc "$DESTDIR/bin/runc"
-"""
+build = ""
 install = ""
 
 [depends]

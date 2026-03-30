@@ -7,35 +7,7 @@ description = "Lightweight, fast, and standards-conformant C library"
 
 [build]
 system = "custom"
-build = """
-set -e
-apk add --no-cache musl musl-dev linux-headers
-for pkg in musl musl-dev linux-headers; do
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
-    f="${f%/}"
-    src="/${f}"
-    [ -e "$src" ] || continue
-    dst="${DESTDIR}/${f}"
-    mkdir -p "$(dirname "$dst")"
-    cp -aP "$src" "$dst" 2>/dev/null || true
-  done
-done
-if [ -d "${DESTDIR}/usr" ]; then
-  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
-  rm -rf "${DESTDIR}/usr"
-fi
-
-# Create musl stub library symlinks (musl includes these in libc)
-LIBC=$(ls ${DESTDIR}/lib/libc.musl-*.so.1 2>/dev/null | head -1)
-if [ -n "$LIBC" ]; then
-  LIBC_NAME=$(basename "$LIBC")
-  for stub in libm libpthread libcrypt librt libdl libutil libresolv libxnet libatomic; do
-    ln -sf "$LIBC_NAME" "${DESTDIR}/lib/${stub}.so"
-    ln -sf "$LIBC_NAME" "${DESTDIR}/lib/${stub}.so.1"
-  done
-  ln -sf "$LIBC_NAME" "${DESTDIR}/lib/libc.so"
-fi
-"""
+build = ""
 install = ""
 
 [depends]
