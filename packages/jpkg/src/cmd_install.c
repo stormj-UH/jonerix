@@ -86,22 +86,17 @@ static int install_files(const char *stage_dir, const char *dest_root) {
      * then restore the /usr symlink.
      */
     snprintf(cmd, sizeof(cmd),
-             /* Flatten usr/ in staging */
+             /* Flatten usr/ in staging (belt-and-suspenders with pkg_extract) */
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
              "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi && "
-             /* Temporarily remove /usr symlink on root to prevent
-              * tar from following it */
-             "USR_WAS_LINK=false; "
-             "if [ -L '%s/usr' ]; then rm -f '%s/usr'; USR_WAS_LINK=true; fi && "
-             /* Copy using tar — staging is flattened, no usr/ paths */
-             "cd '%s' && tar cf - . | tar xf - -C '%s' && "
-             /* Restore /usr symlink */
-             "if $USR_WAS_LINK; then ln -sf / '%s/usr' 2>/dev/null || true; fi",
+             /* Copy staging to root. Since staging is flattened (no usr/),
+              * tar won't encounter usr/ paths. But dest may have /usr -> /
+              * symlink — tar doesn't follow it for files WITHOUT usr/ prefix.
+              * This is safe because our staging has /bin/, /lib/ etc directly. */
+             "cd '%s' && tar cf - . | tar xf - --no-same-owner -C '%s'",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
-             dest_root, dest_root,
-             stage_dir, dest_root,
-             dest_root);
+             stage_dir, dest_root);
     return system(cmd);
 }
 
