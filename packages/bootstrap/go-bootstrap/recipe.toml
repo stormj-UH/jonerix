@@ -23,9 +23,10 @@ if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
   echo "SKIP: Go 1.4 does not support aarch64. Use prebuilt Go (core/go) to bootstrap."
   exit 1
 fi
+mkdir -p /var/tmp /tmp
 cd src
 CGO_ENABLED=0 CC=clang GOROOT_FINAL=/lib/go-bootstrap \
-  bash ./make.bash
+  TMPDIR=/tmp bash ./make.bash
 """
 install = """
 mkdir -p "$DESTDIR/lib/go-bootstrap"
