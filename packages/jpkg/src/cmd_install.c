@@ -73,9 +73,21 @@ static pkg_file_t *build_file_manifest(const char *root_dir, const char *prefix)
 /* Copy extracted files from staging to root filesystem */
 static int install_files(const char *stage_dir, const char *dest_root) {
     char cmd[2048];
-    /* Use tar to preserve permissions and create directories */
+    /*
+     * Copy files from staging to root using cp -a.
+     * We avoid tar here because on merged-usr systems (/usr -> /),
+     * tar follows symlinks on the destination and can corrupt binaries.
+     * cp -a preserves permissions and doesn't follow dest symlinks.
+     *
+     * First ensure usr/ is flattened in staging (belt-and-suspenders
+     * with the flatten in pkg_extract).
+     */
     snprintf(cmd, sizeof(cmd),
-             "cd '%s' && tar cf - . | tar xf - -C '%s'",
+             "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
+             "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi && "
+             "cp -a '%s/.' '%s/'",
+             stage_dir, stage_dir,
+             stage_dir, stage_dir, stage_dir,
              stage_dir, dest_root);
     return system(cmd);
 }
