@@ -89,6 +89,11 @@ RUN apk add --no-cache ca-certificates && \
 # sh symlink: system() in jpkg (and other tools) requires /bin/sh
 RUN ln -sf mksh /jonerix/bin/sh
 
+# tar → bsdtar: toybox tar can't handle symlinks in jpkg archives;
+# bsdtar handles them correctly. Must run AFTER jpkg install since
+# toybox creates its own tar symlink that overwrites bsdtar's.
+RUN ln -sf bsdtar /jonerix/bin/tar
+
 # ssh symlink (dbclient is dropbear's SSH client)
 RUN ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
