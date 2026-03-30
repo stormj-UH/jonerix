@@ -1,0 +1,27 @@
+[package]
+name = "pip"
+version = "26.0.1"
+license = "MIT"
+description = "Python package installer"
+
+[source]
+url = "https://files.pythonhosted.org/packages/48/83/0d7d4e9efe3344b8e2fe25d93be44f64b65364d3c8d7bc6dc90198d5422e/pip-26.0.1.tar.gz"
+sha256 = "c4037d8a277c89b320abe636d59f91e6d0922d08a05b60e85e53b296613346d8"
+
+[build]
+system = "custom"
+configure = ""
+build = ""
+install = """set -e
+python3 setup.py install --prefix=/ --root="$DESTDIR" 2>/dev/null || \
+  python3 -m pip install --no-deps --no-build-isolation --prefix=/ --root="$DESTDIR" . 2>/dev/null || \
+  { mkdir -p "$DESTDIR/lib/python3/pip" "$DESTDIR/bin"
+    cp -a src/pip/. "$DESTDIR/lib/python3/pip/" 2>/dev/null || cp -a pip/. "$DESTDIR/lib/python3/pip/"
+    printf '#!/bin/sh\nexec python3 -m pip "$@"\n' > "$DESTDIR/bin/pip"
+    chmod 755 "$DESTDIR/bin/pip"
+    ln -sf pip "$DESTDIR/bin/pip3"; }
+"""
+
+[depends]
+runtime = ["python3"]
+build = ["python3"]
