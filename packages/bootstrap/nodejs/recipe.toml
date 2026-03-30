@@ -1,12 +1,12 @@
 [package]
 name = "nodejs"
-version = "22.12.0"
+version = "24.14.1"
 license = "MIT"
-description = "JavaScript runtime built on V8"
+description = "JavaScript runtime built on V8 (LTS, bundles npm 11.11.0)"
 
 [source]
-url = "https://nodejs.org/dist/v22.12.0/node-v22.12.0.tar.gz"
-sha256 = "3157e7c002b6e964bdbefb331ec38db1e2dceb064ab11c038275155461b22ce3"
+url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1.tar.gz"
+sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
 
 [build]
 system = "custom"
