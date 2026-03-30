@@ -1,0 +1,87 @@
+# jonerix — Develop image (jpkg-only, self-hosting proof)
+#
+# Pure jpkg installation — no Alpine overlay. This proves jonerix can
+# build its own development environment using only jpkg packages.
+#
+# Prerequisites:
+#   - jonerix-minimal must include bsdtar (for jpkg symlink extraction)
+#   - All referenced packages must be published to the GitHub release
+#
+# Build: docker build -f Dockerfile.develop-jpkg --tag jonerix-develop:latest .
+
+ARG MINIMAL_IMAGE=jonerix-minimal:latest
+FROM ${MINIMAL_IMAGE}
+
+SHELL ["/bin/mksh", "-c"]
+
+# ── Install all development packages via jpkg ────────────────────────────
+# Order: base libs → compilers → build tools → languages → utilities
+RUN jpkg update && jpkg install \
+    musl \
+    ncurses \
+    openssl \
+    zlib \
+    xz \
+    lz4 \
+    zstd \
+    llvm \
+    rust \
+    go \
+    cmake \
+    bmake \
+    samurai \
+    flex \
+    bc \
+    perl \
+    python3 \
+    pip \
+    nodejs \
+    npm \
+    gitoxide \
+    micro \
+    mandoc \
+    pigz \
+    fastfetch \
+    curl \
+    doas \
+    dropbear
+
+# ── Symlinks for standard tool names ────────────────────────────────────
+# Build systems expect cc, make, ar, etc. — point them to our tools.
+RUN \
+    # Compiler
+    ln -sf clang /bin/cc && \
+    ln -sf clang++ /bin/c++ && \
+    # Linker
+    ln -sf ld.lld /bin/ld && \
+    # Binutils (LLVM)
+    ln -sf llvm-ar /bin/ar && \
+    ln -sf llvm-nm /bin/nm && \
+    ln -sf llvm-ranlib /bin/ranlib && \
+    ln -sf llvm-strip /bin/strip && \
+    ln -sf llvm-objcopy /bin/objcopy && \
+    ln -sf llvm-objdump /bin/objdump && \
+    # Build tools
+    ln -sf bmake /bin/make && \
+    ln -sf samu /bin/ninja && \
+    # Python
+    ln -sf python3 /bin/python && \
+    # Editor
+    ln -sf micro /bin/editor && \
+    ln -sf micro /bin/vi
+
+# ── Environment ─────────────────────────────────────────────────────────
+ENV PATH=/bin
+ENV HOME=/root
+ENV SHELL=/bin/mksh
+ENV TERM=xterm
+ENV EDITOR=micro
+ENV VISUAL=micro
+ENV PAGER=less
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+WORKDIR /root
+
+ENTRYPOINT ["/bin/mksh"]
+CMD ["-l"]
