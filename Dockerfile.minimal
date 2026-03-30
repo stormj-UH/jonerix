@@ -51,6 +51,7 @@ RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/downloa
 
 # Install all packages via jpkg (jonerix building jonerix)
 RUN jpkg update && \
+    jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
         musl mksh toybox bsdtar dropbear openrc openssl curl zstd
 
