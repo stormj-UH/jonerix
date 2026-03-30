@@ -1,0 +1,18 @@
+[package]
+name = "bsdtar"
+version = "3.8.5"
+license = "Apache-2.0"
+description = "BSD tar from libarchive (handles symlinks correctly)"
+
+[build]
+system = "custom"
+configure = ""
+build = ""
+install = """
+mkdir -p "$DESTDIR/bin"
+ln -sf bsdtar "$DESTDIR/bin/tar"
+"""
+
+[depends]
+runtime = ["libarchive"]
+build = []

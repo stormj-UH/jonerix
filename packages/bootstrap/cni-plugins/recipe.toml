@@ -1,0 +1,31 @@
+[package]
+name = "cni-plugins"
+version = "1.9.1"
+license = "Apache-2.0"
+description = "CNI network plugins for container networking"
+
+[source]
+url = "https://github.com/containernetworking/plugins/archive/refs/tags/v1.9.1.tar.gz"
+sha256 = "34bd82d47e981940751619c9cc44c095bb90bfcaf8d71865cbb822c37690a764"
+
+[build]
+system = "custom"
+configure = ""
+build = """
+mkdir -p /var/tmp /tmp
+export TMPDIR=/tmp
+export GOPATH=/tmp/gopath
+export GOPROXY=https://proxy.golang.org,direct
+
+CGO_ENABLED=0 ./build_linux.sh
+"""
+install = """
+mkdir -p "$DESTDIR/lib/cni"
+for plugin in bin/*; do
+  install -m755 "$plugin" "$DESTDIR/lib/cni/"
+done
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["go-current"]
