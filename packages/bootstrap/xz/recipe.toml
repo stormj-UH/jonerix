@@ -1,0 +1,20 @@
+[package]
+name = "xz"
+version = "5.8.2"
+license = "0BSD"
+description = "XZ compression utilities and liblzma"
+
+[source]
+url = "https://github.com/tukaani-project/xz/releases/download/v5.8.2/xz-5.8.2.tar.gz"
+sha256 = "ce09c50a5962786b83e5da389c90dd2c15ecd0980a258dd01f70f9e7ce58a8f1"
+
+[build]
+system = "configure"
+configure = "CC=clang ./configure --prefix=/ --disable-static --enable-shared --disable-doc --disable-nls"
+build = "make -j$(nproc)"
+install = """make install DESTDIR=$DESTDIR
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]
