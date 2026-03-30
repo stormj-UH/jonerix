@@ -1,42 +1,26 @@
 # jonerix — Minimal Permissive Linux Distribution
-# Multi-stage build: build only jpkg → install everything else via jpkg packages
+# jonerix builds jonerix: uses existing jonerix:minimal to bootstrap the next.
+# Zero Alpine. Zero GPL runtime.
 #
-# Components (all permissively licensed — zero GPL runtime):
-#   jpkg           (MIT)          — built statically from source (bootstrapper)
+# Components (all permissively licensed):
+#   jpkg           (MIT)          — pre-built static binary
 #   musl libc      (MIT)          — via jpkg
-#   toybox 0.8.11  (0BSD)         — via jpkg (pre-built)
-#   bsdtar         (Apache-2.0)   — via jpkg (symlinked as tar for jpkg)
+#   toybox 0.8.11  (0BSD)         — via jpkg
+#   bsdtar         (Apache-2.0)   — via jpkg (replaces toybox tar)
 #   mksh R59c      (MirOS)        — via jpkg
 #   dropbear SSH   (MIT)          — via jpkg
 #   openrc         (BSD-2-Clause) — via jpkg
 #   openssl        (Apache-2.0)   — via jpkg
 #   curl           (MIT)          — via jpkg
 #   zstd           (BSD)          — via jpkg
-#   ca-certificates (MPL-2.0)    — from Alpine (cert bundle, not jpkg)
 #
 # Build: docker build -f Dockerfile.minimal --tag jonerix-minimal:latest .
 
 # ============================================================
-# Stage 0: Build jpkg (the only source build)
+# Stage 0: Download + install packages using existing jonerix
 # ============================================================
-FROM alpine:latest AS jpkg-builder
-
-RUN apk add --no-cache clang lld musl-dev make zstd-dev zstd-static linux-headers
-
-COPY packages/jpkg/ /src/
-RUN cd /src && \
-    find . -name '*.o' -o -name '*.d' | xargs rm -f && rm -f jpkg && \
-    make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg -j$(nproc) && \
-    strip jpkg
-
-# ============================================================
-# Stage 1: Assemble rootfs using jpkg packages
-# ============================================================
-FROM alpine:latest AS rootfs
-
-RUN apk add --no-cache curl ca-certificates zstd tar libarchive-tools
-
-COPY --from=jpkg-builder /src/jpkg /usr/local/bin/jpkg
+ARG BUILDER=ghcr.io/stormj-uh/jonerix:minimal
+FROM ${BUILDER} AS rootfs
 
 # Create rootfs skeleton
 RUN mkdir -p \
@@ -60,44 +44,29 @@ RUN mkdir -p \
     /jonerix/tmp && \
     chmod 1777 /jonerix/tmp && chmod 700 /jonerix/root
 
-# Configure jpkg repo (no /usr symlink yet — would redirect usr/bin/* to host /)
+# Configure jpkg repo
 COPY config/defaults/etc/jpkg/keys/ /jonerix/etc/jpkg/keys/
 RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/download/packages"\n' \
         > /jonerix/etc/jpkg/repos.conf
 
-# Install bsdtar on Alpine HOST first so jpkg can use it for extraction.
-# Alpine's tar can't handle symlinks in jpkg archives, causing broken packages.
-RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
-
-# Install all packages via jpkg (now using bsdtar for extraction)
-RUN jpkg --root /jonerix update && \
+# Install all packages via jpkg (jonerix building jonerix)
+RUN jpkg update && \
     jpkg --root /jonerix install \
-        musl mksh toybox bsdtar dropbear openrc openssl nghttp2 curl zstd
+        musl mksh toybox bsdtar dropbear openrc openssl curl zstd
 
-# Flatten usr/ into / (merged-usr layout), then add the symlink
+# Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \
         cp -a /jonerix/usr/. /jonerix/ && rm -rf /jonerix/usr; \
     fi && \
     ln -s / /jonerix/usr
 
-# Copy jpkg itself into the rootfs
-RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg
+# Essential symlinks
+RUN ln -sf mksh /jonerix/bin/sh && \
+    ln -sf bsdtar /jonerix/bin/tar && \
+    ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
-# sh symlink: system() in jpkg (and other tools) requires /bin/sh
-RUN ln -sf mksh /jonerix/bin/sh
-
-# tar → bsdtar: toybox tar can't handle symlinks in jpkg archives;
-# bsdtar handles them correctly. Must run AFTER jpkg install since
-# toybox creates its own tar symlink that overwrites bsdtar's.
-RUN ln -sf bsdtar /jonerix/bin/tar
-
-# CA certificates (from Alpine — not a jpkg package, just a cert bundle)
-RUN apk add --no-cache ca-certificates && \
-    mkdir -p /jonerix/etc/ssl/certs && \
-    cp /etc/ssl/certs/ca-certificates.crt /jonerix/etc/ssl/certs/
-
-# ssh symlink (dbclient is dropbear's SSH client)
-RUN ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
+# CA certificates (downloaded from curl.se — no Alpine needed)
+RUN curl -fsSL https://curl.se/ca/cacert.pem -o /jonerix/etc/ssl/certs/ca-certificates.crt
 
 # --- Default config files ---
 COPY config/defaults/etc/hostname     /jonerix/etc/hostname
@@ -117,11 +86,14 @@ COPY scripts/license-audit.sh /jonerix/bin/license-audit
 RUN chmod 755 /jonerix/bin/license-audit
 
 # ============================================================
-# Stage 2: Final image — FROM scratch, zero GPL runtime
+# Stage 1: Final image — FROM scratch, zero dependencies
 # ============================================================
 FROM scratch
 
 COPY --from=rootfs /jonerix/ /
+
+# Pre-built static jpkg binary (150KB, no shared lib deps)
+COPY bin/jpkg-aarch64 /bin/jpkg
 
 ENV PATH=/bin
 ENV HOME=/root
