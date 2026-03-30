@@ -27,8 +27,8 @@ RUN jpkg update && \
     for pkg in \
       musl ncurses openssl zlib xz lz4 zstd \
       llvm rust go \
-      cmake bmake samurai flex bc byacc \
-      perl python3 pip nodejs npm \
+      cmake bmake samurai flex bc byacc m4 \
+      perl python3 pip nodejs \
       gitoxide ripgrep micro mandoc pigz fastfetch \
       curl doas dropbear \
       containerd runc nerdctl; \

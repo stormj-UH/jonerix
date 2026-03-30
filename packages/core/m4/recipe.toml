@@ -1,0 +1,32 @@
+[package]
+name = "m4"
+version = "1.4.20"
+license = "GPL-3.0"
+pre_bootstrap = true
+description = "GNU m4 macro processor (build tool only, not in runtime)"
+
+[build]
+system = "custom"
+build = """
+set -e
+apk add --no-cache m4
+for pkg in m4; do
+  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+  done
+done
+if [ -d "${DESTDIR}/usr" ]; then
+  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+  rm -rf "${DESTDIR}/usr"
+fi
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []
