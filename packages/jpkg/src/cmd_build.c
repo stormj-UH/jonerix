@@ -316,6 +316,18 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
     char *toml_str = toml_serialize(doc);
     toml_free(doc);
 
+    /* Flatten usr/ in dest_dir before packaging.
+     * Many build systems install to usr/bin/, usr/lib/ etc. even with
+     * --prefix=/. On jonerix merged-usr layout, these must be at
+     * /bin/, /lib/ directly. Flatten here so ALL jpkg archives are
+     * consistent regardless of build system behavior. */
+    char flatten[2048];
+    snprintf(flatten, sizeof(flatten),
+             "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
+             "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi",
+             dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
+    system(flatten);
+
     /* Create zstd-compressed tarball of dest_dir contents */
     char tar_path[512];
     snprintf(tar_path, sizeof(tar_path), "/tmp/jpkg-build-%s-%d.tar.zst",
