@@ -22,10 +22,12 @@ LLVM_LINKER=$(apk info 2>/dev/null | grep '^llvm[0-9].*linker' | head -1)
 # llvm21 base package provides llvm-ar, llvm-nm, llvm-ranlib (Apache-2.0)
 LLVM_PKG=$(apk info 2>/dev/null | grep '^llvm[0-9]' | grep -v 'libs\|linker\|dev\|test\|tools' | head -1)
 
+# ONLY extract clang/lld/llvm packages and their runtime deps.
+# Do NOT extract musl-dev, linux-headers, gcc, libstdc++-dev — those
+# are separate jpkg packages and would overwrite system files.
 for pkg in "$CLANG_PKG" "$CLANG_LIBS" "$CLANG_HDRS" \
            "$LLD_PKG" "$LLD_LIBS" "$LLVM_LIBS" "$LLVM_LINKER" "$LLVM_PKG" \
-           gcc libstdc++ libgcc libffi xz-libs libxml2 jansson \
-           musl-dev linux-headers libstdc++-dev; do
+           libstdc++ libgcc libffi xz-libs libxml2 jansson; do
   [ -z "$pkg" ] && continue
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
