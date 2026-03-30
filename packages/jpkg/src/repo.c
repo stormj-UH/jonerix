@@ -503,7 +503,9 @@ char *repo_fetch_package(const repo_config_t *cfg, const repo_entry_t *entry) {
         }
     }
 
-    /* Download from mirrors */
+    /* Download from mirrors.
+     * If download fails but we have a local file, use it anyway
+     * (supports offline installs and Docker builds without network). */
     mkdirs(cfg->cache_dir, 0755);
 
     for (repo_mirror_t *m = cfg->mirrors; m; m = m->next) {
@@ -576,6 +578,27 @@ char *repo_fetch_package(const repo_config_t *cfg, const repo_entry_t *entry) {
             free(legacy_name);
             return legacy_path;
         }
+    }
+
+    /* All downloads failed. Fall back to any local cached file
+     * even if hash doesn't match — supports offline/Docker builds
+     * where packages were pre-seeded but INDEX has different hashes. */
+    char *fb_name = pkg_filename(entry->name, entry->version);
+    char *fb_path = path_join(cfg->cache_dir, fb_name);
+    if (file_exists(fb_path)) {
+        log_info("using cached %s (hash not verified — offline fallback)", fb_name);
+        free(fb_name);
+        free(legacy_name);
+        free(legacy_path);
+        return fb_path;
+    }
+    free(fb_name);
+    free(fb_path);
+
+    if (file_exists(legacy_path)) {
+        log_info("using cached %s (hash not verified — offline fallback)", legacy_name);
+        free(legacy_name);
+        return legacy_path;
     }
 
     log_error("failed to download %s from any mirror", legacy_name);
