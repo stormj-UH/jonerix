@@ -247,6 +247,20 @@ int pkg_extract(const char *jpkg_path, const char *dest_dir) {
         return -1;
     }
 
+    /*
+     * Flatten usr/ to support merged-usr layout.
+     * jpkg archives may contain usr/bin/, usr/lib/ etc. On jonerix,
+     * /usr is a symlink to / so extracting usr/ paths over the symlink
+     * corrupts the filesystem. Instead, merge usr/ contents into the
+     * root and remove the usr/ directory.
+     */
+    char flatten_cmd[1024];
+    snprintf(flatten_cmd, sizeof(flatten_cmd),
+             "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
+             "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi",
+             dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
+    system(flatten_cmd);
+
     log_debug("extracted %s-%s to %s", meta->name, meta->version, dest_dir);
     pkg_meta_free(meta);
     free(data);
