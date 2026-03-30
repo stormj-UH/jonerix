@@ -10,101 +10,162 @@
   ========= permissive + linux =========
 ```
 
-**A Linux distribution with a strictly permissive userland. For when freedom isn't free.**
+**A fully self-hosting Linux distribution with zero GPL in userland.**
 
 ## Overview
 
-jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is the one exception. At present, there is no realistic permissively licensed alternative with comparable hardware support, container support, and general maturity.
+jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is the one exception.
 
-That exception matters for another reason as well: in many containerized deployments, a distributor may not even be providing the kernel. This is not legal advice, and anyone making legal or business decisions should consult a lawyer. Even so, the practical result is that jonerix minimizes copyleft exposure everywhere it realistically can.
+46 packages build from source on jonerix itself. The system compiles its own compiler (Clang/LLVM), its own languages (Go from C, Rust from a bootstrap binary), and its own container runtime. No GNU toolchain, no GCC, no GPL coreutils.
 
-The point of jonerix is not moral instruction. It is not a sermon against copyleft, and it does not require anyone to agree with its premises. It is a distribution for people and organizations who want the lowest possible licensing friction in userland, especially startups that may see copyleft obligations as a barrier to entry. Many major copylefted projects are backed by large institutions that can absorb those costs more easily. jonerix is aimed at those who would rather build on a permissive stack.
+The point of jonerix is not moral instruction. It is not a sermon against copyleft, and it does not require anyone to agree with its premises. It is a distribution for people and organizations who want the lowest possible licensing friction in userland. If that use case does not matter to you, then jonerix is probably not for you.
 
-You do not have to agree with that reasoning. This is simply the use case. If that use case does not matter to you, then jonerix is probably not for you.
+### Self-Hosting
 
-Most Linux distributions struggle to explain, in plain terms, what they are actually for. jonerix does not. Its purpose is to provide a practical, self-hosting Linux system built on a permissively licensed userland.
+jonerix can rebuild itself from source using only the tools it ships:
 
-The system ships with a full development toolchain, including Python, Node.js, and Clang/LLVM, and is designed to be fully self-hosting. jonerix can build its own kernel and rebuild the entire distribution from source using only the permissive tools it provides.
+- **C/C++**: Clang/LLVM/LLD built from source on jonerix
+- **Go**: Full bootstrap chain from C source (C &rarr; Go 1.4 &rarr; 1.17 &rarr; 1.20 &rarr; 1.22 &rarr; 1.24 &rarr; 1.26)
+- **Rust**: Built from source using system LLVM and a bootstrap rustc
+- **Python 3 + Node.js**: Built from source with Clang/musl
+- **Container runtime**: containerd + runc + nerdctl + CNI plugins, all from source
+
+The jpkg-only develop image (`Dockerfile.develop`) installs every tool from jpkg packages with no Alpine overlay. It compiles C, Go, and Rust programs out of the box.
+
 ## Quick Start
 
 ```sh
-brew install container
-container system start
+# Minimal runtime (shell, init, network, SSH)
+docker build -f Dockerfile.minimal --tag jonerix-minimal:latest .
+docker run -it jonerix-minimal:latest
+
+# Development environment (compilers, languages, build tools)
+docker build -f Dockerfile.develop --tag jonerix-develop:latest .
+docker run -it jonerix-develop:latest
+
+# Full image (runtime + all dev tools)
+docker build --tag jonerix:latest .
+docker run -it jonerix:latest
 ```
 
-Three image variants are available depending on how much you need:
+### Building Packages from Source
 
-**Minimal** — bare essentials (toybox, jpkg, dropbear, openrc, mksh):
 ```sh
-container build -f Dockerfile.minimal --tag jonerix-minimal:latest .
-container run --interactive --name jonerix jonerix-minimal:latest
-```
-
-**Develop** — minimal + clang, python3, node, cmake, perl:
-```sh
-container build -f Dockerfile.develop --tag jonerix-develop:latest .
-container run --interactive --name jonerix jonerix-develop:latest
-```
-
-**Bootstrap** — full build including alpine package manager:
-```sh
-container build --tag jonerix:latest .
-container run --interactive --name jonerix jonerix:latest
-```
-
-To build all three variants at once:
-```sh
-make images
+# Run inside jonerix-develop container
+docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
+  sh bootstrap/build-all.sh --output /workspace/.build/pkgs
 ```
 
 ## What's Inside
 
-| Component | Version | License | Role |
-|-----------|---------|---------|------|
-| toybox | 0.8.11 | 0BSD | Coreutils |
-| mksh | R59c | MirOS/ISC | Shell |
-| jpkg | 1.0.0 | MIT | Package manager |
-| Python | 3.12 | PSF | Scripting |
-| Node.js | v24 | MIT | JavaScript runtime |
-| Clang/LLVM | 21 | Apache-2.0 | C/C++ compiler |
-| LLD | 21 | Apache-2.0 | Linker |
-| Dropbear | latest | MIT | SSH |
-| pico | latest | Apache-2.0 | Editor |
-| curl | latest | MIT | HTTP client |
-| bmake | latest | MIT | BSD make |
-| flex | latest | BSD | Lexer generator |
-| bc | latest | BSD | Calculator |
-| perl | latest | Artistic-2.0 | Scripting |
-| fastfetch | latest | MIT | System info |
+### Core System
+
+| Component | License | Role |
+|-----------|---------|------|
+| musl | MIT | C standard library |
+| toybox | 0BSD | Coreutils (ls, cp, cat, grep, ...) |
+| uutils | MIT | Extended coreutils (sort, wc, tr, ...) |
+| mksh | MirOS | Shell |
+| jpkg | MIT | Package manager |
+| OpenRC | BSD-2-Clause | Init system |
+| dropbear | MIT | SSH server/client |
+
+### Compilers and Languages
+
+| Component | License | Role |
+|-----------|---------|------|
+| Clang/LLVM/LLD | Apache-2.0 | C/C++ compiler, linker, toolchain |
+| Rust | MIT/Apache-2.0 | Systems language (from source) |
+| Go | BSD-3-Clause | Go language (bootstrapped from C) |
+| Python 3 | PSF-2.0 | Scripting language |
+| Node.js | MIT | JavaScript runtime |
+| Perl | Artistic-2.0 | Scripting language |
+
+### Build Tools
+
+| Component | License | Role |
+|-----------|---------|------|
+| cmake | BSD-3-Clause | Build system generator |
+| bmake | MIT | BSD make |
+| samurai | Apache-2.0 | Ninja-compatible build tool |
+| meson | Apache-2.0 | Build system (via pip) |
+| flex | BSD-2-Clause | Lexer generator |
+| byacc | Public Domain | Parser generator |
+| bc | BSD-2-Clause | Calculator |
+
+### Networking and Services
+
+| Component | License | Role |
+|-----------|---------|------|
+| curl | MIT | HTTP client |
+| OpenSSL | Apache-2.0 | TLS library |
+| unbound | BSD-3-Clause | DNS resolver |
+| dhcpcd | BSD-2-Clause | DHCP client |
+| ifupdown-ng | ISC | Network configuration |
+
+### Container Runtime
+
+| Component | License | Role |
+|-----------|---------|------|
+| containerd | Apache-2.0 | Container runtime |
+| runc | Apache-2.0 | OCI runtime |
+| nerdctl | Apache-2.0 | Docker-compatible CLI |
+| CNI plugins | Apache-2.0 | Container networking |
+
+### Utilities
+
+| Component | License | Role |
+|-----------|---------|------|
+| micro | MIT | Terminal text editor |
+| gitoxide | MIT/Apache-2.0 | Git implementation in Rust |
+| ripgrep | MIT | Fast recursive grep |
+| mandoc | ISC | Man page tools |
+| pigz | Zlib | Parallel gzip |
+| bsdtar | BSD-2-Clause | Archive tool (libarchive) |
+| doas | ISC | Privilege escalation |
+| fastfetch | MIT | System information |
 
 ## Package Manager (jpkg)
 
-jpkg is a custom, MIT-licensed package manager purpose-built for jonerix. Packages are zstd-compressed tarballs signed with Ed25519.
+jpkg is a custom, MIT-licensed package manager built for jonerix. Packages are zstd-compressed tarballs signed with Ed25519.
 
 ```sh
-jpkg update
-jpkg search fastfetch
-jpkg install fastfetch
-fastfetch
+jpkg update                # fetch latest package index
+jpkg search fastfetch      # search available packages
+jpkg install fastfetch     # install a package
+jpkg list                  # list installed packages
 ```
 
-## Building from Source
+Packages are hosted on GitHub Releases and built from source in CI for both x86_64 and aarch64.
 
-jonerix is bootstrapped from Alpine Linux through a multi-stage build process. Alpine is used only as a build host -- nothing from it enters the final image.
+## Architecture
 
-```sh
-sh bootstrap/stage0.sh    # Install Alpine build dependencies
-sh bootstrap/stage1.sh    # Cross-compile all components with Clang/musl
-sh bootstrap/stage2.sh    # Assemble clean rootfs (no GPL artifacts)
-```
+### Merged /usr Layout
 
-An optional verification stage confirms the system is fully self-hosting:
+jonerix uses a merged `/usr` layout where `/usr` is a symlink to `/`. All binaries live in `/bin`, all libraries in `/lib`, all headers in `/include`.
 
-```sh
-sh bootstrap/stage3-verify.sh
-```
+### Bootstrap Process
 
-See `bootstrap/config.sh` for version pins, SHA256 hashes, and compiler flags.
+The system bootstraps through a layered approach:
+
+1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
+2. **All packages** are installed from the jpkg repository into a clean rootfs
+3. **Final image** is assembled FROM scratch with zero GPL runtime components
+
+For from-source builds, `bootstrap/build-all.sh` builds packages in dependency order inside a jonerix-develop container, using `packages/bootstrap/*/recipe.toml` recipes.
+
+### Licensing Rule
+
+Every package must carry a permissive license:
+
+| Allowed | Not Allowed |
+|---------|-------------|
+| MIT, BSD-2-Clause, BSD-3-Clause | GPL, LGPL, AGPL |
+| Apache-2.0, ISC, 0BSD | SSPL, EUPL |
+| Zlib, PSF-2.0, Artistic-2.0 | CC-BY-SA |
+| Public Domain, MirOS | Any copyleft |
+
+bash (GPL-3.0) is used only as a build-time tool inside Alpine and never ships in the final image.
 
 ## fastfetch
 
