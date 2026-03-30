@@ -64,10 +64,13 @@ COPY config/defaults/etc/jpkg/keys/ /jonerix/etc/jpkg/keys/
 RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/download/packages"\n' \
         > /jonerix/etc/jpkg/repos.conf
 
-# Install all packages via jpkg
+# Install bsdtar FIRST (static binary, no symlink deps — toybox tar can extract it)
+# Then replace tar with bsdtar so subsequent jpkg installs handle symlinks correctly
 RUN jpkg --root /jonerix update && \
+    jpkg --root /jonerix install bsdtar && \
+    ln -sf bsdtar /jonerix/bin/tar && \
     jpkg --root /jonerix install \
-        musl mksh toybox bsdtar dropbear openrc openssl curl zstd
+        musl mksh toybox dropbear openrc openssl curl zstd
 
 # Flatten usr/ into / (merged-usr layout), then add the symlink
 RUN if [ -d /jonerix/usr ]; then \
@@ -84,10 +87,6 @@ RUN apk add --no-cache ca-certificates && \
 
 # sh symlink: system() in jpkg (and other tools) requires /bin/sh
 RUN ln -sf mksh /jonerix/bin/sh
-
-# tar symlink: jpkg uses tar for package extraction; bsdtar handles
-# symlinks correctly (toybox tar can't, causing jpkg install failures)
-RUN ln -sf bsdtar /jonerix/bin/tar
 
 # ssh symlink (dbclient is dropbear's SSH client)
 RUN ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
