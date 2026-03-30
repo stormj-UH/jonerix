@@ -1,0 +1,20 @@
+[package]
+name = "ca-certificates"
+version = "20241121"
+license = "MPL-2.0"
+pre_bootstrap = true
+description = "Mozilla CA certificate bundle for TLS verification"
+
+[build]
+system = "custom"
+build = """
+set -e
+apk add --no-cache ca-certificates-bundle
+mkdir -p "$DESTDIR/etc/ssl/certs"
+cp -a /etc/ssl/certs/ca-certificates.crt "$DESTDIR/etc/ssl/certs/"
+"""
+install = ""
+
+[depends]
+runtime = []
+build = []
