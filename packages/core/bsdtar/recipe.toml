@@ -9,8 +9,8 @@ description = "BSD tar from libarchive (handles symlinks correctly)"
 system = "custom"
 build = """
 set -e
-apk add --no-cache libarchive-tools libarchive acl-libs
-for pkg in libarchive-tools libarchive acl-libs; do
+apk add --no-cache libarchive-tools libarchive acl-libs expat libbz2
+for pkg in libarchive-tools libarchive acl-libs expat libbz2; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
@@ -24,10 +24,11 @@ if [ -d "${DESTDIR}/usr" ]; then
   cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
   rm -rf "${DESTDIR}/usr"
 fi
-ln -sf bsdtar "${DESTDIR}/bin/tar"
+# Don't symlink as tar — keep toybox tar for basic jpkg operations
+# bsdtar is available as /bin/bsdtar for scripts that need symlink support
 """
 install = ""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "openssl", "zstd", "lz4", "xz", "zlib"]
 build = []
