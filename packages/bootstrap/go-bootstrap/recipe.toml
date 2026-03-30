@@ -16,6 +16,13 @@ sha256 = "f4ff5b5eb3a3cae1c993723f3eab519c5bae18866b5e5f96fe1102f0cb5c3e52"
 system = "custom"
 configure = ""
 build = """
+# Go 1.4 only supports amd64/386/arm — not arm64/aarch64.
+# On aarch64, skip the build (use prebuilt Go from core/go instead).
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+  echo "SKIP: Go 1.4 does not support aarch64. Use prebuilt Go (core/go) to bootstrap."
+  exit 1
+fi
 cd src
 CGO_ENABLED=0 CC=clang GOROOT_FINAL=/lib/go-bootstrap \
   bash ./make.bash
