@@ -6,7 +6,7 @@ description = "HTTP/2 C library — needed by curl for GitHub downloads"
 
 [source]
 url = "https://github.com/nghttp2/nghttp2/releases/download/v1.65.0/nghttp2-1.65.0.tar.xz"
-sha256 = "FIXME"
+sha256 = "f1b9df5f02e9942b31247e3d415483553bc4ac501c87aa39340b6d19c92a9331"
 
 [build]
 system = "cmake"
