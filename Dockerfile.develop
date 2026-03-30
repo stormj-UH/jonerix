@@ -3,22 +3,18 @@
 # Pure jpkg installation — no Alpine overlay. jonerix builds its own
 # development environment using only jpkg packages.
 #
-# Prerequisites:
-#   - jonerix-minimal must include bsdtar (for jpkg symlink extraction)
-#   - All referenced packages must be published to the GitHub release
+# Shell: zsh (MIT, bash-compatible) — replaces mksh for develop
 #
 # Build: docker build -f Dockerfile.develop --tag jonerix-develop:latest .
 #
 # Bootstrap usage (build packages from source inside this container):
 #   docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
 #     sh bootstrap/build-all.sh --output /workspace/.build/pkgs --continue-on-error
-#
-# Legacy Alpine overlay version: Dockerfile.develop-alpine-overlay
 
 ARG MINIMAL_IMAGE=jonerix-minimal:latest
 FROM ${MINIMAL_IMAGE}
 
-SHELL ["/bin/mksh", "-c"]
+SHELL ["/bin/sh", "-c"]
 
 # ── Install all development packages via jpkg ────────────────────────────
 # Install one at a time to avoid parallel download race conditions.
@@ -27,9 +23,9 @@ RUN jpkg update && \
     for pkg in \
       musl ncurses openssl zlib xz lz4 zstd \
       llvm rust go \
-      cmake bmake samurai flex bc byacc m4 \
+      cmake bmake samurai flex bc byacc \
       perl python3 pip nodejs \
-      gitoxide ripgrep micro mandoc pigz fastfetch \
+      zsh gitoxide ripgrep micro mandoc pigz fastfetch \
       curl doas dropbear \
       containerd runc nerdctl; \
     do \
@@ -37,7 +33,6 @@ RUN jpkg update && \
     done
 
 # ── Symlinks for standard tool names ────────────────────────────────────
-# Build systems expect cc, make, ar, etc. — point them to our tools.
 RUN \
     # Compiler
     ln -sf clang /bin/cc && \
@@ -57,19 +52,20 @@ RUN \
     ln -sf samu /bin/ninja && \
     # Python
     ln -sf python3 /bin/python && \
+    # Shell: zsh as bash (bash-compatible mode)
+    ln -sf zsh /bin/bash && \
     # Editor
     ln -sf micro /bin/editor && \
     ln -sf micro /bin/vi && \
-    # Linker fixups: create .so symlinks for libs that only ship .so.N
+    # Linker fixups
     ln -sf libgcc_s.so.1 /lib/libgcc_s.so && \
     ln -sf libstdc++.so.6 /lib/libstdc++.so && \
-    # Create empty libssp_nonshared.a stub (musl handles SSP internally)
     printf '!<arch>\n' > /lib/libssp_nonshared.a
 
 # ── Environment ─────────────────────────────────────────────────────────
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/mksh
+ENV SHELL=/bin/zsh
 ENV TERM=xterm
 ENV EDITOR=micro
 ENV VISUAL=micro
@@ -79,5 +75,5 @@ ENV LC_ALL=C.UTF-8
 
 WORKDIR /root
 
-ENTRYPOINT ["/bin/mksh"]
+ENTRYPOINT ["/bin/zsh"]
 CMD ["-l"]

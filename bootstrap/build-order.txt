@@ -34,7 +34,6 @@ lz4
 mandoc
 bc
 dhcpcd
-mksh
 bmake
 byacc
 ifupdown-ng
