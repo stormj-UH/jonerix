@@ -12,7 +12,7 @@ set -e
 apk add --no-cache clang lld gcc musl-dev linux-headers libstdc++-dev llvm
 
 # Detect versioned package names (Alpine uses clang21, lld21, etc.)
-CLANG_PKG=$(apk info 2>/dev/null | grep '^clang[0-9]' | grep -v 'headers\|libs\|dev\|rt\|tools' | head -1)
+CLANG_PKG=$(apk info 2>/dev/null | grep '^clang[0-9]' | grep -Ev 'headers|libs|dev|rt|tools' | head -1)
 CLANG_LIBS=$(apk info 2>/dev/null | grep '^clang[0-9].*-libs' | head -1)
 CLANG_HDRS=$(apk info 2>/dev/null | grep '^clang[0-9].*-headers' | head -1)
 LLD_PKG=$(apk info 2>/dev/null | grep '^lld[0-9]' | grep -v 'libs' | head -1)
@@ -20,7 +20,7 @@ LLD_LIBS=$(apk info 2>/dev/null | grep '^lld[0-9].*-libs' | head -1)
 LLVM_LIBS=$(apk info 2>/dev/null | grep '^llvm[0-9].*-libs$' | head -1)
 LLVM_LINKER=$(apk info 2>/dev/null | grep '^llvm[0-9].*linker' | head -1)
 # llvm21 base package provides llvm-ar, llvm-nm, llvm-ranlib (Apache-2.0)
-LLVM_PKG=$(apk info 2>/dev/null | grep '^llvm[0-9]' | grep -v 'libs\|linker\|dev\|test\|tools' | head -1)
+LLVM_PKG=$(apk info 2>/dev/null | grep '^llvm[0-9]' | grep -Ev 'libs|linker|dev|test|tools' | head -1)
 
 # ONLY extract clang/lld/llvm packages and their runtime deps.
 # Do NOT extract musl-dev, linux-headers, gcc, libstdc++-dev — those
