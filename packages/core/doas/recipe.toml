@@ -7,24 +7,7 @@ description = "Lightweight privilege escalation tool (OpenDoas)"
 
 [build]
 system = "custom"
-build = """
-set -e
-apk add --no-cache doas
-for pkg in doas; do
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
-    f="${f%/}"
-    src="/${f}"
-    [ -e "$src" ] || continue
-    dst="${DESTDIR}/${f}"
-    mkdir -p "$(dirname "$dst")"
-    cp -aP "$src" "$dst" 2>/dev/null || true
-  done
-done
-if [ -d "${DESTDIR}/usr" ]; then
-  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
-  rm -rf "${DESTDIR}/usr"
-fi
-"""
+build = ""
 install = ""
 
 [depends]

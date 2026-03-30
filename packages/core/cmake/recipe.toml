@@ -7,27 +7,7 @@ description = "Cross-platform build system generator"
 
 [build]
 system = "custom"
-build = """
-set -e
-apk add --no-cache cmake libarchive acl-libs libbz2 libexpat lz4-libs xz-libs zstd-libs libgcc rhash-libs libstdc++ libuv
-for pkg in cmake libarchive acl-libs libbz2 libexpat lz4-libs xz-libs zstd-libs libgcc rhash-libs libstdc++ libuv; do
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
-    f="${f%/}"
-    src="/${f}"
-    [ -e "$src" ] || continue
-    dst="${DESTDIR}/${f}"
-    mkdir -p "$(dirname "$dst")"
-    cp -aP "$src" "$dst" 2>/dev/null || true
-  done
-done
-if [ -d "${DESTDIR}/usr" ]; then
-  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
-  rm -rf "${DESTDIR}/usr"
-fi
-# Strip documentation tree — the Help/ dir contains thousands of relative
-# symlinks that cause toybox tar to exit non-zero during jpkg install.
-rm -rf "${DESTDIR}/share/cmake/Help" 2>/dev/null || true
-"""
+build = ""
 install = ""
 
 [depends]
