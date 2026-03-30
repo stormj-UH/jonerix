@@ -13,13 +13,14 @@ system = "custom"
 configure = ""
 build = ""
 install = """set -e
-python3 setup.py install --prefix=/ --root="$DESTDIR" 2>/dev/null || \
-  python3 -m pip install --no-deps --no-build-isolation --prefix=/ --root="$DESTDIR" . 2>/dev/null || \
-  { mkdir -p "$DESTDIR/lib/python3/pip" "$DESTDIR/bin"
-    cp -a src/pip/. "$DESTDIR/lib/python3/pip/" 2>/dev/null || cp -a pip/. "$DESTDIR/lib/python3/pip/"
-    printf '#!/bin/sh\nexec python3 -m pip "$@"\n' > "$DESTDIR/bin/pip"
-    chmod 755 "$DESTDIR/bin/pip"
-    ln -sf pip "$DESTDIR/bin/pip3"; }
+# pip 26.x uses pyproject.toml, no setup.py — install manually
+PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+SITE="$DESTDIR/lib/python${PY_VER}/site-packages"
+mkdir -p "$SITE" "$DESTDIR/bin"
+cp -a src/pip "$SITE/pip"
+printf '#!/bin/sh\nexec python3 -m pip "$@"\n' > "$DESTDIR/bin/pip"
+chmod 755 "$DESTDIR/bin/pip"
+ln -sf pip "$DESTDIR/bin/pip3"
 """
 
 [depends]
