@@ -620,6 +620,16 @@ int cmd_build(int argc, char **argv) {
         rc = run_build_step("install", recipe->install_cmd, src_dir, dest_dir);
         if (rc != 0) goto cleanup;
 
+        /* Step 6.5: Flatten lib64/ → lib/ (cmake defaults to lib64 on x86_64) */
+        {
+            char flatten[2048];
+            snprintf(flatten, sizeof(flatten),
+                "if [ -d '%s/lib64' ] && [ ! -L '%s/lib64' ]; then "
+                "cp -a '%s/lib64/.' '%s/lib/' && rm -rf '%s/lib64'; fi",
+                dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
+            system(flatten);
+        }
+
         /* Step 7: Create .jpkg package */
         rc = create_package(recipe, dest_dir, output_dir);
     } else {
