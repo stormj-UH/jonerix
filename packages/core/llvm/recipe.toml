@@ -40,12 +40,14 @@ for pkg in "$CLANG_PKG" "$CLANG_LIBS" "$CLANG_HDRS" \
 done
 
 # Extract ONLY GCC runtime support files (CRT objects + libgcc) — not the full compiler
-GCC_DIR=$(find /usr/lib/gcc -name "crtbeginS.o" -printf '%h' 2>/dev/null | head -1)
+GCC_DIR=$(find /usr/lib/gcc -name "crtbeginS.o" 2>/dev/null | head -1 | sed 's|/crtbeginS.o||')
 if [ -n "$GCC_DIR" ]; then
   mkdir -p "${DESTDIR}${GCC_DIR}"
   for f in crtbeginS.o crtendS.o crtbegin.o crtend.o libgcc.a libgcc_eh.a; do
     [ -f "${GCC_DIR}/${f}" ] && cp -aP "${GCC_DIR}/${f}" "${DESTDIR}${GCC_DIR}/" 2>/dev/null || true
   done
+else
+  echo "WARNING: GCC CRT files not found — gcc package may not be installed"
 fi
 # libssp_nonshared.a (needed by clang's default link)
 cp -aP /usr/lib/libssp_nonshared.a "${DESTDIR}/lib/" 2>/dev/null || true
