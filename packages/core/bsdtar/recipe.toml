@@ -9,8 +9,8 @@ description = "BSD tar from libarchive (handles symlinks correctly)"
 system = "custom"
 build = """
 set -e
-apk add --no-cache libarchive-tools libarchive
-for pkg in libarchive-tools libarchive; do
+apk add --no-cache libarchive-tools libarchive acl-libs
+for pkg in libarchive-tools libarchive acl-libs; do
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
     src="/${f}"
