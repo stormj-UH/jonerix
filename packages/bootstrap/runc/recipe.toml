@@ -17,8 +17,11 @@ export TMPDIR=/tmp
 export GOPATH=/tmp/gopath
 export GOPROXY=https://proxy.golang.org,direct
 
-# runc uses make with Go — static build, no seccomp (requires libseccomp)
-CGO_ENABLED=0 make static -j$(nproc)
+# Build runc without seccomp (requires libseccomp + pkg-config) and without CGO
+CGO_ENABLED=0 go build -trimpath \
+  -tags "netgo osusergo urfave_cli_no_docs" \
+  -ldflags "-s -w -extldflags -static" \
+  -o runc .
 """
 install = """
 mkdir -p "$DESTDIR/bin"
