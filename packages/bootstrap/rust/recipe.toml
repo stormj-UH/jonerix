@@ -1,0 +1,115 @@
+[package]
+name = "rust"
+version = "1.94.1"
+license = "MIT"
+description = "Rust compiler toolchain (built from source using prebuilt bootstrap)"
+
+# Bootstrap chain: prebuilt rustc 1.94.1 (core/rust) → from-source rustc 1.94.1
+# Uses system LLVM to avoid rebuilding LLVM (~45 min saved).
+# Build time: ~30-40 min on 12 cores, ~8 GB RAM peak.
+# Disk: ~10 GB during build.
+
+[source]
+url = "https://static.rust-lang.org/dist/rustc-1.94.1-src.tar.xz"
+sha256 = "174fce10ce012317ca995810296d8af199318838180b03d68a853e0f02d4b571"
+
+[build]
+system = "custom"
+build = """
+set -e
+
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64)  TRIPLE="x86_64-unknown-linux-musl" ;;
+    aarch64) TRIPLE="aarch64-unknown-linux-musl" ;;
+    *)       echo "Unsupported arch: $ARCH"; exit 1 ;;
+esac
+
+cd rustc-1.94.1-src/
+
+# Verify bootstrap compiler is available
+if ! command -v rustc >/dev/null 2>&1; then
+    echo "ERROR: rustc not found. Install core/rust first as bootstrap compiler."
+    exit 1
+fi
+echo "Bootstrap compiler: $(rustc --version)"
+echo "Bootstrap cargo: $(cargo --version)"
+
+# Generate bootstrap.toml for from-source build
+cat > bootstrap.toml <<CONF
+changelog-seen = 2
+
+[build]
+# Use the prebuilt rustc/cargo as stage0 bootstrap
+rustc = "$(command -v rustc)"
+cargo = "$(command -v cargo)"
+# Build rustc + cargo + std (the essential toolchain)
+extended = true
+tools = ["cargo"]
+# Only build for the host target
+host = ["$TRIPLE"]
+target = ["$TRIPLE"]
+# Skip docs to save time
+docs = false
+# Use Python 3 for x.py
+python = "python3"
+# Disable profiler/sanitizers (not needed)
+profiler = false
+sanitizers = false
+
+[install]
+prefix = "/"
+libdir = "lib"
+
+[rust]
+# Release-optimized compiler
+optimize = true
+# Use musl target defaults
+musl-root = "/"
+# Don't run codegen tests
+codegen-tests = false
+# Single-stage build (stage 1 is sufficient for distribution)
+description = "jonerix from-source"
+
+[target.$TRIPLE]
+# Use system LLVM — avoids rebuilding LLVM from source
+llvm-config = "/bin/llvm-config"
+# musl root for C library
+musl-root = "/"
+# Use system C compiler
+cc = "clang"
+cxx = "clang++"
+ar = "llvm-ar"
+ranlib = "llvm-ranlib"
+linker = "clang"
+
+[llvm]
+# Don't download CI LLVM, use system LLVM
+download-ci-llvm = false
+CONF
+
+# Build stage 1 compiler + cargo (sufficient for a working toolchain)
+python3 x.py build --stage 1 library
+python3 x.py build --stage 1 src/tools/cargo
+
+# Install to DESTDIR
+DESTDIR="$DESTDIR" python3 x.py install --stage 1
+
+# Flatten usr/ (jonerix merged-usr layout)
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+
+# Strip binaries to reduce package size
+find "$DESTDIR/bin" -type f -executable -exec llvm-strip {} \; 2>/dev/null || true
+find "$DESTDIR/lib" -name '*.so*' -type f -exec llvm-strip --strip-debug {} \; 2>/dev/null || true
+
+# Remove docs/man/share to reduce size
+rm -rf "$DESTDIR/share" "$DESTDIR/etc"
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "llvm", "zlib", "zstd"]
+build = ["rust", "llvm", "cmake", "samurai", "python3", "curl"]
