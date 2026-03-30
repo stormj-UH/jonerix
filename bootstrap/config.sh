@@ -1,4 +1,11 @@
 #!/bin/sh
+# DEPRECATED: This file is kept for reference only.
+# The old stage0/stage1/stage2 bootstrap pipeline has been replaced by:
+#   - bootstrap/build-all.sh (builds packages via jpkg)
+#   - packages/bootstrap/*/recipe.toml (per-package from-source recipes)
+#   - Dockerfile.minimal + Dockerfile.develop (jpkg-based image assembly)
+#
+# Original description:
 # jonerix bootstrap — shared configuration
 # Sourced by stage0.sh, stage1.sh, stage2.sh, stage3-verify.sh
 #
