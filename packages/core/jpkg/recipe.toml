@@ -1,0 +1,14 @@
+[package]
+name = "jpkg"
+version = "1.0.0"
+license = "MIT"
+pre_bootstrap = false
+description = "jonerix package manager"
+
+[build]
+build = ""
+install = ""
+
+[depends]
+runtime = ["musl", "curl", "zstd", "bsdtar"]
+build = []
