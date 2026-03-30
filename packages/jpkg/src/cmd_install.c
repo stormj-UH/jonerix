@@ -85,16 +85,22 @@ static int install_files(const char *stage_dir, const char *dest_root) {
      * Since staging is flattened, tar won't write usr/ paths.
      */
     snprintf(cmd, sizeof(cmd),
-             /* Flatten usr/ in staging (belt-and-suspenders with pkg_extract) */
+             /* Flatten usr/ and lib64/ in staging */
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
              "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi && "
-             /* Copy staging to root. Use cp -a with trailing /. to merge
-              * directory contents rather than replace directories.
-              * This avoids bsdtar pipe issues and doesn't follow dest symlinks. */
-             "cd '%s' && cp -a . '%s'",
+             /* Install files using find + per-file copy/rename.
+              * For each file: mkdir parent, cp to .new, mv over original.
+              * mv is atomic and works even for running binaries (ETXTBSY). */
+             "cd '%s' && find . -type d -exec mkdir -p '%s/{}' \\; && "
+             "find . ! -type d | while read f; do "
+             "  cp -a \"$f\" '%s/${f}.jpkg-new' 2>/dev/null && "
+             "  mv -f '%s/${f}.jpkg-new' '%s/${f}'; "
+             "done",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
-             stage_dir, dest_root);
+             stage_dir, dest_root,
+             dest_root,
+             dest_root, dest_root);
     return system(cmd);
 }
 
