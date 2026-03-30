@@ -1,255 +1,158 @@
-# jonerix — Permissive Linux Distribution
-# Multi-stage build: Alpine host → Build custom components → Assemble rootfs (FROM scratch)
+# jonerix — Permissive Linux Distribution (full image)
+# Multi-stage build: Alpine builds jpkg → jpkg installs everything → FROM scratch
 #
-# Strategy: Build from source what's ours or unavailable. Install from Alpine
-# packages what's permissively licensed (Node, Python, LLVM, etc.)
-# GPL tools (Alpine) used only at build time — nothing GPL ships in final image.
+# All components are permissively licensed — zero GPL runtime.
+# Alpine is used ONLY at build time to compile jpkg (the bootstrap step).
+# Everything else is installed from the jpkg package repository.
+#
+# Images:
+#   Dockerfile.minimal  — runtime only (shell, init, network, SSH)
+#   Dockerfile          — full image (runtime + compilers + languages + tools)
+#   Dockerfile.develop  — develop on top of minimal (jpkg install layer)
+#
+# Build: docker build --tag jonerix:latest .
 
 # ============================================================
-# Stage 0: Build custom/unavailable components from source
+# Stage 0: Build jpkg from source (the only Alpine build step)
 # ============================================================
-FROM alpine:latest AS builder
+FROM alpine:latest AS jpkg-builder
 
-RUN apk add --no-cache \
-    clang lld musl-dev make curl patch tar xz bash \
-    zstd-dev zstd-static linux-headers m4 bison
+RUN apk add --no-cache clang lld musl-dev make zstd-dev zstd-static linux-headers
 
-WORKDIR /build
-
-# --- Build toybox (0BSD) — not in Alpine repos ---
-RUN curl -fsSL https://landley.net/toybox/downloads/toybox-0.8.11.tar.gz -o toybox.tar.gz && \
-    tar xf toybox.tar.gz && cd toybox-0.8.11 && \
-    make defconfig && \
-    make CC=clang CFLAGS="-Os -static" -j$(nproc) && \
-    cp toybox /build/toybox && strip /build/toybox
-
-# --- Build jpkg (MIT) — our custom package manager ---
-COPY packages/jpkg/ /build/jpkg-src/
-RUN cd /build/jpkg-src && \
+COPY packages/jpkg/ /src/
+RUN cd /src && \
     find . -name '*.o' -o -name '*.d' | xargs rm -f && rm -f jpkg && \
-    make CC=clang LD=ld.lld \
-    CFLAGS="-Os -pipe -fstack-protector-strong -D_FORTIFY_SOURCE=2" \
-    LDFLAGS="-static -fuse-ld=lld" jpkg && \
-    cp jpkg /build/jpkg && strip /build/jpkg
-RUN cd /build/jpkg-src && make test
-
-# --- Build bmake (MIT) — BSD make, not in Alpine ---
-RUN curl -fsSL https://www.crufty.net/ftp/pub/sjg/bmake-20240808.tar.gz -o bmake.tar.gz && \
-    tar xf bmake.tar.gz && cd bmake && \
-    ./configure --prefix=/usr CC=clang && \
-    sh make-bootstrap.sh && \
-    cp $(find . -name bmake -type f -executable | head -1) /build/bmake-bin && \
-    strip /build/bmake-bin
-
-# --- Build flex (BSD) — static binary ---
-RUN curl -fsSL https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz -o flex.tar.gz && \
-    tar xf flex.tar.gz && cd flex-2.6.4 && \
-    ./configure --prefix=/usr CC=clang LDFLAGS="-static -fuse-ld=lld" CFLAGS="-Os" && \
-    make -j$(nproc) && \
-    cp src/flex /build/flex && strip /build/flex
-
-# --- Build bc (BSD) — static binary ---
-RUN curl -fsSL https://github.com/gavinhoward/bc/releases/download/7.0.3/bc-7.0.3.tar.xz -o bc.tar.xz && \
-    tar xf bc.tar.xz && cd bc-7.0.3 && \
-    CC=clang LDFLAGS="-static -fuse-ld=lld" CFLAGS="-Os" \
-    ./configure --prefix=/usr --disable-nls && \
-    make -j$(nproc) && \
-    cp bin/bc /build/bc && strip /build/bc
-
-# (dropbear moved to assembler stage — installed from Alpine package)
+    make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg -j$(nproc) && \
+    strip jpkg
+RUN cd /src && make test
 
 # ============================================================
-# Stage 1: Assemble jonerix rootfs from built + packaged components
+# Stage 1: Assemble jonerix rootfs using jpkg packages
 # ============================================================
-FROM alpine:latest AS assembler
+FROM alpine:latest AS rootfs
 
-WORKDIR /jonerix
+# Alpine tools needed only to run jpkg during assembly
+RUN apk add --no-cache curl ca-certificates zstd tar libarchive-tools
 
-# Create merged /usr filesystem layout (DESIGN.md section 5)
+COPY --from=jpkg-builder /src/jpkg /usr/local/bin/jpkg
+
+# Create rootfs skeleton
 RUN mkdir -p \
-    bin lib etc dev proc sys run tmp \
-    etc/init.d etc/conf.d etc/ssl etc/jpkg etc/network etc/dropbear \
-    var/log var/cache/jpkg var/db/jpkg/installed \
-    home root boot \
-    && chmod 1777 tmp \
-    && chmod 700 root \
-    && ln -s / usr
+    /jonerix/etc/jpkg/keys \
+    /jonerix/etc/ssl/certs \
+    /jonerix/etc/dropbear \
+    /jonerix/etc/init.d \
+    /jonerix/etc/conf.d \
+    /jonerix/etc/network \
+    /jonerix/bin \
+    /jonerix/lib \
+    /jonerix/include \
+    /jonerix/share \
+    /jonerix/var/log \
+    /jonerix/var/cache/jpkg \
+    /jonerix/var/db/jpkg/installed \
+    /jonerix/home \
+    /jonerix/root \
+    /jonerix/dev \
+    /jonerix/proc \
+    /jonerix/sys \
+    /jonerix/run \
+    /jonerix/tmp && \
+    chmod 1777 /jonerix/tmp && chmod 700 /jonerix/root
 
-# --- Built-from-source binaries ---
-COPY --from=builder /build/toybox bin/toybox
-COPY --from=builder /build/jpkg bin/jpkg
-COPY --from=builder /build/bmake-bin bin/bmake
-COPY --from=builder /build/flex bin/flex
-COPY --from=builder /build/bc bin/bc
-# (dropbear installed from Alpine in the apk add block below)
+# Configure jpkg repo (no /usr symlink yet — would redirect to host /)
+COPY config/defaults/etc/jpkg/keys/ /jonerix/etc/jpkg/keys/
+RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/download/packages"\n' \
+        > /jonerix/etc/jpkg/repos.conf
 
-# Toybox applet symlinks
-RUN for path in $(bin/toybox --long); do \
-        cmd=$(basename "$path"); \
-        [ "$cmd" != "toybox" ] && [ ! -e "bin/$cmd" ] && \
-        ln -s toybox "bin/$cmd" || true; \
-    done && \
-    ln -sf mksh bin/sh && \
-    ln -s bmake bin/make && \
-    ln -s flex bin/lex && \
-    ln -s dbclient bin/ssh
+# Install bsdtar on Alpine HOST so jpkg can extract symlinks correctly
+RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 
-# --- Install permissive packages from Alpine repos ---
-RUN apk add --no-cache \
-    clang lld llvm compiler-rt musl-dev linux-headers libstdc++-dev pkgconf python3-dev \
-    python3 nodejs ncurses perl dropbear dropbear-scp dropbear-dbclient curl zstd cmake samurai \
-    alpine \
-    && apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community mksh
-
-# --- Copy binaries from Alpine into jonerix rootfs ---
-RUN cp /bin/mksh bin/mksh && \
-    # --- Clang/LLVM (Apache-2.0) ---
-    CLANG_BIN=$(readlink -f /usr/bin/clang) && cp "$CLANG_BIN" bin/clang && \
-    ln -s clang bin/clang++ && ln -s clang bin/cc && ln -s clang bin/c++ && \
-    LLD_BIN=$(readlink -f /usr/bin/ld.lld) && cp "$LLD_BIN" bin/ld.lld && \
-    ln -s ld.lld bin/ld && \
-    for tool in llvm-ar llvm-nm llvm-objdump llvm-objcopy llvm-strip \
-                llvm-ranlib llvm-readelf llvm-size llvm-strings \
-                llvm-symbolizer llvm-profdata llvm-cov llvm-as llvm-dis; do \
-        [ -e "/usr/bin/$tool" ] && cp "$(readlink -f /usr/bin/$tool)" "bin/$tool" || true; \
-    done && \
-    ln -sf llvm-ar bin/ar && ln -sf llvm-nm bin/nm && \
-    ln -sf llvm-objdump bin/objdump && ln -sf llvm-objcopy bin/objcopy && \
-    ln -sf llvm-strip bin/strip && ln -sf llvm-ranlib bin/ranlib && \
-    ln -sf llvm-readelf bin/readelf && \
-    # LLVM shared libs
-    find /usr/lib -name 'libLLVM*.so*' -exec cp {} lib/ \; && \
-    find /usr/lib -name 'libclang*.so*' -exec cp {} lib/ \; && \
-    find /usr/lib -name 'libLTO*.so*' -exec cp {} lib/ \; && \
-    find /usr/lib -name 'liblld*.so*' -exec cp {} lib/ \; && \
-    # Clang resource dir
-    mkdir -p lib/clang && \
-    CLANG_RES=$(find /usr/lib -path '*/clang/*/include' -type d 2>/dev/null | head -1) && \
-    [ -n "$CLANG_RES" ] && cp -r "$(dirname "$CLANG_RES")" lib/clang/ || true && \
-    mkdir -p etc/clang && \
-    GCC_VER=$(ls /usr/include/c++/ | head -1) && \
-    TRIPLE=$(clang -dumpmachine) && \
-    (cat /etc/clang*/*.cfg 2>/dev/null; \
-     echo "--gcc-install-dir=/usr/lib/gcc/${TRIPLE}/${GCC_VER}"; \
-    ) > etc/clang/${TRIPLE}.cfg && \
-    # CRT objects + static libs (musl-dev)
-    for f in Scrt1.o crt1.o crti.o crtn.o rcrt1.o \
-             libc.a libc.so libm.a libpthread.a libdl.a librt.a \
-             libcrypt.a libutil.a libresolv.a libssp_nonshared.a libssp.a; do \
-        cp /usr/lib/$f lib/ 2>/dev/null || true; \
-    done && \
-    find /usr/lib/gcc -name 'crtbeginS.o' -exec cp {} lib/ \; 2>/dev/null || true && \
-    find /usr/lib/gcc -name 'crtendS.o' -exec cp {} lib/ \; 2>/dev/null || true && \
-    find /usr/lib/gcc -name 'libgcc.a' -exec cp {} lib/ \; 2>/dev/null || true && \
-    find /usr/lib/gcc -name 'libgcc_eh.a' -exec cp {} lib/ \; 2>/dev/null || true && \
-    # Headers (C + C++ + Python)
-    mkdir -p include && cp -r /usr/include/* include/ && \
-    # C++ stdlib headers (GCC's libstdc++ puts them in a versioned path)
-    for d in /usr/include/c++/*; do \
-        [ -d "$d" ] && cp -r "$d" include/c++/ 2>/dev/null; \
-    done && \
-    # Copy GCC install directory (needed for clang to find C++ headers)
-    GCC_VER=$(ls /usr/include/c++/ | head -1) && \
-    TRIPLE=$(clang -dumpmachine) && \
-    mkdir -p "lib/gcc/${TRIPLE}/${GCC_VER}/include" && \
-    cp -r "/usr/lib/gcc/${TRIPLE}/${GCC_VER}/"* "lib/gcc/${TRIPLE}/${GCC_VER}/" 2>/dev/null || true && \
-    # --- Python 3 (PSF) ---
-    cp /usr/bin/python3 bin/python3 && ln -s python3 bin/python && \
-    cp -r /usr/lib/python3.* lib/ && \
-    # --- Node.js (MIT) ---
-    cp /usr/bin/node bin/node && \
-    # --- Perl (Artistic-2.0) ---
-    cp /usr/bin/perl bin/perl && \
-    cp -r /usr/lib/perl5 lib/perl5 2>/dev/null || true && \
-    # --- terminfo (for terminal editors/tools) ---
-    mkdir -p etc/terminfo lib/terminfo && \
-    cp -r /etc/terminfo/* etc/terminfo/ 2>/dev/null || true && \
-    cp -r /usr/share/terminfo/* lib/terminfo/ 2>/dev/null || true && \
-    # --- zstd (BSD) ---
-    cp /usr/bin/zstd bin/zstd && \
-    # --- pkgconf (ISC) ---
-    cp /usr/bin/pkgconf bin/pkgconf && \
-    ln -s pkgconf bin/pkg-config && \
-    mkdir -p lib/pkgconfig && \
-    cp /usr/lib/pkgconfig/*.pc lib/pkgconfig/ 2>/dev/null || true && \
-    # --- cmake (BSD-3-Clause) + samurai/ninja (Apache-2.0) ---
-    cp /usr/bin/cmake bin/cmake && \
-    cp /usr/bin/samu bin/samu && ln -s samu bin/ninja && \
-    mkdir -p share && cp -r /usr/share/cmake share/cmake && \
-    # --- curl (MIT-like) + CA certificates ---
-    cp /usr/bin/curl bin/curl && \
-    apk add --no-cache ca-certificates && \
-    mkdir -p etc/ssl/certs && \
-    cp /etc/ssl/certs/ca-certificates.crt etc/ssl/certs/ && \
-    # --- Dropbear SSH (MIT) ---
-    cp /usr/sbin/dropbear bin/dropbear 2>/dev/null || cp /usr/bin/dropbear bin/dropbear 2>/dev/null || true && \
-    cp /usr/bin/dbclient bin/dbclient 2>/dev/null || true && \
-    cp /usr/bin/dropbearkey bin/dropbearkey 2>/dev/null || true && \
-    cp /usr/bin/scp bin/scp 2>/dev/null || true && \
-    # --- All shared libraries: use ldd to find everything needed ---
-    for bin in bin/python3 bin/node bin/clang bin/ld.lld bin/mksh \
-               bin/dropbear bin/dbclient bin/perl bin/curl bin/zstd bin/cmake; do \
-        [ -f "$bin" ] && ldd "$bin" 2>/dev/null | awk '/=>/{print $3}' | while read so; do \
-            [ -f "$so" ] && cp -n "$so" lib/ 2>/dev/null || true; \
-        done; \
-    done && \
-    # Also copy Python's shared lib
-    find / -name 'libpython3*.so*' -exec cp -n {} lib/ \; 2>/dev/null || true && \
-    # And any libs that libs themselves need (transitive deps)
-    for so in lib/*.so*; do \
-        ldd "$so" 2>/dev/null | awk '/=>/{print $3}' | while read dep; do \
-            [ -f "$dep" ] && cp -n "$dep" lib/ 2>/dev/null || true; \
-        done; \
-    done && \
-    # GCC runtime (needed by linker)
-    find /usr/lib/gcc -name 'libgcc_s.so*' -exec cp -n {} lib/ \; 2>/dev/null || true && \
-    cp /usr/lib/libgcc_s.so* lib/ 2>/dev/null || true && \
-    # Linker symlinks for -lstdc++ and -lgcc_s
-    ln -sf libstdc++.so.6 lib/libstdc++.so 2>/dev/null || true && \
-    ln -sf libgcc_s.so.1 lib/libgcc_s.so 2>/dev/null || true
-
-# --- Default configs ---
-COPY config/defaults/etc/hostname etc/hostname
-COPY config/defaults/etc/resolv.conf etc/resolv.conf
-COPY config/defaults/etc/passwd etc/passwd
-COPY config/defaults/etc/group etc/group
-COPY config/defaults/etc/shadow etc/shadow
-COPY config/defaults/etc/shells etc/shells
-COPY config/defaults/etc/profile etc/profile
-COPY config/defaults/etc/doas.conf etc/doas.conf
-COPY config/defaults/etc/os-release etc/os-release
-COPY config/defaults/etc/jpkg/keys/ etc/jpkg/keys/
-COPY config/defaults/etc/fastfetch/ etc/fastfetch/
-COPY config/openrc/init.d/ etc/init.d/
-RUN chmod 755 etc/init.d/* 2>/dev/null || true
-
-# --- Package database ---
-RUN for pkg in \
-    "toybox 0.8.11 0BSD" "mksh R59c MirOS" "jpkg 0.1.0 MIT" "musl 1.2.5 MIT" \
-    "python3 3.12 PSF-2.0" "nodejs 22 MIT" "zlib 1.3 Zlib" "micro 2.0.15 MIT" \
-    "dropbear 2024.86 MIT" "llvm 21.1.2 Apache-2.0" "clang 21.1.2 Apache-2.0" \
-    "lld 21.1.2 Apache-2.0" "bmake 20240808 MIT" "flex 2.6.4 BSD-2-Clause" \
-    "perl 5.40 Artistic-2.0" "bc 7.0.3 BSD-2-Clause" "curl 8.17 MIT" "zstd 1.5.7 BSD" \
-    "cmake 4.1 BSD-3-Clause" "samurai 1.2 Apache-2.0"; \
-    do set -- $pkg; \
-    mkdir -p "var/db/jpkg/installed/$1"; \
-    printf "[package]\nname = \"$1\"\nversion = \"$2\"\nlicense = \"$3\"\n" > "var/db/jpkg/installed/$1/metadata.toml"; \
+# Install all packages via jpkg
+# Order: base libs → compilers → build tools → languages → utilities
+RUN jpkg --root /jonerix update && \
+    for pkg in \
+      musl ncurses openssl zlib xz lz4 zstd ca-certificates \
+      mksh toybox bsdtar \
+      llvm \
+      cmake bmake samurai flex bc byacc \
+      perl python3 nodejs \
+      npm pip \
+      curl dropbear openrc doas \
+      snooze socklog dhcpcd ifupdown-ng unbound \
+      mandoc pigz fastfetch \
+      micro; \
+    do \
+      echo "=== Installing: $pkg ===" && \
+      jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \
     done
 
-COPY scripts/license-audit.sh bin/license-audit
-RUN chmod 755 bin/license-audit
+# Flatten usr/ into / (merged-usr layout), then add the symlink
+RUN if [ -d /jonerix/usr ]; then \
+        cp -a /jonerix/usr/. /jonerix/ && rm -rf /jonerix/usr; \
+    fi && \
+    ln -s / /jonerix/usr
+
+# Copy jpkg itself into the rootfs
+RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg
+
+# Post-install symlinks
+RUN \
+    # sh symlink (required by system() calls)
+    ln -sf mksh /jonerix/bin/sh && \
+    # tar → bsdtar (toybox tar can't handle symlinks in jpkg archives)
+    ln -sf bsdtar /jonerix/bin/tar && \
+    # ssh → dbclient (dropbear SSH client)
+    ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true && \
+    # Standard tool names for build systems
+    ln -sf clang /jonerix/bin/cc 2>/dev/null || true && \
+    ln -sf clang++ /jonerix/bin/c++ 2>/dev/null || true && \
+    ln -sf ld.lld /jonerix/bin/ld 2>/dev/null || true && \
+    ln -sf llvm-ar /jonerix/bin/ar 2>/dev/null || true && \
+    ln -sf llvm-nm /jonerix/bin/nm 2>/dev/null || true && \
+    ln -sf llvm-ranlib /jonerix/bin/ranlib 2>/dev/null || true && \
+    ln -sf llvm-strip /jonerix/bin/strip 2>/dev/null || true && \
+    ln -sf llvm-objcopy /jonerix/bin/objcopy 2>/dev/null || true && \
+    ln -sf llvm-objdump /jonerix/bin/objdump 2>/dev/null || true && \
+    ln -sf llvm-readelf /jonerix/bin/readelf 2>/dev/null || true && \
+    ln -sf bmake /jonerix/bin/make 2>/dev/null || true && \
+    ln -sf samu /jonerix/bin/ninja 2>/dev/null || true && \
+    ln -sf python3 /jonerix/bin/python 2>/dev/null || true && \
+    ln -sf flex /jonerix/bin/lex 2>/dev/null || true && \
+    ln -sf micro /jonerix/bin/editor 2>/dev/null || true && \
+    ln -sf micro /jonerix/bin/vi 2>/dev/null || true
+
+# --- Default config files ---
+COPY config/defaults/etc/hostname     /jonerix/etc/hostname
+COPY config/defaults/etc/resolv.conf  /jonerix/etc/resolv.conf
+COPY config/defaults/etc/passwd       /jonerix/etc/passwd
+COPY config/defaults/etc/group        /jonerix/etc/group
+COPY config/defaults/etc/shadow       /jonerix/etc/shadow
+COPY config/defaults/etc/shells       /jonerix/etc/shells
+COPY config/defaults/etc/profile      /jonerix/etc/profile
+COPY config/defaults/etc/doas.conf    /jonerix/etc/doas.conf
+COPY config/defaults/etc/os-release   /jonerix/etc/os-release
+COPY config/defaults/etc/fastfetch/   /jonerix/etc/fastfetch/
+COPY config/openrc/init.d/            /jonerix/etc/init.d/
+RUN chmod 755 /jonerix/etc/init.d/* 2>/dev/null || true
+
+COPY scripts/license-audit.sh /jonerix/bin/license-audit
+RUN chmod 755 /jonerix/bin/license-audit
 
 # ============================================================
 # Stage 2: Final image — FROM scratch, zero GPL runtime
 # ============================================================
 FROM scratch
 
-COPY --from=assembler /jonerix/ /
+COPY --from=rootfs /jonerix/ /
 
 ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/mksh
 ENV TERM=xterm
+ENV EDITOR=micro
+ENV VISUAL=micro
+ENV LANG=C.UTF-8
 
 WORKDIR /root
 
