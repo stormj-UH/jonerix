@@ -92,7 +92,7 @@ static int install_files(const char *stage_dir, const char *dest_root) {
               * tar won't encounter usr/ paths. But dest may have /usr -> /
               * symlink — tar doesn't follow it for files WITHOUT usr/ prefix.
               * This is safe because our staging has /bin/, /lib/ etc directly. */
-             "cd '%s' && tar cf - . | tar xf - --no-same-owner -C '%s'",
+             "cd '%s' && tar cf - . | tar xf - -C '%s'",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
              stage_dir, dest_root);
