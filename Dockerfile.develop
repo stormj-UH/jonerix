@@ -43,13 +43,14 @@ RUN \
     ln -sf clang++ /bin/c++ && \
     # Linker
     ln -sf ld.lld /bin/ld && \
-    # Binutils (LLVM)
-    ln -sf llvm-ar /bin/ar && \
-    ln -sf llvm-nm /bin/nm && \
-    ln -sf llvm-ranlib /bin/ranlib && \
-    ln -sf llvm-strip /bin/strip && \
-    ln -sf llvm-objcopy /bin/objcopy && \
-    ln -sf llvm-objdump /bin/objdump && \
+    # Binutils (LLVM) — find actual location and symlink
+    LLVM_BIN=$(find /lib/llvm* -name "llvm-ar" -exec dirname {} \; 2>/dev/null | head -1) && \
+    if [ -n "$LLVM_BIN" ]; then \
+      for tool in ar nm ranlib strip objcopy objdump; do \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null || true; \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null || true; \
+      done; \
+    fi && \
     # Build tools
     ln -sf bmake /bin/make && \
     ln -sf samu /bin/ninja && \
