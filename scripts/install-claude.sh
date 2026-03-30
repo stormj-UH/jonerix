@@ -5,9 +5,14 @@
 set -e
 
 ARCH=$(uname -m)
+# Use musl variants on musl-based systems (jonerix)
+MUSL=""
+if [ -f /lib/ld-musl-*.so.1 ] 2>/dev/null; then
+    MUSL="-musl"
+fi
 case $ARCH in
-    aarch64) PLATFORM="linux-arm64" ;;
-    x86_64)  PLATFORM="linux-x64" ;;
+    aarch64) PLATFORM="linux-arm64${MUSL}" ;;
+    x86_64)  PLATFORM="linux-x64${MUSL}" ;;
     *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
 esac
 

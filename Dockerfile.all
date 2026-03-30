@@ -1,0 +1,44 @@
+# jonerix:all — Complete image with every package
+#
+# Starts from jonerix-develop and adds all remaining tools.
+# All packages built from source on jonerix with permissive tools.
+#
+# Build: docker build -f Dockerfile.all --tag jonerix:all .
+
+ARG BASE=jonerix-develop:latest
+FROM ${BASE}
+
+# Install additional packages not in the develop image
+# These are installed via jpkg from the GitHub release
+RUN jpkg update 2>/dev/null || true && \
+    for pkg in byacc ripgrep containerd runc nerdctl cni-plugins micro; do \
+        jpkg install $pkg 2>/dev/null || echo "SKIP: $pkg (install from cache or manual)"; \
+    done
+
+# Create standard symlinks
+RUN ln -sf byacc /bin/yacc 2>/dev/null || true && \
+    ln -sf rg /bin/grep-fast 2>/dev/null || true && \
+    ln -sf nerdctl /bin/docker 2>/dev/null || true
+
+# Install Claude Code (native binary, no npm needed)
+RUN ARCH=$(uname -m); \
+    case $ARCH in aarch64) P="linux-arm64";; x86_64) P="linux-x64";; *) P="";; esac; \
+    if [ -n "$P" ]; then \
+        GCS="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"; \
+        VER=$(curl -fsSL "$GCS/latest" 2>/dev/null); \
+        if [ -n "$VER" ]; then \
+            mkdir -p /root/.claude && \
+            curl -fsSL "$GCS/$VER/$P/claude" -o /root/.claude/claude && \
+            chmod +x /root/.claude/claude && \
+            ln -sf /root/.claude/claude /bin/claude; \
+            echo "Claude Code $VER installed"; \
+        fi; \
+    fi
+
+ENV EDITOR=micro
+ENV VISUAL=micro
+ENV LANG=C.UTF-8
+
+WORKDIR /root
+ENTRYPOINT ["/bin/mksh"]
+CMD ["-l"]
