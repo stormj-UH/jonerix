@@ -25,9 +25,7 @@ LLVM_PKG=$(apk info 2>/dev/null | grep '^llvm[0-9]' | grep -Ev 'libs|linker|dev|
 # ONLY extract clang/lld/llvm packages and their runtime deps.
 # Do NOT extract musl-dev, linux-headers, or gcc — those are separate packages.
 # DO extract libstdc++-dev (C++ headers needed for building C++ code).
-for pkg in "$CLANG_PKG" "$CLANG_LIBS" "$CLANG_HDRS" \
-           "$LLD_PKG" "$LLD_LIBS" "$LLVM_LIBS" "$LLVM_LINKER" "$LLVM_PKG" \
-           libstdc++ libstdc++-dev libgcc libffi xz-libs libxml2 jansson; do
+for pkg in $CLANG_PKG $CLANG_LIBS $CLANG_HDRS $LLD_PKG $LLD_LIBS $LLVM_LIBS $LLVM_LINKER $LLVM_PKG libstdc++ libstdc++-dev libgcc libffi xz-libs libxml2 jansson; do
   [ -z "$pkg" ] && continue
   apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
     f="${f%/}"
@@ -82,8 +80,7 @@ GCC_VER=$(ls "${DESTDIR}/include/c++/" 2>/dev/null | head -1)
 TRIPLE=$(clang -dumpmachine 2>/dev/null || true)
 if [ -n "$GCC_VER" ] && [ -n "$TRIPLE" ]; then
   mkdir -p "${DESTDIR}/etc/clang"
-  echo "--gcc-install-dir=/lib/gcc/${TRIPLE}/${GCC_VER}" \
-    > "${DESTDIR}/etc/clang/${TRIPLE}.cfg"
+  echo "--gcc-install-dir=/lib/gcc/${TRIPLE}/${GCC_VER}" > "${DESTDIR}/etc/clang/${TRIPLE}.cfg"
 fi
 """
 install = ""
