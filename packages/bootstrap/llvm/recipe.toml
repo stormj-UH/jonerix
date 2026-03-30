@@ -1,12 +1,12 @@
 [package]
 name = "llvm"
-version = "21.0.0"
+version = "21.1.2"
 license = "Apache-2.0"
 description = "LLVM compiler infrastructure with clang and lld (from source)"
 
 [source]
-url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.0.0/llvm-project-21.0.0.src.tar.xz"
-sha256 = "FIXME"
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
 
 [build]
 system = "custom"
@@ -17,7 +17,7 @@ set -e
 # Builds clang, lld, and LLVM tools using the pre-bootstrap clang.
 # ~45 min on x86_64 (12 cores), ~60 min on aarch64.
 
-cd llvm-project-*/
+cd llvm-project-21.1.2.src/
 
 # Detect host architecture for LLVM target
 case $(uname -m) in
