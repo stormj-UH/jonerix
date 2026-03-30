@@ -1,12 +1,13 @@
 name: Build WSL rootfs
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'packages/core/**'
-      - 'install/wsl/**'
-      - '.github/workflows/wsl-rootfs.yml'
+  # Push trigger disabled — building locally.
+  # push:
+  #   branches: [master]
+  #   paths:
+  #     - 'packages/core/**'
+  #     - 'install/wsl/**'
+  #     - '.github/workflows/wsl-rootfs.yml'
   workflow_dispatch:
 
 # Only one rootfs build at a time; a newer push supersedes an in-progress one.

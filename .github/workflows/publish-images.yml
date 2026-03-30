@@ -1,13 +1,14 @@
 name: Publish container images
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'Dockerfile*'
-      - 'config/**'
-      - 'packages/jpkg/**'
-      - 'scripts/**'
+  # Push trigger disabled — building and uploading images manually.
+  # push:
+  #   branches: [master]
+  #   paths:
+  #     - 'Dockerfile*'
+  #     - 'config/**'
+  #     - 'packages/jpkg/**'
+  #     - 'scripts/**'
   workflow_dispatch:
 
 env:
