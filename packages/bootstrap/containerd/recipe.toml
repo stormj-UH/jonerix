@@ -17,9 +17,16 @@ export TMPDIR=/tmp
 export GOPATH=/tmp/gopath
 export GOPROXY=https://proxy.golang.org,direct
 
-# containerd uses make with Go
-CGO_ENABLED=0 make BUILDTAGS="no_btrfs no_devmapper no_cri" \
-  binaries -j$(nproc)
+# Build directly with go build — no GNU make needed
+TAGS="no_btrfs no_devmapper no_cri urfave_cli_no_docs"
+LDFLAGS="-s -w"
+
+CGO_ENABLED=0 go build -trimpath -tags "$TAGS" -ldflags "$LDFLAGS" \
+  -o bin/containerd ./cmd/containerd
+CGO_ENABLED=0 go build -trimpath -tags "$TAGS" -ldflags "$LDFLAGS" \
+  -o bin/ctr ./cmd/ctr
+CGO_ENABLED=0 go build -trimpath -tags "$TAGS no_grpc" -ldflags "$LDFLAGS -extldflags -static" \
+  -o bin/containerd-shim-runc-v2 ./cmd/containerd-shim-runc-v2
 """
 install = """
 mkdir -p "$DESTDIR/bin"

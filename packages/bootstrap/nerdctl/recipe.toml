@@ -17,12 +17,15 @@ export TMPDIR=/tmp
 export GOPATH=/tmp/gopath
 export GOPROXY=https://proxy.golang.org,direct
 
-# nerdctl uses make with Go
-CGO_ENABLED=0 make -j$(nproc)
+# Build directly with go build — no GNU make needed
+CGO_ENABLED=0 go build -trimpath \
+  -tags "urfave_cli_no_docs" \
+  -ldflags "-s -w" \
+  -o nerdctl ./cmd/nerdctl
 """
 install = """
 mkdir -p "$DESTDIR/bin"
-install -m755 _output/nerdctl "$DESTDIR/bin/nerdctl"
+install -m755 nerdctl "$DESTDIR/bin/nerdctl"
 ln -sf nerdctl "$DESTDIR/bin/docker"
 """
 
