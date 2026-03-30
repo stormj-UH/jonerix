@@ -1,0 +1,33 @@
+[package]
+name = "containerd"
+version = "2.2.2"
+license = "Apache-2.0"
+description = "Industry-standard container runtime"
+
+[source]
+url = "https://github.com/containerd/containerd/archive/refs/tags/v2.2.2.tar.gz"
+sha256 = "d6e8e6424c544cdab9b51cae320c3a9aa5590e8e1ffbd1f862eb395fd8c5bc28"
+
+[build]
+system = "custom"
+configure = ""
+build = """
+mkdir -p /var/tmp /tmp
+export TMPDIR=/tmp
+export GOPATH=/tmp/gopath
+export GOPROXY=https://proxy.golang.org,direct
+
+# containerd uses make with Go
+CGO_ENABLED=0 make BUILDTAGS="no_btrfs no_devmapper no_cri" \
+  binaries -j$(nproc)
+"""
+install = """
+mkdir -p "$DESTDIR/bin"
+install -m755 bin/containerd "$DESTDIR/bin/containerd"
+install -m755 bin/containerd-shim-runc-v2 "$DESTDIR/bin/containerd-shim-runc-v2"
+install -m755 bin/ctr "$DESTDIR/bin/ctr"
+"""
+
+[depends]
+runtime = ["musl", "runc"]
+build = ["go-current"]
