@@ -5,9 +5,8 @@
 # Components (all permissively licensed):
 #   jpkg           (MIT)          — pre-built static binary
 #   musl libc      (MIT)          — via jpkg
-#   toybox 0.8.11  (0BSD)         — via jpkg
+#   toybox 0.8.11  (0BSD)         — via jpkg (includes /bin/sh)
 #   bsdtar         (Apache-2.0)   — via jpkg (replaces toybox tar)
-#   mksh R59c      (MirOS)        — via jpkg
 #   dropbear SSH   (MIT)          — via jpkg
 #   openrc         (BSD-2-Clause) — via jpkg
 #   openssl        (Apache-2.0)   — via jpkg
@@ -50,10 +49,11 @@ RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/downloa
         > /jonerix/etc/jpkg/repos.conf
 
 # Install all packages via jpkg (jonerix building jonerix)
+# No mksh — toybox provides /bin/sh (POSIX shell)
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl mksh toybox bsdtar dropbear openrc openssl curl zstd
+        musl toybox bsdtar dropbear openrc openssl curl zstd
 
 # Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \
@@ -61,9 +61,8 @@ RUN if [ -d /jonerix/usr ]; then \
     fi && \
     ln -s / /jonerix/usr
 
-# Essential symlinks
-RUN ln -sf mksh /jonerix/bin/sh && \
-    ln -sf bsdtar /jonerix/bin/tar && \
+# Essential symlinks (toybox provides sh)
+RUN ln -sf bsdtar /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
 # CA certificates (downloaded from curl.se — no Alpine needed)
@@ -98,10 +97,10 @@ COPY bin/jpkg-aarch64 /bin/jpkg
 
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/mksh
+ENV SHELL=/bin/sh
 ENV TERM=xterm
 
 WORKDIR /root
 
-ENTRYPOINT ["/bin/mksh"]
+ENTRYPOINT ["/bin/sh"]
 CMD ["-l"]

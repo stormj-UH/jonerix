@@ -73,7 +73,7 @@ RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 RUN jpkg --root /jonerix update && \
     for pkg in \
       musl ncurses openssl zlib xz lz4 zstd ca-certificates \
-      mksh toybox bsdtar \
+      toybox bsdtar zsh \
       llvm \
       cmake bmake samurai flex bc byacc \
       perl python3 nodejs \
@@ -99,7 +99,8 @@ RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg
 # Post-install symlinks
 RUN \
     # sh symlink (required by system() calls)
-    ln -sf mksh /jonerix/bin/sh && \
+    # zsh as bash (bash-compatible mode)
+    ln -sf zsh /jonerix/bin/bash 2>/dev/null || true && \
     # tar → bsdtar (toybox tar can't handle symlinks in jpkg archives)
     ln -sf bsdtar /jonerix/bin/tar && \
     # ssh → dbclient (dropbear SSH client)
@@ -148,7 +149,7 @@ COPY --from=rootfs /jonerix/ /
 
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/mksh
+ENV SHELL=/bin/zsh
 ENV TERM=xterm
 ENV EDITOR=micro
 ENV VISUAL=micro
@@ -156,5 +157,5 @@ ENV LANG=C.UTF-8
 
 WORKDIR /root
 
-ENTRYPOINT ["/bin/mksh"]
+ENTRYPOINT ["/bin/zsh"]
 CMD ["-l"]
