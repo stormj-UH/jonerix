@@ -18,6 +18,13 @@ build = "sh make-bootstrap.sh"
 install = """
 install -Dm755 bmake $DESTDIR/bin/bmake
 ln -sf bmake $DESTDIR/bin/make
+# Install system makefiles (sys.mk etc.) — bmake needs these to function
+mkdir -p $DESTDIR/share/mk
+if [ -d mk ]; then
+  cp -a mk/*.mk $DESTDIR/share/mk/
+elif [ -d /usr/share/mk ]; then
+  cp -a /usr/share/mk/*.mk $DESTDIR/share/mk/
+fi
 """
 
 [depends]
