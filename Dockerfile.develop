@@ -27,10 +27,11 @@ RUN jpkg update && \
     for pkg in \
       musl ncurses openssl zlib xz lz4 zstd \
       llvm rust go \
-      cmake bmake samurai flex bc \
+      cmake bmake samurai flex bc byacc \
       perl python3 pip nodejs npm \
-      gitoxide micro mandoc pigz fastfetch \
-      curl doas dropbear; \
+      gitoxide ripgrep micro mandoc pigz fastfetch \
+      curl doas dropbear \
+      containerd runc nerdctl; \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
     done
