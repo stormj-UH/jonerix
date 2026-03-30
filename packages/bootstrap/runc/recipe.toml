@@ -19,7 +19,8 @@ export GOPROXY=https://proxy.golang.org,direct
 
 # runc requires CGO for nsenter (C code for namespace operations).
 # Build with clang as C compiler, no seccomp (needs libseccomp).
-# Dynamic linking — static requires musl-static which isn't in the dev image.
+# Ensure linux headers are found (jonerix merged-usr: /include/)
+export C_INCLUDE_PATH="/include:/usr/include"
 CC=clang CGO_ENABLED=1 go build -trimpath \
   -tags "netgo osusergo urfave_cli_no_docs" \
   -ldflags "-s -w" \
