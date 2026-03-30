@@ -72,23 +72,36 @@ static pkg_file_t *build_file_manifest(const char *root_dir, const char *prefix)
 
 /* Copy extracted files from staging to root filesystem */
 static int install_files(const char *stage_dir, const char *dest_root) {
-    char cmd[2048];
+    char cmd[4096];
     /*
-     * Copy files from staging to root using cp -a.
-     * We avoid tar here because on merged-usr systems (/usr -> /),
-     * tar follows symlinks on the destination and can corrupt binaries.
-     * cp -a preserves permissions and doesn't follow dest symlinks.
+     * Install files from staging to root filesystem.
      *
-     * First ensure usr/ is flattened in staging (belt-and-suspenders
-     * with the flatten in pkg_extract).
+     * Challenges on jonerix merged-usr (/usr -> /):
+     * 1. Staging may contain usr/ paths — flatten them first
+     * 2. Must not follow symlinks on the DESTINATION (root)
+     * 3. Must not replace real files with symlinks from packages
+     *
+     * Strategy: flatten usr/ in staging, remove the /usr symlink on
+     * root temporarily, use tar to copy (preserves permissions),
+     * then restore the /usr symlink.
      */
     snprintf(cmd, sizeof(cmd),
+             /* Flatten usr/ in staging */
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
              "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi && "
-             "cp -a '%s/.' '%s/'",
+             /* Temporarily remove /usr symlink on root to prevent
+              * tar from following it */
+             "USR_WAS_LINK=false; "
+             "if [ -L '%s/usr' ]; then rm -f '%s/usr'; USR_WAS_LINK=true; fi && "
+             /* Copy using tar — staging is flattened, no usr/ paths */
+             "cd '%s' && tar cf - . | tar xf - -C '%s' && "
+             /* Restore /usr symlink */
+             "if $USR_WAS_LINK; then ln -sf / '%s/usr' 2>/dev/null || true; fi",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
-             stage_dir, dest_root);
+             dest_root, dest_root,
+             stage_dir, dest_root,
+             dest_root);
     return system(cmd);
 }
 
