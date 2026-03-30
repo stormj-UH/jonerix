@@ -1,0 +1,32 @@
+[package]
+name = "micro"
+version = "2.0.15"
+license = "MIT"
+description = "Modern terminal text editor (built from source)"
+
+[source]
+url = "https://github.com/zyedidia/micro/archive/refs/tags/v2.0.15.tar.gz"
+sha256 = "612c775321c268c8f9e1767505ff378bca9b9ab66f5c41b69ecb2464ecf15084"
+
+[build]
+system = "custom"
+configure = ""
+build = """
+mkdir -p /var/tmp /tmp
+export TMPDIR=/tmp
+export GOPATH=/tmp/gopath
+export GOPROXY=https://proxy.golang.org,direct
+
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/zyedidia/micro/v2/internal/util.Version=2.0.15" \
+  -o micro ./cmd/micro
+"""
+install = """
+mkdir -p "$DESTDIR/bin"
+install -m755 micro "$DESTDIR/bin/micro"
+ln -sf micro "$DESTDIR/bin/editor"
+ln -sf micro "$DESTDIR/bin/vi"
+"""
+
+[depends]
+runtime = []
+build = ["go-current"]
