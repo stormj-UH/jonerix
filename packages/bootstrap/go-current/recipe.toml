@@ -1,0 +1,50 @@
+[package]
+name = "go-current"
+version = "1.26.1"
+license = "BSD-3-Clause"
+description = "Go programming language (current release, built from Go 1.17)"
+
+# Final stage of the Go bootstrap chain:
+#   C (clang) → Go 1.4 → Go 1.17 → Go 1.26.1
+# This produces the production Go compiler for building containerd,
+# runc, nerdctl, micro, and other Go software from source.
+
+[source]
+url = "https://go.dev/dl/go1.26.1.src.tar.gz"
+sha256 = "3172293d04b209dc1144698e7ba13f0477f6ba8c5ffd0be66c20fdbc9785dfbb"
+
+[build]
+system = "custom"
+configure = ""
+build = """
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+  echo "SKIP: Full from-C chain is x86_64-only (Go 1.4 lacks arm64)."
+  echo "On aarch64, use prebuilt Go (core/go) or cross-bootstrap."
+  exit 1
+fi
+# Ensure Go 1.17 is available as bootstrap
+if [ ! -x /lib/go/bin/go ]; then
+  echo "ERROR: Go 1.17 not found at /lib/go/bin/go"
+  echo "Build go (1.17) first: jpkg build packages/bootstrap/go"
+  exit 1
+fi
+mkdir -p /var/tmp /tmp
+cd src
+CGO_ENABLED=0 \
+GOROOT_BOOTSTRAP=/lib/go \
+GOROOT_FINAL=/lib/go-current \
+TMPDIR=/tmp \
+  bash ./make.bash
+"""
+install = """
+mkdir -p "$DESTDIR/lib/go-current"
+cp -a bin pkg src "$DESTDIR/lib/go-current/"
+mkdir -p "$DESTDIR/bin"
+ln -sf ../lib/go-current/bin/go "$DESTDIR/bin/go"
+ln -sf ../lib/go-current/bin/gofmt "$DESTDIR/bin/gofmt"
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "go"]
