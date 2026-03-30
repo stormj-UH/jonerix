@@ -1,0 +1,21 @@
+[package]
+name = "nghttp2"
+version = "1.65.0"
+license = "MIT"
+description = "HTTP/2 C library — needed by curl for GitHub downloads"
+
+[source]
+url = "https://github.com/nghttp2/nghttp2/releases/download/v1.65.0/nghttp2-1.65.0.tar.xz"
+sha256 = "FIXME"
+
+[build]
+system = "cmake"
+configure = "cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_C_COMPILER=clang -DENABLE_LIB_ONLY=ON -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DBUILD_STATIC_LIBS=OFF -DCMAKE_BUILD_TYPE=Release"
+build = "cmake --build build -j$(nproc)"
+install = """DESTDIR=$DESTDIR cmake --install build
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "cmake", "samurai"]
