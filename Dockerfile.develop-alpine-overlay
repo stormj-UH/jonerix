@@ -1,0 +1,212 @@
+# jonerix — Develop image
+# Multi-stage: overlays Alpine-provided dev tools onto jonerix-minimal.
+# This works around toybox tar's inability to extract symlinks in jpkg archives.
+#
+# Build: docker build -f Dockerfile.develop --tag jonerix-develop:latest .
+#
+# Bootstrap usage (build packages from source inside this container):
+#   docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
+#     sh bootstrap/build-all.sh --output /workspace/.build/pkgs --continue-on-error
+
+ARG MINIMAL_IMAGE=jonerix-minimal:latest
+
+# ============================================================
+# Stage 0: Extract tools from Alpine packages
+# ============================================================
+FROM alpine:latest AS tools
+
+RUN apk add --no-cache \
+    clang lld llvm \
+    cmake samurai meson \
+    musl-dev linux-headers \
+    perl python3 \
+    make xz bzip2 \
+    libarchive libuv rhash \
+    libarchive-tools byacc ripgrep \
+    zlib-dev openssl-dev \
+    grep m4 bash gzip \
+    ncurses-dev expat-dev curl
+
+# Build jpkg for use in the final image
+COPY packages/jpkg/ /src/
+RUN apk add --no-cache zstd-dev zstd-static && \
+    cd /src && find . -name '*.o' -o -name '*.d' | xargs rm -f && rm -f jpkg && \
+    make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg -j$(nproc) && \
+    strip jpkg
+
+# Download prebuilt Rust toolchain (musl-static, MIT license)
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ]; then \
+      URL="https://static.rust-lang.org/dist/2026-03-26/rust-1.94.1-aarch64-unknown-linux-musl.tar.gz"; \
+      SHA="caa1d50676518532cc9b4c4c491f219edbdcb9ebf9e6624432b5b43b87d8cc0a"; \
+    else \
+      URL="https://static.rust-lang.org/dist/2026-03-26/rust-1.94.1-x86_64-unknown-linux-musl.tar.gz"; \
+      SHA="5568d1b7992dcb0cabc9936476a0569ff314a3f1322886b4f414eb2d07b0ffd6"; \
+    fi && \
+    curl -fsSL "$URL" -o /tmp/rust.tar.gz && \
+    printf '%s  /tmp/rust.tar.gz\n' "$SHA" | sha256sum -c && \
+    mkdir /tmp/rust && tar xf /tmp/rust.tar.gz --strip-components=1 -C /tmp/rust && \
+    /tmp/rust/install.sh --prefix=/overlay --disable-ldconfig \
+      --components=rustc,cargo,rust-std-${ARCH}-unknown-linux-musl && \
+    rm -rf /tmp/rust /tmp/rust.tar.gz
+
+# Collect tools into /overlay (only files that don't exist in jonerix-minimal)
+RUN mkdir -p /overlay/bin /overlay/lib /overlay/include /overlay/share && \
+    # clang/lld/llvm tools
+    cp -a /usr/lib/llvm21/bin/clang-21 /overlay/bin/ && \
+    ln -sf clang-21 /overlay/bin/clang && \
+    ln -sf clang-21 /overlay/bin/clang++ && \
+    cp -a /usr/bin/ld.lld /overlay/bin/ && \
+    ln -sf ld.lld /overlay/bin/ld && \
+    cp -aL /usr/bin/llvm-ar /overlay/bin/ && \
+    cp -aL /usr/bin/llvm-nm /overlay/bin/ && \
+    cp -aL /usr/bin/llvm-ranlib /overlay/bin/ && \
+    cp -aL /usr/bin/llvm-objcopy /overlay/bin/ && \
+    cp -aL /usr/bin/llvm-objdump /overlay/bin/ && \
+    cp -aL /usr/bin/llvm-strip /overlay/bin/ && \
+    cp -aL /usr/bin/llvm-readelf /overlay/bin/ && \
+    # clang resource dir (intrinsics headers: emmintrin.h, cpuid.h, etc.)
+    mkdir -p /overlay/lib/llvm21/lib/clang && \
+    cp -a /usr/lib/llvm21/lib/clang/21 /overlay/lib/llvm21/lib/clang/21 && \
+    # LLVM shared libs — use -L to follow symlinks to real files
+    cp -aL /usr/lib/llvm21/lib/libclang-cpp.so* /overlay/lib/ && \
+    cp -aL /usr/lib/llvm21/lib/libLLVM.so* /overlay/lib/ && \
+    cp -aL /usr/lib/liblld*.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libunwind*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libstdc++.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libgcc_s.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libffi.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libxml2.so* /overlay/lib/ && \
+    # cmake
+    cp -a /usr/bin/cmake /overlay/bin/ && \
+    cp -a /usr/bin/ctest /overlay/bin/ && \
+    cp -a /usr/bin/cpack /overlay/bin/ && \
+    cp -aL /usr/lib/libarchive*.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libuv*.so* /overlay/lib/ && \
+    cp -aL /usr/lib/librhash*.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libexpat*.so* /overlay/lib/ 2>/dev/null || true && \
+    # zlib and openssl dev libs (needed by pigz, nodejs, etc.)
+    cp -aL /usr/lib/libz.so* /overlay/lib/ && \
+    cp -aL /usr/lib/libssl.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libcrypto.so* /overlay/lib/ 2>/dev/null || true && \
+    # ncurses dev (needed by dropbear)
+    cp -aL /usr/lib/libncurses*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libform*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libpanel*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libmenu*.so* /overlay/lib/ 2>/dev/null || true && \
+    # expat (needed by unbound)
+    cp -aL /usr/lib/libexpat.so* /overlay/lib/ && \
+    cp -aL /usr/share/cmake/ /overlay/share/cmake/ 2>/dev/null || true && \
+    # samurai (ninja-compatible build tool)
+    cp -a /usr/bin/samu /overlay/bin/ && \
+    ln -sf samu /overlay/bin/ninja && \
+    # meson
+    cp -a /usr/bin/meson /overlay/bin/ 2>/dev/null || true && \
+    cp -a /usr/lib/python3*/site-packages/mesonbuild /overlay/lib/mesonbuild 2>/dev/null || true && \
+    # make (GNU make for configure scripts that need it)
+    cp -a /usr/bin/make /overlay/bin/ && \
+    # perl (needed by many configure scripts)
+    cp -aL /usr/bin/perl /overlay/bin/ && \
+    cp -aL /usr/lib/perl5/ /overlay/lib/perl5/ 2>/dev/null || true && \
+    mkdir -p /overlay/share && \
+    cp -aL /usr/share/perl5/ /overlay/share/perl5/ 2>/dev/null || true && \
+    # python3
+    cp -aL /usr/bin/python3 /overlay/bin/ && \
+    cp -aL /usr/lib/python3* /overlay/lib/ 2>/dev/null || true && \
+    ln -sf python3 /overlay/bin/python && \
+    # xz
+    cp -aL /usr/bin/xz /overlay/bin/ && \
+    cp -aL /usr/lib/liblzma*.so* /overlay/lib/ && \
+    # bzip2
+    cp -aL /usr/bin/bzip2 /overlay/bin/ && \
+    ln -sf bzip2 /overlay/bin/bunzip2 && \
+    # musl-dev headers + crt files + gcc support libs
+    cp -a /usr/include/* /overlay/include/ && \
+    cp -aL /usr/lib/crt*.o /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/Scrt1.o /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/rcrt1.o /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libssp*.a /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/libssp*.so* /overlay/lib/ 2>/dev/null || true && \
+    cp -aL /usr/lib/gcc/ /overlay/lib/gcc/ 2>/dev/null || true && \
+    # POSIX tools missing from toybox (busybox provides these in Alpine)
+    for cmd in tr expr awk nproc patch grep egrep fgrep gzip gunzip; do \
+        p=$(which $cmd 2>/dev/null) && cp -aL "$p" /overlay/bin/ || true; \
+    done && \
+    # bsdtar (replaces toybox tar — handles symlinks correctly)
+    cp -aL /usr/bin/bsdtar /overlay/bin/ && \
+    cp -aL /usr/bin/bsdcpio /overlay/bin/ 2>/dev/null || true && \
+    ln -sf bsdtar /overlay/bin/tar && \
+    # byacc (BSD yacc — needed by doas and others)
+    cp -aL /usr/bin/byacc /overlay/bin/ && \
+    ln -sf byacc /overlay/bin/yacc && \
+    # ripgrep (autoconf-compatible grep replacement)
+    cp -aL /usr/bin/rg /overlay/bin/ && \
+    # m4 (needed by flex, autoconf)
+    cp -aL /usr/bin/m4 /overlay/bin/ && \
+    # bash (needed by toybox genconfig.sh and some configure scripts)
+    cp -aL /bin/bash /overlay/bin/ 2>/dev/null || cp -aL /usr/bin/bash /overlay/bin/ 2>/dev/null || true && \
+    # bmake (from Alpine's bmake package if available, otherwise skip)
+    apk add --no-cache bmake 2>/dev/null && \
+    cp -a /usr/bin/bmake /overlay/bin/ 2>/dev/null || true && \
+    # jpkg (freshly built)
+    cp -a /src/jpkg /overlay/bin/jpkg && \
+    # Auto-resolve all shared lib deps for /overlay/bin/* binaries
+    MUSL_LD=$(find /lib -name 'ld-musl-*.so.1' | head -1) && \
+    for bin in /overlay/bin/*; do \
+        [ -f "$bin" ] && [ -x "$bin" ] || continue; \
+        "$MUSL_LD" --list "$bin" 2>/dev/null | grep ' => ' | grep -v 'not found' | \
+            awk '{print $3}' | while read lib; do \
+                [ -f "$lib" ] && cp -anP "$lib" /overlay/lib/ 2>/dev/null || true; \
+                real=$(readlink -f "$lib" 2>/dev/null); \
+                [ -f "$real" ] && cp -anP "$real" /overlay/lib/ 2>/dev/null || true; \
+            done; \
+    done && \
+    # Remove GCC compiler libs pulled in transitively via libstdc++.
+    # These are only needed by GCC's compiler passes, not at runtime.
+    # Their presence confuses Perl's Configure and other build systems.
+    rm -f /overlay/lib/libgmp* /overlay/lib/libisl* \
+          /overlay/lib/libmpc* /overlay/lib/libmpfr*
+
+# ============================================================
+# Stage 1: Assemble develop image
+# ============================================================
+FROM ${MINIMAL_IMAGE}
+
+# Copy Alpine-provided tools overlay
+COPY --from=tools /overlay/bin/ /bin/
+COPY --from=tools /overlay/lib/ /lib/
+COPY --from=tools /overlay/include/ /include/
+COPY --from=tools /overlay/share/ /share/
+
+ENV PATH=/bin
+ENV HOME=/root
+ENV SHELL=/bin/mksh
+ENV TERM=xterm
+# Post-overlay fixups
+RUN \
+    # Symlinks for configure scripts that expect standard tool names
+    ln -sf clang /bin/cc 2>/dev/null || true && \
+    ln -sf llvm-ar /bin/ar 2>/dev/null || true && \
+    ln -sf llvm-nm /bin/nm 2>/dev/null || true && \
+    ln -sf llvm-ranlib /bin/ranlib 2>/dev/null || true && \
+    ln -sf llvm-strip /bin/strip 2>/dev/null || true && \
+    ln -sf llvm-objcopy /bin/objcopy 2>/dev/null || true && \
+    ln -sf llvm-objdump /bin/objdump 2>/dev/null || true && \
+    # Link clang resource dir so intrinsics (arm_neon.h, emmintrin.h) are found.
+    # Don't copy to /include/ — clang wrapper headers shadow musl via #include_next.
+    mkdir -p /bin/../lib/clang/21 && \
+    ln -sf /lib/llvm21/lib/clang/21/include /bin/../lib/clang/21/include 2>/dev/null || true && \
+    # Remove Alpine fortify headers — they use #include_next which breaks
+    # when fortify dir is searched before musl headers in clang's search path
+    rm -rf /include/fortify /usr/include/fortify && \
+    # musl linker stubs: -lc, -lm, -lpthread, etc. all resolve to libc
+    MUSL_LD=$(ls /lib/ld-musl-*.so.1 2>/dev/null | head -1) && \
+    ln -sf "$MUSL_LD" /lib/libc.so && \
+    for stub in libm libpthread libdl librt libcrypt libresolv libutil libxnet; do \
+        ln -sf "$MUSL_LD" /lib/${stub}.so; \
+    done
+
+WORKDIR /root
+
+ENTRYPOINT ["/bin/mksh"]
+CMD ["-l"]

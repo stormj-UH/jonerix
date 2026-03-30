@@ -1,16 +1,22 @@
 # Bootstrap build order — dependency + size ordered
 #
 # Dependency rules:
-#   musl    → (no deps, must be first)
-#   ncurses → (no deps)
-#   openssl → musl
-#   zstd    → musl
-#   pico    → ncurses
-#   curl    → musl, openssl
-#   python3 → musl, openssl
-#   unbound → musl, openssl
-#   nodejs  → musl, zlib (zlib from pre-bootstrap)
-#   pigz    → musl, zlib (zlib from pre-bootstrap)
+#   musl      → (no deps, must be first)
+#   ncurses   → (no deps)
+#   openssl   → musl
+#   zstd      → musl
+#   libarchive→ musl, openssl, zstd, lz4, xz
+#   bsdtar    → libarchive
+#   curl      → musl, openssl
+#   python3   → musl, openssl
+#   unbound   → musl, openssl
+#   nodejs    → musl, zlib
+#   go-bootstrap → musl, clang (x86_64 only)
+#   go        → musl, clang, go-bootstrap
+#   go-current→ musl, clang, go
+#   rust      → musl, llvm, rust (prebuilt), cmake, samurai, python3, curl
+#   ripgrep   → musl, rust
+#   uutils    → musl, rust
 #
 # Within each dependency tier, packages are ordered smallest-first
 # so that interrupted builds leave the most useful artifacts.
@@ -22,7 +28,6 @@ ncurses
 snooze
 doas
 socklog
-pico
 pigz
 lz4
 # Tier 2: depends on musl only (small)
@@ -31,9 +36,12 @@ bc
 dhcpcd
 mksh
 bmake
+byacc
 ifupdown-ng
 # Tier 3: depends on musl only (medium)
 toybox
+zlib
+xz
 zstd
 openssl
 dropbear
@@ -41,6 +49,8 @@ openrc
 flex
 fastfetch
 # Tier 4: depends on openssl or other tier-3 packages
+libarchive
+bsdtar
 unbound
 curl
 cmake
@@ -51,5 +61,20 @@ nodejs
 # Tier 5b: package managers (pure JS/Python, no compilation)
 npm
 pip
-# Tier 6: Rust-based packages (requires prebuilt Rust toolchain)
+# Tier 6: LLVM from source (requires cmake, samurai, python3)
+llvm
+# Tier 7: Go bootstrap chain (x86_64: C→1.4→1.17→1.26, aarch64: prebuilt)
+go-bootstrap
+go
+go-current
+# Tier 8: Go-based packages (requires go-current)
+micro
+runc
+containerd
+nerdctl
+cni-plugins
+# Tier 9: Rust from source (requires prebuilt rust + llvm)
+rust
+# Tier 10: Rust-based packages (requires from-source rust)
 uutils
+ripgrep
