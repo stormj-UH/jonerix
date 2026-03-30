@@ -57,7 +57,11 @@ RUN \
     ln -sf python3 /bin/python && \
     # Editor
     ln -sf micro /bin/editor && \
-    ln -sf micro /bin/vi
+    ln -sf micro /bin/vi && \
+    # Link libgcc_s.so (linker needs .so, only .so.1 shipped)
+    ln -sf libgcc_s.so.1 /lib/libgcc_s.so && \
+    # Create empty libssp_nonshared.a stub (musl handles SSP internally)
+    printf '!<arch>\n' > /lib/libssp_nonshared.a
 
 # ── Environment ─────────────────────────────────────────────────────────
 ENV PATH=/bin
