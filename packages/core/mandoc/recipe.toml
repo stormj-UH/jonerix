@@ -2,7 +2,7 @@
 name = "mandoc"
 version = "1.14.6"
 license = "ISC"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "UNIX manpage compiler and viewer"
 
 [build]

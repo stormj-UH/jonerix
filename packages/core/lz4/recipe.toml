@@ -2,7 +2,7 @@
 name = "lz4"
 version = "1.10.0"
 license = "BSD-2-Clause"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Extremely fast lossless compression library and tool"
 
 [build]

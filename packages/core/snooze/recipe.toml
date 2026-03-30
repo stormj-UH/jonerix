@@ -2,7 +2,7 @@
 name = "snooze"
 version = "0.5"
 license = "CC0"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Lightweight cron alternative for running a command at a specific time"
 
 [build]

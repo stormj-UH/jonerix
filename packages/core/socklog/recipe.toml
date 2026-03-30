@@ -2,7 +2,7 @@
 name = "socklog"
 version = "2.2.3"
 license = "BSD-3-Clause"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Small and secure syslogd replacement (DJB-style)"
 
 [build]
