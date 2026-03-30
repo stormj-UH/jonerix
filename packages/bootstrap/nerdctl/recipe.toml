@@ -1,0 +1,31 @@
+[package]
+name = "nerdctl"
+version = "2.2.1"
+license = "Apache-2.0"
+description = "Docker-compatible CLI for containerd"
+
+[source]
+url = "https://github.com/containerd/nerdctl/archive/refs/tags/v2.2.1.tar.gz"
+sha256 = "f39c34d3a285e087f2b2869f06fea343d8285ad9bfb9417b9c5b6dd4e78d6fad"
+
+[build]
+system = "custom"
+configure = ""
+build = """
+mkdir -p /var/tmp /tmp
+export TMPDIR=/tmp
+export GOPATH=/tmp/gopath
+export GOPROXY=https://proxy.golang.org,direct
+
+# nerdctl uses make with Go
+CGO_ENABLED=0 make -j$(nproc)
+"""
+install = """
+mkdir -p "$DESTDIR/bin"
+install -m755 _output/nerdctl "$DESTDIR/bin/nerdctl"
+ln -sf nerdctl "$DESTDIR/bin/docker"
+"""
+
+[depends]
+runtime = ["musl", "containerd", "runc"]
+build = ["go-current"]
