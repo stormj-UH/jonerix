@@ -1,4 +1,4 @@
-# /etc/profile — jonerix system-wide login profile for mksh
+# /etc/profile — jonerix system-wide login profile
 # Sourced by login shells. Keep this POSIX-compatible.
 
 # --- PATH ---
@@ -42,7 +42,7 @@ alias ...='cd ../..'
 
 # --- History ---
 export HISTSIZE=1000
-export HISTFILE="$HOME/.mksh_history"
+export HISTFILE="$HOME/.sh_history"
 
 # --- Misc ---
 # Prevent core dumps by default

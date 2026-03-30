@@ -1,4 +1,4 @@
 # /etc/shells — valid login shells
-# jonerix ships mksh as the default shell.
-/bin/mksh
+# minimal: toybox sh (POSIX), develop: zsh (bash-compatible, MIT)
 /bin/sh
+/bin/zsh
