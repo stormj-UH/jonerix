@@ -2,7 +2,7 @@
 name = "zstd"
 version = "1.5.6"
 license = "BSD-3-Clause"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Zstandard compression library and tool"
 
 [build]

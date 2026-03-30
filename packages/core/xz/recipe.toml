@@ -2,7 +2,7 @@
 name = "xz"
 version = "5.8.2"
 license = "0BSD"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "XZ compression utilities and liblzma"
 
 [build]

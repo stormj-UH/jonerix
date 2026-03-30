@@ -2,7 +2,7 @@
 name = "bsdtar"
 version = "3.8.5"
 license = "Apache-2.0"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "BSD tar from libarchive (handles symlinks correctly)"
 
 [build]

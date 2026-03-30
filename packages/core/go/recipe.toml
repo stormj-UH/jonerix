@@ -2,7 +2,7 @@
 name = "go"
 version = "1.26.1"
 license = "BSD-3-Clause"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Go programming language compiler and tools"
 
 # No [source] section: the build step downloads the arch-appropriate prebuilt

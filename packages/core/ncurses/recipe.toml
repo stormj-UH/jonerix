@@ -2,7 +2,7 @@
 name = "ncurses"
 version = "6.5"
 license = "MIT"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Terminal handling library"
 
 [build]

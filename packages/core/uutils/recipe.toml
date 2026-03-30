@@ -2,7 +2,7 @@
 name = "uutils"
 version = "0.4.0"
 license = "MIT"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Rust rewrite of GNU coreutils (tr, expr, sort, wc, cut, and 70+ more)"
 
 [build]

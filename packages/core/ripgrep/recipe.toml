@@ -2,7 +2,7 @@
 name = "ripgrep"
 version = "15.1.0"
 license = "MIT"
-pre_bootstrap = true
+pre_bootstrap = false
 description = "Fast line-oriented search tool (grep replacement)"
 
 [build]
