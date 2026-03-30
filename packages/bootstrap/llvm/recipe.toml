@@ -47,6 +47,8 @@ cmake -S llvm -B build -G Ninja \
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR=$(which llvm-ar || echo /bin/ar) \
+    -DCMAKE_RANLIB=$(which llvm-ranlib || echo /bin/ranlib) \
     -DCMAKE_C_FLAGS="-Os" \
     -DCMAKE_CXX_FLAGS="-Os"
 
