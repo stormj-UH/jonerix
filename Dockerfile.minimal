@@ -12,6 +12,7 @@
 #   openssl        (Apache-2.0)   — via jpkg
 #   curl           (MIT)          — via jpkg
 #   zstd           (BSD)          — via jpkg
+#   ca-certificates (MPL-2.0)    — via jpkg
 #
 # Build: docker build -f Dockerfile.minimal --tag jonerix-minimal:latest .
 
@@ -71,7 +72,7 @@ RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 # Install all packages via jpkg (now using bsdtar for extraction)
 RUN jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl mksh toybox bsdtar dropbear openrc openssl curl zstd
+        musl mksh toybox bsdtar dropbear openrc openssl curl zstd ca-certificates
 
 # Flatten usr/ into / (merged-usr layout), then add the symlink
 RUN if [ -d /jonerix/usr ]; then \
@@ -81,10 +82,6 @@ RUN if [ -d /jonerix/usr ]; then \
 
 # Copy jpkg itself into the rootfs
 RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg
-
-# CA certificates (from Alpine — not a jpkg package yet)
-RUN apk add --no-cache ca-certificates && \
-    cp /etc/ssl/certs/ca-certificates.crt /jonerix/etc/ssl/certs/
 
 # sh symlink: system() in jpkg (and other tools) requires /bin/sh
 RUN ln -sf mksh /jonerix/bin/sh
