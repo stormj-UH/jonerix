@@ -17,10 +17,11 @@ export TMPDIR=/tmp
 export GOPATH=/tmp/gopath
 export GOPROXY=https://proxy.golang.org,direct
 
-# Build runc without seccomp (requires libseccomp + pkg-config) and without CGO
-CGO_ENABLED=0 go build -trimpath \
+# runc requires CGO for nsenter (C code for namespace operations).
+# Build with clang as C compiler, no seccomp (needs libseccomp).
+CC=clang CGO_ENABLED=1 go build -trimpath \
   -tags "netgo osusergo urfave_cli_no_docs" \
-  -ldflags "-s -w -extldflags -static" \
+  -ldflags "-s -w -linkmode external -extldflags '-static'" \
   -o runc .
 """
 install = """
