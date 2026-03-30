@@ -1,0 +1,26 @@
+[package]
+name = "zsh"
+version = "5.9"
+license = "MIT"
+description = "Z shell — bash-compatible permissive shell for build scripts"
+
+[source]
+url = "https://sourceforge.net/projects/zsh/files/zsh/5.9/zsh-5.9.tar.xz/download"
+sha256 = "FIXME"
+
+[build]
+system = "custom"
+build = """
+set -e
+CC=clang ./configure --prefix=/ --enable-multibyte --disable-gdbm --without-tcsetpgrp
+make -j$(nproc)
+make DESTDIR=$DESTDIR install
+# Symlink as bash — enables #!/bin/bash scripts to run via zsh
+ln -sf zsh $DESTDIR/bin/bash
+ln -sf zsh $DESTDIR/bin/sh
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "ncurses"]
+build = ["clang", "make"]
