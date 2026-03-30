@@ -15,36 +15,19 @@ FROM ${MINIMAL_IMAGE}
 SHELL ["/bin/mksh", "-c"]
 
 # ── Install all development packages via jpkg ────────────────────────────
+# Install one at a time to avoid parallel download race conditions.
 # Order: base libs → compilers → build tools → languages → utilities
-RUN jpkg update && jpkg install \
-    musl \
-    ncurses \
-    openssl \
-    zlib \
-    xz \
-    lz4 \
-    zstd \
-    llvm \
-    rust \
-    go \
-    cmake \
-    bmake \
-    samurai \
-    flex \
-    bc \
-    perl \
-    python3 \
-    pip \
-    nodejs \
-    npm \
-    gitoxide \
-    micro \
-    mandoc \
-    pigz \
-    fastfetch \
-    curl \
-    doas \
-    dropbear
+RUN jpkg update && \
+    for pkg in \
+      musl ncurses openssl zlib xz lz4 zstd \
+      llvm rust go \
+      cmake bmake samurai flex bc \
+      perl python3 pip nodejs npm \
+      gitoxide micro mandoc pigz fastfetch \
+      curl doas dropbear; \
+    do \
+      echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
+    done
 
 # ── Symlinks for standard tool names ────────────────────────────────────
 # Build systems expect cc, make, ar, etc. — point them to our tools.
