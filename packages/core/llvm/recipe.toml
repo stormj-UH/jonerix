@@ -9,7 +9,7 @@ description = "LLVM compiler infrastructure with clang and lld"
 system = "custom"
 build = """
 set -e
-apk add --no-cache clang lld gcc musl-dev linux-headers libstdc++-dev
+apk add --no-cache clang lld gcc musl-dev linux-headers libstdc++-dev llvm
 
 # Detect versioned package names (Alpine uses clang21, lld21, etc.)
 CLANG_PKG=$(apk info 2>/dev/null | grep '^clang[0-9]' | grep -v 'headers\|libs\|dev\|rt\|tools' | head -1)
@@ -60,6 +60,9 @@ fi
 
 # ld symlink: clang invokes bare 'ld' which must resolve to lld
 ln -sf ld.lld "${DESTDIR}/bin/ld" 2>/dev/null || true
+
+# libgcc_s.so symlink (linker needs .so, only .so.1 is shipped)
+ln -sf libgcc_s.so.1 "${DESTDIR}/lib/libgcc_s.so" 2>/dev/null || true
 
 # cc symlink: many configure scripts look for 'cc'
 ln -sf clang "${DESTDIR}/bin/cc" 2>/dev/null || true
