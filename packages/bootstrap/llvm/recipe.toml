@@ -17,7 +17,8 @@ set -e
 # Builds clang, lld, and LLVM tools using the pre-bootstrap clang.
 # ~45 min on x86_64 (12 cores), ~60 min on aarch64.
 
-cd llvm-project-21.1.2.src/
+# jpkg auto-detects the extracted subdir as src_dir, so we're already
+# inside llvm-project-21.1.2.src/ — don't cd again.
 
 # Detect host architecture for LLVM target
 case $(uname -m) in
