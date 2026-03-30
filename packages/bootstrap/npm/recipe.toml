@@ -14,7 +14,7 @@ configure = ""
 build = ""
 install = """set -e
 mkdir -p "$DESTDIR/lib/node_modules/npm" "$DESTDIR/bin"
-cp -a package/. "$DESTDIR/lib/node_modules/npm/"
+cp -a . "$DESTDIR/lib/node_modules/npm/"
 ln -sf ../lib/node_modules/npm/bin/npm-cli.js "$DESTDIR/bin/npm"
 ln -sf ../lib/node_modules/npm/bin/npx-cli.js "$DESTDIR/bin/npx"
 chmod 755 "$DESTDIR/lib/node_modules/npm/bin/npm-cli.js"
