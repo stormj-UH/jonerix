@@ -1,0 +1,27 @@
+[package]
+name = "ripgrep"
+version = "15.1.0"
+license = "MIT"
+description = "Fast line-oriented search tool (grep replacement)"
+
+[source]
+url = "https://github.com/BurntSushi/ripgrep/archive/refs/tags/15.1.0.tar.gz"
+sha256 = "046fa01a216793b8bd2750f9d68d4ad43986eb9c0d6122600f993906012972e8"
+
+[build]
+system = "custom"
+configure = ""
+build = """
+set -e
+export CC=clang
+cargo build --release --features pcre2 2>/dev/null || cargo build --release
+"""
+install = """
+set -e
+mkdir -p "$DESTDIR/bin"
+install -m755 target/release/rg "$DESTDIR/bin/rg"
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]
