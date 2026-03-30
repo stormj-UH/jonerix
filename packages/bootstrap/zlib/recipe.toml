@@ -1,0 +1,19 @@
+[package]
+name = "zlib"
+version = "1.3.1"
+license = "zlib"
+description = "General-purpose compression library"
+
+[source]
+url = "https://zlib.net/zlib-1.3.1.tar.gz"
+sha256 = "cc0b4e42510d49c6decd464123ecf3b14ae9b47f9b4ed2ee64893e2d6520a264"
+
+[build]
+system = "custom"
+configure = "CC=clang ./configure --prefix=/"
+build = "make -j$(nproc)"
+install = "make install DESTDIR=$DESTDIR"
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]
