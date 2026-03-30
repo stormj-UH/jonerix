@@ -81,9 +81,8 @@ static int install_files(const char *stage_dir, const char *dest_root) {
      * 2. Must not follow symlinks on the DESTINATION (root)
      * 3. Must not replace real files with symlinks from packages
      *
-     * Strategy: flatten usr/ in staging, remove the /usr symlink on
-     * root temporarily, use tar to copy (preserves permissions),
-     * then restore the /usr symlink.
+     * Strategy: flatten usr/ in staging, then tar to root.
+     * Since staging is flattened, tar won't write usr/ paths.
      */
     snprintf(cmd, sizeof(cmd),
              /* Flatten usr/ in staging (belt-and-suspenders with pkg_extract) */
