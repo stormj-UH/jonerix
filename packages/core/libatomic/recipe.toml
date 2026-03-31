@@ -1,0 +1,38 @@
+[package]
+name = "libatomic"
+version = "14.2"
+license = "GPL-3.0-only WITH GCC-exception-3.1"
+pre_bootstrap = false
+description = "GCC atomic operations runtime library (GCC runtime exception permits redistribution)"
+
+# GCC's libatomic.so.1 is licensed GPL-3.0-only WITH GCC-exception-3.1.
+# The GCC Runtime Library Exception allows distributing binaries that link
+# against GCC runtime libraries without the GPL's copyleft applying.
+# Node.js 24 on aarch64 requires libatomic.so.1 for 128-bit atomic ops.
+
+[build]
+system = "custom"
+build = """
+set -e
+apk add --no-cache libatomic
+apk info --contents libatomic 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
+    f="${f%/}"
+    src="/${f}"
+    [ -e "$src" ] || continue
+    dst="${DESTDIR}/${f}"
+    mkdir -p "$(dirname "$dst")"
+    cp -aP "$src" "$dst" 2>/dev/null || true
+done
+# Flatten usr/ (merged-usr layout: /usr -> /)
+if [ -d "${DESTDIR}/usr" ]; then
+    cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
+    rm -rf "${DESTDIR}/usr"
+fi
+# Link-time symlink for -latomic
+ln -sf libatomic.so.1 "${DESTDIR}/lib/libatomic.so" 2>/dev/null || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []
