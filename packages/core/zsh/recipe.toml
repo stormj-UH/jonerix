@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.10"
+version = "5.9"
 license = "MIT"
 pre_bootstrap = false
 description = "Z shell — bash-compatible permissive shell for build scripts"
