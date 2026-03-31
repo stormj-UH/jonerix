@@ -11,15 +11,9 @@ sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
 [build]
 system = "custom"
 configure = """
-# Always ensure llvm-ar/nm/ranlib are in PATH (unconditional).
-# Alpine has GNU ar from binutils which masks llvm-ar — we MUST override it.
-for _tool in llvm-ar llvm-nm llvm-ranlib; do
-  for _bin in /usr/lib/llvm*/bin/"$_tool"; do
-    [ -x "$_bin" ] && ln -sf "$_bin" /usr/bin/"$_tool" && break
-  done
-done
-# Also symlink ar→llvm-ar to ensure V8's gyp finds it
-ln -sf /usr/bin/llvm-ar /usr/bin/ar 2>/dev/null || true
+# Use system ar (GNU ar on Alpine, llvm-ar on jonerix)
+# jpkg exports AR=llvm-ar but Alpine doesn't have it — override to ar
+command -v llvm-ar >/dev/null 2>&1 || export AR=ar
 
 # Node.js links -latomic — provide real implementation if missing.
 # A stub (void __atomic_stub(){}) causes undefined symbol errors for
@@ -65,7 +59,7 @@ if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
   done
 fi
 
-CC=clang CXX="clang++ -stdlib=libc++" AR=llvm-ar \
+CC=clang CXX="clang++ -stdlib=libc++" AR=ar \
 CFLAGS="-Wno-deprecated-builtins" \
 CXXFLAGS="-Wno-deprecated-builtins -stdlib=libc++" \
 LDFLAGS="-stdlib=libc++ -lc++abi -lunwind -L/lib $LDFLAGS" \
