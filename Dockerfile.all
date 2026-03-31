@@ -12,7 +12,9 @@ FROM ${BASE}
 COPY bin/jpkg-aarch64 /bin/jpkg
 
 # Install additional packages not in the develop image
+# Force reinstall zsh (develop image has stale metadata but missing binary)
 RUN jpkg update && \
+    rm -rf /var/db/jpkg/installed/zsh 2>/dev/null && \
     for pkg in zsh byacc ripgrep containerd runc nerdctl cni-plugins micro nghttp2; do \
         echo "Installing $pkg..." && \
         jpkg install $pkg || echo "FAILED: $pkg"; \
