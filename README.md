@@ -175,7 +175,7 @@ bash (GPL-3.0) is used only as a build-time tool inside Alpine and never ships i
   | |/ _ \| '_ \ / _ \ '__| \ \/ /      -----------------
   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.0 aarch64
  _/ |\___/|_| |_|\___|_|  |_/_/\_\      Kernel -> Linux 6.18.5
-|__/                                     Shell -> mksh
+|__/                                     Shell -> zsh (develop) / toybox sh (minimal)
   ========= permissive + linux =========  CPU -> Virtualized Apple Silicon (4)
                                          Memory -> 102 MiB / 1.01 GiB (10%)
                                          Disk (/) -> 726 MiB / 504 GiB - ext4

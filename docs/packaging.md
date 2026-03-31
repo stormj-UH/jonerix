@@ -294,7 +294,7 @@ The INDEX file is a zstd-compressed text file with one package per line:
 ```
 toybox 0.8.11 0BSD abc123... 245760 musl
 mksh 59c MirOS def456... 189440 musl
-openrc 0.54 BSD-2-Clause ghi789... 327680 musl toybox mksh
+openrc 0.54 BSD-2-Clause ghi789... 327680 musl toybox
 ```
 
 Fields: `name version license sha256 size dependencies...`

@@ -40,5 +40,5 @@ ENV VISUAL=micro
 ENV LANG=C.UTF-8
 
 WORKDIR /root
-ENTRYPOINT ["/bin/mksh"]
+ENTRYPOINT ["/bin/sh"]
 CMD ["-l"]

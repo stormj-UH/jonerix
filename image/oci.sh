@@ -27,7 +27,7 @@ AUTHOR="jonerix contributors"
 ARCH="${JONERIX_ARCH:-amd64}"
 OS="linux"
 CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '2026-01-01T00:00:00Z')"
-ENTRYPOINT='["/bin/mksh"]'
+ENTRYPOINT='["/bin/sh"]'
 CMD='["-l"]'
 
 WORK_DIR=""
