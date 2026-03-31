@@ -11,21 +11,35 @@ sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
 [build]
 system = "custom"
 configure = """
-# Node.js links -latomic on all platforms — provide stub if missing
-# (musl has atomic builtins, so the stub just needs to exist)
+# Ensure build tools are available (handles both Alpine and jonerix environments)
+# On Alpine: llvm-ar is at /usr/lib/llvm21/bin/, needs symlinks
+if ! command -v ar >/dev/null 2>&1; then
+  for tool in /usr/lib/llvm*/bin/llvm-ar; do
+    [ -x "$tool" ] && ln -sf "$tool" /usr/bin/ar && break
+  done
+  for tool in /usr/lib/llvm*/bin/llvm-nm; do
+    [ -x "$tool" ] && ln -sf "$tool" /usr/bin/nm && break
+  done
+  for tool in /usr/lib/llvm*/bin/llvm-ranlib; do
+    [ -x "$tool" ] && ln -sf "$tool" /usr/bin/ranlib && break
+  done
+fi
+
+# Node.js links -latomic — provide stub if missing (musl has builtins)
 if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
   echo 'void __atomic_stub(void){}' | clang -shared -o /lib/libatomic.so -x c - 2>/dev/null || true
 fi
-# Only create /usr/lib symlinks if /usr/lib and /lib are different directories
-# (on merged-usr systems they resolve to the same path, creating symlink loops)
+
+# libstdc++ symlinks for gyp linker (only if /usr/lib != /lib)
 if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
   mkdir -p /usr/lib
   for lib in /lib/libstdc++* /lib/libgcc_s*; do
     [ -f "$lib" ] && ln -sf "$lib" /usr/lib/ 2>/dev/null || true
   done
 fi
-CC=clang CXX=clang++ \
-LDFLAGS="-L/lib $LDFLAGS $ATOMIC_FLAG" \
+
+CC=clang CXX=clang++ AR=llvm-ar \
+LDFLAGS="-L/lib $LDFLAGS" \
 python3 configure.py \
   --prefix=/ \
   --ninja \
@@ -33,9 +47,9 @@ python3 configure.py \
   --shared-zlib \
   --without-node-snapshot
 """
-build = "make -j$(nproc)"
+build = "make -j1"
 install = "make install DESTDIR=$DESTDIR"
 
 [depends]
 runtime = ["musl", "zlib"]
-build = ["clang", "python3", "make", "samurai"]
+build = ["clang", "python3", "make", "samurai", "zlib"]
