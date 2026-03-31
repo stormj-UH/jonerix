@@ -4,25 +4,26 @@ version = "2.2.3"
 license = "BSD-3-Clause"
 description = "Small and secure syslogd replacement (DJB-style)"
 
-# Note: smarden.org serves this file as bzip2 despite the .tar.gz extension.
+# Note: smarden.org serves bzip2 despite .tar.gz extension
+[source]
+url = "https://smarden.org/socklog/socklog-2.2.3.tar.gz"
+sha256 = "960410d2b54b165e636afc9fb201effdbf48aa032cbfefd544adf0b0656a91d3"
+
 [build]
 system = "custom"
 build = """
-curl -fsSL https://smarden.org/socklog/socklog-2.2.3.tar.gz -o socklog.tar.bz2
-printf '960410d2b54b165e636afc9fb201effdbf48aa032cbfefd544adf0b0656a91d3  socklog.tar.bz2\n' | sha256sum -c
-tar xjf socklog.tar.bz2
-cd socklog-2.2.3
+cd admin/socklog-2.2.3
 printf '%s\n' 'clang -Os -pipe -fstack-protector-strong -fPIE' > src/conf-cc
 printf '%s\n' 'clang -Wl,-z,relro,-z,now -pie' > src/conf-ld
-make -C src
-install -Dm755 src/socklog "${DESTDIR}/bin/socklog"
-install -Dm755 src/socklog-check "${DESTDIR}/bin/socklog-check"
-install -Dm755 src/tryto "${DESTDIR}/bin/tryto"
-install -Dm755 src/uncat "${DESTDIR}/bin/uncat"
+cd src && make
+install -Dm755 socklog "${DESTDIR}/bin/socklog"
+install -Dm755 socklog-check "${DESTDIR}/bin/socklog-check"
+install -Dm755 tryto "${DESTDIR}/bin/tryto"
+install -Dm755 uncat "${DESTDIR}/bin/uncat"
 mkdir -p "${DESTDIR}/var/log/socklog"
 """
 install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "bmake", "curl"]
+build = ["clang"]
