@@ -11,19 +11,15 @@ sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
 [build]
 system = "custom"
 configure = """
-# Ensure build tools are available (handles both Alpine and jonerix environments)
-# On Alpine: llvm-ar is at /usr/lib/llvm21/bin/, needs symlinks
-if ! command -v ar >/dev/null 2>&1; then
-  for tool in /usr/lib/llvm*/bin/llvm-ar; do
-    [ -x "$tool" ] && ln -sf "$tool" /usr/bin/ar && break
+# Always ensure llvm-ar/nm/ranlib are in PATH (unconditional).
+# Alpine has GNU ar from binutils which masks llvm-ar — we MUST override it.
+for _tool in llvm-ar llvm-nm llvm-ranlib; do
+  for _bin in /usr/lib/llvm*/bin/"$_tool"; do
+    [ -x "$_bin" ] && ln -sf "$_bin" /usr/local/bin/"$_tool" && break
   done
-  for tool in /usr/lib/llvm*/bin/llvm-nm; do
-    [ -x "$tool" ] && ln -sf "$tool" /usr/bin/nm && break
-  done
-  for tool in /usr/lib/llvm*/bin/llvm-ranlib; do
-    [ -x "$tool" ] && ln -sf "$tool" /usr/bin/ranlib && break
-  done
-fi
+done
+# Also symlink ar→llvm-ar to ensure V8's gyp finds it
+ln -sf /usr/local/bin/llvm-ar /usr/local/bin/ar 2>/dev/null || true
 
 # Node.js links -latomic — provide stub if missing (musl has builtins)
 if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
@@ -39,6 +35,8 @@ if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
 fi
 
 CC=clang CXX=clang++ AR=llvm-ar \
+CFLAGS="-Wno-deprecated-builtins" \
+CXXFLAGS="-Wno-deprecated-builtins" \
 LDFLAGS="-L/lib $LDFLAGS" \
 python3 configure.py \
   --prefix=/ \
