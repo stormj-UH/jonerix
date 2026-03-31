@@ -49,8 +49,9 @@ cmake -S llvm -B build -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR=$(which llvm-ar || echo /bin/ar) \
     -DCMAKE_RANLIB=$(which llvm-ranlib || echo /bin/ranlib) \
+    -DLLVM_ENABLE_LIBCXX=ON \
     -DCMAKE_C_FLAGS="-Os" \
-    -DCMAKE_CXX_FLAGS="-Os"
+    -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++"
 
 cmake --build build -j$(nproc)
 DESTDIR=$DESTDIR cmake --install build
@@ -82,5 +83,5 @@ rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc" "$DESTDIR/lib/cmake"
 install = ""
 
 [depends]
-runtime = ["musl", "zstd", "zlib"]
-build = ["clang", "cmake", "samurai", "python3"]
+runtime = ["musl", "zstd", "zlib", "libcxx"]
+build = ["clang", "cmake", "samurai", "python3", "libcxx"]
