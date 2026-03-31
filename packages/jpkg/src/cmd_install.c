@@ -93,8 +93,8 @@ static int install_files(const char *stage_dir, const char *dest_root) {
               * mv is atomic and works even for running binaries (ETXTBSY). */
              "cd '%s' && find . -type d -exec mkdir -p '%s/{}' \\; && "
              "find . ! -type d | while read f; do "
-             "  cp -a \"$f\" '%s/${f}.jpkg-new' 2>/dev/null && "
-             "  mv -f '%s/${f}.jpkg-new' '%s/${f}'; "
+             "  cp -a \"$f\" \"%s/${f}.jpkg-new\" 2>/dev/null && "
+             "  mv -f \"%s/${f}.jpkg-new\" \"%s/${f}\"; "
              "done",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
