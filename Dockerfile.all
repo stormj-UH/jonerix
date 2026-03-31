@@ -14,13 +14,32 @@ RUN jpkg update 2>/dev/null || true && \
         jpkg install $pkg 2>/dev/null || echo "SKIP: $pkg"; \
     done
 
-# libatomic.so.1 — needed by Node 24 on aarch64 (V8 atomic ops)
+# libatomic.so.1 — needed by Node 24 on aarch64 (V8 atomic ops).
+# The real libatomic comes from GCC runtime (libgcc package).
+# If not present, check if llvm's compiler-rt provides it.
 RUN if [ ! -f /lib/libatomic.so.1 ]; then \
-        if [ -f /lib/libatomic.so ]; then \
-            ln -sf libatomic.so /lib/libatomic.so.1; \
-        else \
-            echo 'void __atomic_stub(void){}' | cc -shared -o /lib/libatomic.so -x c - 2>/dev/null && \
-            ln -sf libatomic.so /lib/libatomic.so.1; \
+        # Try to find it in the LLVM/GCC runtime dirs
+        for f in /lib/gcc/*/libatomic.so.1 /lib/libgcc/libatomic.so.1; do \
+            [ -f "$f" ] && cp "$f" /lib/libatomic.so.1 && break; \
+        done; \
+        # If still missing, create a proper one using clang's built-in atomics
+        if [ ! -f /lib/libatomic.so.1 ]; then \
+            cat > /tmp/atomic.c << 'ATOMICSRC'
+#include <stdint.h>
+#include <stddef.h>
+#define ATOMIC_OP(size, type) \
+  type __atomic_load_##size(const volatile void *ptr, int mo) { return __atomic_load_n((const volatile type *)ptr, mo); } \
+  void __atomic_store_##size(volatile void *ptr, type val, int mo) { __atomic_store_n((volatile type *)ptr, val, mo); } \
+  type __atomic_exchange_##size(volatile void *ptr, type val, int mo) { return __atomic_exchange_n((volatile type *)ptr, val, mo); } \
+  int __atomic_compare_exchange_##size(volatile void *ptr, void *expected, type desired, int success, int failure) { return __atomic_compare_exchange_n((volatile type *)ptr, (type *)expected, desired, 0, success, failure); }
+ATOMIC_OP(1, uint8_t)
+ATOMIC_OP(2, uint16_t)
+ATOMIC_OP(4, uint32_t)
+ATOMIC_OP(8, uint64_t)
+ATOMICSRC
+            cc -shared -O2 -o /lib/libatomic.so.1 /tmp/atomic.c 2>/dev/null && \
+            ln -sf libatomic.so.1 /lib/libatomic.so && \
+            rm -f /tmp/atomic.c; \
         fi; \
     fi
 
