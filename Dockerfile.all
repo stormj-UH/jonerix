@@ -18,13 +18,10 @@ RUN jpkg update && \
         jpkg install $pkg || echo "FAILED: $pkg"; \
     done
 
-# libatomic.so.1 — needed by Node 24 on aarch64.
-# Build a proper libatomic using clang __atomic builtins.
-COPY scripts/build-libatomic.c /tmp/atomic.c
-RUN if [ ! -f /lib/libatomic.so.1 ]; then \
-        cc -shared -O2 -fPIC -o /lib/libatomic.so.1 /tmp/atomic.c && \
-        ln -sf libatomic.so.1 /lib/libatomic.so; \
-    fi && rm -f /tmp/atomic.c
+# libatomic.so.1 — needed by Node 24 on aarch64 (V8 atomic ops).
+# Pre-extracted from Alpine's libatomic package (Apache-2.0 GCC runtime exception).
+COPY scripts/libatomic-aarch64.so.1 /lib/libatomic.so.1
+RUN ln -sf libatomic.so.1 /lib/libatomic.so
 
 # Standard symlinks
 RUN ln -sf byacc /bin/yacc 2>/dev/null || true && \
