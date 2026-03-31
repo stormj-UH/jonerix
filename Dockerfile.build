@@ -21,7 +21,7 @@
 ARG DEVELOP_IMAGE=jonerix-develop:latest
 FROM ${DEVELOP_IMAGE}
 
-SHELL ["/bin/zsh", "-c"]
+SHELL ["/bin/sh", "-c"]
 
 # ── Additional build packages ────────────────────────────────────────────
 # uutils provides extended coreutils (sort, wc, tr, etc.) needed by
@@ -34,11 +34,8 @@ RUN jpkg update && \
 
 # ── Build-specific symlinks ──────────────────────────────────────────────
 RUN \
-    # zsh in bash-emulation mode for configure scripts that hardcode #!/bin/bash
-    # (zsh already symlinked as /bin/bash in develop, verify it exists)
-    [ -e /bin/bash ] || ln -sf zsh /bin/bash && \
-    # Ensure /bin/sh points to zsh for build scripts
-    ln -sf zsh /bin/sh && \
+    # bash symlink for configure scripts that hardcode #!/bin/bash
+    [ -e /bin/bash ] || ln -sf sh /bin/bash && \
     # yacc → byacc for autotools that call yacc
     ln -sf byacc /bin/yacc 2>/dev/null || true && \
     # lex → flex
@@ -61,12 +58,12 @@ ENV C_INCLUDE_PATH=/include
 ENV LIBRARY_PATH=/lib
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/zsh
+ENV SHELL=/bin/mksh
 ENV TERM=xterm
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
 WORKDIR /workspace
 
-ENTRYPOINT ["/bin/zsh"]
+ENTRYPOINT ["/bin/sh"]
 CMD ["-c", "sh bootstrap/build-all.sh --output /workspace/.build/pkgs"]
