@@ -121,7 +121,7 @@ EOF
 # ---------------------------------------------------------------------------
 echo "--- Writing base /etc files ---"
 cat > "${STAGING}/etc/passwd" << 'EOF'
-root:x:0:0:root:/root:/bin/mksh
+root:x:0:0:root:/root:/bin/sh
 nobody:x:65534:65534:nobody:/nonexistent:/bin/false
 EOF
 
@@ -137,7 +137,7 @@ EOF
 chmod 0600 "${STAGING}/etc/shadow"
 
 cat > "${STAGING}/etc/shells" << 'EOF'
-/bin/mksh
+/bin/sh
 /bin/sh
 EOF
 
@@ -287,8 +287,8 @@ extract_jpkg() {
 }
 
 # Install the minimal set of packages
-echo "--- Installing packages: musl, mksh, toybox ---"
-for pkg in musl mksh toybox; do
+echo "--- Installing packages: musl, toybox ---"
+for pkg in musl toybox; do
     echo "  -> ${pkg}"
     install_pkg "${pkg}"
 done
@@ -305,7 +305,7 @@ fi
 
 # Ensure /bin/sh exists (toybox or busybox provides it; mksh fallback)
 if [ ! -e "${STAGING}/bin/sh" ]; then
-    if [ -f "${STAGING}/bin/mksh" ]; then
+    if [ -f "${STAGING}/bin/sh" ]; then
         ln -sf mksh "${STAGING}/bin/sh"
     fi
 fi

@@ -120,7 +120,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 
 **GNU make**: Replaced by `samurai` (ninja-compatible) for most builds. For Makefile-based projects, BSD `make` (bmake) is MIT-licensed.
 
-**bash**: mksh is POSIX-compliant and supports most bashisms via compatibility mode. Shell scripts in jonerix target POSIX `sh`.
+**bash**: zsh is bash-compatible and supports most bashisms via compatibility mode. Shell scripts in jonerix target POSIX `sh`.
 
 **gzip**: The gzip *format* is open. `pigz` (zlib license) handles `.gz` files. `zstd` is the preferred compression.
 
@@ -259,7 +259,7 @@ UEFI firmware
       - socklog (logging)
       - snooze (cron jobs)
   → agetty spawns on tty1
-  → User logs in → mksh
+  → User logs in → zsh (develop) / sh (minimal)
 ```
 
 ### BIOS Legacy (fallback)
@@ -325,13 +325,13 @@ All packages are built with:
 # Resulting image: ~8-15 MB
 FROM scratch
 ADD jonerix-rootfs.tar.zst /
-ENTRYPOINT ["/bin/mksh"]
+ENTRYPOINT ["/bin/sh"]
 ```
 
-The OCI image includes: musl, toybox, mksh, curl, OpenSSL, ca-certificates, jpkg. Everything needed to `jpkg install` additional packages.
+The OCI image includes: musl, toybox, curl, OpenSSL, ca-certificates, jpkg. Everything needed to `jpkg install` additional packages.
 
 Target sizes:
-- **Minimal rootfs**: ~8 MB (toybox + mksh + musl + jpkg)
+- **Minimal rootfs**: ~8 MB (toybox + musl + jpkg)
 - **Server image**: ~80 MB (adds dropbear, curl, OpenRC, socklog, Python 3, Node.js)
 - **Full development**: ~600 MB (adds LLVM/Clang, libc++)
 

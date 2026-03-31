@@ -38,7 +38,7 @@ RUN mkdir -p /jonerix /jonerix/bin /jonerix/lib /jonerix/etc /jonerix/var/db/jpk
 # Install packages into the rootfs using jpkg
 RUN jpkg update && \
     jpkg --root /jonerix install \
-        musl mksh toybox bsdtar dropbear openrc openssl curl zstd nghttp2
+        musl toybox bsdtar dropbear openrc openssl curl zstd nghttp2
 
 # Post-install: symlinks and config
 RUN ln -sf bsdtar /jonerix/bin/tar && \
@@ -57,9 +57,9 @@ COPY --from=rootfs /jonerix/ /
 
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/mksh
+ENV SHELL=/bin/sh
 ENV TERM=xterm
 
 WORKDIR /root
-ENTRYPOINT ["/bin/mksh"]
+ENTRYPOINT ["/bin/sh"]
 CMD ["-l"]

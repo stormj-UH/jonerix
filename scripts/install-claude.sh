@@ -1,6 +1,6 @@
-#!/bin/mksh
+#!/bin/sh
 # Install Claude Code on jonerix
-# Works with mksh (no bash required)
+# Works with sh (no bash required)
 
 set -e
 
