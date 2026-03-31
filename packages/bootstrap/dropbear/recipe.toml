@@ -12,7 +12,12 @@ sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 system = "configure"
 configure = "CC=clang ./configure --prefix=/ --disable-wtmp --disable-lastlog --disable-zlib"
 build = "make PROGRAMS=\"dropbear dbclient dropbearkey scp\" -j$(nproc)"
-install = "make install DESTDIR=$DESTDIR"
+install = """make PROGRAMS="dropbear dbclient dropbearkey scp" install DESTDIR=$DESTDIR
+# Ensure dropbear sshd is in bin/ (some installs put it in sbin/)
+[ -f "$DESTDIR/sbin/dropbear" ] && mv "$DESTDIR/sbin/dropbear" "$DESTDIR/bin/dropbear" || true
+# Symlink scp if dropbear installed it elsewhere
+[ -f "$DESTDIR/bin/scp" ] || ln -sf dbclient "$DESTDIR/bin/scp" 2>/dev/null || true
+"""
 
 [depends]
 runtime = ["musl"]
