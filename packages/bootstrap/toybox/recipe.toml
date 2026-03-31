@@ -11,9 +11,13 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 [build]
 system = "custom"
 configure = """
-# toybox scripts use #!/bin/bash — ensure bash is available or use sh
+# toybox scripts use #!/bin/bash — zsh provides bash compatibility
 if ! command -v bash >/dev/null 2>&1; then
-  ln -sf sh /bin/bash 2>/dev/null || true
+  if command -v zsh >/dev/null 2>&1; then
+    ln -sf zsh /bin/bash
+  else
+    ln -sf sh /bin/bash 2>/dev/null || true
+  fi
 fi
 make defconfig
 # Enable sh (shell) applet — not in defconfig by default

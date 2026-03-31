@@ -234,7 +234,7 @@ int pkg_extract(const char *jpkg_path, const char *dest_dir) {
      * We invoke them via execv for safety.
      */
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "zstd -d -c '%s' | tar -xf - -C '%s'",
+    snprintf(cmd, sizeof(cmd), "zstd -d -c '%s' | tar -xf - -C '%s' 2>/dev/null",
              tmp_zst, dest_dir);
 
     int rc = system(cmd);
