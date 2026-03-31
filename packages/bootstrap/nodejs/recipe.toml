@@ -21,9 +21,40 @@ done
 # Also symlink ar→llvm-ar to ensure V8's gyp finds it
 ln -sf /usr/local/bin/llvm-ar /usr/local/bin/ar 2>/dev/null || true
 
-# Node.js links -latomic — provide stub if missing (musl has builtins)
+# Node.js links -latomic — provide real implementation if missing.
+# A stub (void __atomic_stub(){}) causes undefined symbol errors for
+# __atomic_compare_exchange at V8 link time. Compile a real libatomic.so.
 if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
-  echo 'void __atomic_stub(void){}' | clang -shared -o /lib/libatomic.so -x c - 2>/dev/null || true
+  cat > /tmp/libatomic_impl.c << 'ATOMIC_EOF'
+#include <stddef.h>
+#include <string.h>
+#include <stdbool.h>
+#include <pthread.h>
+static pthread_mutex_t __atomic_lock = PTHREAD_MUTEX_INITIALIZER;
+bool __atomic_compare_exchange(size_t size, void *obj, void *expected,
+                               void *desired, int succ, int fail) {
+    (void)succ; (void)fail;
+    pthread_mutex_lock(&__atomic_lock);
+    bool result = (memcmp(obj, expected, size) == 0);
+    if (result) memcpy(obj, desired, size);
+    else        memcpy(expected, obj, size);
+    pthread_mutex_unlock(&__atomic_lock);
+    return result;
+}
+void __atomic_store(size_t size, void *obj, void *val, int order) {
+    (void)order;
+    pthread_mutex_lock(&__atomic_lock);
+    memcpy(obj, val, size);
+    pthread_mutex_unlock(&__atomic_lock);
+}
+void __atomic_load(size_t size, void *obj, void *ret, int order) {
+    (void)order;
+    pthread_mutex_lock(&__atomic_lock);
+    memcpy(ret, obj, size);
+    pthread_mutex_unlock(&__atomic_lock);
+}
+ATOMIC_EOF
+  clang -shared -fPIC -o /lib/libatomic.so /tmp/libatomic_impl.c -lpthread 2>/dev/null || true
 fi
 
 # libstdc++ symlinks for gyp linker (only if /usr/lib != /lib)
@@ -43,11 +74,12 @@ python3 configure.py \
   --ninja \
   --with-intl=none \
   --shared-zlib \
+  --without-snapshot \
   --without-node-snapshot
 """
 build = "make -j1"
 install = "make install DESTDIR=$DESTDIR"
 
 [depends]
-runtime = ["musl", "zlib"]
+runtime = ["musl", "zlib", "libstdcxx", "libatomic"]
 build = ["clang", "python3", "make", "samurai", "zlib"]
