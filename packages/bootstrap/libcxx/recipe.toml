@@ -1,0 +1,48 @@
+[package]
+name = "libcxx"
+version = "21.1.2"
+license = "Apache-2.0"
+description = "LLVM libc++ and libunwind — permissive C++ runtime (replaces GCC libstdc++/libgcc_s)"
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+
+[build]
+system = "custom"
+build = """
+set -e
+
+# Build libc++, libc++abi, and libunwind from LLVM source
+# These replace GCC's libstdc++ and libgcc_s with Apache-2.0 alternatives
+
+cmake -S runtimes -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
+    -DLIBCXX_USE_COMPILER_RT=ON \
+    -DLIBCXXABI_USE_COMPILER_RT=ON \
+    -DLIBCXXABI_USE_LLVM_UNWINDER=ON \
+    -DLIBUNWIND_USE_COMPILER_RT=ON \
+    -DLIBCXX_HAS_MUSL_LIBC=ON \
+    -DLIBCXX_INCLUDE_BENCHMARKS=OFF \
+    -DLIBCXX_INCLUDE_TESTS=OFF
+
+cmake --build build -j$(nproc)
+DESTDIR=$DESTDIR cmake --install build
+
+# Create compatibility symlinks so existing binaries find the libs
+# Programs linked against libstdc++ need these:
+ln -sf libc++.so.1 $DESTDIR/lib/libstdc++.so.6 2>/dev/null || true
+ln -sf libc++.so.1 $DESTDIR/lib/libstdc++.so 2>/dev/null || true
+ln -sf libunwind.so.1 $DESTDIR/lib/libgcc_s.so.1 2>/dev/null || true
+ln -sf libunwind.so.1 $DESTDIR/lib/libgcc_s.so 2>/dev/null || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "cmake", "samurai"]
