@@ -1,0 +1,14 @@
+[package]
+name = "libcxx"
+version = "21.1.2"
+license = "Apache-2.0"
+pre_bootstrap = false
+description = "LLVM C++ standard library runtime (libc++, libunwind) — replaces GCC libstdc++"
+
+[build]
+build = ""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []

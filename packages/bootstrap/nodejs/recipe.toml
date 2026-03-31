@@ -81,5 +81,5 @@ build = "make -j1"
 install = "make install DESTDIR=$DESTDIR"
 
 [depends]
-runtime = ["musl", "zlib", "libstdcxx", "libatomic"]
+runtime = ["musl", "zlib", "libcxx", "libatomic"]
 build = ["clang", "python3", "make", "samurai", "zlib"]
