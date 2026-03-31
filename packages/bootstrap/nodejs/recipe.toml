@@ -65,10 +65,10 @@ if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
   done
 fi
 
-CC=clang CXX=clang++ AR=llvm-ar \
+CC=clang CXX="clang++ -stdlib=libc++" AR=llvm-ar \
 CFLAGS="-Wno-deprecated-builtins" \
-CXXFLAGS="-Wno-deprecated-builtins" \
-LDFLAGS="-L/lib $LDFLAGS" \
+CXXFLAGS="-Wno-deprecated-builtins -stdlib=libc++" \
+LDFLAGS="-stdlib=libc++ -lc++abi -lunwind -L/lib $LDFLAGS" \
 python3 configure.py \
   --prefix=/ \
   --ninja \
