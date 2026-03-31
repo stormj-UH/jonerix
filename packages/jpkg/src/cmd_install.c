@@ -91,16 +91,20 @@ static int install_files(const char *stage_dir, const char *dest_root) {
              /* Install files using find + per-file copy/rename.
               * For each file: mkdir parent, cp to .new, mv over original.
               * mv is atomic and works even for running binaries (ETXTBSY). */
-             "cd '%s' && find . -type d -exec mkdir -p '%s/{}' \\; && "
-             "find . ! -type d | while read f; do "
-             "  cp -a \"$f\" \"%s/${f}.jpkg-new\" 2>/dev/null && "
-             "  mv -f \"%s/${f}.jpkg-new\" \"%s/${f}\"; "
+             "cd '%s' && "
+             "find . -type d | while IFS= read -r d; do "
+             "  mkdir -p '%s'\"/$d\"; "
+             "done && "
+             "find . ! -type d | while IFS= read -r f; do "
+             "  d='%s'\"/$f\" && "
+             "  cp -a \"$f\" \"$d.jpkg-new\" 2>/dev/null && "
+             "  mv -f \"$d.jpkg-new\" \"$d\"; "
              "done",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
-             stage_dir, dest_root,
+             stage_dir,
              dest_root,
-             dest_root, dest_root);
+             dest_root);
     return system(cmd);
 }
 
