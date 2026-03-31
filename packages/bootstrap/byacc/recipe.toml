@@ -12,7 +12,12 @@ sha256 = "192c2fae048d4e7f514ba451627f9c4e612765099f819c19191f9fde3e609673"
 system = "configure"
 configure = "CC=clang ./configure --prefix=/"
 build = "make -j$(nproc)"
-install = """make install DESTDIR=$DESTDIR
+install = """
+# byacc's make install puts the binary as 'yacc' — rename to byacc
+make install DESTDIR=$DESTDIR
+if [ -f "$DESTDIR/bin/yacc" ] && [ ! -L "$DESTDIR/bin/yacc" ]; then
+  mv "$DESTDIR/bin/yacc" "$DESTDIR/bin/byacc"
+fi
 ln -sf byacc "$DESTDIR/bin/yacc"
 """
 
