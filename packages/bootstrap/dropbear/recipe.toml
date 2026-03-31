@@ -11,7 +11,11 @@ sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 [build]
 system = "configure"
 configure = "CC=clang ./configure --prefix=/ --disable-wtmp --disable-lastlog --disable-zlib"
-build = "make PROGRAMS=\"dropbear dbclient dropbearkey scp\" -j$(nproc)"
+build = """
+# jpkg exports AR=llvm-ar but it may not exist; ensure ar/ranlib are found
+command -v llvm-ar >/dev/null 2>&1 || { ln -sf $(command -v ar) /usr/local/bin/llvm-ar; ln -sf $(command -v ranlib) /usr/local/bin/llvm-ranlib; }
+make PROGRAMS="dropbear dbclient dropbearkey scp" -j$(nproc)
+"""
 install = """make PROGRAMS="dropbear dbclient dropbearkey scp" install DESTDIR=$DESTDIR
 # Ensure dropbear sshd is in bin/ (some installs put it in sbin/)
 [ -f "$DESTDIR/sbin/dropbear" ] && mv "$DESTDIR/sbin/dropbear" "$DESTDIR/bin/dropbear" || true
