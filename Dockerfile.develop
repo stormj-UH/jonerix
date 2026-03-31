@@ -16,6 +16,9 @@ FROM ${MINIMAL_IMAGE}
 
 SHELL ["/bin/sh", "-c"]
 
+# Update jpkg binary to latest (fixes bsdtar warning handling)
+COPY bin/jpkg-aarch64 /bin/jpkg
+
 # ── Install all development packages via jpkg ────────────────────────────
 # Install one at a time to avoid parallel download race conditions.
 # Order: base libs → compilers → build tools → languages → utilities
