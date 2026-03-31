@@ -45,4 +45,4 @@ install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "cmake", "samurai"]
+build = ["clang", "cmake", "samurai", "python3"]
