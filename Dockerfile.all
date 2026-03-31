@@ -34,24 +34,9 @@ RUN ln -sf byacc /bin/yacc 2>/dev/null || true && \
     # zsh as default shell + bash compatibility
     ln -sf zsh /bin/bash 2>/dev/null || true
 
-# Install Claude Code (native musl binary, no npm needed)
-RUN ARCH=$(uname -m); \
-    case $ARCH in \
-        aarch64) P="linux-arm64-musl";; \
-        x86_64)  P="linux-x64-musl";; \
-        *) P="";; \
-    esac; \
-    if [ -n "$P" ]; then \
-        GCS="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"; \
-        VER=$(curl -fsSL "$GCS/latest" 2>/dev/null); \
-        if [ -n "$VER" ]; then \
-            mkdir -p /root/.claude && \
-            curl -fsSL "$GCS/$VER/$P/claude" -o /root/.claude/claude && \
-            chmod +x /root/.claude/claude && \
-            ln -sf /root/.claude/claude /bin/claude && \
-            echo "Claude Code $VER installed"; \
-        fi; \
-    fi
+# Install Claude Code via npm (uses Node.js already in image, ~47MB JS)
+RUN npm install -g @anthropic-ai/claude-code && \
+    echo "Claude Code installed via npm"
 
 ENV EDITOR=micro
 ENV VISUAL=micro
