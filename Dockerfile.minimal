@@ -62,8 +62,8 @@ RUN if [ -d /jonerix/usr ]; then \
     ln -s / /jonerix/usr
 
 # Essential symlinks
-# Copy the builder's /bin/sh into the rootfs (toybox sh not compiled in Alpine's build)
-RUN cp -a /bin/sh /jonerix/bin/sh 2>/dev/null || true && \
+# toybox now includes sh applet — symlink /bin/sh to toybox
+RUN ln -sf toybox /jonerix/bin/sh && \
     ln -sf bsdtar /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
