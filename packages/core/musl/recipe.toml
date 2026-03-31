@@ -1,6 +1,6 @@
 [package]
 name = "musl"
-version = "1.2.5"
+version = "1.2.6"
 license = "MIT"
 pre_bootstrap = false
 description = "Lightweight, fast, and standards-conformant C library"
