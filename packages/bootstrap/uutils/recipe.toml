@@ -27,7 +27,8 @@ install = """set -e
 mkdir -p "$DESTDIR/bin"
 install -m755 target/release/coreutils "$DESTDIR/bin/uutils"
 
-# Create symlinks for each tool
+# Create symlinks for each uutils command.
+# Force overwrite toybox symlinks — uutils provides better POSIX compliance.
 for cmd in \
   arch base32 base64 basename basenc cat chgrp chmod chown chroot cksum \
   comm cp csplit cut date dd df dir dircolors dirname du echo env expand \
@@ -38,6 +39,7 @@ for cmd in \
   sha512sum shred shuf sleep sort split stat stdbuf stty sum sync tac \
   tail tee test timeout touch tr true truncate tsort tty uname unexpand \
   uniq unlink uptime users vdir wc who whoami yes; do
+  rm -f "$DESTDIR/bin/$cmd" 2>/dev/null
   ln -sf uutils "$DESTDIR/bin/$cmd"
 done
 """
