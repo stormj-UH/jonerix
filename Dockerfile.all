@@ -1,28 +1,42 @@
-# jonerix:all — Complete image with every package
+# jonerix:all — Complete image with every package + Claude Code
 #
 # Starts from jonerix-develop and adds all remaining tools.
 # All packages built from source on jonerix with permissive tools.
 #
-# Build: docker build -f Dockerfile.all --tag jonerix:all .
+# Build: docker build -f Dockerfile.all --tag jonerix:all --platform linux/arm64 .
 
 ARG BASE=jonerix-develop:latest
 FROM ${BASE}
 
 # Install additional packages not in the develop image
-# These are installed via jpkg from the GitHub release
 RUN jpkg update 2>/dev/null || true && \
-    for pkg in byacc ripgrep containerd runc nerdctl cni-plugins micro; do \
-        jpkg install $pkg 2>/dev/null || echo "SKIP: $pkg (install from cache or manual)"; \
+    for pkg in zsh byacc ripgrep containerd runc nerdctl cni-plugins micro nghttp2; do \
+        jpkg install $pkg 2>/dev/null || echo "SKIP: $pkg"; \
     done
 
-# Create standard symlinks
-RUN ln -sf byacc /bin/yacc 2>/dev/null || true && \
-    ln -sf rg /bin/grep-fast 2>/dev/null || true && \
-    ln -sf nerdctl /bin/docker 2>/dev/null || true
+# libatomic.so.1 — needed by Node 24 on aarch64 (V8 atomic ops)
+RUN if [ ! -f /lib/libatomic.so.1 ]; then \
+        if [ -f /lib/libatomic.so ]; then \
+            ln -sf libatomic.so /lib/libatomic.so.1; \
+        else \
+            echo 'void __atomic_stub(void){}' | cc -shared -o /lib/libatomic.so -x c - 2>/dev/null && \
+            ln -sf libatomic.so /lib/libatomic.so.1; \
+        fi; \
+    fi
 
-# Install Claude Code (native binary, no npm needed)
+# Standard symlinks
+RUN ln -sf byacc /bin/yacc 2>/dev/null || true && \
+    ln -sf nerdctl /bin/docker 2>/dev/null || true && \
+    # zsh as default shell + bash compatibility
+    ln -sf zsh /bin/bash 2>/dev/null || true
+
+# Install Claude Code (native musl binary, no npm needed)
 RUN ARCH=$(uname -m); \
-    case $ARCH in aarch64) P="linux-arm64";; x86_64) P="linux-x64";; *) P="";; esac; \
+    case $ARCH in \
+        aarch64) P="linux-arm64-musl";; \
+        x86_64)  P="linux-x64-musl";; \
+        *) P="";; \
+    esac; \
     if [ -n "$P" ]; then \
         GCS="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"; \
         VER=$(curl -fsSL "$GCS/latest" 2>/dev/null); \
@@ -30,15 +44,16 @@ RUN ARCH=$(uname -m); \
             mkdir -p /root/.claude && \
             curl -fsSL "$GCS/$VER/$P/claude" -o /root/.claude/claude && \
             chmod +x /root/.claude/claude && \
-            ln -sf /root/.claude/claude /bin/claude; \
+            ln -sf /root/.claude/claude /bin/claude && \
             echo "Claude Code $VER installed"; \
         fi; \
     fi
 
 ENV EDITOR=micro
 ENV VISUAL=micro
+ENV SHELL=/bin/zsh
 ENV LANG=C.UTF-8
 
 WORKDIR /root
-ENTRYPOINT ["/bin/sh"]
+ENTRYPOINT ["/bin/zsh"]
 CMD ["-l"]
