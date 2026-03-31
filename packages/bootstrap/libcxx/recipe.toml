@@ -34,12 +34,8 @@ cmake -S runtimes -B build -G Ninja \
 cmake --build build -j$(nproc)
 DESTDIR=$DESTDIR cmake --install build
 
-# Create compatibility symlinks so existing binaries find the libs
-# Programs linked against libstdc++ need these:
-ln -sf libc++.so.1 $DESTDIR/lib/libstdc++.so.6 2>/dev/null || true
-ln -sf libc++.so.1 $DESTDIR/lib/libstdc++.so 2>/dev/null || true
-ln -sf libunwind.so.1 $DESTDIR/lib/libgcc_s.so.1 2>/dev/null || true
-ln -sf libunwind.so.1 $DESTDIR/lib/libgcc_s.so 2>/dev/null || true
+# NO compat symlinks — libstdc++.so.6/libgcc_s.so.1 are ABI-incompatible
+# with libc++. All C++ packages must be rebuilt with -stdlib=libc++.
 """
 install = ""
 
