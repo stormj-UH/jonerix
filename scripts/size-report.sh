@@ -384,7 +384,7 @@ main() {
                 printf '  --top <n>        Number of largest files to show (default: 20)\n'
                 printf '\n'
                 printf 'Targets:\n'
-                printf '  minimal  8 MB  (toybox + mksh + musl + jpkg)\n'
+                printf '  minimal  8 MB  (toybox + musl + jpkg)\n'
                 printf '  server   15 MB (adds dropbear, curl, OpenRC, socklog)\n'
                 printf '  full     500 MB (adds LLVM/Clang)\n'
                 exit 0
