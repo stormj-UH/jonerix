@@ -10,14 +10,17 @@ sha256 = "81ee8170028865581a8e10eaf055afb620fa4baa0beb6387241241a975033508"
 
 [build]
 system = "custom"
-configure = """CXX_INC=$(find /include/c++ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)
-CXX_ARCH=$(find "$CXX_INC" -maxdepth 1 -mindepth 1 -type d -name '*-linux-musl' 2>/dev/null | head -1)
-CC=clang CXX=clang++ CXXFLAGS="-I$CXX_INC -I$CXX_ARCH" ./bootstrap --prefix=/ --parallel=$(nproc) -- -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_USE_OPENSSL=OFF"""
+configure = """CC=clang CXX=clang++ ./bootstrap --prefix=/ --parallel=$(nproc) -- \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_CXX_FLAGS="-stdlib=libc++" \
+    -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++ -lc++abi -lunwind" \
+    -DCMAKE_USE_OPENSSL=OFF"""
 build = "make -j$(nproc)"
 install = """make install DESTDIR=$DESTDIR
 rm -rf "$DESTDIR/share/cmake"*/Help
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi"""
 
 [depends]
-runtime = ["musl"]
-build = ["clang", "make"]
+runtime = ["musl", "libcxx"]
+build = ["clang", "make", "libcxx"]
