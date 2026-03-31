@@ -90,7 +90,7 @@ static int install_files(const char *stage_dir, const char *dest_root) {
              "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi && "
              /* Copy staging to root using cp -a.
               * Simple and compatible with toybox sh (no 'read' builtin needed). */
-             "cp -a '%s'/. '%s'",
+             "for d in '%s'/*; do cp -a \"$d\" '%s/' 2>/dev/null || true; done",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
              stage_dir, dest_root);
