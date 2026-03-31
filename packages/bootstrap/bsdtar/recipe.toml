@@ -1,6 +1,6 @@
 [package]
 name = "bsdtar"
-version = "3.8.5"
+version = "3.8.6"
 license = "Apache-2.0"
 description = "BSD tar from libarchive (handles symlinks correctly)"
 
