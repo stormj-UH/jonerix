@@ -62,7 +62,10 @@ RUN if [ -d /jonerix/usr ]; then \
     ln -s / /jonerix/usr
 
 # Essential symlinks
-RUN ln -sf toybox /jonerix/bin/sh && \
+# toybox from Alpine doesn't include sh — copy mksh from builder until
+# toybox is rebuilt from source with sh enabled
+RUN cp /bin/mksh /jonerix/bin/mksh 2>/dev/null || cp /bin/sh /jonerix/bin/sh 2>/dev/null || true && \
+    ln -sf mksh /jonerix/bin/sh 2>/dev/null || true && \
     ln -sf bsdtar /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
