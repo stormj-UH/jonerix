@@ -16,6 +16,12 @@ if ! command -v bash >/dev/null 2>&1; then
   ln -sf sh /bin/bash 2>/dev/null || true
 fi
 make defconfig
+# Enable sh (shell) applet — not in defconfig by default
+sed -i 's/# CONFIG_SH is not set/CONFIG_SH=y/' .config 2>/dev/null || \
+  echo 'CONFIG_SH=y' >> .config
+# Also enable tr and expr (needed by configure scripts)
+sed -i 's/# CONFIG_TR is not set/CONFIG_TR=y/' .config 2>/dev/null || true
+sed -i 's/# CONFIG_EXPR is not set/CONFIG_EXPR=y/' .config 2>/dev/null || true
 """
 build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
 install = "make PREFIX=$DESTDIR install"
