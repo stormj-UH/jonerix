@@ -93,7 +93,7 @@ FROM scratch
 COPY --from=rootfs /jonerix/ /
 
 # Pre-built static jpkg binary (150KB, no shared lib deps)
-COPY bin/jpkg-aarch64 /bin/jpkg
+COPY --from=rootfs /bin/jpkg /bin/jpkg
 
 ENV PATH=/bin
 ENV HOME=/root
