@@ -78,8 +78,18 @@ python3 configure.py \
   --without-snapshot \
   --without-node-snapshot
 """
-build = "make -j1"
-install = "make install DESTDIR=$DESTDIR"
+build = "ninja -C out/Release -j$(nproc)"
+install = """
+mkdir -p $DESTDIR/bin $DESTDIR/lib
+install -m755 out/Release/node $DESTDIR/bin/node
+# Install npm if built
+if [ -d deps/npm ]; then
+  mkdir -p $DESTDIR/lib/node_modules
+  cp -a deps/npm $DESTDIR/lib/node_modules/npm
+  ln -sf ../lib/node_modules/npm/bin/npm-cli.js $DESTDIR/bin/npm
+  ln -sf ../lib/node_modules/npm/bin/npx-cli.js $DESTDIR/bin/npx
+fi
+"""
 
 [depends]
 runtime = ["musl", "zlib", "libcxx", "libatomic"]
