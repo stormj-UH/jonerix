@@ -12,7 +12,11 @@ sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6"
 system = "autoconf"
 configure = "CC=clang ./configure --prefix=/ --with-shared --without-static --enable-widec --without-normal --without-debug --without-manpages --without-tests --with-default-terminfo-dir=/lib/terminfo --disable-nls --without-cxx-shared --without-cxx-binding"
 build = "make -j$(nproc)"
-install = "make DESTDIR=$DESTDIR install"
+install = """make DESTDIR=$DESTDIR install
+# Remove clear — toybox provides it as a built-in applet and
+# jpkg can't overwrite a running toybox binary (Text file busy)
+rm -f $DESTDIR/bin/clear 2>/dev/null || true
+"""
 
 [depends]
 runtime = []
