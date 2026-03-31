@@ -61,8 +61,9 @@ RUN if [ -d /jonerix/usr ]; then \
     fi && \
     ln -s / /jonerix/usr
 
-# Essential symlinks (toybox provides sh)
-RUN ln -sf bsdtar /jonerix/bin/tar && \
+# Essential symlinks
+RUN ln -sf toybox /jonerix/bin/sh && \
+    ln -sf bsdtar /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
 # CA certificates (downloaded from curl.se — no Alpine needed)
