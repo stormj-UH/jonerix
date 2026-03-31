@@ -57,10 +57,10 @@ ATOMIC_EOF
   clang -shared -fPIC -o /lib/libatomic.so /tmp/libatomic_impl.c -lpthread 2>/dev/null || true
 fi
 
-# libstdc++ symlinks for gyp linker (only if /usr/lib != /lib)
+# libc++ symlinks for gyp linker (only if /usr/lib != /lib)
 if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
   mkdir -p /usr/lib
-  for lib in /lib/libstdc++* /lib/libgcc_s*; do
+  for lib in /lib/libc++* /lib/libunwind*; do
     [ -f "$lib" ] && ln -sf "$lib" /usr/lib/ 2>/dev/null || true
   done
 fi
