@@ -11,65 +11,10 @@ sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
 [build]
 system = "custom"
 configure = """
-# Ensure llvm-ar is in PATH (Alpine puts it at /usr/lib/llvm*/bin/)
-for _bin in /usr/lib/llvm*/bin/llvm-ar; do
-  [ -x "$_bin" ] && { ln -sf "$_bin" /usr/bin/llvm-ar; ln -sf "$_bin" /usr/bin/ar; break; }
-done
-for _bin in /usr/lib/llvm*/bin/llvm-nm; do
-  [ -x "$_bin" ] && ln -sf "$_bin" /usr/bin/llvm-nm && break
-done
-for _bin in /usr/lib/llvm*/bin/llvm-ranlib; do
-  [ -x "$_bin" ] && ln -sf "$_bin" /usr/bin/llvm-ranlib && break
-done
-
-# Node.js links -latomic — provide real implementation if missing.
-# A stub (void __atomic_stub(){}) causes undefined symbol errors for
-# __atomic_compare_exchange at V8 link time. Compile a real libatomic.so.
-if ! [ -f /lib/libatomic.so ] && ! [ -f /usr/lib/libatomic.so ]; then
-  cat > /tmp/libatomic_impl.c << 'ATOMIC_EOF'
-#include <stddef.h>
-#include <string.h>
-#include <stdbool.h>
-#include <pthread.h>
-static pthread_mutex_t __atomic_lock = PTHREAD_MUTEX_INITIALIZER;
-bool __atomic_compare_exchange(size_t size, void *obj, void *expected,
-                               void *desired, int succ, int fail) {
-    (void)succ; (void)fail;
-    pthread_mutex_lock(&__atomic_lock);
-    bool result = (memcmp(obj, expected, size) == 0);
-    if (result) memcpy(obj, desired, size);
-    else        memcpy(expected, obj, size);
-    pthread_mutex_unlock(&__atomic_lock);
-    return result;
-}
-void __atomic_store(size_t size, void *obj, void *val, int order) {
-    (void)order;
-    pthread_mutex_lock(&__atomic_lock);
-    memcpy(obj, val, size);
-    pthread_mutex_unlock(&__atomic_lock);
-}
-void __atomic_load(size_t size, void *obj, void *ret, int order) {
-    (void)order;
-    pthread_mutex_lock(&__atomic_lock);
-    memcpy(ret, obj, size);
-    pthread_mutex_unlock(&__atomic_lock);
-}
-ATOMIC_EOF
-  clang -shared -fPIC -o /lib/libatomic.so /tmp/libatomic_impl.c -lpthread 2>/dev/null || true
-fi
-
-# libc++ symlinks for gyp linker (only if /usr/lib != /lib)
-if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
-  mkdir -p /usr/lib
-  for lib in /lib/libc++* /lib/libunwind*; do
-    [ -f "$lib" ] && ln -sf "$lib" /usr/lib/ 2>/dev/null || true
-  done
-fi
-
 CC=clang CXX="clang++ -stdlib=libc++" AR=llvm-ar \
 CFLAGS="-Wno-deprecated-builtins" \
 CXXFLAGS="-Wno-deprecated-builtins -stdlib=libc++" \
-LDFLAGS="-stdlib=libc++ -lc++abi -lunwind -L/lib $LDFLAGS" \
+LDFLAGS="-stdlib=libc++ -lc++abi -lunwind -L/lib" \
 python3 configure.py \
   --prefix=/ \
   --ninja \
