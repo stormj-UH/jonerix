@@ -45,5 +45,5 @@ done
 """
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "zsh"]
 build = ["rust"]
