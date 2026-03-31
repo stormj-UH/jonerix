@@ -20,10 +20,13 @@ RUN jpkg update && \
         jpkg install $pkg || echo "FAILED: $pkg"; \
     done
 
-# libatomic.so.1 — needed by Node 24 on aarch64 (V8 atomic ops).
-# Pre-extracted from Alpine's libatomic package (Apache-2.0 GCC runtime exception).
-COPY scripts/libatomic-aarch64.so.1 /lib/libatomic.so.1
-RUN ln -sf libatomic.so.1 /lib/libatomic.so
+# libatomic — needed by Node 24 on aarch64 (V8 atomic ops).
+# Built from compiler-rt source (Apache-2.0). Installed via jpkg.
+RUN rm -rf /var/db/jpkg/installed/libatomic 2>/dev/null && \
+    jpkg install libatomic || echo "libatomic: manual fallback" && \
+    if [ ! -f /lib/libatomic.so.1 ]; then \
+        ln -sf libatomic.so /lib/libatomic.so.1 2>/dev/null || true; \
+    fi
 
 # Standard symlinks
 RUN ln -sf byacc /bin/yacc 2>/dev/null || true && \
