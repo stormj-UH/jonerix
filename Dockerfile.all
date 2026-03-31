@@ -8,10 +8,14 @@
 ARG BASE=jonerix-develop:latest
 FROM ${BASE}
 
+# Update jpkg binary to latest (fixes install path bugs)
+COPY bin/jpkg-aarch64 /bin/jpkg
+
 # Install additional packages not in the develop image
-RUN jpkg update 2>/dev/null || true && \
+RUN jpkg update && \
     for pkg in zsh byacc ripgrep containerd runc nerdctl cni-plugins micro nghttp2; do \
-        jpkg install $pkg 2>/dev/null || echo "SKIP: $pkg"; \
+        echo "Installing $pkg..." && \
+        jpkg install $pkg || echo "FAILED: $pkg"; \
     done
 
 # libatomic.so.1 — needed by Node 24 on aarch64.
