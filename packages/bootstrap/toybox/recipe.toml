@@ -24,7 +24,10 @@ sed -i 's/# CONFIG_TR is not set/CONFIG_TR=y/' .config 2>/dev/null || true
 sed -i 's/# CONFIG_EXPR is not set/CONFIG_EXPR=y/' .config 2>/dev/null || true
 """
 build = "make CC=clang CFLAGS=\"-Os -pipe -fstack-protector-strong -fPIE\" LDFLAGS=\"-Wl,-z,relro,-z,now -pie\" -j$(nproc)"
-install = "make PREFIX=$DESTDIR install"
+install = """make PREFIX=$DESTDIR install
+# Remove tar symlink — bsdtar provides a better tar that handles symlinks
+rm -f $DESTDIR/bin/tar 2>/dev/null || true
+"""
 
 [depends]
 runtime = ["musl"]
