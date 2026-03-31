@@ -93,4 +93,4 @@ fi
 
 [depends]
 runtime = ["musl", "zlib", "libcxx", "libatomic"]
-build = ["clang", "python3", "make", "samurai", "zlib"]
+build = ["clang", "python3", "samurai", "zlib", "libcxx"]
