@@ -11,5 +11,5 @@ build = ""
 install = ""
 
 [depends]
-runtime = ["musl", "libatomic"]
+runtime = ["musl", "libstdcxx", "libatomic"]
 build = []
