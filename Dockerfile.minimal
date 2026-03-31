@@ -105,4 +105,4 @@ ENV TERM=xterm
 WORKDIR /root
 
 ENTRYPOINT ["/bin/sh"]
-CMD ["-l"]
+CMD []
