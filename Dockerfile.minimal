@@ -53,7 +53,7 @@ RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/downloa
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl toybox bsdtar dropbear openrc openssl curl zstd
+        musl mksh toybox bsdtar dropbear openrc openssl curl zstd
 
 # Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \
