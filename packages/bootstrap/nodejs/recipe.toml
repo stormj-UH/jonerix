@@ -11,9 +11,16 @@ sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
 [build]
 system = "custom"
 configure = """
-# Use system ar (GNU ar on Alpine, llvm-ar on jonerix)
-# jpkg exports AR=llvm-ar but Alpine doesn't have it — override to ar
-command -v llvm-ar >/dev/null 2>&1 || export AR=ar
+# Ensure llvm-ar is in PATH (Alpine puts it at /usr/lib/llvm*/bin/)
+for _bin in /usr/lib/llvm*/bin/llvm-ar; do
+  [ -x "$_bin" ] && { ln -sf "$_bin" /usr/bin/llvm-ar; ln -sf "$_bin" /usr/bin/ar; break; }
+done
+for _bin in /usr/lib/llvm*/bin/llvm-nm; do
+  [ -x "$_bin" ] && ln -sf "$_bin" /usr/bin/llvm-nm && break
+done
+for _bin in /usr/lib/llvm*/bin/llvm-ranlib; do
+  [ -x "$_bin" ] && ln -sf "$_bin" /usr/bin/llvm-ranlib && break
+done
 
 # Node.js links -latomic — provide real implementation if missing.
 # A stub (void __atomic_stub(){}) causes undefined symbol errors for
@@ -59,7 +66,7 @@ if [ "$(readlink -f /lib)" != "$(readlink -f /usr/lib)" ]; then
   done
 fi
 
-CC=clang CXX="clang++ -stdlib=libc++" AR=ar \
+CC=clang CXX="clang++ -stdlib=libc++" AR=llvm-ar \
 CFLAGS="-Wno-deprecated-builtins" \
 CXXFLAGS="-Wno-deprecated-builtins -stdlib=libc++" \
 LDFLAGS="-stdlib=libc++ -lc++abi -lunwind -L/lib $LDFLAGS" \
