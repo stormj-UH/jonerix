@@ -291,6 +291,7 @@ void pkg_meta_free(pkg_meta_t *meta) {
     while (f) {
         pkg_file_t *next = f->next;
         free(f->path);
+        free(f->link_target);
         free(f);
         f = next;
     }
