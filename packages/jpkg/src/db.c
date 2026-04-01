@@ -81,7 +81,12 @@ static void db_unlock(int fd) {
 /*
  * files format: one line per file
  *   <sha256> <mode_octal> <path>
+ * symlinks use a special sha256 of all zeros and append " -> <target>":
+ *   0000...0000 <mode_octal> <path> -> <target>
  */
+
+static const char SYMLINK_SHA256[65] =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
 static pkg_file_t *parse_files_list(const char *data, size_t *count) {
     pkg_file_t *head = NULL;
@@ -111,15 +116,33 @@ static pkg_file_t *parse_files_list(const char *data, size_t *count) {
         if (*p != ' ') break;
         p++;
 
-        /* Read path until newline */
+        /* Read path (and optional " -> target") until newline */
         const char *start = p;
         while (*p && *p != '\n') p++;
-        size_t plen = (size_t)(p - start);
+        size_t linelen = (size_t)(p - start);
 
         pkg_file_t *f = xcalloc(1, sizeof(pkg_file_t));
-        f->path = xstrndup(start, plen);
         memcpy(f->sha256, sha, 65);
         f->mode = (uint32_t)strtoul(mode_str, NULL, 8);
+
+        /* Check for symlink marker " -> " */
+        const char *arrow = NULL;
+        for (size_t i = 0; i + 4 <= linelen; i++) {
+            if (start[i] == ' ' && start[i+1] == '-' &&
+                start[i+2] == '>' && start[i+3] == ' ') {
+                arrow = start + i;
+                break;
+            }
+        }
+
+        if (arrow && strcmp(sha, SYMLINK_SHA256) == 0) {
+            size_t plen = (size_t)(arrow - start);
+            f->path = xstrndup(start, plen);
+            f->link_target = xstrndup(arrow + 4, linelen - plen - 4);
+        } else {
+            f->path = xstrndup(start, linelen);
+        }
+
         f->next = head;
         head = f;
         (*count)++;
@@ -136,10 +159,16 @@ static char *serialize_files_list(const pkg_file_t *files) {
     buf[0] = '\0';
 
     for (const pkg_file_t *f = files; f; f = f->next) {
-        size_t needed = 64 + 1 + 8 + 1 + strlen(f->path) + 2;
+        size_t tlen = f->link_target ? strlen(f->link_target) : 0;
+        size_t needed = 64 + 1 + 8 + 1 + strlen(f->path) + (tlen ? 4 + tlen : 0) + 2;
         while (len + needed >= cap) { cap *= 2; buf = xrealloc(buf, cap); }
-        len += (size_t)snprintf(buf + len, cap - len, "%s %06o %s\n",
-                                f->sha256, f->mode, f->path);
+        if (f->link_target) {
+            len += (size_t)snprintf(buf + len, cap - len, "%s %06o %s -> %s\n",
+                                    SYMLINK_SHA256, f->mode, f->path, f->link_target);
+        } else {
+            len += (size_t)snprintf(buf + len, cap - len, "%s %06o %s\n",
+                                    f->sha256, f->mode, f->path);
+        }
     }
 
     return buf;
@@ -363,6 +392,7 @@ int db_register(jpkg_db_t *db, const pkg_meta_t *meta, const pkg_file_t *files) 
         memcpy(nf->sha256, f->sha256, 65);
         nf->size = f->size;
         nf->mode = f->mode;
+        if (f->link_target) nf->link_target = xstrdup(f->link_target);
         nf->next = pkg->files;
         pkg->files = nf;
         pkg->file_count++;
@@ -454,6 +484,7 @@ void db_pkg_free(db_pkg_t *pkg) {
     while (f) {
         pkg_file_t *next = f->next;
         free(f->path);
+        free(f->link_target);
         free(f);
         f = next;
     }
@@ -477,22 +508,51 @@ int db_verify_files(const jpkg_db_t *db, const char *name,
         char full_path[1024];
         snprintf(full_path, sizeof(full_path), "%s%s", g_rootfs, f->path);
 
-        if (!file_exists(full_path)) {
+        struct stat lst;
+        if (lstat(full_path, &lst) != 0) {
             if (callback) callback(f->path, f->sha256, "(missing)", ctx);
             mismatches++;
             continue;
         }
 
-        char actual_hash[65];
-        if (sha256_file(full_path, actual_hash) != 0) {
-            if (callback) callback(f->path, f->sha256, "(error)", ctx);
-            mismatches++;
-            continue;
-        }
+        if (f->link_target) {
+            /* Verify symlink target */
+            if (!S_ISLNK(lst.st_mode)) {
+                if (callback) callback(f->path, f->link_target, "(not a symlink)", ctx);
+                mismatches++;
+                continue;
+            }
+            char actual_target[1024];
+            ssize_t tlen = readlink(full_path, actual_target, sizeof(actual_target) - 1);
+            if (tlen < 0) {
+                if (callback) callback(f->path, f->link_target, "(error)", ctx);
+                mismatches++;
+                continue;
+            }
+            actual_target[tlen] = '\0';
+            if (strcmp(f->link_target, actual_target) != 0) {
+                if (callback) callback(f->path, f->link_target, actual_target, ctx);
+                mismatches++;
+            }
+        } else {
+            /* Verify regular file by SHA256 */
+            if (!file_exists(full_path)) {
+                if (callback) callback(f->path, f->sha256, "(missing)", ctx);
+                mismatches++;
+                continue;
+            }
 
-        if (strcmp(f->sha256, actual_hash) != 0) {
-            if (callback) callback(f->path, f->sha256, actual_hash, ctx);
-            mismatches++;
+            char actual_hash[65];
+            if (sha256_file(full_path, actual_hash) != 0) {
+                if (callback) callback(f->path, f->sha256, "(error)", ctx);
+                mismatches++;
+                continue;
+            }
+
+            if (strcmp(f->sha256, actual_hash) != 0) {
+                if (callback) callback(f->path, f->sha256, actual_hash, ctx);
+                mismatches++;
+            }
         }
     }
 

@@ -3,12 +3,73 @@ name = "libcxx"
 version = "21.1.2"
 license = "Apache-2.0"
 pre_bootstrap = false
-description = "LLVM C++ standard library runtime (libc++, libunwind) — replaces GCC libstdc++"
+description = "LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME"
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
 
 [build]
-build = ""
+system = "custom"
+build = """
+set -e
+
+# Build libc++, libc++abi, and libunwind from LLVM source.
+# Key fix: force libunwind SONAME to libunwind.so.1 (default LLVM build
+# sets SONAME = libgcc_s.so.1 as a GCC compat hack, which is wrong for
+# a zero-GPL runtime).
+
+cmake -S runtimes -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
+    -DLIBCXX_USE_COMPILER_RT=ON \
+    -DLIBCXXABI_USE_COMPILER_RT=ON \
+    -DLIBCXXABI_USE_LLVM_UNWINDER=ON \
+    -DLIBUNWIND_USE_COMPILER_RT=ON \
+    -DLIBUNWIND_INSTALL_LIBRARY=ON \
+    -DLIBCXX_HAS_MUSL_LIBC=ON \
+    -DLIBCXX_INCLUDE_BENCHMARKS=OFF \
+    -DLIBCXX_INCLUDE_TESTS=OFF \
+    -DLIBCXXABI_INCLUDE_TESTS=OFF \
+    -DLIBUNWIND_INCLUDE_TESTS=OFF \
+    -DLIBUNWIND_HAS_COMMENT_LIB_PRAGMA=OFF
+
+cmake --build build -j1
+
+# Install to staging
+DESTDIR=$DESTDIR cmake --install build
+
+# Fix libunwind SONAME: the default LLVM build produces libunwind.so.1
+# with SONAME=libgcc_s.so.1. Rebuild just the shared lib with correct SONAME
+# if needed (check with readelf).
+if readelf -d $DESTDIR/lib/libunwind.so.1.0 2>/dev/null | grep -q 'libgcc_s'; then
+    echo "Fixing libunwind SONAME..."
+    cd build
+    # Re-link libunwind.so with correct SONAME
+    clang -shared -o $DESTDIR/lib/libunwind.so.1.0 \
+        -Wl,-soname,libunwind.so.1 \
+        -Wl,--whole-archive lib/libunwind.a -Wl,--no-whole-archive \
+        -lc -nostdlib
+    cd ..
+fi
+
+# Ensure correct symlinks
+cd $DESTDIR/lib
+ln -sf libunwind.so.1.0 libunwind.so.1
+ln -sf libunwind.so.1 libunwind.so
+ln -sf libc++.so.1.0 libc++.so.1
+ln -sf libc++abi.so.1.0 libc++abi.so.1
+ln -sf libc++abi.so.1 libc++abi.so
+
+# NO compat symlinks — libstdc++.so.6/libgcc_s.so.1 are ABI-incompatible
+# with libc++. All C++ packages must be rebuilt with -stdlib=libc++.
+"""
 install = ""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["clang", "cmake", "samurai", "python3"]

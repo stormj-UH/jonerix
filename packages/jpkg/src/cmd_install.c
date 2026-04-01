@@ -50,6 +50,21 @@ static pkg_file_t *build_file_manifest(const char *root_dir, const char *prefix)
                 tail->next = head;
                 head = sub;
             }
+        } else if (S_ISLNK(st.st_mode)) {
+            /* Symlink */
+            char target[1024];
+            ssize_t tlen = readlink(full_path, target, sizeof(target) - 1);
+            if (tlen > 0) {
+                target[tlen] = '\0';
+                pkg_file_t *f = xcalloc(1, sizeof(pkg_file_t));
+                f->path = xstrdup(rel_path);
+                f->link_target = xstrdup(target);
+                f->mode = (uint32_t)st.st_mode & 07777;
+                memset(f->sha256, '0', 64);
+                f->sha256[64] = '\0';
+                f->next = head;
+                head = f;
+            }
         } else if (S_ISREG(st.st_mode)) {
             pkg_file_t *f = xcalloc(1, sizeof(pkg_file_t));
             f->path = xstrdup(rel_path);
@@ -180,6 +195,7 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
     while (f) {
         pkg_file_t *next = f->next;
         free(f->path);
+        free(f->link_target);
         free(f);
         f = next;
     }

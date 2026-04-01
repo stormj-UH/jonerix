@@ -25,6 +25,7 @@ typedef struct pkg_file {
     char sha256[65];  /* hex string */
     uint64_t size;
     uint32_t mode;
+    char *link_target; /* symlink target (NULL for regular files) */
     struct pkg_file *next;
 } pkg_file_t;
 
