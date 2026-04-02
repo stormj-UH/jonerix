@@ -1,0 +1,33 @@
+[package]
+name = "jpkg-local"
+version = "1.0.0"
+license = "MIT"
+description = "jpkg subcommand for local .jpkg install and recipe builds"
+
+[source]
+url = "local"
+
+[build]
+system = "custom"
+build = """
+set -e
+cd packages/jpkg-local
+clang -std=c11 -Os -static -fuse-ld=lld \
+  -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
+  -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
+  -fstack-protector-strong \
+  -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
+  -I../jpkg/src \
+  -o jpkg-local \
+  src/main.c \
+  ../jpkg/src/util.c \
+  ../jpkg/src/toml.c \
+  ../jpkg/src/pkg.c \
+  ../jpkg/src/db.c
+install -Dm755 jpkg-local $DESTDIR/bin/jpkg-local
+"""
+install = ""
+
+[depends]
+runtime = ["jpkg"]
+build = ["clang", "llvm"]
