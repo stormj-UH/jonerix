@@ -62,6 +62,8 @@ readelf -d "$DESTDIR/bin/node" 2>/dev/null | grep NEEDED || true
 if readelf -d "$DESTDIR/bin/node" 2>/dev/null | grep -q 'libstdc++\\|libgcc_s'; then
     echo "WARNING: GNU C++ runtime dependencies detected in node binary!"
 fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
 """
 install = ""
 

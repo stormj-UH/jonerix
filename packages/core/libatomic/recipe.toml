@@ -30,6 +30,7 @@ if [ -d "${DESTDIR}/usr" ]; then
 fi
 # Link-time symlink for -latomic
 ln -sf libatomic.so.1 "${DESTDIR}/lib/libatomic.so" 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
 """
 install = ""
 
