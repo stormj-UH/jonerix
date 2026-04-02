@@ -9,23 +9,16 @@ export PATH="/bin"
 [ -d "/usr/local/bin" ] && export PATH="/usr/local/bin:$PATH"
 
 # --- Prompt ---
-# Show hostname and current directory. root gets red '#', users get '$'.
-if [ -n "$ZSH_VERSION" ]; then
-    # zsh prompt escapes (%~ = cwd with ~ abbreviation)
-    if [ "$(id -u)" -eq 0 ]; then
-        PS1='%F{red}%m%f:%~# '
-    else
-        PS1='%F{green}%n@%m%f:%~$ '
-    fi
-else
-    # POSIX sh / toybox — $PWD updates automatically
+# zsh: handled by /etc/zshrc
+# POSIX sh / toybox
+if [ -z "$ZSH_VERSION" ]; then
     if [ "$(id -u)" -eq 0 ]; then
         PS1='$HOSTNAME:$PWD# '
     else
         PS1='$(whoami)@$HOSTNAME:$PWD$ '
     fi
+    export PS1
 fi
-export PS1
 
 # --- Umask ---
 # 022: owner rwx, group r-x, other r-x

@@ -1,0 +1,5 @@
+# /etc/zshrc — jonerix system-wide zsh interactive config
+
+autoload -Uz colors && colors
+
+PROMPT='%F{cyan}%~%f %F{yellow}%m%f %# '
