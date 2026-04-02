@@ -221,7 +221,7 @@ jobs:
             -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
-            ghcr.io/stormj-uh/jonerix:all /bin/zsh /workspace/scripts/ci-build-aarch64.sh
+            ghcr.io/stormj-uh/jonerix:all /bin/sh /workspace/scripts/ci-build-aarch64.sh
 
       - name: Upload packages to release
         env:
