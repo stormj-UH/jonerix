@@ -252,13 +252,30 @@ int pkg_extract(const char *jpkg_path, const char *dest_dir) {
         return -1;
     }
 
-    char extract_cmd[512];
+    /*
+     * Extract the .tar to dest_dir using bsdtar, falling back to toybox tar.
+     *
+     * bsdtar may be absent or non-functional (e.g., jonerix:minimal-new has a
+     * bsdtar linked against OpenSSL 3 which is not present when LibreSSL is
+     * used; the dynamic linker then exits with 1 without extracting anything).
+     *
+     * Strategy: run bsdtar; if it exits 0 we are done.  Any non-zero exit —
+     * whether command-not-found (127), missing shared lib (1), or any error —
+     * triggers a second attempt with 'toybox tar'.  toybox tar may itself exit
+     * 1 for minor warnings (unpreservable attributes, etc.) while still
+     * successfully extracting the archive; treat that as success.
+     */
+    char extract_cmd[600];
     snprintf(extract_cmd, sizeof(extract_cmd),
-             "bsdtar -xf '%s' -C '%s' 2>/dev/null", tmp_tar, dest_dir);
+             "bsdtar -xf '%s' -C '%s' 2>/dev/null && true || "
+             "toybox tar -xf '%s' -C '%s' 2>/dev/null",
+             tmp_tar, dest_dir, tmp_tar, dest_dir);
     rc = system(extract_cmd);
     unlink(tmp_tar);
 
-    if (rc != 0) {
+    /* Accept exit 0 (success) or 256 (raw waitpid status for exit-code 1,
+     * meaning toybox tar warned about unpreservable attrs but did extract). */
+    if (rc != 0 && rc != 256) {
         log_error("extraction failed for %s (exit %d)", meta->name, rc);
         pkg_meta_free(meta);
         free(data);
