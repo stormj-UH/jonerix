@@ -11,12 +11,14 @@ sha256 = "9b8d1ecedd5b35564ef486edda542e19ac71a3b346c8b4b478b19e36a36bd7ac"
 
 [build]
 system = "autoconf"
-configure = "./configure --prefix=/ --bindir=/bin --mandir=/share/man --infodir=/share/info --with-tcsetpgrp --enable-multibyte --enable-unicode9 --disable-gdbm --without-tcl CC=clang"
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --infodir=/share/info --with-tcsetpgrp --enable-multibyte --enable-unicode9 --disable-gdbm --without-tcl CC=clang"
 build = "make -j$(nproc)"
 install = """
 make DESTDIR=$DESTDIR install
 printf '# /etc/zshrc — jonerix system-wide zsh interactive config\n\nautoload -Uz colors && colors\n\nPROMPT='"'"'%%F{cyan}%%~%%f %%F{yellow}%%m%%f %%# '"'"'\n' > $DESTDIR/etc/zshrc
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
 """
 
 [depends]
