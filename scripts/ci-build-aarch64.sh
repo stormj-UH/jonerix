@@ -29,6 +29,17 @@ else
     cp jpkg /jpkg-bin/jpkg
 fi
 
+# Ensure bsdtar/tar is functional. libarchive's bsdtar links against EVP_MAC_*
+# (OpenSSL 3.x API) which LibreSSL 4.0.0 does not implement. If the container's
+# bsdtar is broken (jpkg install libarchive overwrites the static fallback),
+# restore the static bsdtar from the workspace before jpkg tries to extract sources.
+if ! bsdtar --version >/dev/null 2>&1; then
+    if [ -x /workspace/tools/bsdtar-static-aarch64 ]; then
+        install -m 755 /workspace/tools/bsdtar-static-aarch64 /bin/bsdtar
+        echo "bsdtar: restored static fallback (dynamic bsdtar missing EVP_MAC_* from LibreSSL)"
+    fi
+fi
+
 # Update package index
 jpkg update
 
