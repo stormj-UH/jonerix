@@ -82,7 +82,7 @@ jobs:
           apk add \
             clang lld musl-dev make \
             curl patch tar xz bash \
-            zstd \
+            zstd libarchive-tools \
             linux-headers git \
             github-cli \
             cmake samurai \
