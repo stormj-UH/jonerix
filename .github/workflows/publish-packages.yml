@@ -51,7 +51,7 @@ jobs:
   # ── x86_64: build inside Alpine container (JS actions work on x64) ────────
   build-x86_64:
     name: Build packages (x86_64)
-    if: ${{ inputs.index_only != 'true' }}
+    if: ${{ github.event.inputs.index_only != 'true' }}
     needs: create-release
     runs-on: ubuntu-latest
     container:
@@ -158,7 +158,7 @@ jobs:
   # run bare on ubuntu-24.04-arm and exec the Alpine build via docker run.
   build-aarch64:
     name: Build packages (aarch64)
-    if: ${{ inputs.index_only != 'true' }}
+    if: ${{ github.event.inputs.index_only != 'true' }}
     needs: create-release
     runs-on: ubuntu-24.04-arm
     permissions:
