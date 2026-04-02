@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define JPKG_VERSION "1.0.0"
 
@@ -136,6 +137,29 @@ int main(int argc, char **argv) {
     }
 
     if (!cmd) {
+        /* Try external subcommand: jpkg-<cmd> */
+        char subcmd[256];
+        int n = snprintf(subcmd, sizeof(subcmd), "jpkg-%s", cmd_name);
+        if (n > 0 && (size_t)n < sizeof(subcmd)) {
+            /* Check if the binary exists somewhere in PATH */
+            static const char *path_dirs[] = {
+                "/bin", "/usr/bin", "/usr/local/bin", "/sbin", "/usr/sbin", NULL
+            };
+            bool found = false;
+            for (int i = 0; path_dirs[i]; i++) {
+                char full[512];
+                snprintf(full, sizeof(full), "%s/%s", path_dirs[i], subcmd);
+                if (access(full, X_OK) == 0) { found = true; break; }
+            }
+            if (found) {
+                /* Shift argv so that subcmd gets: argv[0]=subcmd, rest=original args after cmd */
+                argv[cmd_idx] = subcmd;
+                execvp(subcmd, argv + cmd_idx);
+                /* execvp only returns on failure */
+                fprintf(stderr, "jpkg: failed to run %s: %s\n", subcmd, strerror(errno));
+                return 1;
+            }
+        }
         fprintf(stderr, "jpkg: unknown command: %s\n", cmd_name);
         fprintf(stderr, "Run 'jpkg --help' for usage.\n");
         return 1;
