@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Command-line tool and library for transferring data with URLs"
 
 [source]
-url = "https://curl.se/download/curl-8.11.1.tar.gz"
+url = "sources/curl-8.11.1.tar.gz"  # vendored in sources/
 sha256 = "a889ac9dbba3644271bd9d1302b5c22a088893719b72be3487bc3d401e5c4e80"
 
 [build]

@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "ninja-compatible build tool written in C"
 
 [source]
-url = "https://github.com/michaelforney/samurai/archive/refs/tags/1.2.tar.gz"
+url = "sources/samurai-1.2.tar.gz"  # vendored in sources/
 sha256 = "37a2d9f35f338c53387eba210bab7e5d8abe033492664984704ad84f91b71bac"
 
 [build]

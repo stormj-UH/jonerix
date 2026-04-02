@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Terminal handling library"
 
 [source]
-url = "https://invisible-island.net/archives/ncurses/ncurses-6.5.tar.gz"
+url = "sources/ncurses-6.5.tar.gz"  # vendored in sources/
 sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6"
 
 [build]
