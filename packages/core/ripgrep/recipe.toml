@@ -5,11 +5,20 @@ license = "MIT"
 pre_bootstrap = false
 description = "Fast line-oriented search tool (grep replacement)"
 
+[source]
+url = "https://github.com/BurntSushi/ripgrep/archive/refs/tags/15.1.0.tar.gz"
+sha256 = "FIXME"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+build = """cargo fetch
+RUSTFLAGS="-C strip=symbols" cargo build --release"""
+install = """install -Dm755 target/release/rg $DESTDIR/bin/rg
+ln -sf rg $DESTDIR/bin/ripgrep
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["rust"]

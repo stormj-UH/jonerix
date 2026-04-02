@@ -5,11 +5,23 @@ license = "Apache-2.0"
 pre_bootstrap = false
 description = "CNI network plugins for container networking"
 
+[source]
+url = "https://github.com/containernetworking/plugins/archive/refs/tags/v1.9.1.tar.gz"
+sha256 = "FIXME"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+build = """go mod download
+mkdir -p $DESTDIR/opt/cni/bin
+for d in plugins/main/* plugins/meta/* plugins/ipam/*; do
+  [ -d "$d" ] || continue
+  name=$(basename "$d")
+  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$DESTDIR/opt/cni/bin/$name" "./$d" 2>/dev/null || true
+done"""
+install = """if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/opt/cni/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["go"]

@@ -5,11 +5,20 @@ license = "MIT"
 pre_bootstrap = false
 description = "Feature-rich system information tool"
 
+[source]
+url = "https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-source.tar.gz"
+sha256 = "FIXME"
+
 [build]
-system = "custom"
-build = ""
-install = ""
+system = "cmake"
+configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DFASTFETCH_BUILD_TESTS=OFF"
+build = "samu -C build -j$(nproc)"
+install = """DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl"]
-build = []
+runtime = ["musl", "libcxx"]
+build = ["clang", "cmake", "samurai"]

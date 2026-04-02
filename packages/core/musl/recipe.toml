@@ -5,11 +5,19 @@ license = "MIT"
 pre_bootstrap = false
 description = "Lightweight, fast, and standards-conformant C library"
 
+[source]
+url = "https://musl.libc.org/releases/musl-1.2.6.tar.gz"
+sha256 = "FIXME"
+
 [build]
-system = "custom"
-build = ""
-install = ""
+system = "autoconf"
+configure = "CFLAGS=\"-Os -fomit-frame-pointer\" ./configure --prefix=/ --syslibdir=/lib CC=clang"
+build = "make -j$(nproc)"
+install = """make DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/lib -name "libc.musl-*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = []
-build = []
+build = ["clang", "make"]

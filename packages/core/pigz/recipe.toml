@@ -5,11 +5,20 @@ license = "Zlib"
 pre_bootstrap = false
 description = "Parallel implementation of gzip"
 
+[source]
+url = "https://github.com/madler/pigz/archive/refs/tags/v2.8.tar.gz"
+sha256 = "FIXME"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+build = "make CC=clang CFLAGS=\"-O2 -fomit-frame-pointer\" -j$(nproc)"
+install = """install -Dm755 pigz $DESTDIR/bin/pigz
+ln -sf pigz $DESTDIR/bin/unpigz
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl"]
-build = []
+runtime = ["musl", "zlib"]
+build = ["clang", "make"]

@@ -5,11 +5,20 @@ license = "Apache-2.0"
 pre_bootstrap = false
 description = "Docker-compatible CLI for containerd"
 
+[source]
+url = "https://github.com/containerd/nerdctl/archive/refs/tags/v2.2.1.tar.gz"
+sha256 = "FIXME"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+build = """go mod download
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/nerdctl"""
+install = """install -Dm755 nerdctl $DESTDIR/bin/nerdctl
+ln -sf nerdctl $DESTDIR/bin/docker
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl", "containerd", "runc", "cni-plugins"]
-build = []
+build = ["go"]

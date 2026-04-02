@@ -5,11 +5,20 @@ license = "BSD-3-Clause"
 pre_bootstrap = false
 description = "Validating, recursive, and caching DNS resolver"
 
+[source]
+url = "https://nlnetlabs.nl/downloads/unbound/unbound-1.22.0.tar.gz"
+sha256 = "FIXME"
+
 [build]
-system = "custom"
-build = ""
-install = ""
+system = "autoconf"
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --sbindir=/bin --with-ssl=/ --with-libunbound-only CC=clang"
+build = "make -j$(nproc)"
+install = """make DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl", "openssl"]
-build = []
+build = ["clang", "make"]

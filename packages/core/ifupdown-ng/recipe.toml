@@ -5,11 +5,19 @@ license = "ISC"
 pre_bootstrap = false
 description = "Next-generation network interface configuration tool"
 
+[source]
+url = "https://github.com/ifupdown-ng/ifupdown-ng/releases/download/ifupdown-ng-0.12.1/ifupdown-ng-0.12.1.tar.xz"
+sha256 = "FIXME"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+build = "make CC=clang CFLAGS=\"-O2 -fomit-frame-pointer\" PREFIX=/ -j$(nproc)"
+install = """make PREFIX=/ DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["clang", "make"]
