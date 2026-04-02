@@ -17,6 +17,16 @@ set -e
 # Zero-GNU LLVM from-source build.
 # Produces clang, lld, and compiler-rt linked against libc++/libunwind.
 # No libstdc++, no libgcc_s, no GCC CRT objects.
+#
+# Build notes:
+# - compiler-rt builtins are built standalone (two-step) instead of via
+#   LLVM_ENABLE_RUNTIMES, because the runtimes sub-build pulls in
+#   sanitizer_common which needs kernel headers not present in the container.
+# - libclang-cpp.so cannot be built on aarch64/musl (non-PIC relocation
+#   errors), so all shared dylib targets are disabled.
+# - cmake --install fails because cmake_install.cmake still references the
+#   disabled shared libs; a manual install is used instead.
+# - llvm-ar/llvm-ranlib are at /lib/llvm21/bin/ in the bootstrap env.
 
 case $(uname -m) in
     x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-jonerix-linux-musl" ;;
@@ -24,28 +34,60 @@ case $(uname -m) in
     *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl" ;;
 esac
 
+SRC=$(pwd)
+
+# Locate bootstrap llvm-ar/llvm-ranlib (may be in /lib/llvm21/bin or on PATH)
+LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
+LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
+
+# --- Step 0: libssp_nonshared.a must exist before cmake configure ---
+# Without it, --rtlib=compiler-rt test links fail at configure time.
+# musl provides __stack_chk_fail natively so this stub is safe.
+printf '!<arch>\n' > /lib/libssp_nonshared.a
+
+# --- Step 1: Bootstrap compiler-rt builtins ---
+# Build builtins for the BOOTSTRAP clang's triple so that --rtlib=compiler-rt
+# test links pass during the main cmake configure step.
+BOOTSTRAP_TRIPLE=$(clang -dumpmachine)
+mkdir -p /tmp/llvm-builtins-bootstrap
+cmake -S compiler-rt/lib/builtins -B /tmp/llvm-builtins-bootstrap -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_C_COMPILER_TARGET="$BOOTSTRAP_TRIPLE" \
+    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCMAKE_INSTALL_PREFIX=/lib/llvm21/lib/clang/21
+samu -C /tmp/llvm-builtins-bootstrap
+DESTDIR="" cmake --install /tmp/llvm-builtins-bootstrap
+
+# --- Step 2: Configure main LLVM build ---
+# No LLVM_ENABLE_RUNTIMES — compiler-rt is built standalone (steps 1 and 3).
+# Disable all shared library targets: libclang-cpp.so fails to link on
+# aarch64/musl due to R_AARCH64_ADR_PREL_PG_HI21 relocations.
+mkdir -p build
 cmake -S llvm -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang;lld" \
-    -DLLVM_ENABLE_RUNTIMES="compiler-rt" \
     -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
-    -DCMAKE_AR=$(which llvm-ar) \
-    -DCMAKE_RANLIB=$(which llvm-ranlib) \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
     -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt --unwindlib=libunwind" \
     -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
     -DLLVM_ENABLE_LIBCXX=ON \
-    -DCOMPILER_RT_BUILD_BUILTINS=ON \
-    -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
-    -DCOMPILER_RT_BUILD_XRAY=OFF \
-    -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
-    -DCOMPILER_RT_BUILD_PROFILE=OFF \
-    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DLLVM_BUILD_LLVM_DYLIB=OFF \
+    -DCLANG_BUILD_CLANG_DYLIB=OFF \
+    -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
+    -DLLVM_TOOL_LTO_BUILD=OFF \
+    -DCLANG_TOOL_C_INDEX_TEST_BUILD=OFF \
+    -DLLVM_ENABLE_PLUGINS=OFF \
     -DCMAKE_INSTALL_PREFIX=/ \
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DLLVM_INSTALL_UTILS=ON \
@@ -61,10 +103,21 @@ cmake -S llvm -B build -G Ninja \
     -DLLVM_ENABLE_ZSTD=ON \
     -DLLVM_PARALLEL_LINK_JOBS=2
 
-cmake --build build -j$(nproc)
-DESTDIR=$DESTDIR cmake --install build
+# --- Step 3: Build ---
+samu -C build -j$(nproc)
 
-# --- Post-install fixups ---
+# --- Step 4: Manual install ---
+# cmake --install fails because cmake_install.cmake still references the
+# disabled libclang-cpp.so. Copy directly from the build tree instead.
+mkdir -p "$DESTDIR/bin" "$DESTDIR/lib"
+cp -a build/bin/. "$DESTDIR/bin/"
+cp -a build/lib/clang "$DESTDIR/lib/"
+# Copy any non-empty shared libs actually built (libRemarks.so etc.)
+find build/lib -maxdepth 1 -name '*.so*' -size +0 \
+    ! -name 'libclang-cpp*' ! -name 'libLLVM*' \
+    -exec cp -a {} "$DESTDIR/lib/" \; 2>/dev/null || true
+
+# --- Step 5: Post-install fixups ---
 
 # Flatten usr/ (jonerix merged-usr layout)
 if [ -d "$DESTDIR/usr" ]; then
@@ -79,73 +132,92 @@ if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
 fi
 
 # Global tool symlinks
-ln -sf clang     "$DESTDIR/bin/cc"      2>/dev/null || true
-ln -sf clang++   "$DESTDIR/bin/c++"     2>/dev/null || true
-ln -sf ld.lld    "$DESTDIR/bin/ld"      2>/dev/null || true
-ln -sf llvm-ar   "$DESTDIR/bin/ar"      2>/dev/null || true
-ln -sf llvm-nm   "$DESTDIR/bin/nm"      2>/dev/null || true
-ln -sf llvm-ranlib "$DESTDIR/bin/ranlib" 2>/dev/null || true
-ln -sf llvm-strip  "$DESTDIR/bin/strip"  2>/dev/null || true
-ln -sf llvm-objcopy "$DESTDIR/bin/objcopy" 2>/dev/null || true
-ln -sf llvm-objdump "$DESTDIR/bin/objdump" 2>/dev/null || true
+ln -sf clang       "$DESTDIR/bin/cc"       2>/dev/null || true
+ln -sf clang++     "$DESTDIR/bin/c++"      2>/dev/null || true
+ln -sf ld.lld      "$DESTDIR/bin/ld"       2>/dev/null || true
+ln -sf llvm-ar     "$DESTDIR/bin/ar"       2>/dev/null || true
+ln -sf llvm-nm     "$DESTDIR/bin/nm"       2>/dev/null || true
+ln -sf llvm-ranlib "$DESTDIR/bin/ranlib"   2>/dev/null || true
+ln -sf llvm-strip  "$DESTDIR/bin/strip"    2>/dev/null || true
+ln -sf llvm-objcopy  "$DESTDIR/bin/objcopy"  2>/dev/null || true
+ln -sf llvm-objdump  "$DESTDIR/bin/objdump"  2>/dev/null || true
 
-# --- Compiler-RT CRT into GCC search path ---
-# Clang's driver probes /lib/gcc/<triple>/<ver>/crtbeginS.o by default.
-# Place compiler-rt objects there so clang uses them instead of GCC's.
-# Use the configured target triple, not the host clang's triple.
-TRIPLE="$LLVM_TRIPLE"
-# Find compiler-rt output dir
-RT_DIR=$(find "$DESTDIR/lib/clang" -name "clang_rt.crtbegin*" -printf '%h' -quit 2>/dev/null || true)
-if [ -z "$RT_DIR" ]; then
-    RT_DIR=$(find "$DESTDIR/lib/clang" -name "libclang_rt.builtins*" -printf '%h' -quit 2>/dev/null || true)
+# --- Step 6: jonerix compiler-rt builtins ---
+# Build builtins with the newly-built clang targeting the jonerix triple.
+# Installed to the per-target layout that the new clang expects.
+mkdir -p /tmp/llvm-builtins-jonerix
+cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/llvm-builtins-jonerix -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER="$DESTDIR/bin/clang" \
+    -DCMAKE_C_COMPILER_TARGET="$LLVM_TRIPLE" \
+    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
+    -DCMAKE_AR="$DESTDIR/bin/llvm-ar" \
+    -DCMAKE_RANLIB="$DESTDIR/bin/llvm-ranlib" \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCMAKE_INSTALL_PREFIX="$DESTDIR/lib/clang/21"
+samu -C /tmp/llvm-builtins-jonerix
+DESTDIR="" cmake --install /tmp/llvm-builtins-jonerix
+
+# Copy from legacy linux/ layout to the per-target dir the new clang expects
+ARCH=$(uname -m)
+RT_LINUX="$DESTDIR/lib/clang/21/lib/linux"
+RT_TARGET="$DESTDIR/lib/clang/21/lib/$LLVM_TRIPLE"
+if [ -d "$RT_LINUX" ]; then
+    mkdir -p "$RT_TARGET"
+    cp "$RT_LINUX/libclang_rt.builtins-${ARCH}.a"  "$RT_TARGET/libclang_rt.builtins.a"  2>/dev/null || true
+    cp "$RT_LINUX/clang_rt.crtbegin-${ARCH}.o"     "$RT_TARGET/clang_rt.crtbegin.o"     2>/dev/null || true
+    cp "$RT_LINUX/clang_rt.crtend-${ARCH}.o"       "$RT_TARGET/clang_rt.crtend.o"       2>/dev/null || true
 fi
 
-if [ -n "$RT_DIR" ]; then
-    # Detect GCC version dir that clang probes
-    GCC_VER="21"
-    GCC_DIR="$DESTDIR/lib/gcc/$TRIPLE/$GCC_VER"
-    mkdir -p "$GCC_DIR"
+# --- Step 7: GCC compat CRT dir ---
+# Clang probes /lib/gcc/<triple>/<ver>/crtbeginS.o when linking.
+# Populate with compiler-rt objects so no GCC CRT is needed.
+GCC_VER="21"
+GCC_DIR="$DESTDIR/lib/gcc/$LLVM_TRIPLE/$GCC_VER"
+mkdir -p "$GCC_DIR"
+[ -f "$RT_TARGET/clang_rt.crtbegin.o" ] && \
+    cp "$RT_TARGET/clang_rt.crtbegin.o" "$GCC_DIR/crtbeginS.o" && \
+    cp "$RT_TARGET/clang_rt.crtbegin.o" "$GCC_DIR/crtbeginT.o"
+[ -f "$RT_TARGET/clang_rt.crtend.o" ] && \
+    cp "$RT_TARGET/clang_rt.crtend.o"   "$GCC_DIR/crtendS.o"
+[ -f "$RT_TARGET/libclang_rt.builtins.a" ] && \
+    cp "$RT_TARGET/libclang_rt.builtins.a" "$GCC_DIR/libgcc.a"
 
-    # CRT begin/end — try both naming conventions
-    for f in "$RT_DIR"/clang_rt.crtbegin*.o; do
-        [ -f "$f" ] && cp "$f" "$GCC_DIR/crtbeginS.o" && cp "$f" "$GCC_DIR/crtbeginT.o" && break
-    done
-    for f in "$RT_DIR"/clang_rt.crtend*.o; do
-        [ -f "$f" ] && cp "$f" "$GCC_DIR/crtendS.o" && break
-    done
-
-    # Builtins archive replaces libgcc.a
-    for f in "$RT_DIR"/libclang_rt.builtins*.a; do
-        [ -f "$f" ] && cp "$f" "$GCC_DIR/libgcc.a" && break
-    done
-else
-    echo "WARNING: compiler-rt output not found in DESTDIR"
-fi
-
-# Empty libssp_nonshared.a — musl provides __stack_chk_fail natively
+# Empty libssp_nonshared.a in DESTDIR (musl provides __stack_chk_fail)
 printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
 
-# Clang config: default to compiler-rt/libunwind/lld for this triple
+# Clang config: default flags for this triple
 mkdir -p "$DESTDIR/etc/clang"
-cat > "$DESTDIR/etc/clang/$TRIPLE.cfg" << 'CLANGCFG'
+cat > "$DESTDIR/etc/clang/$LLVM_TRIPLE.cfg" << 'CLANGCFG'
 --rtlib=compiler-rt
 --unwindlib=libunwind
 -fuse-ld=lld
 CLANGCFG
 
+# --- Step 8: Strip and clean up ---
+# Remove static libs (dev-only, ~400MB uncompressed) and headers
+find "$DESTDIR/lib" -maxdepth 1 -name 'libLLVM*.a' -delete 2>/dev/null || true
+find "$DESTDIR/lib" -maxdepth 1 -name 'libclang*.a' -delete 2>/dev/null || true
+find "$DESTDIR/lib" -maxdepth 1 -name 'liblld*.a'   -delete 2>/dev/null || true
+rm -rf "$DESTDIR/include"
+
 # Strip debug info to reduce package size
-find "$DESTDIR/bin" -type f -executable -exec llvm-strip {} \; 2>/dev/null || true
-find "$DESTDIR/lib" -name '*.so*' -type f -exec llvm-strip --strip-debug {} \; 2>/dev/null || true
+find "$DESTDIR/bin" -type f -executable \
+    -exec "$DESTDIR/bin/llvm-strip" {} \; 2>/dev/null || true
+find "$DESTDIR/lib" -name '*.so*' -type f -size +0 \
+    -exec "$DESTDIR/bin/llvm-strip" --strip-debug {} \; 2>/dev/null || true
 
 # Remove docs/man/cmake to save space
 rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc" "$DESTDIR/lib/cmake"
 
-# Verify: warn if any GNU deps leaked through
+# --- Verify: warn if any GNU deps leaked through ---
 echo "=== Verifying clang binary dependencies ==="
 readelf -d "$DESTDIR/bin/clang-21" 2>/dev/null | grep NEEDED || true
 if readelf -d "$DESTDIR/bin/clang-21" 2>/dev/null | grep -q 'libstdc++\|libgcc_s'; then
     echo "WARNING: GNU runtime dependencies detected in clang binary!"
 fi
+echo "=== Triple check ==="
+"$DESTDIR/bin/clang" -dumpmachine 2>/dev/null || true
 """
 install = ""
 
