@@ -1,14 +1,13 @@
 name: Publish container images
 
 on:
-  # Push trigger disabled — building and uploading images manually.
-  # push:
-  #   branches: [master]
-  #   paths:
-  #     - 'Dockerfile*'
-  #     - 'config/**'
-  #     - 'packages/jpkg/**'
-  #     - 'scripts/**'
+  push:
+    branches: [master]
+    paths:
+      - 'Dockerfile*'
+      - 'config/**'
+      - 'packages/jpkg/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 env:
@@ -129,8 +128,9 @@ jobs:
           cache-from: type=gha,scope=develop
           cache-to: type=gha,mode=max,scope=develop
 
-  bootstrap:
-    name: Build and push jonerix-bootstrap
+  all:
+    name: Build and push jonerix-all
+    needs: minimal
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -152,23 +152,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata (bootstrap)
+      - name: Set lowercase image ref
+        id: refs
+        run: |
+          echo "minimal=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Docker metadata (all)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=bootstrap
-            type=sha,prefix=bootstrap-
+            type=raw,value=all
+            type=sha,prefix=all-
 
-      - name: Build and push bootstrap
+      - name: Build and push all
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.all.new
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=bootstrap
-          cache-to: type=gha,mode=max,scope=bootstrap
+          platforms: linux/arm64
+          build-args: |
+            MINIMAL_IMAGE=${{ steps.refs.outputs.minimal }}
+          cache-from: type=gha,scope=all
+          cache-to: type=gha,mode=max,scope=all
