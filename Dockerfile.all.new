@@ -23,7 +23,7 @@ RUN printf '#!/bin/sh\nexec toybox tar "$@"\n' > /bin/bsdtar && chmod 755 /bin/b
 RUN jpkg update && \
     for pkg in \
       musl zlib zstd lz4 xz ncurses libressl openssl curl nghttp2 \
-      bsdtar toybox openrc dropbear dhcpcd doas snooze socklog \
+      libarchive bsdtar toybox openrc dropbear dhcpcd doas snooze socklog \
       ifupdown-ng unbound mandoc pigz \
       libcxx libatomic llvm \
       cmake bmake samurai flex bc byacc \
