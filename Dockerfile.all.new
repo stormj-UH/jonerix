@@ -15,10 +15,11 @@ COPY jonerix-built-jpkgs/llvm-21.1.2-aarch64.jpkg /var/cache/jpkg/llvm-21.1.2-aa
 
 # Bootstrap bsdtar: minimal-new has /bin/tar→bsdtar but no bsdtar binary
 # (core bsdtar is a metadata stub; the real binary comes from libarchive).
-# Create a bsdtar shim that routes to toybox tar so jpkg extraction works
-# before libarchive is installed. Toybox does not recognise "bsdtar" as an
-# applet, so a symlink alone is insufficient — use a tiny wrapper script.
-RUN printf '#!/bin/sh\nexec toybox tar "$@"\n' > /bin/bsdtar && chmod 755 /bin/bsdtar
+# Install a pre-built static bsdtar (libarchive 3.8.6, no OpenSSL) so that
+# PAX-format archives (LLVM) extract correctly. Depends only on musl+zlib+zstd
+# which are all present in the minimal image.
+COPY jonerix-built-jpkgs/bsdtar-static-aarch64 /bin/bsdtar
+RUN chmod 755 /bin/bsdtar
 
 RUN jpkg update && \
     for pkg in \
