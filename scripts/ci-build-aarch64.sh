@@ -4,21 +4,25 @@
 # Env: PKG_INPUT (optional package name to force-build)
 set -e
 
-# Build jpkg from source (source of truth — do not trust container binary)
+# Get jpkg binary: prefer host cache, then container pre-installed, then compile.
+# The jonerix:all container COPYs packages/jpkg/jpkg → /bin/jpkg at build time,
+# so the pre-installed path is always available for containers built that way.
 if [ -f /jpkg-bin/jpkg ]; then
     install -m 755 /jpkg-bin/jpkg /bin/jpkg
     echo "jpkg: using cached binary"
+elif /bin/jpkg --version >/dev/null 2>&1; then
+    echo "jpkg: using container pre-installed binary"
+    cp /bin/jpkg /jpkg-bin/jpkg 2>/dev/null || true
 else
     cd /workspace/packages/jpkg
     # Use clang directly — jonerix has bmake, not GNU make, so Makefile pattern
     # rules (%.o: %.c) don't work; compile all sources in one shot instead.
-    # Build dynamically — jonerix's LLVM ships crtbeginS.o (shared) but not
-    # crtbeginT.o (static-PIE), so -static fails. Dynamic is fine inside the
-    # container since musl is present.
+    # --rtlib=compiler-rt avoids GCC CRT (crtbeginS.o/libgcc) path dependency.
     clang -std=c11 -Os -fuse-ld=lld \
       -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
       -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
       -fstack-protector-strong \
+      --rtlib=compiler-rt --unwindlib=none \
       -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
       -o jpkg src/*.c
     install -m 755 jpkg /bin/jpkg
