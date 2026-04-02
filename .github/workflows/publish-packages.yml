@@ -206,6 +206,9 @@ jobs:
             --dir /tmp/jpkg-published 2>/dev/null || true
           echo "Existing aarch64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
 
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: Build packages in jonerix:all container
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
