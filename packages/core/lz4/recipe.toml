@@ -5,11 +5,20 @@ license = "BSD-2-Clause"
 pre_bootstrap = false
 description = "Extremely fast lossless compression library and tool"
 
+[source]
+url = "https://github.com/lz4/lz4/releases/download/v1.10.0/lz4-1.10.0.tar.gz"
+sha256 = "FIXME"
+
 [build]
-system = "custom"
-build = ""
-install = ""
+system = "cmake"
+configure = "cmake -B build build/cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DLZ4_BUILD_CLI=ON"
+build = "samu -C build -j$(nproc)"
+install = """DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["clang", "cmake", "samurai"]

@@ -5,11 +5,20 @@ license = "0BSD"
 pre_bootstrap = false
 description = "XZ compression utilities and liblzma"
 
+[source]
+url = "https://github.com/tukaani-project/xz/releases/download/v5.8.2/xz-5.8.2.tar.xz"
+sha256 = "FIXME"
+
 [build]
-system = "custom"
-build = ""
-install = ""
+system = "cmake"
+configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib"
+build = "samu -C build -j$(nproc)"
+install = """DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["clang", "cmake", "samurai"]

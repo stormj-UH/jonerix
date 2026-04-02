@@ -2,32 +2,24 @@
 name = "micro"
 version = "2.0.15"
 license = "MIT"
+pre_bootstrap = false
 description = "Modern terminal text editor (intuitive keybindings, syntax highlighting)"
 
-# Prebuilt static Go binary — no build dependencies.
-# micro is a permissive-licensed alternative to nano (GPL) and pico (complex build).
-# Can serve as the default editor for jonerix.
+[source]
+url = "https://github.com/zyedidia/micro/archive/refs/tags/v2.0.15.tar.gz"
+sha256 = "FIXME"
 
 [build]
 system = "custom"
-build = """
-ARCH=$(uname -m)
-if [ "$ARCH" = "aarch64" ]; then
-  URL="https://github.com/zyedidia/micro/releases/download/v2.0.15/micro-2.0.15-linux-arm64.tar.gz"
-  SHA="5ca127857bf5500be3879f1a70b27556e737a49da04a1be5334de9e8e8781ad9"
-else
-  URL="https://github.com/zyedidia/micro/releases/download/v2.0.15/micro-2.0.15-linux64-static.tar.gz"
-  SHA="267d238eac1e26ed053d13d4d48bd421b87f9eb538b604f0b2f74a85598b6cc2"
-fi
-curl -fsSL "$URL" -o micro.tar.gz
-printf '%s  micro.tar.gz\n' "$SHA" | sha256sum -c
-tar xzf micro.tar.gz
-install -Dm755 micro-*/micro "$DESTDIR/bin/micro"
-ln -sf micro "$DESTDIR/bin/editor"
-ln -sf micro "$DESTDIR/bin/vi"
-"""
-install = ""
+build = """go mod download
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/micro"""
+install = """install -Dm755 micro $DESTDIR/bin/micro
+ln -sf micro $DESTDIR/bin/editor
+ln -sf micro $DESTDIR/bin/vi
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = []
-build = []
+build = ["go"]

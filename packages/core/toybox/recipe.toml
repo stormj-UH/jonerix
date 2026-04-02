@@ -5,11 +5,19 @@ license = "0BSD"
 pre_bootstrap = false
 description = "BSD-licensed coreutils replacement"
 
+[source]
+url = "http://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
+sha256 = "FIXME"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+build = "make defconfig && make CC=clang CFLAGS=\"-Os -fomit-frame-pointer\" -j$(nproc)"
+install = """make CC=clang PREFIX=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["clang", "make"]
