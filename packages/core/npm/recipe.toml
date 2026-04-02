@@ -1,14 +1,26 @@
 [package]
 name = "npm"
-version = "11.11.0"
+version = "11.12.1"
 license = "Artistic-2.0"
 pre_bootstrap = false
-description = "Node.js package manager"
+description = "Node.js package manager (standalone install from npmjs.com tarball)"
+
+[source]
+url = "https://registry.npmjs.org/npm/-/npm-11.12.1.tgz"
+sha256 = "e679850e663b16f5f146ee425d0eb0e3442c1d2bda3d513bbfd7c81f5ee5db38"
 
 [build]
 system = "custom"
 build = ""
-install = ""
+install = """
+set -e
+mkdir -p "$DESTDIR/lib/node_modules/npm" "$DESTDIR/bin"
+cp -a . "$DESTDIR/lib/node_modules/npm/"
+ln -sf ../lib/node_modules/npm/bin/npm-cli.js "$DESTDIR/bin/npm"
+ln -sf ../lib/node_modules/npm/bin/npx-cli.js "$DESTDIR/bin/npx"
+chmod 755 "$DESTDIR/lib/node_modules/npm/bin/npm-cli.js"
+chmod 755 "$DESTDIR/lib/node_modules/npm/bin/npx-cli.js"
+"""
 
 [depends]
 runtime = ["nodejs"]

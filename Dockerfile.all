@@ -1,47 +1,87 @@
 # jonerix:all — Complete image with every package + Claude Code
 #
-# Starts from jonerix-develop and adds all remaining tools.
-# All packages built from source on jonerix with permissive tools.
+# Starts directly from jonerix-minimal for a fully reproducible build.
+# No dependency on a manually-committed jonerix-develop intermediate.
 #
-# Build: docker build -f Dockerfile.all --tag jonerix:all --platform linux/arm64 .
+# Build (aarch64): docker build -f Dockerfile.all --tag jonerix:all .
+# Build (x86_64):  docker build -f Dockerfile.all --tag jonerix:all \
+#                    --build-arg JPKG_ARCH=x86_64 .
 
-ARG BASE=jonerix-develop:latest
-FROM ${BASE}
+ARG MINIMAL_IMAGE=jonerix-minimal:latest
+FROM ${MINIMAL_IMAGE}
 
-# Update jpkg binary to latest (fixes install path bugs)
-COPY bin/jpkg-aarch64 /bin/jpkg
+ARG JPKG_ARCH=aarch64
 
-# Install additional packages not in the develop image
-# Force reinstall zsh (develop image has stale metadata but missing binary)
+SHELL ["/bin/sh", "-c"]
+
+# Update jpkg binary to latest
+COPY bin/jpkg-${JPKG_ARCH} /bin/jpkg
+
+# ── Install all packages via jpkg ────────────────────────────────────────
+# Order: base libs → compilers → build tools → languages → utilities → tools
 RUN jpkg update && \
-    rm -rf /var/db/jpkg/installed/zsh 2>/dev/null && \
-    for pkg in zsh byacc ripgrep containerd runc nerdctl cni-plugins micro nghttp2; do \
-        echo "Installing $pkg..." && \
-        jpkg install $pkg || echo "FAILED: $pkg"; \
+    for pkg in \
+      musl ncurses openssl zlib xz lz4 zstd \
+      llvm \
+      rust go \
+      cmake bmake samurai flex bc byacc \
+      perl python3 pip \
+      nodejs npm \
+      zsh gitoxide ripgrep micro mandoc pigz fastfetch \
+      curl doas dropbear \
+      containerd runc nerdctl cni-plugins \
+      nghttp2 libatomic \
+      uutils ca-certificates; \
+    do \
+      echo "==> $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
     done
 
-# libatomic — needed by Node 24 on aarch64 (V8 atomic ops).
-# Built from compiler-rt source (Apache-2.0). Installed via jpkg.
-RUN rm -rf /var/db/jpkg/installed/libatomic 2>/dev/null && \
-    jpkg install libatomic || echo "libatomic: manual fallback" && \
-    if [ ! -f /lib/libatomic.so.1 ]; then \
-        ln -sf libatomic.so /lib/libatomic.so.1 2>/dev/null || true; \
-    fi
+# ── Symlinks for standard tool names ─────────────────────────────────────
+RUN \
+    # Compiler
+    ln -sf clang /bin/cc && \
+    ln -sf clang++ /bin/c++ && \
+    # Linker
+    ln -sf ld.lld /bin/ld && \
+    # LLVM binutils
+    LLVM_BIN=$(find /lib/llvm* -name "llvm-ar" -exec dirname {} \; 2>/dev/null | head -1) && \
+    if [ -n "$LLVM_BIN" ]; then \
+      for tool in ar nm ranlib strip objcopy objdump readelf; do \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null || true; \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null || true; \
+      done; \
+    fi && \
+    # Build tools
+    ln -sf bmake /bin/make && \
+    ln -sf samu /bin/ninja && \
+    # Python
+    ln -sf python3 /bin/python && \
+    # Shell: zsh as bash-compatible (bash shebang scripts work)
+    ln -sf zsh /bin/bash && \
+    # Other tools
+    ln -sf byacc /bin/yacc && \
+    ln -sf flex /bin/lex && \
+    ln -sf micro /bin/editor && \
+    ln -sf micro /bin/vi && \
+    ln -sf nerdctl /bin/docker && \
+    # Runtime stubs expected by some packages
+    ln -sf libgcc_s.so.1 /lib/libgcc_s.so 2>/dev/null || true && \
+    ln -sf libstdc++.so.6 /lib/libstdc++.so 2>/dev/null || true && \
+    printf '!<arch>\n' > /lib/libssp_nonshared.a
 
-# Standard symlinks
-RUN ln -sf byacc /bin/yacc 2>/dev/null || true && \
-    ln -sf nerdctl /bin/docker 2>/dev/null || true && \
-    # zsh as default shell + bash compatibility
-    ln -sf zsh /bin/bash 2>/dev/null || true
-
-# Install Claude Code via npm (uses Node.js already in image, ~47MB JS)
+# ── Install Claude Code via npm ───────────────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code && \
-    echo "Claude Code installed via npm"
+    echo "Claude Code installed"
 
+ENV PATH=/bin
+ENV HOME=/root
+ENV SHELL=/bin/zsh
+ENV TERM=xterm
 ENV EDITOR=micro
 ENV VISUAL=micro
-ENV SHELL=/bin/zsh
+ENV PAGER=less
 ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 WORKDIR /root
 ENTRYPOINT ["/bin/zsh"]
