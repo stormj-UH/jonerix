@@ -10,7 +10,14 @@ if [ -f /jpkg-bin/jpkg ]; then
     echo "jpkg: using cached binary"
 else
     cd /workspace/packages/jpkg
-    make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+    # Use clang directly — jonerix has bmake, not GNU make, so Makefile pattern
+    # rules (%.o: %.c) don't work; compile all sources in one shot instead.
+    clang -std=c11 -Os -static -fuse-ld=lld \
+      -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
+      -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
+      -fstack-protector-strong \
+      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
+      -o jpkg src/*.c
     install -m 755 jpkg /bin/jpkg
     cp jpkg /jpkg-bin/jpkg
 fi
