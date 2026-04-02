@@ -29,6 +29,22 @@ else
     cp jpkg /jpkg-bin/jpkg
 fi
 
+# Ensure clang config exists so it uses --rtlib=compiler-rt (zero-GCC build).
+# The LLVM recipe writes /etc/clang/<triple>.cfg, but this may be absent if
+# the published llvm package predates that recipe step. Without the config,
+# clang falls back to GCC-mode and looks for crtbeginS.o which doesn't exist.
+# Also ensure the libssp_nonshared.a stub exists for stack-protector link checks.
+CLANG_TRIPLE=$(clang -dumpmachine 2>/dev/null || true)
+if [ -n "$CLANG_TRIPLE" ]; then
+    CLANG_CFG="/etc/clang/${CLANG_TRIPLE}.cfg"
+    if [ ! -f "$CLANG_CFG" ]; then
+        mkdir -p /etc/clang
+        printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' > "$CLANG_CFG"
+        echo "clang: created missing $CLANG_CFG (--rtlib=compiler-rt)"
+    fi
+fi
+[ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
+
 # Ensure bsdtar/tar is functional. libarchive's bsdtar links against EVP_MAC_*
 # (OpenSSL 3.x API) which LibreSSL 4.0.0 does not implement. If the container's
 # bsdtar is broken (jpkg install libarchive overwrites the static fallback),
