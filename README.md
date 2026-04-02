@@ -35,25 +35,22 @@ The jpkg-only develop image (`Dockerfile.develop`) installs every tool from jpkg
 ## Quick Start
 
 ```sh
-# Minimal runtime (shell, init, network, SSH)
-docker build -f Dockerfile.minimal --tag jonerix-minimal:latest .
-docker run -it jonerix-minimal:latest
+# Pull from GHCR (fastest)
+docker pull ghcr.io/stormj-uh/jonerix:minimal   # shell + init + network + SSH (~47MB)
+docker pull ghcr.io/stormj-uh/jonerix:all        # full dev environment (~1.6GB)
 
-# Development environment (compilers, languages, build tools)
-docker build -f Dockerfile.develop --tag jonerix-develop:latest .
-docker run -it jonerix-develop:latest
-
-# Full image (runtime + all dev tools)
-docker build --tag jonerix:latest .
-docker run -it jonerix:latest
+docker run -it ghcr.io/stormj-uh/jonerix:minimal
+docker run -it ghcr.io/stormj-uh/jonerix:all
 ```
 
-### Building Packages from Source
+Or build locally:
 
 ```sh
-# Run inside jonerix-develop container
-docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
-  sh bootstrap/build-all.sh --output /workspace/.build/pkgs
+# Minimal runtime image
+docker build -f Dockerfile.minimal --tag jonerix:minimal .
+
+# Full image with all packages (compilers, languages, container runtime)
+docker build -f Dockerfile.all.new --tag jonerix:all .
 ```
 
 ## What's Inside
@@ -65,7 +62,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
 | musl | MIT | C standard library |
 | toybox | 0BSD | Coreutils (ls, cp, cat, grep, ...) |
 | uutils | MIT | Extended coreutils (sort, wc, tr, ...) |
-| mksh | MirOS | Shell |
+| zsh | MIT | Shell |
 | jpkg | MIT | Package manager |
 | OpenRC | BSD-2-Clause | Init system |
 | dropbear | MIT | SSH server/client |
@@ -98,7 +95,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
 | Component | License | Role |
 |-----------|---------|------|
 | curl | MIT | HTTP client |
-| OpenSSL | Apache-2.0 | TLS library |
+| LibreSSL | ISC | TLS library (OpenSSL fork) |
 | unbound | BSD-3-Clause | DNS resolver |
 | dhcpcd | BSD-2-Clause | DHCP client |
 | ifupdown-ng | ISC | Network configuration |
@@ -146,13 +143,12 @@ jonerix uses a merged `/usr` layout where `/usr` is a symlink to `/`. All binari
 
 ### Bootstrap Process
 
-The system bootstraps through a layered approach:
-
 1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
-2. **All packages** are installed from the jpkg repository into a clean rootfs
-3. **Final image** is assembled FROM scratch with zero GPL runtime components
+2. **All packages** are installed from the jpkg repository into a clean rootfs via `Dockerfile.minimal`
+3. **Final image** is assembled `FROM scratch` with zero GPL runtime components
+4. **Self-hosting**: `jonerix:all` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:all → jonerix:minimal` is proven at v1.0.
 
-For from-source builds, `bootstrap/build-all.sh` builds packages in dependency order inside a jonerix-develop container, using `packages/bootstrap/*/recipe.toml` recipes.
+Package recipes live in `packages/*/recipe.toml`. Build dependencies are declared explicitly; the package manager resolves and installs them in order.
 
 ### Licensing Rule
 
@@ -165,7 +161,7 @@ Every package must carry a permissive license:
 | Zlib, PSF-2.0, Artistic-2.0 | CC-BY-SA |
 | Public Domain, MirOS | Any copyleft |
 
-bash (GPL-3.0) is used only as a build-time tool inside Alpine and never ships in the final image.
+bash/GNU tools are used only at build time inside Alpine CI and never ship in the final image. zsh (MIT) is the interactive shell.
 
 ## fastfetch
 
