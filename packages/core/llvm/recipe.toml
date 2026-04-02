@@ -19,9 +19,9 @@ set -e
 # No libstdc++, no libgcc_s, no GCC CRT objects.
 
 case $(uname -m) in
-    x86_64)  LLVM_TARGET="X86" ;;
-    aarch64) LLVM_TARGET="AArch64" ;;
-    *)       LLVM_TARGET="host" ;;
+    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-alpine-linux-musl" ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-alpine-linux-musl" ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE=$(cc -dumpmachine 2>/dev/null || echo "unknown") ;;
 esac
 
 cmake -S llvm -B build -G Ninja \
@@ -29,6 +29,8 @@ cmake -S llvm -B build -G Ninja \
     -DLLVM_ENABLE_PROJECTS="clang;lld" \
     -DLLVM_ENABLE_RUNTIMES="compiler-rt" \
     -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
+    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR=$(which llvm-ar) \
@@ -90,7 +92,8 @@ ln -sf llvm-objdump "$DESTDIR/bin/objdump" 2>/dev/null || true
 # --- Compiler-RT CRT into GCC search path ---
 # Clang's driver probes /lib/gcc/<triple>/<ver>/crtbeginS.o by default.
 # Place compiler-rt objects there so clang uses them instead of GCC's.
-TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "unknown")
+# Use the configured target triple, not the host clang's triple.
+TRIPLE="$LLVM_TRIPLE"
 # Find compiler-rt output dir
 RT_DIR=$(find "$DESTDIR/lib/clang" -name "clang_rt.crtbegin*" -printf '%h' -quit 2>/dev/null || true)
 if [ -z "$RT_DIR" ]; then
