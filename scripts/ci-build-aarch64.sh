@@ -61,6 +61,12 @@ if ! timeout 10 bsdtar --version >/dev/null 2>&1; then
 fi
 
 echo "debug: E — jpkg update"
+# Prevent zsh startup file hangs: jpkg invokes /bin/zsh for build steps,
+# and /bin/sh is symlinked to zsh in jonerix:all. Any .zshenv sourced at
+# startup (ZDOTDIR or /etc/zshenv) can block indefinitely. Point ZDOTDIR
+# at /tmp (no startup files there) and remove /etc/zshenv if it exists.
+export ZDOTDIR=/tmp
+rm -f /etc/zshenv 2>/dev/null || true
 # Update package index
 jpkg update
 echo "debug: F — jpkg update done"
