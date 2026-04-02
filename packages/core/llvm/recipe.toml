@@ -19,9 +19,9 @@ set -e
 # No libstdc++, no libgcc_s, no GCC CRT objects.
 
 case $(uname -m) in
-    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-alpine-linux-musl" ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-alpine-linux-musl" ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE=$(cc -dumpmachine 2>/dev/null || echo "unknown") ;;
+    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-jonerix-linux-musl" ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl" ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl" ;;
 esac
 
 cmake -S llvm -B build -G Ninja \
@@ -102,7 +102,7 @@ fi
 
 if [ -n "$RT_DIR" ]; then
     # Detect GCC version dir that clang probes
-    GCC_VER="15.2.0"
+    GCC_VER="21"
     GCC_DIR="$DESTDIR/lib/gcc/$TRIPLE/$GCC_VER"
     mkdir -p "$GCC_DIR"
 
