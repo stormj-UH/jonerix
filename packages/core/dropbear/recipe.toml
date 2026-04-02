@@ -7,7 +7,7 @@ description = "Lightweight SSH server and client"
 
 [source]
 url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.86.tar.bz2"
-sha256 = "FIXME"
+sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 
 [build]
 system = "autoconf"

@@ -7,7 +7,7 @@ description = "Docker-compatible CLI for containerd"
 
 [source]
 url = "https://github.com/containerd/nerdctl/archive/refs/tags/v2.2.1.tar.gz"
-sha256 = "FIXME"
+sha256 = "f39c34d3a285e087f2b2869f06fea343d8285ad9bfb9417b9c5b6dd4e78d6fad"
 
 [build]
 system = "custom"

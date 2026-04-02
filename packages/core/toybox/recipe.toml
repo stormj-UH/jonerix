@@ -7,7 +7,7 @@ description = "BSD-licensed coreutils replacement"
 
 [source]
 url = "http://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
-sha256 = "FIXME"
+sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 
 [build]
 system = "custom"

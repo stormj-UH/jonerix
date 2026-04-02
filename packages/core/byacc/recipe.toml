@@ -7,7 +7,7 @@ description = "Berkeley Yacc parser generator"
 
 [source]
 url = "https://invisible-island.net/archives/byacc/byacc-20241231.tgz"
-sha256 = "FIXME"
+sha256 = "192c2fae048d4e7f514ba451627f9c4e612765099f819c19191f9fde3e609673"
 
 [build]
 system = "autoconf"

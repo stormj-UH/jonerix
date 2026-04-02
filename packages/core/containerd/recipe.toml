@@ -7,7 +7,7 @@ description = "Industry-standard container runtime"
 
 [source]
 url = "https://github.com/containerd/containerd/archive/refs/tags/v2.2.2.tar.gz"
-sha256 = "FIXME"
+sha256 = "d6e8e6424c544cdab9b51cae320c3a9aa5590e8e1ffbd1f862eb395fd8c5bc28"
 
 [build]
 system = "custom"

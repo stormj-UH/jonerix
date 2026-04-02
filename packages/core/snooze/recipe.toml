@@ -6,8 +6,8 @@ pre_bootstrap = false
 description = "Lightweight cron alternative for running a command at a specific time"
 
 [source]
-url = "https://github.com/leah/snooze/archive/refs/tags/0.5.tar.gz"
-sha256 = "FIXME"
+url = "https://github.com/leahneukirchen/snooze/archive/refs/tags/v0.5.tar.gz"
+sha256 = "d63fde85d9333188bed5996baabd833eaa00842ce117443ffbf8719c094be414"
 
 [build]
 system = "custom"

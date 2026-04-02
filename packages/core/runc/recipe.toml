@@ -7,7 +7,7 @@ description = "OCI container runtime"
 
 [source]
 url = "https://github.com/opencontainers/runc/archive/refs/tags/v1.4.1.tar.gz"
-sha256 = "FIXME"
+sha256 = "a09f5e2f5b3b5e488bd3ee45c0be8f1e9078692174411dc5193f56a7e0de8078"
 
 [build]
 system = "custom"
