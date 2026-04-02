@@ -229,16 +229,34 @@ int pkg_extract(const char *jpkg_path, const char *dest_dir) {
     }
 
     /*
-     * Decompress and extract using zstd and tar.
-     * In the jonerix system, both are available as native tools.
-     * We invoke them via execv for safety.
+     * Decompress and extract using zstd and bsdtar in two separate steps.
+     * Avoids a pipe between them: toybox sh keeps the read end of the
+     * inter-process pipe open in its own fd table while waiting for children,
+     * so once bsdtar exits the pipe buffer fills and zstd blocks forever.
+     * Two-step (decompress to tmp file, then extract) sidesteps this entirely.
      */
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "zstd -d -c '%s' | bsdtar -xf - -C '%s' 2>/dev/null",
-             tmp_zst, dest_dir);
+    char tmp_tar[256];
+    snprintf(tmp_tar, sizeof(tmp_tar), "/tmp/jpkg-extract-%d.tar", (int)getpid());
 
-    int rc = system(cmd);
+    char decomp_cmd[512];
+    snprintf(decomp_cmd, sizeof(decomp_cmd), "zstd -d -q '%s' -o '%s'",
+             tmp_zst, tmp_tar);
+
+    int rc = system(decomp_cmd);
     unlink(tmp_zst);
+    if (rc != 0) {
+        log_error("decompression failed for %s (exit %d)", meta->name, rc);
+        unlink(tmp_tar);
+        pkg_meta_free(meta);
+        free(data);
+        return -1;
+    }
+
+    char extract_cmd[512];
+    snprintf(extract_cmd, sizeof(extract_cmd),
+             "bsdtar -xf '%s' -C '%s' 2>/dev/null", tmp_tar, dest_dir);
+    rc = system(extract_cmd);
+    unlink(tmp_tar);
 
     if (rc != 0) {
         log_error("extraction failed for %s (exit %d)", meta->name, rc);
