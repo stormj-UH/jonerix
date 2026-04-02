@@ -7,7 +7,7 @@
 # Build (x86_64):  docker build -f Dockerfile.all --tag jonerix:all \
 #                    --build-arg JPKG_ARCH=x86_64 .
 
-ARG MINIMAL_IMAGE=jonerix-minimal:latest
+ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
 FROM ${MINIMAL_IMAGE}
 
 ARG JPKG_ARCH=aarch64
