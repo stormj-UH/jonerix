@@ -3,13 +3,68 @@ name = "nodejs"
 version = "24.14.1"
 license = "MIT"
 pre_bootstrap = false
-description = "JavaScript runtime built on V8"
+description = "JavaScript runtime built on V8 (libc++ / compiler-rt / zero GNU)"
+
+[source]
+url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1.tar.gz"
+sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
 
 [build]
 system = "custom"
-build = ""
+build = """
+set -e
+
+# Node 24 from source — zero GNU C++ runtime.
+#
+# Build notes (see jonerix-built-jpkgs/NODE24_RECIPE_FIXES.md):
+# - Must pass PATH explicitly: Python subprocess doesn't inherit jpkg's env.
+# - Use --ninja; the generated top-level Makefile is GNU-make syntax.
+# - Single job (-j1) to avoid OOM on low-memory build hosts.
+# - --rtlib=compiler-rt + --unwindlib=libunwind requires that the LLVM
+#   package has been installed with its GCC compat CRT dir populated
+#   (clang_rt.crtbegin.o / crtend.o under lib/gcc/<triple>/<ver>/).
+# - Remove -latomic gyp injections; compiler-rt builtins cover atomics.
+# - asm/hwcap.h (needed by V8/Highway) requires linux-headers as a build
+#   dep. Add linux-headers to [depends].build once that package exists.
+
+export PATH=/bin:/usr/bin
+
+# Strip explicit -latomic injections that GYP adds for Linux+Clang.
+# compiler-rt builtins provide the same symbols.
+sed -i "s/'-latomic',//g" node.gyp tools/v8_gypfiles/v8.gyp 2>/dev/null || true
+sed -i 's/-latomic//g' node.gyp tools/v8_gypfiles/v8.gyp 2>/dev/null || true
+
+CC=clang \
+CXX=clang++ \
+AR=llvm-ar \
+RANLIB=llvm-ranlib \
+NM=llvm-nm \
+CFLAGS="-O2 --rtlib=compiler-rt" \
+CXXFLAGS="-O2 -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+LDFLAGS="-stdlib=libc++ -lc++abi -fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
+python3 configure.py \
+    --prefix=/ \
+    --ninja \
+    --with-intl=none \
+    --shared-zlib \
+    --without-snapshot \
+    --without-node-snapshot
+
+# Single-job build to stay within memory limits.
+samu -C out/Release -j1
+
+# Stage install using Node's own installer.
+python3 tools/install.py install --dest-dir "$DESTDIR" --prefix /
+
+# Verify: warn if GNU C++ runtime leaked in.
+echo "=== Verifying node binary dependencies ==="
+readelf -d "$DESTDIR/bin/node" 2>/dev/null | grep NEEDED || true
+if readelf -d "$DESTDIR/bin/node" 2>/dev/null | grep -q 'libstdc++\\|libgcc_s'; then
+    echo "WARNING: GNU C++ runtime dependencies detected in node binary!"
+fi
+"""
 install = ""
 
 [depends]
-runtime = ["musl", "libcxx", "libatomic"]
-build = []
+runtime = ["musl", "zlib", "libcxx"]
+build = ["clang", "python3", "samurai", "zlib", "libcxx"]
