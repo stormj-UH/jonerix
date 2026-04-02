@@ -1,90 +1,151 @@
 [package]
 name = "llvm"
-version = "21"
+version = "21.1.2"
 license = "Apache-2.0"
 pre_bootstrap = false
-description = "LLVM compiler infrastructure with clang and lld"
+description = "LLVM toolchain with clang, lld, and compiler-rt — zero GCC dependencies"
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
 
 [build]
 system = "custom"
 build = """
 set -e
-apk add --no-cache clang lld gcc musl-dev linux-headers libstdc++-dev llvm
 
-# Detect versioned package names (Alpine uses clang21, lld21, etc.)
-CLANG_PKG=$(apk info 2>/dev/null | grep '^clang[0-9]' | grep -Ev 'headers|libs|dev|rt|tools' | head -1)
-CLANG_LIBS=$(apk info 2>/dev/null | grep '^clang[0-9].*-libs' | head -1)
-CLANG_HDRS=$(apk info 2>/dev/null | grep '^clang[0-9].*-headers' | head -1)
-LLD_PKG=$(apk info 2>/dev/null | grep '^lld[0-9]' | grep -v 'libs' | head -1)
-LLD_LIBS=$(apk info 2>/dev/null | grep '^lld[0-9].*-libs' | head -1)
-LLVM_LIBS=$(apk info 2>/dev/null | grep '^llvm[0-9].*-libs$' | head -1)
-LLVM_LINKER=$(apk info 2>/dev/null | grep '^llvm[0-9].*linker' | head -1)
-# llvm21 base package provides llvm-ar, llvm-nm, llvm-ranlib (Apache-2.0)
-LLVM_PKG=$(apk info 2>/dev/null | grep '^llvm[0-9]' | grep -Ev 'libs|linker|dev|test|tools' | head -1)
+# Zero-GNU LLVM from-source build.
+# Produces clang, lld, and compiler-rt linked against libc++/libunwind.
+# No libstdc++, no libgcc_s, no GCC CRT objects.
 
-# ONLY extract clang/lld/llvm packages and their runtime deps.
-# Do NOT extract musl-dev, linux-headers, or gcc — those are separate packages.
-# DO extract libstdc++-dev (C++ headers needed for building C++ code).
-for pkg in $CLANG_PKG $CLANG_LIBS $CLANG_HDRS $LLD_PKG $LLD_LIBS $LLVM_LIBS $LLVM_LINKER $LLVM_PKG libstdc++ libstdc++-dev libgcc libffi xz-libs libxml2 jansson; do
-  [ -z "$pkg" ] && continue
-  apk info --contents "$pkg" 2>/dev/null | tail -n +2 | grep -Ev '(/$|^$)' | while IFS= read -r f; do
-    f="${f%/}"
-    src="/${f}"
-    [ -e "$src" ] || continue
-    dst="${DESTDIR}/${f}"
-    mkdir -p "$(dirname "$dst")"
-    cp -aP "$src" "$dst" 2>/dev/null || true
-  done
-done
+case $(uname -m) in
+    x86_64)  LLVM_TARGET="X86" ;;
+    aarch64) LLVM_TARGET="AArch64" ;;
+    *)       LLVM_TARGET="host" ;;
+esac
 
-# Extract ONLY GCC runtime support files (CRT objects + libgcc) — not the full compiler
-GCC_DIR=$(find /usr/lib/gcc -name "crtbeginS.o" 2>/dev/null | head -1 | sed 's|/crtbeginS.o||')
-if [ -n "$GCC_DIR" ]; then
-  mkdir -p "${DESTDIR}${GCC_DIR}"
-  for f in crtbeginS.o crtendS.o crtbegin.o crtend.o libgcc.a libgcc_eh.a; do
-    [ -f "${GCC_DIR}/${f}" ] && cp -aP "${GCC_DIR}/${f}" "${DESTDIR}${GCC_DIR}/" 2>/dev/null || true
-  done
+cmake -S llvm -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_ENABLE_PROJECTS="clang;lld" \
+    -DLLVM_ENABLE_RUNTIMES="compiler-rt" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR=$(which llvm-ar) \
+    -DCMAKE_RANLIB=$(which llvm-ranlib) \
+    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DLLVM_ENABLE_LIBCXX=ON \
+    -DCOMPILER_RT_BUILD_BUILTINS=ON \
+    -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
+    -DCOMPILER_RT_BUILD_XRAY=OFF \
+    -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+    -DCOMPILER_RT_BUILD_PROFILE=OFF \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLVM_INSTALL_UTILS=ON \
+    -DLLVM_ENABLE_ASSERTIONS=OFF \
+    -DLLVM_ENABLE_SPHINX=OFF \
+    -DLLVM_ENABLE_DOXYGEN=OFF \
+    -DLLVM_BUILD_TESTS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_ENABLE_FFI=OFF \
+    -DLLVM_ENABLE_ZLIB=ON \
+    -DLLVM_ENABLE_ZSTD=ON \
+    -DLLVM_PARALLEL_LINK_JOBS=2
+
+cmake --build build -j$(nproc)
+DESTDIR=$DESTDIR cmake --install build
+
+# --- Post-install fixups ---
+
+# Flatten usr/ (jonerix merged-usr layout)
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+
+# Flatten lib64/ (cmake x86_64 default)
+if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
+    cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/"
+    rm -rf "$DESTDIR/lib64"
+fi
+
+# Global tool symlinks
+ln -sf clang     "$DESTDIR/bin/cc"      2>/dev/null || true
+ln -sf clang++   "$DESTDIR/bin/c++"     2>/dev/null || true
+ln -sf ld.lld    "$DESTDIR/bin/ld"      2>/dev/null || true
+ln -sf llvm-ar   "$DESTDIR/bin/ar"      2>/dev/null || true
+ln -sf llvm-nm   "$DESTDIR/bin/nm"      2>/dev/null || true
+ln -sf llvm-ranlib "$DESTDIR/bin/ranlib" 2>/dev/null || true
+ln -sf llvm-strip  "$DESTDIR/bin/strip"  2>/dev/null || true
+ln -sf llvm-objcopy "$DESTDIR/bin/objcopy" 2>/dev/null || true
+ln -sf llvm-objdump "$DESTDIR/bin/objdump" 2>/dev/null || true
+
+# --- Compiler-RT CRT into GCC search path ---
+# Clang's driver probes /lib/gcc/<triple>/<ver>/crtbeginS.o by default.
+# Place compiler-rt objects there so clang uses them instead of GCC's.
+TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "unknown")
+# Find compiler-rt output dir
+RT_DIR=$(find "$DESTDIR/lib/clang" -name "clang_rt.crtbegin*" -printf '%h' -quit 2>/dev/null || true)
+if [ -z "$RT_DIR" ]; then
+    RT_DIR=$(find "$DESTDIR/lib/clang" -name "libclang_rt.builtins*" -printf '%h' -quit 2>/dev/null || true)
+fi
+
+if [ -n "$RT_DIR" ]; then
+    # Detect GCC version dir that clang probes
+    GCC_VER="15.2.0"
+    GCC_DIR="$DESTDIR/lib/gcc/$TRIPLE/$GCC_VER"
+    mkdir -p "$GCC_DIR"
+
+    # CRT begin/end — try both naming conventions
+    for f in "$RT_DIR"/clang_rt.crtbegin*.o; do
+        [ -f "$f" ] && cp "$f" "$GCC_DIR/crtbeginS.o" && cp "$f" "$GCC_DIR/crtbeginT.o" && break
+    done
+    for f in "$RT_DIR"/clang_rt.crtend*.o; do
+        [ -f "$f" ] && cp "$f" "$GCC_DIR/crtendS.o" && break
+    done
+
+    # Builtins archive replaces libgcc.a
+    for f in "$RT_DIR"/libclang_rt.builtins*.a; do
+        [ -f "$f" ] && cp "$f" "$GCC_DIR/libgcc.a" && break
+    done
 else
-  echo "WARNING: GCC CRT files not found — gcc package may not be installed"
-fi
-# libssp_nonshared.a (needed by clang's default link)
-cp -aP /usr/lib/libssp_nonshared.a "${DESTDIR}/lib/" 2>/dev/null || true
-
-# Flatten usr/ FIRST, then create symlinks/configs that reference final paths
-if [ -d "${DESTDIR}/usr" ]; then
-  cp -a "${DESTDIR}/usr/." "${DESTDIR}/"
-  rm -rf "${DESTDIR}/usr"
+    echo "WARNING: compiler-rt output not found in DESTDIR"
 fi
 
-# ld symlink: clang invokes bare 'ld' which must resolve to lld
-ln -sf ld.lld "${DESTDIR}/bin/ld" 2>/dev/null || true
+# Empty libssp_nonshared.a — musl provides __stack_chk_fail natively
+printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
 
-# libgcc_s.so symlink (linker needs .so, only .so.1 is shipped)
-ln -sf libgcc_s.so.1 "${DESTDIR}/lib/libgcc_s.so" 2>/dev/null || true
+# Clang config: default to compiler-rt/libunwind/lld for this triple
+mkdir -p "$DESTDIR/etc/clang"
+cat > "$DESTDIR/etc/clang/$TRIPLE.cfg" << 'CLANGCFG'
+--rtlib=compiler-rt
+--unwindlib=libunwind
+-fuse-ld=lld
+CLANGCFG
 
-# cc symlink: many configure scripts look for 'cc'
-ln -sf clang "${DESTDIR}/bin/cc" 2>/dev/null || true
+# Strip debug info to reduce package size
+find "$DESTDIR/bin" -type f -executable -exec llvm-strip {} \; 2>/dev/null || true
+find "$DESTDIR/lib" -name '*.so*' -type f -exec llvm-strip --strip-debug {} \; 2>/dev/null || true
 
-# ar/nm/ranlib symlinks: point to llvm binutils (Apache-2.0, not GPL)
-# llvm-ar etc. are installed as llvm21-ar, llvm21-nm, etc.
-LLVM_VER=$(ls "${DESTDIR}/bin/" 2>/dev/null | grep '^llvm[0-9]*-ar$' | sed 's/llvm\([0-9]*\)-ar/\1/' | head -1)
-if [ -n "$LLVM_VER" ]; then
-  ln -sf "llvm${LLVM_VER}-ar"     "${DESTDIR}/bin/ar"     2>/dev/null || true
-  ln -sf "llvm${LLVM_VER}-nm"     "${DESTDIR}/bin/nm"     2>/dev/null || true
-  ln -sf "llvm${LLVM_VER}-ranlib" "${DESTDIR}/bin/ranlib" 2>/dev/null || true
-  ln -sf "llvm${LLVM_VER}-strip"  "${DESTDIR}/bin/strip"  2>/dev/null || true
-fi
+# Remove docs/man/cmake to save space
+rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc" "$DESTDIR/lib/cmake"
 
-# clang.cfg: tell clang where to find C++ stdlib and GCC CRT support
-GCC_VER=$(ls "${DESTDIR}/include/c++/" 2>/dev/null | head -1)
-TRIPLE=$(clang -dumpmachine 2>/dev/null || true)
-if [ -n "$GCC_VER" ] && [ -n "$TRIPLE" ]; then
-  mkdir -p "${DESTDIR}/etc/clang"
-  echo "--gcc-install-dir=/lib/gcc/${TRIPLE}/${GCC_VER}" > "${DESTDIR}/etc/clang/${TRIPLE}.cfg"
+# Verify: warn if any GNU deps leaked through
+echo "=== Verifying clang binary dependencies ==="
+readelf -d "$DESTDIR/bin/clang-21" 2>/dev/null | grep NEEDED || true
+if readelf -d "$DESTDIR/bin/clang-21" 2>/dev/null | grep -q 'libstdc++\|libgcc_s'; then
+    echo "WARNING: GNU runtime dependencies detected in clang binary!"
 fi
 """
 install = ""
 
 [depends]
-runtime = ["musl", "zstd"]
-build = []
+runtime = ["musl", "libcxx", "zstd", "zlib"]
+build = ["clang", "cmake", "samurai", "python3", "libcxx"]
