@@ -7,7 +7,7 @@ description = "ninja-compatible build tool written in C"
 
 [source]
 url = "https://github.com/michaelforney/samurai/archive/refs/tags/1.2.tar.gz"
-sha256 = "FIXME"
+sha256 = "37a2d9f35f338c53387eba210bab7e5d8abe033492664984704ad84f91b71bac"
 
 [build]
 system = "custom"

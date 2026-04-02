@@ -7,7 +7,7 @@ description = "RFC2131-compliant DHCP client daemon"
 
 [source]
 url = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.1.0/dhcpcd-10.1.0.tar.xz"
-sha256 = "FIXME"
+sha256 = "abc307c63853da3199baa5c1e15fd5ede9d68d068b2a59ca14c5a6768e9cc3b7"
 
 [build]
 system = "autoconf"
