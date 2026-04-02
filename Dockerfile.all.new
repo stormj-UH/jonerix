@@ -10,15 +10,12 @@ FROM ${MINIMAL_IMAGE}
 
 COPY packages/jpkg/jpkg /bin/jpkg
 
-# Pre-seed large packages to avoid transient download failures (CDN cache issues)
-COPY jonerix-built-jpkgs/llvm-21.1.2-aarch64.jpkg /var/cache/jpkg/llvm-21.1.2-aarch64.jpkg
-
 # Bootstrap bsdtar: minimal-new has /bin/tar→bsdtar but no bsdtar binary
 # (core bsdtar is a metadata stub; the real binary comes from libarchive).
 # Install a pre-built static bsdtar (libarchive 3.8.6, no OpenSSL) so that
 # PAX-format archives (LLVM) extract correctly. Depends only on musl+zlib+zstd
 # which are all present in the minimal image.
-COPY jonerix-built-jpkgs/bsdtar-static-aarch64 /bin/bsdtar
+COPY tools/bsdtar-static-aarch64 /bin/bsdtar
 RUN chmod 755 /bin/bsdtar
 
 RUN jpkg update && \
