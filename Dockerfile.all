@@ -43,8 +43,11 @@ RUN \
     ln -sf clang++ /bin/c++ && \
     # Linker
     ln -sf ld.lld /bin/ld && \
-    # LLVM binutils
-    LLVM_BIN=$(find /lib/llvm* -name "llvm-ar" -exec dirname {} \; 2>/dev/null | head -1) && \
+    # LLVM binutils — avoid pipes to work around toybox sh pipe deadlock
+    LLVM_BIN="" && \
+    for d in /lib/llvm*/bin; do \
+      [ -f "$d/llvm-ar" ] && LLVM_BIN="$d" && break; \
+    done && \
     if [ -n "$LLVM_BIN" ]; then \
       for tool in ar nm ranlib strip objcopy objdump readelf; do \
         ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null || true; \

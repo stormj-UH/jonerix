@@ -1,0 +1,78 @@
+# jonerix:all-new — Complete image built from jonerix:minimal
+#
+# Installs all packages via jpkg from the local built binary.
+#
+# Build (aarch64): docker build -f Dockerfile.all.new --tag jonerix:all-new --platform linux/arm64 .
+# Build (x86_64):  docker build -f Dockerfile.all.new --tag jonerix:all-new --platform linux/amd64 .
+
+ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
+FROM ${MINIMAL_IMAGE}
+
+COPY packages/jpkg/jpkg /bin/jpkg
+
+# Pre-seed large packages to avoid transient download failures (CDN cache issues)
+COPY jonerix-built-jpkgs/llvm-21.1.2-aarch64.jpkg /var/cache/jpkg/llvm-21.1.2-aarch64.jpkg
+
+RUN jpkg update && \
+    for pkg in \
+      musl zlib zstd lz4 xz ncurses libressl openssl curl nghttp2 \
+      bsdtar toybox openrc dropbear dhcpcd doas snooze socklog \
+      ifupdown-ng unbound mandoc pigz \
+      libcxx libatomic llvm \
+      cmake bmake samurai flex bc byacc \
+      perl python3 pip \
+      go rust \
+      nodejs npm \
+      zsh uutils gitoxide ripgrep micro fastfetch \
+      containerd runc nerdctl cni-plugins; \
+    do \
+      echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
+    done
+
+# ── Symlinks for standard tool names ─────────────────────────────────────
+RUN \
+    # Compiler
+    ln -sf clang /bin/cc 2>/dev/null || true && \
+    ln -sf clang++ /bin/c++ 2>/dev/null || true && \
+    # Linker
+    ln -sf ld.lld /bin/ld 2>/dev/null || true && \
+    # LLVM binutils — avoid pipes to work around toybox sh pipe deadlock
+    LLVM_BIN="" && \
+    for d in /lib/llvm*/bin; do \
+      [ -f "$d/llvm-ar" ] && LLVM_BIN="$d" && break; \
+    done && \
+    if [ -n "$LLVM_BIN" ]; then \
+      for tool in ar nm ranlib strip objcopy objdump readelf; do \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null || true; \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null || true; \
+      done; \
+    fi && \
+    # Build tools
+    ln -sf bmake /bin/make 2>/dev/null || true && \
+    ln -sf samu /bin/ninja 2>/dev/null || true && \
+    # Python
+    ln -sf python3 /bin/python 2>/dev/null || true && \
+    # Shell: zsh as bash-compatible (bash shebang scripts work)
+    ln -sf zsh /bin/bash 2>/dev/null || true && \
+    # Archive tool
+    ln -sf bsdtar /bin/tar 2>/dev/null || true && \
+    # Other tools
+    ln -sf byacc /bin/yacc 2>/dev/null || true && \
+    ln -sf flex /bin/lex 2>/dev/null || true && \
+    ln -sf micro /bin/editor 2>/dev/null || true && \
+    ln -sf micro /bin/vi 2>/dev/null || true && \
+    ln -sf nerdctl /bin/docker 2>/dev/null || true
+
+ENV PATH=/bin
+ENV HOME=/root
+ENV SHELL=/bin/zsh
+ENV TERM=xterm
+ENV EDITOR=micro
+ENV VISUAL=micro
+ENV PAGER=less
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+WORKDIR /root
+ENTRYPOINT ["/bin/zsh"]
+CMD ["-l"]
