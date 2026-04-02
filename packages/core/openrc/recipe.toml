@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Dependency-based init system for Unix-like systems"
 
 [source]
-url = "https://github.com/OpenRC/openrc/archive/refs/tags/0.54.tar.gz"
+url = "sources/openrc-0.54.tar.gz"  # vendored in sources/
 sha256 = "c84ff1d8e468c043fe136d11d3d34d6bb28328267d1352526a5d18cdf4c60fb0"
 
 [build]

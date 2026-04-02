@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Node.js package manager (standalone install from npmjs.com tarball)"
 
 [source]
-url = "https://registry.npmjs.org/npm/-/npm-11.12.1.tgz"
+url = "sources/npm-11.12.1.tgz"  # vendored in sources/
 sha256 = "e679850e663b16f5f146ee425d0eb0e3442c1d2bda3d513bbfd7c81f5ee5db38"
 
 [build]

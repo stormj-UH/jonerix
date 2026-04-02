@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "BSD-licensed coreutils replacement"
 
 [source]
-url = "http://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
+url = "sources/toybox-0.8.11.tar.gz"  # vendored in sources/
 sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 
 [build]

@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "XZ compression utilities and liblzma"
 
 [source]
-url = "https://github.com/tukaani-project/xz/releases/download/v5.8.2/xz-5.8.2.tar.xz"
+url = "sources/xz-5.8.2.tar.xz"  # vendored in sources/
 sha256 = "890966ec3f5d5cc151077879e157c0593500a522f413ac50ba26d22a9a145214"
 
 [build]
