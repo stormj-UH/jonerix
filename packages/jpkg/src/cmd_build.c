@@ -188,17 +188,36 @@ static int run_build_step(const char *step_name, const char *cmd,
     char env_cinclude[128] = "C_INCLUDE_PATH=/include";
     char env_libpath[128] = "LIBRARY_PATH=/lib";
 
-    /* Build the full command with environment and working directory */
-    char full_cmd[4096];
-    snprintf(full_cmd, sizeof(full_cmd),
-             "cd '%s' && export %s && export %s && export %s && export %s && "
-             "export %s && export '%s' && export '%s' && "
-             "export '%s' && export %s && export %s && %s",
-             work_dir, env_cc, env_ld, env_ar, env_nm, env_ranlib,
-             env_cflags, env_ldflags, env_destdir,
-             env_cinclude, env_libpath, cmd);
+    /* Pick a shell that handles $(...) correctly.
+     * toybox sh deadlocks on command substitution in subshells (e.g. $(nproc)).
+     * Prefer zsh or mksh; fall back to /bin/sh. */
+    const char *shell = "/bin/sh";
+    if (access("/bin/zsh", X_OK) == 0)       shell = "/bin/zsh";
+    else if (access("/bin/mksh", X_OK) == 0)  shell = "/bin/mksh";
 
-    int rc = system(full_cmd);
+    /* Write the build script to a temp file to avoid quoting issues.
+     * This also lets the chosen shell interpret $(...) correctly. */
+    char script_path[256];
+    snprintf(script_path, sizeof(script_path), "/tmp/jpkg-build-%d.sh", (int)getpid());
+
+    FILE *sf = fopen(script_path, "w");
+    if (!sf) {
+        log_error("failed to create build script: %s", strerror(errno));
+        return -1;
+    }
+    fprintf(sf, "#!%s\nset -e\n", shell);
+    fprintf(sf, "cd '%s'\n", work_dir);
+    fprintf(sf, "export %s\nexport %s\nexport %s\nexport %s\nexport %s\n",
+            env_cc, env_ld, env_ar, env_nm, env_ranlib);
+    fprintf(sf, "export '%s'\nexport '%s'\n", env_cflags, env_ldflags);
+    fprintf(sf, "export '%s'\n", env_destdir);
+    fprintf(sf, "export %s\nexport %s\n", env_cinclude, env_libpath);
+    fprintf(sf, "%s\n", cmd);
+    fclose(sf);
+    chmod(script_path, 0755);
+
+    int rc = system(script_path);
+    unlink(script_path);
     if (rc != 0) {
         log_error("%s failed (exit %d)", step_name, WEXITSTATUS(rc));
         return -1;
