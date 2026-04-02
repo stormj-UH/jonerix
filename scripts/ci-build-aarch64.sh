@@ -12,7 +12,10 @@ else
     cd /workspace/packages/jpkg
     # Use clang directly — jonerix has bmake, not GNU make, so Makefile pattern
     # rules (%.o: %.c) don't work; compile all sources in one shot instead.
-    clang -std=c11 -Os -static -fuse-ld=lld \
+    # Build dynamically — jonerix's LLVM ships crtbeginS.o (shared) but not
+    # crtbeginT.o (static-PIE), so -static fails. Dynamic is fine inside the
+    # container since musl is present.
+    clang -std=c11 -Os -fuse-ld=lld \
       -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
       -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
       -fstack-protector-strong \
