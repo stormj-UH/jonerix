@@ -34,7 +34,9 @@ fi
 # the published llvm package predates that recipe step. Without the config,
 # clang falls back to GCC-mode and looks for crtbeginS.o which doesn't exist.
 # Also ensure the libssp_nonshared.a stub exists for stack-protector link checks.
-CLANG_TRIPLE=$(clang -dumpmachine 2>/dev/null || true)
+echo "debug: A — clang dumpmachine"
+CLANG_TRIPLE=$(timeout 10 clang -dumpmachine 2>/dev/null || true)
+echo "debug: B — clang triple=${CLANG_TRIPLE}"
 if [ -n "$CLANG_TRIPLE" ]; then
     CLANG_CFG="/etc/clang/${CLANG_TRIPLE}.cfg"
     if [ ! -f "$CLANG_CFG" ]; then
@@ -43,21 +45,25 @@ if [ -n "$CLANG_TRIPLE" ]; then
         echo "clang: created missing $CLANG_CFG (--rtlib=compiler-rt)"
     fi
 fi
+echo "debug: C — libssp_nonshared"
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
 # Ensure bsdtar/tar is functional. libarchive's bsdtar links against EVP_MAC_*
 # (OpenSSL 3.x API) which LibreSSL 4.0.0 does not implement. If the container's
 # bsdtar is broken (jpkg install libarchive overwrites the static fallback),
 # restore the static bsdtar from the workspace before jpkg tries to extract sources.
-if ! bsdtar --version >/dev/null 2>&1; then
+echo "debug: D — bsdtar check"
+if ! timeout 10 bsdtar --version >/dev/null 2>&1; then
     if [ -x /workspace/tools/bsdtar-static-aarch64 ]; then
         install -m 755 /workspace/tools/bsdtar-static-aarch64 /bin/bsdtar
         echo "bsdtar: restored static fallback (dynamic bsdtar missing EVP_MAC_* from LibreSSL)"
     fi
 fi
 
+echo "debug: E — jpkg update"
 # Update package index
 jpkg update
+echo "debug: F — jpkg update done"
 
 if [ -n "$PKG_INPUT" ]; then
     recipe_dir="/workspace/packages/core/${PKG_INPUT}"
