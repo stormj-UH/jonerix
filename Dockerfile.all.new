@@ -29,14 +29,19 @@ RUN jpkg update && \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
     done
 
+# Switch to zsh for subsequent RUN steps — avoids toybox sh pipe deadlock
+# (zsh was installed by jpkg in the step above)
+SHELL ["/bin/zsh", "-c"]
+
 # ── Symlinks for standard tool names ─────────────────────────────────────
 RUN \
+    setopt NULL_GLOB 2>/dev/null || true && \
     # Compiler
     ln -sf clang /bin/cc 2>/dev/null || true && \
     ln -sf clang++ /bin/c++ 2>/dev/null || true && \
     # Linker
     ln -sf ld.lld /bin/ld 2>/dev/null || true && \
-    # LLVM binutils — avoid pipes to work around toybox sh pipe deadlock
+    # LLVM binutils
     LLVM_BIN="" && \
     for d in /lib/llvm*/bin; do \
       [ -f "$d/llvm-ar" ] && LLVM_BIN="$d" && break; \
