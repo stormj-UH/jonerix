@@ -9,11 +9,21 @@ export PATH="/bin"
 [ -d "/usr/local/bin" ] && export PATH="/usr/local/bin:$PATH"
 
 # --- Prompt ---
-# root gets a red '#', regular users get '$'
-if [ "$(id -u)" -eq 0 ]; then
-    PS1=$'\001\033[1;31m\002\h\001\033[0m\002:\w# '
+# Show hostname and current directory. root gets red '#', users get '$'.
+if [ -n "$ZSH_VERSION" ]; then
+    # zsh prompt escapes (%~ = cwd with ~ abbreviation)
+    if [ "$(id -u)" -eq 0 ]; then
+        PS1='%F{red}%m%f:%~# '
+    else
+        PS1='%F{green}%n@%m%f:%~$ '
+    fi
 else
-    PS1=$'\001\033[1;32m\002\u@\h\001\033[0m\002:\w$ '
+    # POSIX sh / toybox — $PWD updates automatically
+    if [ "$(id -u)" -eq 0 ]; then
+        PS1='$HOSTNAME:$PWD# '
+    else
+        PS1='$(whoami)@$HOSTNAME:$PWD$ '
+    fi
 fi
 export PS1
 
