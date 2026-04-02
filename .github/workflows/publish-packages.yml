@@ -48,7 +48,11 @@ jobs:
               --prerelease
           fi
 
-  # ── x86_64: build inside Alpine container (JS actions work on x64) ────────
+  # ── x86_64: Alpine runner + jonerix packages for runtime deps ─────────────
+  # Build tools (clang, cmake, samu) come from Alpine.
+  # Runtime/library deps (LibreSSL, zlib, musl) come from the jonerix release
+  # via the prebuilt bin/jpkg-x86_64 binary — so packages link against
+  # jonerix's LibreSSL (libssl.so.58), not Alpine's OpenSSL 3.x.
   build-x86_64:
     name: Build packages (x86_64)
     if: ${{ github.event.inputs.index_only != 'true' }}
@@ -71,19 +75,18 @@ jobs:
           key: apk-x86_64-${{ hashFiles('.github/workflows/publish-packages.yml') }}
           restore-keys: apk-x86_64-
 
-      - name: Install build dependencies
+      - name: Install build tools (no openssl-dev / zlib-dev from Alpine)
         run: |
           mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
           apk update
           apk add \
             clang lld musl-dev make \
             curl patch tar xz bash \
-            zstd-dev zstd-static \
+            zstd \
             linux-headers git \
             github-cli \
             cmake samurai \
-            ncurses-dev openssl-dev \
-            zlib-dev byacc m4 meson && \
+            byacc m4 meson python3 && \
           ln -sf /usr/bin/samu /usr/local/bin/ninja
 
       - name: Restore jpkg build cache
@@ -104,6 +107,22 @@ jobs:
           name: jpkg-x86_64
           path: packages/jpkg/jpkg
           retention-days: 1
+
+      - name: Install jonerix runtime deps (LibreSSL, zlib) from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use the prebuilt jpkg x86_64 binary (already in /usr/local/bin/jpkg)
+          # to install jonerix's LibreSSL and zlib into / so packages link against
+          # the correct shared libraries (libssl.so.58, libz.so.1.x).
+          jpkg update
+          jpkg install openssl zlib || true
+          # Ensure libz.so symlink exists for cmake find_package(ZLIB)
+          [ -f /lib/libz.so ] || ln -sf libz.so.1 /lib/libz.so || true
+          echo "=== Installed SSL libs ==="
+          ls /lib/libssl* /lib/libcrypto* 2>/dev/null || true
+          echo "=== OpenSSL headers ==="
+          ls /include/openssl/ssl.h 2>/dev/null || true
 
       - name: Download existing packages from release
         env:
@@ -153,9 +172,10 @@ jobs:
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /var/cache/jpkg/*.jpkg
           echo "Uploaded $count package(s) (x86_64)."
 
-  # ── aarch64: checkout on Ubuntu host, build inside docker alpine ──────────
+  # ── aarch64: checkout on Ubuntu ARM host, build inside jonerix:all ────────
   # JS GitHub Actions (checkout@v4) don't work in Alpine containers on ARM64;
-  # run bare on ubuntu-24.04-arm and exec the Alpine build via docker run.
+  # run bare on ubuntu-24.04-arm and exec the jonerix build via docker run.
+  # jonerix:all already has clang, cmake, samu, LibreSSL 4.0.0, zlib — no apk.
   build-aarch64:
     name: Build packages (aarch64)
     if: ${{ github.event.inputs.index_only != 'true' }}
@@ -167,13 +187,6 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
-      - name: Restore apk cache (aarch64)
-        uses: actions/cache@v4
-        with:
-          path: /tmp/apk-cache
-          key: apk-aarch64-${{ hashFiles('.github/workflows/publish-packages.yml') }}
-          restore-keys: apk-aarch64-
 
       - name: Restore jpkg binary cache (aarch64)
         uses: actions/cache@v4
@@ -193,42 +206,34 @@ jobs:
             --dir /tmp/jpkg-published 2>/dev/null || true
           echo "Existing aarch64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
 
-      - name: Build packages in Alpine container
+      - name: Build packages in jonerix:all container
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
-          mkdir -p /tmp/apk-cache /tmp/jpkg-bin-aarch64
+          mkdir -p /tmp/jpkg-bin-aarch64
           docker run --rm --privileged \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
-            -v "/tmp/apk-cache:/var/cache/apk" \
             -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
-            alpine:latest sh -c '
+            ghcr.io/stormj-uh/jonerix:all /bin/sh -c '
               set -e
-              mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
-              apk update -q
-              apk add -q \
-                clang lld musl-dev make \
-                curl patch tar xz bash \
-                zstd-dev zstd-static \
-                linux-headers git \
-                cmake samurai \
-                ncurses-dev openssl-dev \
-                zlib-dev byacc m4 meson
-              ln -sf /usr/bin/samu /usr/local/bin/ninja
 
+              # Build jpkg from source (source of truth — do not trust container binary)
               if [ -f /jpkg-bin/jpkg ]; then
-                install -m 755 /jpkg-bin/jpkg /usr/local/bin/jpkg
+                install -m 755 /jpkg-bin/jpkg /bin/jpkg
                 echo "jpkg: using cached binary"
               else
                 cd /workspace/packages/jpkg
                 make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
-                install -m 755 jpkg /usr/local/bin/jpkg
+                install -m 755 jpkg /bin/jpkg
                 cp jpkg /jpkg-bin/jpkg
               fi
+
+              # Update package index
+              jpkg update
 
               if [ -n "$PKG_INPUT" ]; then
                 recipe_dir="/workspace/packages/core/${PKG_INPUT}"
