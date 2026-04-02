@@ -362,13 +362,10 @@ jobs:
           zstd -19 -f -o "$INDEX_ZST" "$INDEX_PLAIN"
           echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
 
-      - name: Download jpkg artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: jpkg-x86_64
-          path: /usr/local/bin
-      - name: Fix jpkg permissions
-        run: chmod 755 /usr/local/bin/jpkg
+      - name: Install jpkg for signing
+        run: |
+          install -m 755 "$GITHUB_WORKSPACE/bin/jpkg-x86_64" /usr/local/bin/jpkg
+          jpkg --version || true
 
       - name: Sign INDEX.zst
         env:
