@@ -214,7 +214,7 @@ jobs:
           PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
           mkdir -p /tmp/jpkg-bin-aarch64
-          docker run --rm --privileged \
+          docker run --rm --privileged --entrypoint "" \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
