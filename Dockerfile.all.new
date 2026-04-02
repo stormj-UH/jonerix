@@ -62,7 +62,8 @@ RUN \
     ln -sf samu /bin/ninja 2>/dev/null || true && \
     # Python
     ln -sf python3 /bin/python 2>/dev/null || true && \
-    # Shell: zsh as bash-compatible (bash shebang scripts work)
+    # Shell: toybox sh is /bin/sh; zsh is bash-compat only
+    ln -sf toybox /bin/sh 2>/dev/null || true && \
     ln -sf zsh /bin/bash 2>/dev/null || true && \
     # Archive tool
     ln -sf bsdtar /bin/tar 2>/dev/null || true && \
