@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Rust rewrite of GNU coreutils (tr, expr, sort, wc, cut, and 70+ more)"
 
 [source]
-url = "sources/uutils-0.4.0.tar.gz"  # vendored in sources/
+url = "https://github.com/uutils/coreutils/archive/refs/tags/0.4.0.tar.gz"
 sha256 = "5f0c3f97b807e72edccc844c6a685ec9862199f16a665df07de5b1d20ec21233"
 
 [build]

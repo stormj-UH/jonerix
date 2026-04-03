@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Pure Rust implementation of git (gix + ein)"
 
 [source]
-url = "sources/gitoxide-0.52.0.tar.gz"  # vendored in sources/
+url = "https://github.com/Byron/gitoxide/archive/refs/tags/v0.52.0.tar.gz"
 sha256 = "8c4edd66f19e9c672040f8a4f76de5f3feafff5c443fc54554ae142a36bc10af"
 
 [build]

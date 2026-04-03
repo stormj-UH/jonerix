@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Modern terminal text editor (intuitive keybindings, syntax highlighting)"
 
 [source]
-url = "sources/micro-2.0.15.tar.gz"  # vendored in sources/
+url = "https://github.com/zyedidia/micro/releases/download/v2.0.15/micro-2.0.15-src.tar.gz"
 sha256 = "612c775321c268c8f9e1767505ff378bca9b9ab66f5c41b69ecb2464ecf15084"
 
 [build]
