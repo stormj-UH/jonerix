@@ -1,14 +1,24 @@
 [package]
 name = "socklog"
-version = "2.2.3"
+version = "2.1.2"
 license = "BSD-3-Clause"
 pre_bootstrap = false
 description = "Small and secure syslogd replacement (DJB-style)"
 
+[source]
+url = "https://smarden.org/socklog/socklog-2.1.2.tar.gz"
+sha256 = "7bc7a3f9e8e15a7e791281c05741a4c0cf0de86e74870fd2c6f4d7e7942b95e6"
+
 [build]
-build = ""
-install = ""
+configure = 'echo "clang -O2 -fomit-frame-pointer" > src/conf-cc && echo "clang" > src/conf-ld'
+build = "make -C src"
+install = """mkdir -p "$DESTDIR/bin" "$DESTDIR/var/log/socklog" "$DESTDIR/share/man/man8"
+install -m 755 src/socklog "$DESTDIR/bin/socklog"
+install -m 755 src/socklog-check "$DESTDIR/bin/socklog-check"
+install -m 755 src/tryto "$DESTDIR/bin/tryto"
+install -m 755 src/uncat "$DESTDIR/bin/uncat"
+install -m 644 man/socklog.8 "$DESTDIR/share/man/man8/socklog.8"""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["clang", "make"]
