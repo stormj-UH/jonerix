@@ -30,9 +30,10 @@ else
 fi
 
 # Ensure clang config exists for --rtlib=compiler-rt (zero-GCC build).
-# Hardcoded triple — this script only runs inside jonerix:all (aarch64).
-CLANG_TRIPLE="aarch64-jonerix-linux-musl"
-CLANG_CFG="/etc/clang/${CLANG_TRIPLE}.cfg"
+# Triple is aarch64-alpine-linux-musl — this is what clang in jonerix:all
+# reports (built against Alpine musl). The cfg is written by the LLVM recipe;
+# recreate it here in case the published package predates that step.
+CLANG_CFG="/etc/clang/aarch64-alpine-linux-musl.cfg"
 if [ ! -f "$CLANG_CFG" ]; then
     mkdir -p /etc/clang
     printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' > "$CLANG_CFG"
