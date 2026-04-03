@@ -32,7 +32,10 @@ RUN jpkg update && \
       containerd runc nerdctl cni-plugins; \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
+      ln -sf toybox /bin/sh 2>/dev/null || true; \
     done
+# Ensure /bin/sh -> toybox after the install loop (exec-form: no shell needed)
+RUN ["/bin/toybox", "ln", "-sf", "toybox", "/bin/sh"]
 
 # ── Symlinks for standard tool names ─────────────────────────────────────
 # Use toybox sh directly — jpkg may change /bin/sh during install
@@ -42,7 +45,8 @@ RUN \
     ln -sf clang /bin/cc 2>/dev/null; \
     ln -sf clang++ /bin/c++ 2>/dev/null; \
     ln -sf ld.lld /bin/ld 2>/dev/null; \
-    LLVM_BIN=$(ls -d /lib/llvm*/bin 2>/dev/null | head -1); \
+    LLVM_BIN=; \
+    for d in /lib/llvm*/bin; do [ -d "$d" ] && LLVM_BIN="$d" && break; done; \
     if [ -n "$LLVM_BIN" ]; then \
       for tool in ar nm ranlib strip objcopy objdump readelf; do \
         ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null; \
