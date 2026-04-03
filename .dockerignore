@@ -4,3 +4,4 @@
 .env*
 *.output
 .build
+sources/
