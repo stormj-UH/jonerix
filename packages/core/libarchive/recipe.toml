@@ -1,9 +1,9 @@
 [package]
-name = "bsdtar"
+name = "libarchive"
 version = "3.8.6"
 license = "Apache-2.0"
 pre_bootstrap = false
-description = "BSD tar from libarchive (handles symlinks correctly)"
+description = "Multi-format archive and compression library with bsdtar"
 
 [source]
 url = "https://github.com/libarchive/libarchive/releases/download/v3.8.6/libarchive-3.8.6.tar.xz"
