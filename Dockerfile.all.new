@@ -18,6 +18,11 @@ COPY packages/jpkg/jpkg /bin/jpkg
 COPY tools/bsdtar-static-aarch64 /bin/bsdtar
 RUN chmod 755 /bin/bsdtar && echo "jpkg $(jpkg --version 2>&1 | head -1)"
 
+# Install zsh first — required as shell for jpkg build steps (commit a588005).
+# Separate RUN intentionally busts the cache for the main install block below
+# so the big install loop re-runs when the package repo changes.
+RUN jpkg update && jpkg install zsh && ln -sf zsh /bin/sh
+
 RUN jpkg update && \
     for pkg in \
       musl zlib zstd lz4 xz ncurses libressl openssl curl nghttp2 \
@@ -32,9 +37,8 @@ RUN jpkg update && \
       containerd runc nerdctl cni-plugins; \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
-      ln -sf toybox /bin/sh 2>/dev/null || true; \
     done; \
-    ln -sf toybox /bin/sh 2>/dev/null || true; \
+    ln -sf zsh /bin/sh 2>/dev/null || true; \
     ln -sf clang /bin/cc 2>/dev/null || true; \
     ln -sf clang++ /bin/c++ 2>/dev/null || true; \
     ln -sf ld.lld /bin/ld 2>/dev/null || true; \
