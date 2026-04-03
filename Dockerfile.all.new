@@ -34,14 +34,14 @@ RUN jpkg update && \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
       ln -sf toybox /bin/sh 2>/dev/null || true; \
     done
-# Ensure /bin/sh -> toybox after the install loop (exec-form: no shell needed)
-RUN ["/bin/toybox", "ln", "-sf", "toybox", "/bin/sh"]
 
 # ── Symlinks for standard tool names ─────────────────────────────────────
-# Use toybox sh directly — jpkg may change /bin/sh during install
-# (uutils or zsh could overwrite the symlink). toybox is always present.
+# Use /bin/toybox sh directly — jpkg may change /bin/sh during install.
+# The exec-form RUN ["/bin/toybox","ln",...] exits 1 under QEMU; redundant
+# since SHELL uses /bin/toybox explicitly and symlinks step also sets /bin/sh.
 SHELL ["/bin/toybox", "sh", "-c"]
 RUN \
+    ln -sf toybox /bin/sh 2>/dev/null; \
     ln -sf clang /bin/cc 2>/dev/null; \
     ln -sf clang++ /bin/c++ 2>/dev/null; \
     ln -sf ld.lld /bin/ld 2>/dev/null; \
