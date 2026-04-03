@@ -61,7 +61,7 @@ if [ -n "$PKG_INPUT" ]; then
     recipe_dir="/workspace/packages/core/${PKG_INPUT}"
     [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}/recipe.toml"; exit 1; }
     echo "=== Building ${PKG_INPUT} (forced) ==="
-    timeout 1800 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+    timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
 else
     for recipe in /workspace/packages/core/*/recipe.toml; do
         pkg_dir="$(dirname "$recipe")"
