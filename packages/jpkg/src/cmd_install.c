@@ -103,9 +103,9 @@ static int install_files(const char *stage_dir, const char *dest_root) {
              /* Flatten usr/ in staging */
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
              "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi && "
-             /* Copy staging to root using cp -a.
-              * Simple and compatible with toybox sh (no 'read' builtin needed). */
-             "for d in '%s'/*; do cp -a \"$d\" '%s/' 2>/dev/null || true; done",
+             /* Copy staging to root using cp -a. Fail immediately on the
+              * first copy error instead of silently registering a partial install. */
+             "for d in '%s'/*; do cp -a \"$d\" '%s/' 2>/dev/null || exit 1; done",
              stage_dir, stage_dir,
              stage_dir, stage_dir, stage_dir,
              stage_dir, dest_root);
@@ -160,6 +160,15 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
 
     /* Build file manifest from extracted files */
     pkg_file_t *files = build_file_manifest(stage_dir, "/");
+    if (!files) {
+        log_error("package %s extracted no installable files", meta->name);
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", stage_dir);
+        system(cmd);
+        pkg_meta_free(meta);
+        free(pkg_path);
+        return -1;
+    }
 
     /* Copy files to root filesystem */
     char dest_root[512];
