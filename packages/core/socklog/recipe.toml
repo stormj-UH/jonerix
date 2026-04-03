@@ -10,8 +10,8 @@ url = "https://smarden.org/socklog/socklog-2.1.2.tar.gz"
 sha256 = "7bc7a3f9e8e15a7e791281c05741a4c0cf0de86e74870fd2c6f4d7e7942b95e6"
 
 [build]
-configure = "cd socklog-2.1.2 && printf '%s\n' 'clang -O2 -fomit-frame-pointer' > src/conf-cc && printf '%s\n' 'clang' > src/conf-ld && printf '%s\n' 'linux-aarch64-:-:aarch64-:-' > src/systype"
-build = "make -C socklog-2.1.2/src"
+configure = "cd socklog-2.1.2/src && printf '%s\n' 'clang -O2 -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld' > conf-cc && printf '%s\n' 'clang --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld' > conf-ld && printf '%s\n' 'linux-aarch64-:-:aarch64-:-' > systype && cp hassgprm.h2 hassgprm.h && cp hassgact.h2 hassgact.h && cp haswaitp.h2 haswaitp.h && cp hasmkffo.h2 hasmkffo.h && cp hasflock.h2 hasflock.h && cp uint64.h1 uint64.h && cp iopause.h2 iopause.h && cp select.h2 select.h && printf '%s\n' '#!/bin/sh' 'exec clang -O2 -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -c "$$@"' > /tmp/compile_socklog.sh && printf '%s\n' '#!/bin/sh' 'main="$$1"; shift' 'exec clang --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o "$$main" "$$main".o "$$@"' > /tmp/load_socklog.sh && printf '%s\n' '#!/bin/sh' 'main="$$1"; shift' 'rm -f "$$main"' 'ar cr "$$main" "$$@"' 'ranlib "$$main"' > /tmp/makelib_socklog.sh && chmod 755 /tmp/compile_socklog.sh /tmp/load_socklog.sh /tmp/makelib_socklog.sh && ln -sf /tmp/compile_socklog.sh compile && ln -sf /tmp/load_socklog.sh load && ln -sf /tmp/makelib_socklog.sh makelib"
+build = "make -C socklog-2.1.2/src byte.a unix.a time.a socklog socklog-check tryto uncat"
 install = "mkdir -p $DESTDIR/bin $DESTDIR/var/log/socklog $DESTDIR/share/man/man8 && install -m 755 socklog-2.1.2/src/socklog $DESTDIR/bin/socklog && install -m 755 socklog-2.1.2/src/socklog-check $DESTDIR/bin/socklog-check && install -m 755 socklog-2.1.2/src/tryto $DESTDIR/bin/tryto && install -m 755 socklog-2.1.2/src/uncat $DESTDIR/bin/uncat && install -m 644 socklog-2.1.2/man/socklog.8 $DESTDIR/share/man/man8/socklog.8"
 
 [depends]
