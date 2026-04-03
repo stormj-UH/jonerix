@@ -10,13 +10,13 @@ FROM ${MINIMAL_IMAGE}
 
 COPY packages/jpkg/jpkg /bin/jpkg
 
-# Bootstrap bsdtar: minimal-new has /bin/tar→bsdtar but no bsdtar binary
+# Bootstrap bsdtar: minimal has /bin/tar→bsdtar but no bsdtar binary
 # (core bsdtar is a metadata stub; the real binary comes from libarchive).
 # Install a pre-built static bsdtar (libarchive 3.8.6, no OpenSSL) so that
 # PAX-format archives (LLVM) extract correctly. Depends only on musl+zlib+zstd
 # which are all present in the minimal image.
 COPY tools/bsdtar-static-aarch64 /bin/bsdtar
-RUN chmod 755 /bin/bsdtar
+RUN chmod 755 /bin/bsdtar && echo "jpkg $(jpkg --version 2>&1 | head -1)"
 
 RUN jpkg update && \
     for pkg in \
@@ -35,8 +35,9 @@ RUN jpkg update && \
     done
 
 # ── Symlinks for standard tool names ─────────────────────────────────────
-# Use sh (not zsh) — symlinks need no pipes so no deadlock risk;
-# zsh NULL_GLOB + && chain was causing exit 1 in CI.
+# Use toybox sh directly — jpkg may change /bin/sh during install
+# (uutils or zsh could overwrite the symlink). toybox is always present.
+SHELL ["/bin/toybox", "sh", "-c"]
 RUN \
     ln -sf clang /bin/cc 2>/dev/null; \
     ln -sf clang++ /bin/c++ 2>/dev/null; \
