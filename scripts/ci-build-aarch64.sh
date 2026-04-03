@@ -29,23 +29,16 @@ else
     cp jpkg /jpkg-bin/jpkg
 fi
 
-# Wrap /bin/clang to always pass --config explicitly.
-# /etc/clang/aarch64-alpine-linux-musl.cfg exists with --rtlib=compiler-rt
-# flags, but Alpine's clang 21 does not auto-load it (CLANG_CONFIG_FILE_SYSTEM_DIR
-# mismatch). Without the cfg, clang falls back to GCC mode and tries to link
-# against crtbeginS.o/libgcc which don't exist in jonerix:all.
+# Ensure the clang cfg exists (written by LLVM recipe; recreate if absent).
+# NOTE: Alpine's clang 21 does NOT auto-load /etc/clang/<triple>.cfg —
+# CLANG_CONFIG_FILE_SYSTEM_DIR is unset. cmake-based recipes must pass
+# -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY and explicit linker flags
+# to avoid the missing crtbeginS.o / libgcc failure.
 CLANG_CFG="/etc/clang/aarch64-alpine-linux-musl.cfg"
 if [ ! -f "$CLANG_CFG" ]; then
     mkdir -p /etc/clang
     printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' > "$CLANG_CFG"
     echo "clang: created $CLANG_CFG"
-fi
-# /bin/clang is a symlink to clang-21; replace it with a wrapper.
-if [ -L /bin/clang ]; then
-    ln -sf clang-21 /bin/clang-real
-    printf '#!/bin/sh\nexec /bin/clang-real --config %s "$@"\n' "$CLANG_CFG" > /bin/clang
-    chmod 755 /bin/clang
-    echo "clang: wrapper installed (--config $CLANG_CFG)"
 fi
 
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
