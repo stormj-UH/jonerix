@@ -21,7 +21,8 @@ RUN chmod 755 /bin/bsdtar && echo "jpkg $(jpkg --version 2>&1 | head -1)"
 # Install zsh first — required as shell for jpkg build steps (commit a588005).
 # Separate RUN intentionally busts the cache for the main install block below
 # so the big install loop re-runs when the package repo changes.
-RUN jpkg update && jpkg install zsh && ln -sf zsh /bin/sh
+# Fall back gracefully if zsh not yet published (404 → continue with toybox sh).
+RUN jpkg update && jpkg install zsh && ln -sf zsh /bin/sh || true
 
 RUN jpkg update && \
     for pkg in \
@@ -38,7 +39,7 @@ RUN jpkg update && \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
     done; \
-    ln -sf zsh /bin/sh 2>/dev/null || true; \
+    [ -x /bin/zsh ] && ln -sf zsh /bin/sh 2>/dev/null || true; \
     ln -sf clang /bin/cc 2>/dev/null || true; \
     ln -sf clang++ /bin/c++ 2>/dev/null || true; \
     ln -sf ld.lld /bin/ld 2>/dev/null || true; \
