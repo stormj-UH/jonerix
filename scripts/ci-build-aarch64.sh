@@ -29,47 +29,31 @@ else
     cp jpkg /jpkg-bin/jpkg
 fi
 
-# Ensure clang config exists so it uses --rtlib=compiler-rt (zero-GCC build).
-# The LLVM recipe writes /etc/clang/<triple>.cfg, but this may be absent if
-# the published llvm package predates that recipe step. Without the config,
-# clang falls back to GCC-mode and looks for crtbeginS.o which doesn't exist.
-# Also ensure the libssp_nonshared.a stub exists for stack-protector link checks.
-echo "debug: A — clang dumpmachine"
-CLANG_TRIPLE=$(timeout 10 clang -dumpmachine 2>/dev/null || true)
-echo "debug: B — clang triple=${CLANG_TRIPLE}"
-if [ -n "$CLANG_TRIPLE" ]; then
-    CLANG_CFG="/etc/clang/${CLANG_TRIPLE}.cfg"
-    if [ ! -f "$CLANG_CFG" ]; then
-        mkdir -p /etc/clang
-        printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' > "$CLANG_CFG"
-        echo "clang: created missing $CLANG_CFG (--rtlib=compiler-rt)"
-    fi
+# Ensure clang config exists for --rtlib=compiler-rt (zero-GCC build).
+# Hardcoded triple — this script only runs inside jonerix:all (aarch64).
+CLANG_TRIPLE="aarch64-jonerix-linux-musl"
+CLANG_CFG="/etc/clang/${CLANG_TRIPLE}.cfg"
+if [ ! -f "$CLANG_CFG" ]; then
+    mkdir -p /etc/clang
+    printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' > "$CLANG_CFG"
+    echo "clang: created $CLANG_CFG"
 fi
-echo "debug: C — libssp_nonshared"
+
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
 # Ensure bsdtar/tar is functional. libarchive's bsdtar links against EVP_MAC_*
 # (OpenSSL 3.x API) which LibreSSL 4.0.0 does not implement. If the container's
 # bsdtar is broken (jpkg install libarchive overwrites the static fallback),
 # restore the static bsdtar from the workspace before jpkg tries to extract sources.
-echo "debug: D — bsdtar check"
-if ! timeout 10 bsdtar --version >/dev/null 2>&1; then
+if ! bsdtar --version >/dev/null 2>&1; then
     if [ -x /workspace/tools/bsdtar-static-aarch64 ]; then
         install -m 755 /workspace/tools/bsdtar-static-aarch64 /bin/bsdtar
         echo "bsdtar: restored static fallback (dynamic bsdtar missing EVP_MAC_* from LibreSSL)"
     fi
 fi
 
-echo "debug: E — jpkg update"
-# Prevent zsh startup file hangs: jpkg invokes /bin/zsh for build steps,
-# and /bin/sh is symlinked to zsh in jonerix:all. Any .zshenv sourced at
-# startup (ZDOTDIR or /etc/zshenv) can block indefinitely. Point ZDOTDIR
-# at /tmp (no startup files there) and remove /etc/zshenv if it exists.
-export ZDOTDIR=/tmp
-rm -f /etc/zshenv 2>/dev/null || true
 # Update package index
 jpkg update
-echo "debug: F — jpkg update done"
 
 if [ -n "$PKG_INPUT" ]; then
     recipe_dir="/workspace/packages/core/${PKG_INPUT}"
