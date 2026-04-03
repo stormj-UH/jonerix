@@ -202,10 +202,10 @@ int pkg_extract(const char *jpkg_path, const char *dest_dir) {
     }
 
     if (payload_len == 0) {
-        log_warn("package %s has no payload", meta->name);
+        log_error("package %s has no payload", meta->name);
         pkg_meta_free(meta);
         free(data);
-        return 0;
+        return -1;
     }
 
     /* Write the zstd payload to a temporary file */
