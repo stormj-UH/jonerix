@@ -111,6 +111,8 @@ ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/sh
 ENV TERM=xterm
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 WORKDIR /root
 
