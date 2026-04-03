@@ -209,6 +209,14 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
+      - name: Probe jonerix:all shells
+        run: |
+          docker pull ghcr.io/stormj-uh/jonerix:all
+          docker run --rm --entrypoint "" ghcr.io/stormj-uh/jonerix:all \
+            /bin/toybox ls -la /bin/sh /bin/zsh /bin/mksh 2>&1 || true
+          docker run --rm --entrypoint "" ghcr.io/stormj-uh/jonerix:all \
+            /bin/sh -c 'echo sh-ok' 2>&1 || true
+
       - name: Build packages in jonerix:all container
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
@@ -221,7 +229,7 @@ jobs:
             -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
-            ghcr.io/stormj-uh/jonerix:all /bin/zsh /workspace/scripts/ci-build-aarch64.sh
+            ghcr.io/stormj-uh/jonerix:all /bin/sh /workspace/scripts/ci-build-aarch64.sh
 
       - name: Upload packages to release
         env:
