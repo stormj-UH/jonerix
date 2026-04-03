@@ -34,45 +34,32 @@ RUN jpkg update && \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
     done
 
-# Switch to zsh for subsequent RUN steps — avoids toybox sh pipe deadlock
-# (zsh was installed by jpkg in the step above)
-SHELL ["/bin/zsh", "-c"]
-
 # ── Symlinks for standard tool names ─────────────────────────────────────
+# Use sh (not zsh) — symlinks need no pipes so no deadlock risk;
+# zsh NULL_GLOB + && chain was causing exit 1 in CI.
 RUN \
-    setopt NULL_GLOB 2>/dev/null || true && \
-    # Compiler
-    ln -sf clang /bin/cc 2>/dev/null || true && \
-    ln -sf clang++ /bin/c++ 2>/dev/null || true && \
-    # Linker
-    ln -sf ld.lld /bin/ld 2>/dev/null || true && \
-    # LLVM binutils
-    LLVM_BIN="" && \
-    for d in /lib/llvm*/bin; do \
-      [ -f "$d/llvm-ar" ] && LLVM_BIN="$d" && break; \
-    done && \
+    ln -sf clang /bin/cc 2>/dev/null; \
+    ln -sf clang++ /bin/c++ 2>/dev/null; \
+    ln -sf ld.lld /bin/ld 2>/dev/null; \
+    LLVM_BIN=$(ls -d /lib/llvm*/bin 2>/dev/null | head -1); \
     if [ -n "$LLVM_BIN" ]; then \
       for tool in ar nm ranlib strip objcopy objdump readelf; do \
-        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null || true; \
-        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null || true; \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null; \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null; \
       done; \
-    fi && \
-    # Build tools
-    ln -sf bmake /bin/make 2>/dev/null || true && \
-    ln -sf samu /bin/ninja 2>/dev/null || true && \
-    # Python
-    ln -sf python3 /bin/python 2>/dev/null || true && \
-    # Shell: toybox sh is /bin/sh; zsh is bash-compat only
-    ln -sf toybox /bin/sh 2>/dev/null || true && \
-    ln -sf zsh /bin/bash 2>/dev/null || true && \
-    # Archive tool
-    ln -sf bsdtar /bin/tar 2>/dev/null || true && \
-    # Other tools
-    ln -sf byacc /bin/yacc 2>/dev/null || true && \
-    ln -sf flex /bin/lex 2>/dev/null || true && \
-    ln -sf micro /bin/editor 2>/dev/null || true && \
-    ln -sf micro /bin/vi 2>/dev/null || true && \
-    ln -sf nerdctl /bin/docker 2>/dev/null || true
+    fi; \
+    ln -sf bmake /bin/make 2>/dev/null; \
+    ln -sf samu /bin/ninja 2>/dev/null; \
+    ln -sf python3 /bin/python 2>/dev/null; \
+    ln -sf toybox /bin/sh 2>/dev/null; \
+    ln -sf zsh /bin/bash 2>/dev/null; \
+    ln -sf bsdtar /bin/tar 2>/dev/null; \
+    ln -sf byacc /bin/yacc 2>/dev/null; \
+    ln -sf flex /bin/lex 2>/dev/null; \
+    ln -sf micro /bin/editor 2>/dev/null; \
+    ln -sf micro /bin/vi 2>/dev/null; \
+    ln -sf nerdctl /bin/docker 2>/dev/null; \
+    true
 
 ENV PATH=/bin
 ENV HOME=/root
