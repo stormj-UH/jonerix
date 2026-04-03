@@ -10,14 +10,9 @@ url = "https://smarden.org/socklog/socklog-2.1.2.tar.gz"
 sha256 = "7bc7a3f9e8e15a7e791281c05741a4c0cf0de86e74870fd2c6f4d7e7942b95e6"
 
 [build]
-configure = 'echo "clang -O2 -fomit-frame-pointer" > src/conf-cc && echo "clang" > src/conf-ld'
-build = "make -C src"
-install = """mkdir -p "$DESTDIR/bin" "$DESTDIR/var/log/socklog" "$DESTDIR/share/man/man8"
-install -m 755 src/socklog "$DESTDIR/bin/socklog"
-install -m 755 src/socklog-check "$DESTDIR/bin/socklog-check"
-install -m 755 src/tryto "$DESTDIR/bin/tryto"
-install -m 755 src/uncat "$DESTDIR/bin/uncat"
-install -m 644 man/socklog.8 "$DESTDIR/share/man/man8/socklog.8"""
+configure = "cd socklog-2.1.2 && printf '%s\n' 'clang -O2 -fomit-frame-pointer' > src/conf-cc && printf '%s\n' 'clang' > src/conf-ld && printf '%s\n' 'linux-aarch64-:-:aarch64-:-' > src/systype"
+build = "make -C socklog-2.1.2/src"
+install = "mkdir -p $DESTDIR/bin $DESTDIR/var/log/socklog $DESTDIR/share/man/man8 && install -m 755 socklog-2.1.2/src/socklog $DESTDIR/bin/socklog && install -m 755 socklog-2.1.2/src/socklog-check $DESTDIR/bin/socklog-check && install -m 755 socklog-2.1.2/src/tryto $DESTDIR/bin/tryto && install -m 755 socklog-2.1.2/src/uncat $DESTDIR/bin/uncat && install -m 644 socklog-2.1.2/man/socklog.8 $DESTDIR/share/man/man8/socklog.8"
 
 [depends]
 runtime = ["musl"]
