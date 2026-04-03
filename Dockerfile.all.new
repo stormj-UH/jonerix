@@ -24,17 +24,22 @@ RUN chmod 755 /bin/bsdtar && echo "jpkg $(jpkg --version 2>&1 | head -1)"
 # Fall back gracefully if zsh not yet published (404 → continue with toybox sh).
 RUN jpkg update && jpkg install zsh && ln -sf zsh /bin/sh || true
 
+# Skip stale/conflicting package artifacts until they are rebuilt:
+# - libressl duplicates the current openssl package's payload
+# - libarchive/bsdtar and unbound still link against missing OpenSSL 3 sonames
+# - npm overlaps with nodejs' bundled npm tree
+# - uutils overwrites many toybox-owned paths under /bin
 RUN jpkg update && \
     for pkg in \
-      musl zlib zstd lz4 xz ncurses libressl openssl curl nghttp2 \
-      libarchive bsdtar toybox openrc dropbear dhcpcd doas snooze socklog \
-      ifupdown-ng unbound mandoc pigz \
+      musl zlib zstd lz4 xz ncurses openssl curl nghttp2 \
+      toybox openrc dropbear dhcpcd doas snooze \
+      ifupdown-ng mandoc pigz \
       libcxx libatomic llvm \
       cmake bmake samurai flex bc byacc \
       perl python3 pip \
       go rust \
-      nodejs npm \
-      zsh uutils gitoxide ripgrep micro fastfetch \
+      nodejs \
+      zsh gitoxide ripgrep micro fastfetch \
       containerd runc nerdctl cni-plugins; \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \

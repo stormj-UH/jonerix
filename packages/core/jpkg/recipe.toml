@@ -10,5 +10,5 @@ build = ""
 install = ""
 
 [depends]
-runtime = ["musl", "curl", "zstd", "bsdtar"]
+runtime = ["musl", "curl", "zstd", "libarchive"]
 build = []
