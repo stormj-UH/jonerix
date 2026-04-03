@@ -16,5 +16,5 @@ output/
 packages/jpkg/tests/test_toml
 packages/jpkg/tests/test_pkg
 packages/jpkg/tests/test_deps
-packages/jpkg/jpkg
+# packages/jpkg/jpkg — tracked: CI needs this pre-built arm64 binary
 keys/jonerix.sec
