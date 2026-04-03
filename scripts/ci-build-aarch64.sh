@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/zsh
 # ci-build-aarch64.sh — Run inside ghcr.io/stormj-uh/jonerix:all container
 # Mounts: /workspace (repo), /var/cache/jpkg (output), /var/cache/jpkg-published, /jpkg-bin
 # Env: PKG_INPUT (optional package name to force-build)
