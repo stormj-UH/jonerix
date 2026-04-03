@@ -33,38 +33,29 @@ RUN jpkg update && \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
       ln -sf toybox /bin/sh 2>/dev/null || true; \
-    done
-
-# ── Symlinks for standard tool names ─────────────────────────────────────
-# Use /bin/toybox sh directly — jpkg may change /bin/sh during install.
-# The exec-form RUN ["/bin/toybox","ln",...] exits 1 under QEMU; redundant
-# since SHELL uses /bin/toybox explicitly and symlinks step also sets /bin/sh.
-SHELL ["/bin/toybox", "sh", "-c"]
-RUN \
-    ln -sf toybox /bin/sh 2>/dev/null; \
-    ln -sf clang /bin/cc 2>/dev/null; \
-    ln -sf clang++ /bin/c++ 2>/dev/null; \
-    ln -sf ld.lld /bin/ld 2>/dev/null; \
+    done; \
+    ln -sf toybox /bin/sh 2>/dev/null || true; \
+    ln -sf clang /bin/cc 2>/dev/null || true; \
+    ln -sf clang++ /bin/c++ 2>/dev/null || true; \
+    ln -sf ld.lld /bin/ld 2>/dev/null || true; \
     LLVM_BIN=; \
     for d in /lib/llvm*/bin; do [ -d "$d" ] && LLVM_BIN="$d" && break; done; \
     if [ -n "$LLVM_BIN" ]; then \
       for tool in ar nm ranlib strip objcopy objdump readelf; do \
-        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null; \
-        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null; \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool" 2>/dev/null || true; \
+        ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null || true; \
       done; \
     fi; \
-    ln -sf bmake /bin/make 2>/dev/null; \
-    ln -sf samu /bin/ninja 2>/dev/null; \
-    ln -sf python3 /bin/python 2>/dev/null; \
-    ln -sf toybox /bin/sh 2>/dev/null; \
-    ln -sf zsh /bin/bash 2>/dev/null; \
-    ln -sf bsdtar /bin/tar 2>/dev/null; \
-    ln -sf byacc /bin/yacc 2>/dev/null; \
-    ln -sf flex /bin/lex 2>/dev/null; \
-    ln -sf micro /bin/editor 2>/dev/null; \
-    ln -sf micro /bin/vi 2>/dev/null; \
-    ln -sf nerdctl /bin/docker 2>/dev/null; \
-    true
+    ln -sf bmake /bin/make 2>/dev/null || true; \
+    ln -sf samu /bin/ninja 2>/dev/null || true; \
+    ln -sf python3 /bin/python 2>/dev/null || true; \
+    ln -sf zsh /bin/bash 2>/dev/null || true; \
+    ln -sf bsdtar /bin/tar 2>/dev/null || true; \
+    ln -sf byacc /bin/yacc 2>/dev/null || true; \
+    ln -sf flex /bin/lex 2>/dev/null || true; \
+    ln -sf micro /bin/editor 2>/dev/null || true; \
+    ln -sf micro /bin/vi 2>/dev/null || true; \
+    ln -sf nerdctl /bin/docker 2>/dev/null || true
 
 ENV PATH=/bin
 ENV HOME=/root
