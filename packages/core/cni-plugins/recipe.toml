@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "CNI network plugins for container networking"
 
 [source]
-url = "sources/cni-plugins-1.9.1.tar.gz"  # vendored in sources/
+url = "https://github.com/containernetworking/plugins/archive/refs/tags/v1.9.1.tar.gz"
 sha256 = "34bd82d47e981940751619c9cc44c095bb90bfcaf8d71865cbb822c37690a764"
 
 [build]

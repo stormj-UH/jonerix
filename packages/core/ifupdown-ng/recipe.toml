@@ -6,7 +6,7 @@ pre_bootstrap = false
 description = "Next-generation network interface configuration tool"
 
 [source]
-url = "sources/ifupdown-ng-0.12.1.tar.gz"  # vendored in sources/
+url = "https://github.com/ifupdown-ng/ifupdown-ng/releases/download/ifupdown-ng-0.12.1/ifupdown-ng-0.12.1.tar.xz"
 sha256 = "d42c8c18222efbce0087b92a14ea206de4e865d5c9dde6c0864dcbb2b45f2d85"
 
 [build]
