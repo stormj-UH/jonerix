@@ -52,12 +52,17 @@ RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/downloa
 # deadlock bug in the extraction path that causes jpkg install to hang.
 COPY packages/jpkg/jpkg /bin/jpkg
 
+# Install the bundled static bsdtar instead of the current repository bsdtar package,
+# whose published artifact still links against unavailable OpenSSL 3 symbols.
+COPY tools/bsdtar-static-aarch64 /jonerix/bin/bsdtar
+RUN chmod 755 /jonerix/bin/bsdtar
+
 # Install all packages via jpkg (jonerix building jonerix)
 # No mksh — toybox provides /bin/sh (POSIX shell)
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl zlib toybox bsdtar dropbear openrc openssl curl zstd
+        musl zlib toybox dropbear openrc openssl curl zstd
 
 # Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \
@@ -106,6 +111,8 @@ ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/sh
 ENV TERM=xterm
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 WORKDIR /root
 

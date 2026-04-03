@@ -43,14 +43,14 @@ fi
 
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
-# Ensure bsdtar/tar is functional. libarchive's bsdtar links against EVP_MAC_*
-# (OpenSSL 3.x API) which LibreSSL 4.0.0 does not implement. If the container's
-# bsdtar is broken (jpkg install libarchive overwrites the static fallback),
-# restore the static bsdtar from the workspace before jpkg tries to extract sources.
+# Ensure bsdtar/tar is functional. Some published libarchive artifacts were built
+# against OpenSSL 3 and require libcrypto.so.3, while jonerix ships LibreSSL. If the
+# container's dynamic bsdtar is broken, restore the static fallback before jpkg tries
+# to extract sources.
 if ! bsdtar --version >/dev/null 2>&1; then
     if [ -x /workspace/tools/bsdtar-static-aarch64 ]; then
         install -m 755 /workspace/tools/bsdtar-static-aarch64 /bin/bsdtar
-        echo "bsdtar: restored static fallback (dynamic bsdtar missing EVP_MAC_* from LibreSSL)"
+        echo "bsdtar: restored static fallback (dynamic libarchive artifact expects OpenSSL 3)"
     fi
 fi
 

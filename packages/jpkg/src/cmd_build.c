@@ -179,10 +179,10 @@ static int run_build_step(const char *step_name, const char *cmd,
     char env_ranlib[64] = "RANLIB=llvm-ranlib";
     char env_cflags[256];
     snprintf(env_cflags, sizeof(env_cflags),
-             "CFLAGS=-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2");
+             "CFLAGS=-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 --rtlib=compiler-rt --unwindlib=libunwind");
     char env_ldflags[256];
     snprintf(env_ldflags, sizeof(env_ldflags),
-             "LDFLAGS=-Wl,-z,relro,-z,now -pie");
+             "LDFLAGS=-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld");
     char env_destdir[512];
     snprintf(env_destdir, sizeof(env_destdir), "DESTDIR=%s", dest_dir);
     char env_cinclude[128] = "C_INCLUDE_PATH=/include";
@@ -262,8 +262,18 @@ static int fetch_source(const build_recipe_t *recipe, const char *work_dir) {
         log_info("  source hash verified");
     }
 
-    /* Extract */
-    snprintf(cmd, sizeof(cmd), "cd '%s' && tar xf '%s'", work_dir, tarball);
+    /* Extract with a tar implementation that does not depend on the
+     * system /bin/tar being functional. */
+    if (access("/bin/toybox", X_OK) == 0) {
+        snprintf(cmd, sizeof(cmd), "cd '%s' && /bin/toybox tar xf '%s'",
+                 work_dir, tarball);
+    } else if (access("/root/jonerix/tools/bsdtar-static-aarch64", X_OK) == 0) {
+        snprintf(cmd, sizeof(cmd),
+                 "cd '%s' && /root/jonerix/tools/bsdtar-static-aarch64 xf '%s'",
+                 work_dir, tarball);
+    } else {
+        snprintf(cmd, sizeof(cmd), "cd '%s' && tar xf '%s'", work_dir, tarball);
+    }
     if (system(cmd) != 0) {
         log_error("failed to extract source");
         return -1;
@@ -347,19 +357,44 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
              dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
     system(flatten);
 
-    /* Create zstd-compressed tarball of dest_dir contents */
+    /* Create the payload in two steps to avoid shell pipe deadlocks.
+     * toybox sh can keep pipe fds open while waiting, which wedges a tar|zstd
+     * pipeline once the reader exits. Write an uncompressed tar first, then
+     * compress it to zstd as a separate command. */
+    char raw_tar_path[512];
+    snprintf(raw_tar_path, sizeof(raw_tar_path), "/tmp/jpkg-build-%s-%d.tar",
+             recipe->name, (int)getpid());
     char tar_path[512];
     snprintf(tar_path, sizeof(tar_path), "/tmp/jpkg-build-%s-%d.tar.zst",
              recipe->name, (int)getpid());
 
     char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "cd '%s' && tar cf - . | zstd -c > '%s'",
-             dest_dir, tar_path);
+    if (access("/bin/toybox", X_OK) == 0) {
+        snprintf(cmd, sizeof(cmd),
+                 "cd '%s' && /bin/toybox tar cf '%s' .",
+                 dest_dir, raw_tar_path);
+    } else if (access("/root/jonerix/tools/bsdtar-static-aarch64", X_OK) == 0) {
+        snprintf(cmd, sizeof(cmd),
+                 "cd '%s' && /root/jonerix/tools/bsdtar-static-aarch64 cf '%s' .",
+                 dest_dir, raw_tar_path);
+    } else {
+        snprintf(cmd, sizeof(cmd), "cd '%s' && tar cf '%s' .",
+                 dest_dir, raw_tar_path);
+    }
     if (system(cmd) != 0) {
         log_error("failed to create package tarball");
         free(toml_str);
         return -1;
     }
+
+    snprintf(cmd, sizeof(cmd), "zstd -q -f '%s' -o '%s'", raw_tar_path, tar_path);
+    if (system(cmd) != 0) {
+        log_error("failed to compress package tarball");
+        unlink(raw_tar_path);
+        free(toml_str);
+        return -1;
+    }
+    unlink(raw_tar_path);
 
     /* Read zstd payload */
     uint8_t *payload;
