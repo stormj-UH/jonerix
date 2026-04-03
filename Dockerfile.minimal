@@ -48,6 +48,10 @@ COPY config/defaults/etc/jpkg/keys/ /jonerix/etc/jpkg/keys/
 RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/download/packages"\n' \
         > /jonerix/etc/jpkg/repos.conf
 
+# Use the fixed local jpkg binary — the BUILDER image's jpkg has a pipe
+# deadlock bug in the extraction path that causes jpkg install to hang.
+COPY packages/jpkg/jpkg /bin/jpkg
+
 # Install all packages via jpkg (jonerix building jonerix)
 # No mksh — toybox provides /bin/sh (POSIX shell)
 RUN jpkg update && \
@@ -95,8 +99,8 @@ FROM scratch
 
 COPY --from=rootfs /jonerix/ /
 
-# Pre-built static jpkg binary (150KB, no shared lib deps)
-COPY --from=rootfs /bin/jpkg /bin/jpkg
+# Pre-built static jpkg binary (arm64, statically linked)
+COPY packages/jpkg/jpkg /bin/jpkg
 
 ENV PATH=/bin
 ENV HOME=/root
