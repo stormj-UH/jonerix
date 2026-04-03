@@ -1,14 +1,13 @@
 [package]
 name = "bsdtar"
-version = "3.8.6"
+version = "3.8.6-r1"
 license = "Apache-2.0"
 pre_bootstrap = false
 description = "Compatibility package providing /bin/tar via libarchive bsdtar"
 
 [build]
 build = ""
-install = """mkdir -p "$DESTDIR/bin"
-ln -sf bsdtar "$DESTDIR/bin/tar"""
+install = "mkdir -p $DESTDIR/bin && ln -sf bsdtar $DESTDIR/bin/tar"
 
 [depends]
 runtime = ["libarchive"]
