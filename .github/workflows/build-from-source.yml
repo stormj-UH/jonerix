@@ -1,21 +1,5 @@
 name: Build from source
 
-# Manually triggered only.
-# Builds ALL bootstrap packages from source in dependency order,
-# producing a fully from-source jonerix image (jonerix:all).
-#
-# Architecture input:
-#   both    → build aarch64 + x86_64 in parallel (default)
-#   aarch64 → build aarch64 only (ubuntu-24.04-arm, jonerix:minimal container)
-#   x86_64  → build x86_64 only (ubuntu-latest + Alpine container)
-#
-# aarch64 is self-hosting: starts from ghcr.io/stormj-uh/jonerix:minimal,
-# installs the build toolchain via jpkg, then builds all packages from source.
-# x86_64 still uses Alpine (no x86_64 jonerix:minimal image exists).
-#
-# After both arch jobs finish (or are skipped), the INDEX is regenerated
-# and optionally the jonerix:all image is pushed to GHCR.
-
 on:
   workflow_dispatch:
     inputs:
@@ -44,11 +28,9 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ── aarch64: native ARM64 runner + jonerix:minimal container (self-hosting) ─
-  # The jonerix:minimal image is arm64 native.  We run the full build inside
-  # a docker run so that the build environment is the jonerix container, not
-  # the Ubuntu host.  gh CLI (needed for uploads) is NOT in jonerix, so
-  # packages are written to a host-mounted volume and uploaded from the host.
+  # ── aarch64: native ARM64 runner, jonerix rootfs via docker export ────────
+  # Extract jonerix:minimal rootfs to disk, then run build-all.sh natively
+  # using the jonerix toolchain. No Docker container overhead.
   build-aarch64:
     name: Build all packages (aarch64)
     if: inputs.architecture == 'aarch64' || inputs.architecture == 'both'
@@ -76,80 +58,74 @@ jobs:
           key: build-from-source-aarch64-${{ hashFiles('bootstrap/build-order.txt') }}
           restore-keys: build-from-source-aarch64-
 
-      - name: Pull jonerix:minimal
+      - name: Extract jonerix:minimal rootfs
         run: |
-          image=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')
-          docker pull "$image"
-          echo "JONERIX_MINIMAL=$image" >> "$GITHUB_ENV"
+          IMAGE=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')
+          docker pull "$IMAGE"
+          sudo mkdir -p /jonerix
+          CID=$(docker create "$IMAGE" /bin/true)
+          docker export "$CID" | sudo tar -xf - -C /jonerix
+          docker rm "$CID" > /dev/null
+          echo "Extracted jonerix:minimal to /jonerix"
+          ls /jonerix/bin/ | head -10
 
-      - name: Build all packages from source (jonerix:minimal container, aarch64)
-        env:
-          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+      - name: Install build toolchain via jpkg
+        if: ${{ !inputs.dry_run }}
         run: |
+          # Run jpkg inside the extracted rootfs via chroot
+          sudo mount -t proc proc /jonerix/proc
+          sudo mount -t sysfs sys /jonerix/sys
+          sudo mount --bind /dev /jonerix/dev
+          sudo mount --bind /tmp /jonerix/tmp
+
+          sudo chroot /jonerix /bin/sh -c '
+            jpkg update
+            for pkg in llvm cmake bmake samurai flex bc byacc perl python3 pip \
+                       zsh ncurses zlib xz zstd lz4 curl bsdtar libcxx libatomic; do
+              jpkg install "$pkg" || echo "WARN: $pkg"
+            done
+          '
+
+          # Add jonerix bin to PATH and set up symlinks
+          sudo ln -sf /jonerix/bin/clang   /jonerix/bin/cc
+          sudo ln -sf /jonerix/bin/clang++ /jonerix/bin/c++
+          sudo ln -sf /jonerix/bin/ld.lld  /jonerix/bin/ld
+          sudo ln -sf /jonerix/bin/bmake   /jonerix/bin/make
+          sudo ln -sf /jonerix/bin/samu    /jonerix/bin/ninja
+          sudo ln -sf /jonerix/bin/python3 /jonerix/bin/python
+          sudo ln -sf /jonerix/bin/byacc   /jonerix/bin/yacc
+          sudo ln -sf /jonerix/bin/flex    /jonerix/bin/lex
+
+          for d in /jonerix/lib/llvm*/bin; do
+            if [ -d "$d" ]; then
+              for tool in ar nm ranlib strip objcopy objdump readelf; do
+                sudo ln -sf "$d/llvm-$tool" "/jonerix/bin/$tool" 2>/dev/null || true
+                sudo ln -sf "$d/llvm-$tool" "/jonerix/bin/llvm-$tool" 2>/dev/null || true
+              done
+            fi
+          done
+
+          echo "/jonerix/bin" >> "$GITHUB_PATH"
+          echo "Build toolchain installed"
+
+      - name: Build jpkg from source
+        if: ${{ !inputs.dry_run }}
+        run: |
+          export PATH="/jonerix/bin:$PATH"
+          cd packages/jpkg && samu
+          sudo install -m 755 jpkg /jonerix/bin/jpkg
+          jpkg --version
+
+      - name: Build all packages from source
+        run: |
+          export PATH="/jonerix/bin:$PATH"
           mkdir -p /tmp/jpkg-output
-
-          docker run --rm --privileged --memory=14g \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -v "/tmp/jpkg-output:/var/cache/jpkg" \
-            -e "DRY_RUN_FLAG=$DRY_RUN" \
-            -w /workspace \
-            "$JONERIX_MINIMAL" /bin/sh -c '
-
-              # ── 1. Fetch the package index ──────────────────────────────
-              jpkg update
-
-              # ── 2. Install build toolchain from prebuilt packages ───────
-              if [ -z "$DRY_RUN_FLAG" ]; then
-                # Full build: install everything including LLVM (~500MB)
-                for pkg in \
-                  llvm cmake bmake samurai \
-                  flex bc byacc perl python3 pip \
-                  zsh ncurses \
-                  zlib xz zstd lz4 \
-                  curl bsdtar; \
-                do
-                  echo "jpkg install $pkg"
-                  jpkg install "$pkg" || echo "WARN: $pkg install failed"
-                done
-              else
-                echo "Dry run — skipping toolchain install"
-              fi
-
-              # ── 3. Set up build symlinks ─────────────────────────────────
-              if [ -z "$DRY_RUN_FLAG" ]; then
-                ln -sf clang       /bin/cc      2>/dev/null || true
-                ln -sf clang++     /bin/c++     2>/dev/null || true
-                ln -sf ld.lld      /bin/ld      2>/dev/null || true
-                LLVM_BIN=
-                for d in /lib/llvm*/bin; do [ -d "$d" ] && LLVM_BIN="$d" && break; done
-                if [ -n "$LLVM_BIN" ]; then
-                  for tool in ar nm ranlib strip objcopy objdump readelf; do
-                    ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool"       2>/dev/null || true
-                    ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool"  2>/dev/null || true
-                  done
-                fi
-                ln -sf bmake   /bin/make   2>/dev/null || true
-                ln -sf samu    /bin/ninja  2>/dev/null || true
-                ln -sf byacc   /bin/yacc   2>/dev/null || true
-                ln -sf flex    /bin/lex    2>/dev/null || true
-                ln -sf bsdtar  /bin/tar    2>/dev/null || true
-                ln -sf python3 /bin/python 2>/dev/null || true
-
-                # ── 4. Build jpkg from source ─────────────────────────────
-                cd /workspace/packages/jpkg
-                samu
-                install -m 755 jpkg /bin/jpkg
-              fi
-              jpkg --version || true
-
-              # ── 5. Build all bootstrap packages ─────────────────────────
-              cd /workspace
-              mkdir -p /var/cache/jpkg
-              /bin/toybox sh /workspace/bootstrap/build-all.sh --output /var/cache/jpkg $DRY_RUN_FLAG
-            '
+          DRY_RUN_FLAG=""
+          [ "${{ inputs.dry_run }}" = "true" ] && DRY_RUN_FLAG="--dry-run"
+          bash bootstrap/build-all.sh --output /tmp/jpkg-output $DRY_RUN_FLAG
 
       - name: List built packages
-        run: ls -lh /tmp/jpkg-output/*.jpkg 2>/dev/null || echo "(none)"
+        run: ls -lhS /tmp/jpkg-output/*.jpkg 2>/dev/null || echo "(none)"
 
       - name: Upload packages to release
         if: ${{ !inputs.dry_run }}
@@ -159,10 +135,7 @@ jobs:
           count=0
           for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
           [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
-          gh release upload packages \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber \
-            /tmp/jpkg-output/*.jpkg
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (aarch64)."
 
       - name: Upload packages as artifacts
@@ -174,8 +147,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # ── x86_64: runs directly inside Alpine container ─────────────────────────
-  # No x86_64 jonerix:minimal image exists, so Alpine is still used here.
+      - name: Cleanup mounts
+        if: always()
+        run: |
+          sudo umount /jonerix/dev 2>/dev/null || true
+          sudo umount /jonerix/sys 2>/dev/null || true
+          sudo umount /jonerix/proc 2>/dev/null || true
+          sudo umount /jonerix/tmp 2>/dev/null || true
+
+  # ── x86_64: Alpine container (no x86_64 jonerix:minimal exists yet) ──────
   build-x86_64:
     name: Build all packages (x86_64)
     if: inputs.architecture == 'x86_64' || inputs.architecture == 'both'
@@ -215,8 +195,7 @@ jobs:
 
       - name: Build jpkg
         run: |
-          cd packages/jpkg
-          samu
+          cd packages/jpkg && samu
           install -m 755 jpkg /usr/local/bin/jpkg
 
       - name: Build all packages from source
@@ -227,7 +206,7 @@ jobs:
           sh bootstrap/build-all.sh --output /var/cache/jpkg $DRY_RUN_FLAG
 
       - name: List built packages
-        run: ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+        run: ls -lhS /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
 
       - name: Upload packages to release
         if: ${{ !inputs.dry_run }}
@@ -237,10 +216,7 @@ jobs:
           count=0
           for pkg in /var/cache/jpkg/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
           [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
-          gh release upload packages \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber \
-            /var/cache/jpkg/*.jpkg
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /var/cache/jpkg/*.jpkg
           echo "Uploaded $count package(s) (x86_64)."
 
       - name: Upload packages as artifacts
@@ -252,24 +228,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # ── Regenerate combined INDEX from all uploaded packages ──────────────────
-  # Runs even when one arch is skipped (if: always() + result checks).
-  # Only skips if BOTH build jobs were skipped (i.e. dry_run or no arch selected).
+  # ── Regenerate INDEX ─────────────────────────────────────────────────────
   regenerate-index:
     name: Regenerate package INDEX
     needs: [build-aarch64, build-x86_64]
     if: |
       always() &&
       !inputs.dry_run &&
-      (
-        needs.build-aarch64.result == 'success' ||
-        needs.build-x86_64.result == 'success'
-      ) &&
-      !(needs.build-aarch64.result == 'skipped' && needs.build-x86_64.result == 'skipped')
+      (needs.build-aarch64.result == 'success' || needs.build-x86_64.result == 'success')
     runs-on: ubuntu-latest
     container:
       image: alpine:latest
-      options: --privileged
     permissions:
       contents: write
 
@@ -280,165 +249,96 @@ jobs:
       - name: Install tools
         run: apk add --no-cache clang lld musl-dev samurai curl github-cli zstd
 
-      - name: Build jpkg (for sign subcommand)
+      - name: Build jpkg
         run: |
-          cd packages/jpkg
-          samu
+          cd packages/jpkg && samu
           install -m 755 jpkg /usr/local/bin/jpkg
-          jpkg --version || true
 
-      - name: Download all packages from release
+      - name: Download all packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p /var/cache/jpkg
-          gh release download packages \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "*.jpkg" \
-            --dir /var/cache/jpkg 2>/dev/null || true
-          echo "Downloaded packages:"
-          ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+          gh release download packages --repo "$GITHUB_REPOSITORY" --pattern "*.jpkg" --dir /var/cache/jpkg || true
+          ls /var/cache/jpkg/*.jpkg 2>/dev/null | wc -l
 
-      - name: Generate INDEX.zst
+      - name: Generate INDEX
         run: |
           set -e
-          INDEX_PLAIN=/var/cache/jpkg/INDEX
-          INDEX_ZST=/var/cache/jpkg/INDEX.zst
-
-          printf '[meta]\ntimestamp = "%s"\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$INDEX_PLAIN"
-
+          IDX=/var/cache/jpkg/INDEX
+          printf '[meta]\ntimestamp = "%s"\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$IDX"
           for pkg in /var/cache/jpkg/*.jpkg; do
             [ -f "$pkg" ] || continue
-            pkg_base="$(basename "$pkg")"
-
-            meta_len=$(dd if="$pkg" bs=1 skip=8 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n')
-            if [ -z "$meta_len" ] || [ "$meta_len" -eq 0 ] 2>/dev/null; then
-              echo "WARNING: could not read metadata from $pkg_base, skipping"
-              continue
-            fi
-
-            meta=$(dd if="$pkg" bs=1 skip=12 count="$meta_len" 2>/dev/null)
-
-            name=$(printf '%s' "$meta"    | grep '^name '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            version=$(printf '%s' "$meta" | grep '^version '     | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            license=$(printf '%s' "$meta" | grep '^license '     | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            arch=$(printf '%s' "$meta"    | grep '^arch '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            # Prefer bootstrap recipe (source of truth) for depends; fall back to .jpkg metadata
-            recipe_file="${GITHUB_WORKSPACE}/packages/bootstrap/${name}/recipe.toml"
-            if [ ! -f "$recipe_file" ]; then
-              recipe_file="${GITHUB_WORKSPACE}/packages/core/${name}/recipe.toml"
-            fi
-            if [ -f "$recipe_file" ]; then
-              depends_arr=$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')
+            ml=$(dd if="$pkg" bs=1 skip=8 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n')
+            [ -z "$ml" ] || [ "$ml" -eq 0 ] 2>/dev/null && continue
+            m=$(dd if="$pkg" bs=1 skip=12 count="$ml" 2>/dev/null)
+            n=$(printf '%s' "$m" | grep '^name '    | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            v=$(printf '%s' "$m" | grep '^version ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            l=$(printf '%s' "$m" | grep '^license ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            d=$(printf '%s' "$m" | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            a=$(printf '%s' "$m" | grep '^arch '    | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            rf="packages/bootstrap/${n}/recipe.toml"
+            [ -f "$rf" ] || rf="packages/core/${n}/recipe.toml"
+            if [ -f "$rf" ]; then
+              deps=$(grep '^runtime = ' "$rf" | head -1 | sed 's/^runtime = //')
             else
-              depends_arr=$(printf '%s' "$meta" | grep '^runtime = \[' | head -1 | sed 's/^runtime = //')
+              deps=$(printf '%s' "$m" | grep '^runtime = ' | head -1 | sed 's/^runtime = //')
             fi
-            [ "$depends_arr" = "[]" ] && depends_arr=""
-
-            sha256=$(sha256sum "$pkg" | cut -d' ' -f1)
-            size_val=$(stat -c %s "$pkg" 2>/dev/null || echo 0)
-
-            [ -z "$name" ]    && name="$(echo "$pkg_base" | sed 's/-[^-]*-[^-]*\.jpkg$//')"
-            [ -z "$version" ] && version="0"
-            [ -z "$arch" ]    && arch="x86_64"
-
-            # Section key is "name-arch" so x86_64 and aarch64 packages coexist.
-            section="${name}-${arch}"
-
-            {
-              printf '[%s]\n' "$section"
-              printf 'version = "%s"\n' "$version"
-              [ -n "$license" ]     && printf 'license = "%s"\n' "$license"
-              [ -n "$desc" ]        && printf 'description = "%s"\n' "$desc"
-              printf 'arch = "%s"\n' "$arch"
-              [ -n "$depends_arr" ] && printf 'depends = %s\n' "$depends_arr"
-              [ -n "$sha256" ]      && printf 'sha256 = "%s"\n' "$sha256"
-              printf 'size = %s\n' "$size_val"
-              printf '\n'
-            } >> "$INDEX_PLAIN"
-
-            echo "  indexed: ${section}-${version}"
+            [ "$deps" = "[]" ] && deps=""
+            s=$(sha256sum "$pkg" | cut -d' ' -f1)
+            sz=$(stat -c %s "$pkg" 2>/dev/null || echo 0)
+            [ -z "$n" ] && continue
+            [ -z "$a" ] && a="x86_64"
+            printf '[%s-%s]\nversion = "%s"\n' "$n" "$a" "$v" >> "$IDX"
+            [ -n "$l" ] && printf 'license = "%s"\n' "$l" >> "$IDX"
+            [ -n "$d" ] && printf 'description = "%s"\n' "$d" >> "$IDX"
+            printf 'arch = "%s"\n' "$a" >> "$IDX"
+            [ -n "$deps" ] && printf 'depends = %s\n' "$deps" >> "$IDX"
+            printf 'sha256 = "%s"\nsize = %s\n\n' "$s" "$sz" >> "$IDX"
           done
+          zstd -19 -f -o /var/cache/jpkg/INDEX.zst "$IDX"
 
-          echo "Generated INDEX:"
-          cat "$INDEX_PLAIN"
-
-          zstd -19 -f -o "$INDEX_ZST" "$INDEX_PLAIN"
-          echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
-
-      - name: Sign INDEX.zst
+      - name: Sign INDEX
         env:
           JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
         run: |
-          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > /tmp/jpkg-sign.sec
-          chmod 600 /tmp/jpkg-sign.sec
-          jpkg sign /var/cache/jpkg/INDEX.zst --key /tmp/jpkg-sign.sec
-          rm -f /tmp/jpkg-sign.sec
-          echo "INDEX.zst.sig: $(wc -c < /var/cache/jpkg/INDEX.zst.sig) bytes"
+          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > /tmp/k.sec
+          jpkg sign /var/cache/jpkg/INDEX.zst --key /tmp/k.sec
+          rm -f /tmp/k.sec
 
-      - name: Upload INDEX.zst and signature
+      - name: Upload INDEX
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload packages \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber \
-            /var/cache/jpkg/INDEX.zst \
-            /var/cache/jpkg/INDEX.zst.sig
-          echo "INDEX.zst and INDEX.zst.sig uploaded."
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber \
+            /var/cache/jpkg/INDEX.zst /var/cache/jpkg/INDEX.zst.sig
 
-  # ── Optional: Build and push jonerix:all image ────────────────────────────
+  # ── Optional: push jonerix:all image ─────────────────────────────────────
   push-image:
-    name: Build and push jonerix:all image
+    name: Push jonerix:all image
     needs: [regenerate-index]
-    if: |
-      always() &&
-      inputs.push_image == true &&
-      needs.regenerate-index.result == 'success'
+    if: inputs.push_image && needs.regenerate-index.result == 'success'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set lowercase image ref
-        id: refs
-        run: |
-          echo "minimal=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-
-      - name: Docker metadata (all)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=all
-            type=sha,prefix=all-
-
-      - name: Build and push jonerix:all
-        uses: docker/build-push-action@v6
+      - id: refs
+        run: echo "minimal=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.all.new
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ghcr.io/stormj-uh/jonerix:all
           platforms: linux/arm64
-          build-args: |
-            MINIMAL_IMAGE=${{ steps.refs.outputs.minimal }}
+          build-args: MINIMAL_IMAGE=${{ steps.refs.outputs.minimal }}
           cache-from: type=gha,scope=all-v5
           cache-to: type=gha,mode=max,scope=all-v5
