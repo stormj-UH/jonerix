@@ -1,0 +1,62 @@
+# jpkg - jonerix package manager
+# build.ninja - builds jpkg binary using samu/ninja
+#
+# MIT License
+# Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
+#
+# Usage: samu          (or: ninja)
+#        samu clean
+#        samu install
+
+cc = clang
+cflags = -std=c11 -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration $
+         -Wno-unused-parameter -Wshadow -Wstrict-prototypes $
+         -Os -pipe $
+         -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE $
+         -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2
+ldflags = -static -fuse-ld=lld
+
+rule cc
+  command = $cc $cflags -MMD -MF $out.d -c $in -o $out
+  depfile = $out.d
+  description = CC $in
+
+rule link
+  command = $cc $in $ldflags -o $out
+  description = LINK $out
+
+build src/main.o: cc src/main.c
+build src/util.o: cc src/util.c
+build src/toml.o: cc src/toml.c
+build src/pkg.o: cc src/pkg.c
+build src/repo.o: cc src/repo.c
+build src/db.o: cc src/db.c
+build src/fetch.o: cc src/fetch.c
+build src/sign.o: cc src/sign.c
+build src/deps.o: cc src/deps.c
+build src/cmd_install.o: cc src/cmd_install.c
+build src/cmd_remove.o: cc src/cmd_remove.c
+build src/cmd_update.o: cc src/cmd_update.c
+build src/cmd_upgrade.o: cc src/cmd_upgrade.c
+build src/cmd_search.o: cc src/cmd_search.c
+build src/cmd_info.o: cc src/cmd_info.c
+build src/cmd_build.o: cc src/cmd_build.c
+build src/cmd_verify.o: cc src/cmd_verify.c
+build src/cmd_audit.o: cc src/cmd_audit.c
+build src/cmd_keygen.o: cc src/cmd_keygen.c
+build src/cmd_sign.o: cc src/cmd_sign.c
+
+build jpkg: link $
+  src/main.o src/util.o src/toml.o src/pkg.o src/repo.o $
+  src/db.o src/fetch.o src/sign.o src/deps.o $
+  src/cmd_install.o src/cmd_remove.o src/cmd_update.o $
+  src/cmd_upgrade.o src/cmd_search.o src/cmd_info.o $
+  src/cmd_build.o src/cmd_verify.o src/cmd_audit.o $
+  src/cmd_keygen.o src/cmd_sign.o
+
+default jpkg
+
+build clean: phony
+rule clean_cmd
+  command = rm -f src/*.o src/*.o.d jpkg
+build _clean: clean_cmd
