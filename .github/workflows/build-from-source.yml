@@ -66,6 +66,11 @@ jobs:
           CID=$(docker create "$IMAGE" /bin/true)
           docker export "$CID" | sudo tar -xf - -C /jonerix
           docker rm "$CID" > /dev/null
+          # Make musl-linked jonerix binaries runnable on the glibc host
+          sudo ln -sf /jonerix/lib/ld-musl-aarch64.so.1 /lib/ld-musl-aarch64.so.1
+          sudo ln -sf /jonerix/lib/libc.so /lib/ld-musl-aarch64.so.1 2>/dev/null || true
+          # Also add jonerix libs to the library search path
+          echo "/jonerix/lib" | sudo tee /etc/ld-musl-aarch64.path
           echo "Extracted jonerix:minimal to /jonerix"
           ls /jonerix/bin/ | head -10
 
