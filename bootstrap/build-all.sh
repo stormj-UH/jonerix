@@ -14,7 +14,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-set -eu
+# Note: no set -eu — toybox sh does not support it.
+# Error handling is done manually in the build loop.
 
 # =========================================================================
 # Configuration
@@ -22,7 +23,12 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RECIPE_DIR="${REPO_ROOT}/packages/bootstrap"
+# Prefer packages/bootstrap/ if it exists, fall back to packages/core/
+if [ -d "${REPO_ROOT}/packages/bootstrap" ]; then
+    RECIPE_DIR="${REPO_ROOT}/packages/bootstrap"
+else
+    RECIPE_DIR="${REPO_ROOT}/packages/core"
+fi
 ORDER_FILE="${SCRIPT_DIR}/build-order.txt"
 OUTPUT="${OUTPUT:-/var/cache/jpkg}"
 FORCE_PKG=""
@@ -106,14 +112,9 @@ if [ ! -f "$ORDER_FILE" ]; then
     exit 1
 fi
 
-# Read packages from build-order.txt (skip comments and blank lines)
-PACKAGES=""
-while IFS= read -r line; do
-    # Strip comments and whitespace
-    line=$(printf '%s' "$line" | sed 's/#.*//; s/[ 	]//g')
-    [ -z "$line" ] && continue
-    PACKAGES="$PACKAGES $line"
-done < "$ORDER_FILE"
+# Read packages from build-order.txt (skip comments and blank lines).
+# Uses sed+grep instead of while-read because toybox sh lacks 'read'.
+PACKAGES=$(sed 's/#.*//; s/[[:space:]]//g' "$ORDER_FILE" | grep -v '^$' | tr '\n' ' ')
 
 # =========================================================================
 # Build loop
