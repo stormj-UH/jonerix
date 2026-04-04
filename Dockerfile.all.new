@@ -30,7 +30,8 @@ RUN chmod 755 /bin/bsdtar && echo "jpkg $(jpkg --version 2>&1 | head -1)"
 # Separate RUN intentionally busts the cache for the main install block below
 # so the big install loop re-runs when the package repo changes.
 # Fall back gracefully if zsh not yet published (404 → continue with toybox sh).
-RUN jpkg update && jpkg install zsh && ln -sf zsh /bin/sh || true
+RUN jpkg update && jpkg install zsh; \
+    [ -x /bin/zsh ] && ln -sf zsh /bin/sh || true
 
 # Skip stale/conflicting package artifacts until they are rebuilt:
 # - libressl duplicates the current openssl package's payload

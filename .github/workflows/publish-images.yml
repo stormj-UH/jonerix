@@ -125,5 +125,5 @@ jobs:
           platforms: linux/arm64
           build-args: |
             MINIMAL_IMAGE=${{ steps.refs.outputs.minimal }}
-          cache-from: type=gha,scope=all-v4
-          cache-to: type=gha,mode=max,scope=all-v4
+          cache-from: type=gha,scope=all-v5
+          cache-to: type=gha,mode=max,scope=all-v5
