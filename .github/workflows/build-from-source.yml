@@ -112,8 +112,9 @@ jobs:
               done
 
               # ── 3. Set up build symlinks ─────────────────────────────────
-              # sh → zsh (better POSIX compatibility for build scripts)
-              [ -x /bin/zsh ] && ln -sf zsh /bin/sh || true
+              # NOTE: do NOT link sh→zsh here. zsh in sh-emulation mode
+              # hangs on nested $() command substitutions, which build-all.sh
+              # uses. Toybox sh works fine for the build scripts.
 
               # Compiler / linker aliases
               ln -sf clang       /bin/cc      2>/dev/null || true
@@ -147,7 +148,7 @@ jobs:
               # ── 5. Build all bootstrap packages ─────────────────────────
               cd /workspace
               mkdir -p /var/cache/jpkg
-              /bin/zsh /workspace/bootstrap/build-all.sh --output /var/cache/jpkg '"$DRY_RUN"'
+              /bin/toybox sh /workspace/bootstrap/build-all.sh --output /var/cache/jpkg '"$DRY_RUN"'
             '
 
       - name: List built packages
