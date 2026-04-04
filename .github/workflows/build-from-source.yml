@@ -1,0 +1,389 @@
+name: Build from source
+
+# Manually triggered only.
+# Builds ALL bootstrap packages from source in dependency order,
+# producing a fully from-source jonerix image (jonerix:all).
+#
+# Architecture input:
+#   both    → build aarch64 + x86_64 in parallel (default)
+#   aarch64 → build aarch64 only (ubuntu-24.04-arm, no QEMU)
+#   x86_64  → build x86_64 only (ubuntu-latest + Alpine container)
+#
+# After both arch jobs finish (or are skipped), the INDEX is regenerated
+# and optionally the jonerix:all image is pushed to GHCR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: 'Target architecture'
+        required: true
+        type: choice
+        options:
+          - both
+          - aarch64
+          - x86_64
+        default: both
+      push_image:
+        description: 'Push jonerix:all image to GHCR after build'
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run (show what would be built without building)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ── aarch64: native ARM64 runner + Alpine container via docker run ─────────
+  # JS GitHub Actions (checkout@v4) don't work in Alpine containers on ARM64;
+  # run bare on ubuntu-24.04-arm and exec the full build via docker run.
+  build-aarch64:
+    name: Build all packages (aarch64)
+    if: inputs.architecture == 'aarch64' || inputs.architecture == 'both'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Restore package cache (aarch64)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/jpkg-output
+          key: build-from-source-aarch64-${{ hashFiles('bootstrap/build-order.txt') }}
+          restore-keys: build-from-source-aarch64-
+
+      - name: Build all packages from source (Alpine container, aarch64)
+        env:
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          mkdir -p /tmp/jpkg-output
+          docker run --rm --privileged \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "/tmp/jpkg-output:/var/cache/jpkg" \
+            -w /workspace \
+            alpine:latest /bin/sh -c '
+              set -e
+              apk update -q
+              apk add -q \
+                clang lld musl-dev make \
+                curl patch tar xz bash \
+                zstd-dev zstd-static \
+                linux-headers git \
+                cmake samurai \
+                ncurses-dev openssl-dev \
+                zlib-dev byacc m4 meson \
+                python3 perl github-cli
+              ln -sf /usr/bin/samu /usr/local/bin/ninja
+
+              cd /workspace/packages/jpkg
+              make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+              install -m 755 jpkg /usr/local/bin/jpkg
+
+              cd /workspace
+              sh bootstrap/build-all.sh --output /var/cache/jpkg '"$DRY_RUN"'
+            '
+
+      - name: List built packages
+        run: ls -lh /tmp/jpkg-output/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Upload packages to release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=0
+          for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          gh release upload packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            /tmp/jpkg-output/*.jpkg
+          echo "Uploaded $count package(s) (aarch64)."
+
+      - name: Upload packages as artifacts
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-aarch64
+          path: /tmp/jpkg-output/*.jpkg
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ── x86_64: runs directly inside Alpine container ─────────────────────────
+  build-x86_64:
+    name: Build all packages (x86_64)
+    if: inputs.architecture == 'x86_64' || inputs.architecture == 'both'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    container:
+      image: alpine:latest
+      options: --privileged
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Restore package cache (x86_64)
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/jpkg
+          key: build-from-source-x86_64-${{ hashFiles('bootstrap/build-order.txt') }}
+          restore-keys: build-from-source-x86_64-
+
+      - name: Install build dependencies
+        run: |
+          apk update -q
+          apk add -q \
+            clang lld musl-dev make \
+            curl patch tar xz bash \
+            zstd-dev zstd-static \
+            linux-headers git \
+            cmake samurai \
+            ncurses-dev openssl-dev \
+            zlib-dev byacc m4 meson \
+            python3 perl github-cli
+          ln -sf /usr/bin/samu /usr/local/bin/ninja
+
+      - name: Build jpkg
+        run: |
+          cd packages/jpkg
+          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          install -m 755 jpkg /usr/local/bin/jpkg
+
+      - name: Build all packages from source
+        run: |
+          mkdir -p /var/cache/jpkg
+          DRY_RUN_FLAG=""
+          [ "${{ inputs.dry_run }}" = "true" ] && DRY_RUN_FLAG="--dry-run"
+          sh bootstrap/build-all.sh --output /var/cache/jpkg $DRY_RUN_FLAG
+
+      - name: List built packages
+        run: ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Upload packages to release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=0
+          for pkg in /var/cache/jpkg/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          [ "$count" -eq 0 ] && { echo "No packages built."; exit 0; }
+          gh release upload packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            /var/cache/jpkg/*.jpkg
+          echo "Uploaded $count package(s) (x86_64)."
+
+      - name: Upload packages as artifacts
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-x86_64
+          path: /var/cache/jpkg/*.jpkg
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ── Regenerate combined INDEX from all uploaded packages ──────────────────
+  # Runs even when one arch is skipped (if: always() + result checks).
+  # Only skips if BOTH build jobs were skipped (i.e. dry_run or no arch selected).
+  regenerate-index:
+    name: Regenerate package INDEX
+    needs: [build-aarch64, build-x86_64]
+    if: |
+      always() &&
+      !inputs.dry_run &&
+      (
+        needs.build-aarch64.result == 'success' ||
+        needs.build-x86_64.result == 'success'
+      ) &&
+      !(needs.build-aarch64.result == 'skipped' && needs.build-x86_64.result == 'skipped')
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+      options: --privileged
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: apk add --no-cache clang lld musl-dev make curl github-cli zstd
+
+      - name: Build jpkg (for sign subcommand)
+        run: |
+          cd packages/jpkg
+          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          install -m 755 jpkg /usr/local/bin/jpkg
+          jpkg --version || true
+
+      - name: Download all packages from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /var/cache/jpkg
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.jpkg" \
+            --dir /var/cache/jpkg 2>/dev/null || true
+          echo "Downloaded packages:"
+          ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Generate INDEX.zst
+        run: |
+          set -e
+          INDEX_PLAIN=/var/cache/jpkg/INDEX
+          INDEX_ZST=/var/cache/jpkg/INDEX.zst
+
+          printf '[meta]\ntimestamp = "%s"\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$INDEX_PLAIN"
+
+          for pkg in /var/cache/jpkg/*.jpkg; do
+            [ -f "$pkg" ] || continue
+            pkg_base="$(basename "$pkg")"
+
+            meta_len=$(dd if="$pkg" bs=1 skip=8 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n')
+            if [ -z "$meta_len" ] || [ "$meta_len" -eq 0 ] 2>/dev/null; then
+              echo "WARNING: could not read metadata from $pkg_base, skipping"
+              continue
+            fi
+
+            meta=$(dd if="$pkg" bs=1 skip=12 count="$meta_len" 2>/dev/null)
+
+            name=$(printf '%s' "$meta"    | grep '^name '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            version=$(printf '%s' "$meta" | grep '^version '     | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            license=$(printf '%s' "$meta" | grep '^license '     | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            arch=$(printf '%s' "$meta"    | grep '^arch '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            # Prefer bootstrap recipe (source of truth) for depends; fall back to .jpkg metadata
+            recipe_file="${GITHUB_WORKSPACE}/packages/bootstrap/${name}/recipe.toml"
+            if [ ! -f "$recipe_file" ]; then
+              recipe_file="${GITHUB_WORKSPACE}/packages/core/${name}/recipe.toml"
+            fi
+            if [ -f "$recipe_file" ]; then
+              depends_arr=$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')
+            else
+              depends_arr=$(printf '%s' "$meta" | grep '^runtime = \[' | head -1 | sed 's/^runtime = //')
+            fi
+            [ "$depends_arr" = "[]" ] && depends_arr=""
+
+            sha256=$(sha256sum "$pkg" | cut -d' ' -f1)
+            size_val=$(stat -c %s "$pkg" 2>/dev/null || echo 0)
+
+            [ -z "$name" ]    && name="$(echo "$pkg_base" | sed 's/-[^-]*-[^-]*\.jpkg$//')"
+            [ -z "$version" ] && version="0"
+            [ -z "$arch" ]    && arch="x86_64"
+
+            # Section key is "name-arch" so x86_64 and aarch64 packages coexist.
+            section="${name}-${arch}"
+
+            {
+              printf '[%s]\n' "$section"
+              printf 'version = "%s"\n' "$version"
+              [ -n "$license" ]     && printf 'license = "%s"\n' "$license"
+              [ -n "$desc" ]        && printf 'description = "%s"\n' "$desc"
+              printf 'arch = "%s"\n' "$arch"
+              [ -n "$depends_arr" ] && printf 'depends = %s\n' "$depends_arr"
+              [ -n "$sha256" ]      && printf 'sha256 = "%s"\n' "$sha256"
+              printf 'size = %s\n' "$size_val"
+              printf '\n'
+            } >> "$INDEX_PLAIN"
+
+            echo "  indexed: ${section}-${version}"
+          done
+
+          echo "Generated INDEX:"
+          cat "$INDEX_PLAIN"
+
+          zstd -19 -f -o "$INDEX_ZST" "$INDEX_PLAIN"
+          echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
+
+      - name: Sign INDEX.zst
+        env:
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
+        run: |
+          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > /tmp/jpkg-sign.sec
+          chmod 600 /tmp/jpkg-sign.sec
+          jpkg sign /var/cache/jpkg/INDEX.zst --key /tmp/jpkg-sign.sec
+          rm -f /tmp/jpkg-sign.sec
+          echo "INDEX.zst.sig: $(wc -c < /var/cache/jpkg/INDEX.zst.sig) bytes"
+
+      - name: Upload INDEX.zst and signature
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            /var/cache/jpkg/INDEX.zst \
+            /var/cache/jpkg/INDEX.zst.sig
+          echo "INDEX.zst and INDEX.zst.sig uploaded."
+
+  # ── Optional: Build and push jonerix:all image ────────────────────────────
+  push-image:
+    name: Build and push jonerix:all image
+    needs: [regenerate-index]
+    if: |
+      always() &&
+      inputs.push_image == true &&
+      needs.regenerate-index.result == 'success'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set lowercase image ref
+        id: refs
+        run: |
+          echo "minimal=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Docker metadata (all)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=all
+            type=sha,prefix=all-
+
+      - name: Build and push jonerix:all
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.all.new
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          build-args: |
+            MINIMAL_IMAGE=${{ steps.refs.outputs.minimal }}
+          cache-from: type=gha,scope=all-v5
+          cache-to: type=gha,mode=max,scope=all-v5
