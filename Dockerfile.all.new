@@ -6,9 +6,17 @@
 # Build (x86_64):  docker build -f Dockerfile.all.new --tag jonerix:all-new --platform linux/amd64 .
 
 ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
+
+# Stage 0: Build jpkg from source in Alpine
+FROM alpine:latest AS jpkg-builder
+RUN apk add --no-cache clang lld musl-dev make zstd-dev
+COPY packages/jpkg/ /build/jpkg/
+RUN cd /build/jpkg && make CC=clang LDFLAGS="-static -fuse-ld=lld" && strip jpkg
+
+# Stage 1: Build the all image from minimal
 FROM ${MINIMAL_IMAGE}
 
-COPY packages/jpkg/jpkg /bin/jpkg
+COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
 # Bootstrap bsdtar: minimal has /bin/tar→bsdtar but no bsdtar binary
 # (core bsdtar is a metadata stub; the real binary comes from libarchive).
