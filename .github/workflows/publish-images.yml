@@ -41,7 +41,7 @@ jobs:
           context: .
           file: Dockerfile.minimal
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal-arm64
+          tags: ghcr.io/stormj-uh/jonerix:minimal-arm64
           platforms: linux/arm64
           build-args: |
             BUILDER=ghcr.io/stormj-uh/jonerix:minimal
@@ -73,7 +73,7 @@ jobs:
           context: .
           file: Dockerfile.minimal
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal-amd64
+          tags: ghcr.io/stormj-uh/jonerix:minimal-amd64
           platforms: linux/amd64
           build-args: |
             BUILDER=alpine:latest
@@ -89,7 +89,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal
+      image: ghcr.io/stormj-uh/jonerix:minimal
     steps:
       - uses: docker/login-action@v3
         with:
@@ -99,9 +99,9 @@ jobs:
 
       - name: Create and push multi-arch manifest
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ghcr.io/stormj-uh/jonerix
         run: |
-          IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          IMAGE_LC="$IMAGE"
           docker manifest create "${IMAGE_LC}:minimal" \
             "${IMAGE_LC}:minimal-arm64" \
             "${IMAGE_LC}:minimal-amd64"
@@ -133,10 +133,10 @@ jobs:
           context: .
           file: Dockerfile.all.new
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:all-arm64
+          tags: ghcr.io/stormj-uh/jonerix:all-arm64
           platforms: linux/arm64
           build-args: |
-            MINIMAL_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal-arm64
+            MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal-arm64
           cache-from: type=gha,scope=all-arm64
           cache-to: type=gha,mode=max,scope=all-arm64
 
@@ -162,10 +162,10 @@ jobs:
           context: .
           file: Dockerfile.all.new
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:all-amd64
+          tags: ghcr.io/stormj-uh/jonerix:all-amd64
           platforms: linux/amd64
           build-args: |
-            MINIMAL_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal-amd64
+            MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal-amd64
           cache-from: type=gha,scope=all-amd64
           cache-to: type=gha,mode=max,scope=all-amd64
 
@@ -186,9 +186,9 @@ jobs:
 
       - name: Create and push multi-arch manifest
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ghcr.io/stormj-uh/jonerix
         run: |
-          IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          IMAGE_LC="$IMAGE"
           docker manifest create "${IMAGE_LC}:all" \
             "${IMAGE_LC}:all-arm64" \
             "${IMAGE_LC}:all-amd64"
@@ -197,9 +197,9 @@ jobs:
 
       - name: Image sizes
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ghcr.io/stormj-uh/jonerix
         run: |
-          IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          IMAGE_LC="$IMAGE"
           for tag in minimal all; do
             echo "=== ${tag} ==="
             docker manifest inspect "${IMAGE_LC}:${tag}" 2>/dev/null | \
