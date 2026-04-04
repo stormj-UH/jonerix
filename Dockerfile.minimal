@@ -15,10 +15,19 @@
 #
 # Build: docker build -f Dockerfile.minimal --tag jonerix-minimal:latest .
 
-# ============================================================
-# Stage 0: Download + install packages using existing jonerix
-# ============================================================
 ARG BUILDER=ghcr.io/stormj-uh/jonerix:minimal
+
+# ============================================================
+# Stage 0: Build jpkg from source in Alpine
+# ============================================================
+FROM alpine:latest AS jpkg-builder
+RUN apk add --no-cache clang lld musl-dev make zstd-dev
+COPY packages/jpkg/ /build/jpkg/
+RUN cd /build/jpkg && make CC=clang LDFLAGS="-static -fuse-ld=lld" && strip jpkg
+
+# ============================================================
+# Stage 1: Download + install packages using existing jonerix
+# ============================================================
 FROM ${BUILDER} AS rootfs
 
 # Create rootfs skeleton
@@ -48,9 +57,8 @@ COPY config/defaults/etc/jpkg/keys/ /jonerix/etc/jpkg/keys/
 RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/download/packages"\n' \
         > /jonerix/etc/jpkg/repos.conf
 
-# Use the fixed local jpkg binary — the BUILDER image's jpkg has a pipe
-# deadlock bug in the extraction path that causes jpkg install to hang.
-COPY packages/jpkg/jpkg /bin/jpkg
+# Use freshly built jpkg — the BUILDER image's jpkg may have bugs.
+COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
 # Install the bundled static bsdtar instead of the current repository bsdtar package,
 # whose published artifact still links against unavailable OpenSSL 3 symbols.
@@ -104,8 +112,8 @@ FROM scratch
 
 COPY --from=rootfs /jonerix/ /
 
-# Pre-built static jpkg binary (arm64, statically linked)
-COPY packages/jpkg/jpkg /bin/jpkg
+# Freshly built static jpkg binary
+COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
 ENV PATH=/bin
 ENV HOME=/root
