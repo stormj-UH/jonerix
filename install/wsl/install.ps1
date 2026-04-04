@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Install jonerix as a WSL2 distribution on Windows.
@@ -215,7 +215,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Success "Distribution started: $uname"
 } else {
     Write-Warn "Smoke test failed — the distro may need a WSL restart."
-    Write-Warn "Try: wsl --shutdown && wsl -d $DistroName"
+    Write-Warn "Try: wsl --shutdown; wsl -d $DistroName"
 }
 
 # ---------------------------------------------------------------------------
@@ -228,7 +228,7 @@ Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 # ---------------------------------------------------------------------------
 Write-Header "Installation complete"
 
-Write-Host @"
+$msg = @"
 
 jonerix has been installed as a WSL2 distribution named '$DistroName'.
 
@@ -240,14 +240,15 @@ Getting started:
     jpkg update
 
   Install packages:
-    jpkg install <package>
+    jpkg install [package]
 
   Search for packages:
-    jpkg search <query>
+    jpkg search [query]
 
   Set as default WSL distribution (optional):
     wsl --set-default $DistroName
 
 Installation directory: $InstallDir
 
-"@ -ForegroundColor White
+"@
+Write-Host $msg -ForegroundColor White
