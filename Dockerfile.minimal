@@ -15,7 +15,7 @@
 #
 # Build: docker build -f Dockerfile.minimal --tag jonerix-minimal:latest .
 
-ARG BUILDER=alpine:latest
+ARG BUILDER=ghcr.io/stormj-uh/jonerix:minimal
 
 # ============================================================
 # Stage 0: Build jpkg from source in Alpine
