@@ -144,7 +144,7 @@ jobs:
           tags: ${{ env.IMAGE }}:all-amd64
           platforms: linux/amd64
           build-args: |
-            MINIMAL_IMAGE=${{ env.IMAGE }}:minimal-amd64
+            MINIMAL_IMAGE=alpine:latest
           cache-from: type=gha,scope=all-amd64
           cache-to: type=gha,mode=max,scope=all-amd64
 
