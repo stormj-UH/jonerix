@@ -14,7 +14,9 @@ cflags = -std=c11 -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration
          -Os -pipe $
          -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE $
          -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2
-ldflags = -static -fuse-ld=lld
+# Default: jonerix static linking (no GCC CRT available).
+# Override with LDFLAGS env var for Alpine builds.
+ldflags = -static -fuse-ld=lld --rtlib=compiler-rt --unwindlib=none
 
 rule cc
   command = $cc $cflags -MMD -MF $out.d -c $in -o $out
@@ -22,7 +24,7 @@ rule cc
   description = CC $in
 
 rule link
-  command = $cc $in $ldflags -o $out
+  command = $cc $in $ldflags -o $out 2>/dev/null || $cc $in -static -fuse-ld=lld -o $out
   description = LINK $out
 
 build src/main.o: cc src/main.c
