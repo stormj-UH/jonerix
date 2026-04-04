@@ -138,7 +138,10 @@ jobs:
               ln -sf bsdtar  /bin/tar    2>/dev/null || true
               ln -sf python3 /bin/python 2>/dev/null || true
 
-              # ── 4. Verify jpkg (already installed via jpkg install jpkg) ─
+              # ── 4. Build jpkg from source using samu (ninja-compatible) ─
+              cd /workspace/packages/jpkg
+              samu
+              install -m 755 jpkg /bin/jpkg
               jpkg --version || true
 
               # ── 5. Build all bootstrap packages ─────────────────────────
@@ -215,7 +218,7 @@ jobs:
       - name: Build jpkg
         run: |
           cd packages/jpkg
-          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          samu
           install -m 755 jpkg /usr/local/bin/jpkg
 
       - name: Build all packages from source
@@ -277,12 +280,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install tools
-        run: apk add --no-cache clang lld musl-dev make curl github-cli zstd
+        run: apk add --no-cache clang lld musl-dev samurai curl github-cli zstd
 
       - name: Build jpkg (for sign subcommand)
         run: |
           cd packages/jpkg
-          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          samu
           install -m 755 jpkg /usr/local/bin/jpkg
           jpkg --version || true
 

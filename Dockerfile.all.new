@@ -9,9 +9,9 @@ ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
 
 # Stage 0: Build jpkg from source in Alpine
 FROM alpine:latest AS jpkg-builder
-RUN apk add --no-cache clang lld musl-dev make zstd-dev
+RUN apk add --no-cache clang lld musl-dev samurai zstd-dev
 COPY packages/jpkg/ /build/jpkg/
-RUN cd /build/jpkg && make CC=clang LDFLAGS="-static -fuse-ld=lld" && strip jpkg
+RUN cd /build/jpkg && samu && strip jpkg
 
 # Build bsdtar from Alpine libarchive (arch-neutral)
 RUN apk add --no-cache libarchive-tools && cp /usr/bin/bsdtar /build/bsdtar && chmod 755 /build/bsdtar
