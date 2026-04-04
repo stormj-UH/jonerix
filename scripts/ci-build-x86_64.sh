@@ -1,5 +1,5 @@
 #!/bin/zsh
-# ci-build-aarch64.sh â€” Run inside ghcr.io/stormj-uh/jonerix:all container
+# ci-build-x86_64.sh â€” Run inside ghcr.io/stormj-uh/jonerix:all container
 # Mounts: /workspace (repo), /var/cache/jpkg (output), /var/cache/jpkg-published, /jpkg-bin
 # Env: PKG_INPUT (optional package name to force-build)
 set -e
@@ -34,7 +34,7 @@ fi
 # CLANG_CONFIG_FILE_SYSTEM_DIR is unset. cmake-based recipes must pass
 # -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY and explicit linker flags
 # to avoid the missing crtbeginS.o / libgcc failure.
-CLANG_TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "aarch64-jonerix-linux-musl")
+CLANG_TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "x86_64-jonerix-linux-musl")
 CLANG_CFG="/etc/clang/${CLANG_TRIPLE}.cfg"
 if [ ! -f "$CLANG_CFG" ]; then
     mkdir -p /etc/clang
@@ -49,8 +49,14 @@ fi
 # container's dynamic bsdtar is broken, restore the static fallback before jpkg tries
 # to extract sources.
 if ! bsdtar --version >/dev/null 2>&1; then
-    if [ -x /workspace/tools/bsdtar-static-aarch64 ]; then
-        install -m 755 /workspace/tools/bsdtar-static-aarch64 /bin/bsdtar
+    if [ -x /workspace/tools/bsdtar-static-x86_64 ]; then
+    elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache libarchive-tools 2>/dev/null || true
+        echo "bsdtar: installed from Alpine packages"
+        install -m 755 /workspace/tools/bsdtar-static-x86_64 /bin/bsdtar
+    elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache libarchive-tools 2>/dev/null || true
+        echo "bsdtar: installed from Alpine packages"
         echo "bsdtar: restored static fallback (dynamic libarchive artifact expects OpenSSL 3)"
     fi
 fi
@@ -68,7 +74,7 @@ else
         pkg_dir="$(dirname "$recipe")"
         pkg_name="$(basename "$pkg_dir")"
         pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-        expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-aarch64.jpkg"
+        expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-x86_64.jpkg"
         legacy="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
         if [ -f "$expected" ] || [ -f "$legacy" ]; then
             echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
@@ -79,5 +85,5 @@ else
     done
 fi
 
-echo "Built/cached packages (aarch64):"
+echo "Built/cached packages (x86_64):"
 ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"

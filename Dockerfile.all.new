@@ -13,17 +13,16 @@ RUN apk add --no-cache clang lld musl-dev make zstd-dev
 COPY packages/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && make CC=clang LDFLAGS="-static -fuse-ld=lld" && strip jpkg
 
+# Build bsdtar from Alpine libarchive (arch-neutral)
+RUN apk add --no-cache libarchive-tools && cp /usr/bin/bsdtar /build/bsdtar && chmod 755 /build/bsdtar
+
 # Stage 1: Build the all image from minimal
 FROM ${MINIMAL_IMAGE}
 
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
-# Bootstrap bsdtar: minimal has /bin/tar→bsdtar but no bsdtar binary
-# (core bsdtar is a metadata stub; the real binary comes from libarchive).
-# Install a pre-built static bsdtar (libarchive 3.8.6, no OpenSSL) so that
-# PAX-format archives (LLVM) extract correctly. Depends only on musl+zlib+zstd
-# which are all present in the minimal image.
-COPY tools/bsdtar-static-aarch64 /bin/bsdtar
+# Bootstrap bsdtar from Alpine build (arch-neutral, no prebuilt binary needed).
+COPY --from=jpkg-builder /build/bsdtar /bin/bsdtar
 RUN chmod 755 /bin/bsdtar && echo "jpkg $(jpkg --version 2>&1 | head -1)"
 
 # Install zsh first — required as shell for jpkg build steps (commit a588005).
