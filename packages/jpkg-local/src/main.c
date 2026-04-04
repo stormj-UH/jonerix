@@ -2,7 +2,7 @@
  * jpkg-local - jpkg subcommand for local .jpkg install and recipe builds
  *
  * MIT License
- * Copyright (c) 2026 jonerix contributors
+ * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
  *
  * Usage:
  *   jpkg-local install <file.jpkg|url|-> [--root <dir>]
@@ -834,7 +834,7 @@ cleanup:
 
 static void print_usage(void) {
     printf("jpkg-local - install .jpkg files and build recipes from any source\n");
-    printf("MIT License - Copyright (c) 2026 jonerix contributors\n\n");
+    printf("MIT License - Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software\n\n");
     printf("Usage:\n");
     printf("  jpkg local install <file.jpkg|url|-> [--root <dir>]\n");
     printf("  jpkg local build   <recipe-dir|recipe.toml|url|-> [--output <dir>] [--build-jpkg]\n");

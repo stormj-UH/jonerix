@@ -3,7 +3,7 @@
  * util.c - Shared utilities (logging, error handling, memory, crypto)
  *
  * MIT License
- * Copyright (c) 2026 jonerix contributors
+ * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
  */
 
 #include "util.h"
