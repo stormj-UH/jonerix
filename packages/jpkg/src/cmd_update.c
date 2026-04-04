@@ -3,7 +3,7 @@
  * cmd_update.c - jpkg update: fetch INDEX.zst from mirrors, verify signature
  *
  * MIT License
- * Copyright (c) 2026 jonerix contributors
+ * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
  */
 
 #include "repo.h"

@@ -3,7 +3,7 @@
  * toml.c - Minimal TOML parser for package metadata
  *
  * MIT License
- * Copyright (c) 2026 jonerix contributors
+ * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
  *
  * Supports the subset of TOML used by jpkg:
  *   - [section] headers
