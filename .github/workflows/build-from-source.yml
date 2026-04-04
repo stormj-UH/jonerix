@@ -138,16 +138,13 @@ jobs:
               ln -sf bsdtar  /bin/tar    2>/dev/null || true
               ln -sf python3 /bin/python 2>/dev/null || true
 
-              # ── 4. Build jpkg from source ────────────────────────────────
-              cd /workspace/packages/jpkg
-              make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
-              install -m 755 jpkg /bin/jpkg
+              # ── 4. Verify jpkg (already installed via jpkg install jpkg) ─
               jpkg --version || true
 
               # ── 5. Build all bootstrap packages ─────────────────────────
               cd /workspace
               mkdir -p /var/cache/jpkg
-              sh bootstrap/build-all.sh --output /var/cache/jpkg '"$DRY_RUN"'
+              /bin/zsh /workspace/bootstrap/build-all.sh --output /var/cache/jpkg '"$DRY_RUN"'
             '
 
       - name: List built packages
