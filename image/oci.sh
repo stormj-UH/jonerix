@@ -23,7 +23,7 @@ OUTPUT="${2:-jonerix-oci.tar}"
 TAG="${3:-jonerix:latest}"
 
 # OCI image metadata
-AUTHOR="jonerix contributors"
+AUTHOR="Jon-Erik G. Storm, Inc. DBA Lava Goat Software"
 ARCH="${JONERIX_ARCH:-amd64}"
 OS="linux"
 CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '2026-01-01T00:00:00Z')"

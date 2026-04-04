@@ -3,7 +3,7 @@
  * main.c - Entry point, command dispatch
  *
  * MIT License
- * Copyright (c) 2026 jonerix contributors
+ * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
  */
 
 #include "util.h"
@@ -60,7 +60,7 @@ static const command_t commands[] = {
 
 static void print_version(void) {
     printf("jpkg %s - jonerix package manager\n", JPKG_VERSION);
-    printf("MIT License - Copyright (c) 2026 jonerix contributors\n");
+    printf("MIT License - Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software\n");
 }
 
 static void print_usage(void) {

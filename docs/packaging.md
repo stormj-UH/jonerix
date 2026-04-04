@@ -141,7 +141,7 @@ version = "0.8.11"
 license = "0BSD"
 description = "BSD-licensed replacement for BusyBox"
 arch = "x86_64"
-maintainer = "jonerix contributors"
+maintainer = "Jon-Erik G. Storm, Inc. DBA Lava Goat Software"
 url = "https://github.com/landley/toybox"
 
 [depends]
