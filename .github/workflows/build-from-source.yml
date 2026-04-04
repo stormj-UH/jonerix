@@ -88,7 +88,7 @@ jobs:
         run: |
           mkdir -p /tmp/jpkg-output
 
-          docker run --rm --privileged \
+          docker run --rm --privileged --memory=14g \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -e "DRY_RUN_FLAG=$DRY_RUN" \
