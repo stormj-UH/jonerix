@@ -99,50 +99,47 @@ jobs:
               jpkg update
 
               # ── 2. Install build toolchain from prebuilt packages ───────
-              # Install packages one-by-one so a single failure is visible.
-              for pkg in \
-                llvm cmake bmake samurai \
-                flex bc byacc perl python3 pip \
-                zsh ncurses \
-                zlib xz zstd lz4 \
-                curl bsdtar; \
-              do
-                echo "jpkg install $pkg"
-                jpkg install "$pkg" || echo "WARN: $pkg install failed (may already be present)"
-              done
-
-              # ── 3. Set up build symlinks ─────────────────────────────────
-              # NOTE: do NOT link sh→zsh here. zsh in sh-emulation mode
-              # hangs on nested $() command substitutions, which build-all.sh
-              # uses. Toybox sh works fine for the build scripts.
-
-              # Compiler / linker aliases
-              ln -sf clang       /bin/cc      2>/dev/null || true
-              ln -sf clang++     /bin/c++     2>/dev/null || true
-              ln -sf ld.lld      /bin/ld      2>/dev/null || true
-
-              # LLVM tool aliases (llvm-ar, llvm-nm, etc.)
-              LLVM_BIN=
-              for d in /lib/llvm*/bin; do [ -d "$d" ] && LLVM_BIN="$d" && break; done
-              if [ -n "$LLVM_BIN" ]; then
-                for tool in ar nm ranlib strip objcopy objdump readelf; do
-                  ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool"       2>/dev/null || true
-                  ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool"  2>/dev/null || true
+              if [ -z "$DRY_RUN_FLAG" ]; then
+                # Full build: install everything including LLVM (~500MB)
+                for pkg in \
+                  llvm cmake bmake samurai \
+                  flex bc byacc perl python3 pip \
+                  zsh ncurses \
+                  zlib xz zstd lz4 \
+                  curl bsdtar; \
+                do
+                  echo "jpkg install $pkg"
+                  jpkg install "$pkg" || echo "WARN: $pkg install failed"
                 done
+              else
+                echo "Dry run — skipping toolchain install"
               fi
 
-              # Build-tool aliases
-              ln -sf bmake   /bin/make   2>/dev/null || true
-              ln -sf samu    /bin/ninja  2>/dev/null || true
-              ln -sf byacc   /bin/yacc   2>/dev/null || true
-              ln -sf flex    /bin/lex    2>/dev/null || true
-              ln -sf bsdtar  /bin/tar    2>/dev/null || true
-              ln -sf python3 /bin/python 2>/dev/null || true
+              # ── 3. Set up build symlinks ─────────────────────────────────
+              if [ -z "$DRY_RUN_FLAG" ]; then
+                ln -sf clang       /bin/cc      2>/dev/null || true
+                ln -sf clang++     /bin/c++     2>/dev/null || true
+                ln -sf ld.lld      /bin/ld      2>/dev/null || true
+                LLVM_BIN=
+                for d in /lib/llvm*/bin; do [ -d "$d" ] && LLVM_BIN="$d" && break; done
+                if [ -n "$LLVM_BIN" ]; then
+                  for tool in ar nm ranlib strip objcopy objdump readelf; do
+                    ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool"       2>/dev/null || true
+                    ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool"  2>/dev/null || true
+                  done
+                fi
+                ln -sf bmake   /bin/make   2>/dev/null || true
+                ln -sf samu    /bin/ninja  2>/dev/null || true
+                ln -sf byacc   /bin/yacc   2>/dev/null || true
+                ln -sf flex    /bin/lex    2>/dev/null || true
+                ln -sf bsdtar  /bin/tar    2>/dev/null || true
+                ln -sf python3 /bin/python 2>/dev/null || true
 
-              # ── 4. Build jpkg from source using samu (ninja-compatible) ─
-              cd /workspace/packages/jpkg
-              samu
-              install -m 755 jpkg /bin/jpkg
+                # ── 4. Build jpkg from source ─────────────────────────────
+                cd /workspace/packages/jpkg
+                samu
+                install -m 755 jpkg /bin/jpkg
+              fi
               jpkg --version || true
 
               # ── 5. Build all bootstrap packages ─────────────────────────
