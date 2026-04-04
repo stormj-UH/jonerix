@@ -68,6 +68,8 @@ COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
 # Install bsdtar from Alpine libarchive (arch-neutral, no prebuilt binary needed).
 COPY --from=jpkg-builder /build/bsdtar /jonerix/bin/bsdtar
+# Also install on builder PATH so jpkg can extract packages
+COPY --from=jpkg-builder /build/bsdtar /bin/bsdtar
 
 # Install all packages via jpkg (jonerix building jonerix)
 # No mksh â€” toybox provides /bin/sh (POSIX shell)
