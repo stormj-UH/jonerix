@@ -3,7 +3,7 @@
  * sign.c - Ed25519 signature verification using tweetnacl
  *
  * MIT License
- * Copyright (c) 2026 jonerix contributors
+ * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
  *
  * This file embeds a minimal Ed25519 implementation derived from
  * tweetnacl (public domain, Daniel J. Bernstein et al.).
