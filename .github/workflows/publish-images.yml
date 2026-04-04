@@ -12,18 +12,15 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE: ghcr.io/stormj-uh/jonerix
 
 jobs:
-  # ── Build minimal for arm64 (uses existing jonerix:minimal as BUILDER) ────
   minimal-arm64:
     name: Build minimal (arm64)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -33,30 +30,25 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push minimal (arm64)
-        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.minimal
           push: true
-          tags: ghcr.io/stormj-uh/jonerix:minimal-arm64
+          tags: ${{ env.IMAGE }}:minimal-arm64
           platforms: linux/arm64
           build-args: |
             BUILDER=ghcr.io/stormj-uh/jonerix:minimal
           cache-from: type=gha,scope=minimal-arm64
           cache-to: type=gha,mode=max,scope=minimal-arm64
 
-  # ── Build minimal for amd64 (bootstrap from Alpine — no prior amd64 image) ─
   minimal-amd64:
     name: Build minimal (amd64)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -65,22 +57,19 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push minimal (amd64)
-        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.minimal
           push: true
-          tags: ghcr.io/stormj-uh/jonerix:minimal-amd64
+          tags: ${{ env.IMAGE }}:minimal-amd64
           platforms: linux/amd64
           build-args: |
             BUILDER=alpine:latest
           cache-from: type=gha,scope=minimal-amd64
           cache-to: type=gha,mode=max,scope=minimal-amd64
 
-  # ── Merge minimal into a single multi-arch manifest ───────────────────────
   minimal-manifest:
     name: Merge minimal manifest
     needs: [minimal-arm64, minimal-amd64]
@@ -88,28 +77,20 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ghcr.io/stormj-uh/jonerix:minimal
     steps:
+      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create and push multi-arch manifest
-        env:
-          IMAGE: ghcr.io/stormj-uh/jonerix
+      - name: Create multi-arch manifest
         run: |
-          IMAGE_LC="$IMAGE"
-          docker manifest create "${IMAGE_LC}:minimal" \
-            "${IMAGE_LC}:minimal-arm64" \
-            "${IMAGE_LC}:minimal-amd64"
-          docker manifest push "${IMAGE_LC}:minimal"
-          echo "Pushed multi-arch manifest: ${IMAGE_LC}:minimal"
+          docker buildx imagetools create \
+            -t ${{ env.IMAGE }}:minimal \
+            ${{ env.IMAGE }}:minimal-arm64 \
+            ${{ env.IMAGE }}:minimal-amd64
 
-  # ── Build jonerix:all for both arches ─────────────────────────────────────
-  # Uses the per-arch minimal images as base (Dockerfile.all.new FROM minimal).
   all-arm64:
     name: Build all (arm64)
     needs: minimal-manifest
@@ -126,17 +107,16 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push all (arm64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.all.new
           push: true
-          tags: ghcr.io/stormj-uh/jonerix:all-arm64
+          tags: ${{ env.IMAGE }}:all-arm64
           platforms: linux/arm64
           build-args: |
-            MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal-arm64
+            MINIMAL_IMAGE=${{ env.IMAGE }}:minimal-arm64
           cache-from: type=gha,scope=all-arm64
           cache-to: type=gha,mode=max,scope=all-arm64
 
@@ -155,21 +135,19 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push all (amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.all.new
           push: true
-          tags: ghcr.io/stormj-uh/jonerix:all-amd64
+          tags: ${{ env.IMAGE }}:all-amd64
           platforms: linux/amd64
           build-args: |
-            MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal-amd64
+            MINIMAL_IMAGE=${{ env.IMAGE }}:minimal-amd64
           cache-from: type=gha,scope=all-amd64
           cache-to: type=gha,mode=max,scope=all-amd64
 
-  # ── Merge all into a single multi-arch manifest ───────────────────────────
   all-manifest:
     name: Merge all manifest
     needs: [all-arm64, all-amd64]
@@ -178,37 +156,15 @@ jobs:
       contents: read
       packages: write
     steps:
+      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create and push multi-arch manifest
-        env:
-          IMAGE: ghcr.io/stormj-uh/jonerix
+      - name: Create multi-arch manifest
         run: |
-          IMAGE_LC="$IMAGE"
-          docker manifest create "${IMAGE_LC}:all" \
-            "${IMAGE_LC}:all-arm64" \
-            "${IMAGE_LC}:all-amd64"
-          docker manifest push "${IMAGE_LC}:all"
-          echo "Pushed multi-arch manifest: ${IMAGE_LC}:all"
-
-      - name: Image sizes
-        env:
-          IMAGE: ghcr.io/stormj-uh/jonerix
-        run: |
-          IMAGE_LC="$IMAGE"
-          for tag in minimal all; do
-            echo "=== ${tag} ==="
-            docker manifest inspect "${IMAGE_LC}:${tag}" 2>/dev/null | \
-              python3 -c "
-          import json,sys
-          m = json.load(sys.stdin)
-          for p in m.get('manifests', []):
-              sz = p.get('size', 0)
-              plat = p.get('platform', {})
-              print(f\"  {plat.get('os','?')}/{plat.get('architecture','?')}: {sz/1024/1024:.1f} MB\")
-          " || echo "  (manifest not available)"
-          done
+          docker buildx imagetools create \
+            -t ${{ env.IMAGE }}:all \
+            ${{ env.IMAGE }}:all-arm64 \
+            ${{ env.IMAGE }}:all-amd64
