@@ -91,9 +91,9 @@ jobs:
           docker run --rm --privileged \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
+            -e "DRY_RUN_FLAG=$DRY_RUN" \
             -w /workspace \
             "$JONERIX_MINIMAL" /bin/sh -c '
-              set -e
 
               # ── 1. Fetch the package index ──────────────────────────────
               jpkg update
@@ -148,7 +148,7 @@ jobs:
               # ── 5. Build all bootstrap packages ─────────────────────────
               cd /workspace
               mkdir -p /var/cache/jpkg
-              /bin/toybox sh /workspace/bootstrap/build-all.sh --output /var/cache/jpkg '"$DRY_RUN"'
+              /bin/toybox sh /workspace/bootstrap/build-all.sh --output /var/cache/jpkg $DRY_RUN_FLAG
             '
 
       - name: List built packages
