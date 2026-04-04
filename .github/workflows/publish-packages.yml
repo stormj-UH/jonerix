@@ -1,7 +1,7 @@
 name: Publish packages
 
 on:
-  # Push trigger disabled — building locally and uploading manually.
+  # Push trigger disabled Ã¢â‚¬â€ building locally and uploading manually.
   # Re-enable when ready to use CI for package builds.
   # push:
   #   branches: [master]
@@ -21,14 +21,14 @@ on:
         default: 'false'
         type: boolean
 
-# Cancel in-progress runs when a new commit arrives — safe because
+# Cancel in-progress runs when a new commit arrives Ã¢â‚¬â€ safe because
 # skip-if-published means the next run picks up where this one left off.
 concurrency:
   group: publish-packages
   cancel-in-progress: true
 
 jobs:
-  # ── Create the packages release once ──────────────────────────────────────
+  # Ã¢â€â‚¬Ã¢â€â‚¬ Create the packages release once Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   create-release:
     name: Create packages release
     runs-on: ubuntu-latest
@@ -48,19 +48,20 @@ jobs:
               --prerelease
           fi
 
-  # ── x86_64: Alpine runner + jonerix packages for runtime deps ─────────────
+  # Ã¢â€â‚¬Ã¢â€â‚¬ x86_64: Alpine runner + jonerix packages for runtime deps Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   # Build tools (clang, cmake, samu) come from Alpine.
   # Runtime/library deps (LibreSSL, zlib, musl) come from the jonerix release
-  # via the prebuilt bin/jpkg-x86_64 binary — so packages link against
+  # via the prebuilt bin/jpkg-x86_64 binary Ã¢â‚¬â€ so packages link against
   # jonerix's LibreSSL (libssl.so.58), not Alpine's OpenSSL 3.x.
+  # ── x86_64: checkout on Ubuntu host, build inside jonerix:all ─────────────
+  # Uses the same container-based approach as aarch64 — jonerix:all has the
+  # full LLVM toolchain with compiler-rt, libunwind, and libc++ so packages
+  # link against jonerix's runtime, not Alpine's.
   build-x86_64:
     name: Build packages (x86_64)
     if: ${{ github.event.inputs.index_only != 'true' }}
     needs: create-release
     runs-on: ubuntu-latest
-    container:
-      image: alpine:latest
-      options: --privileged
     permissions:
       contents: write
 
@@ -68,114 +69,51 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Restore apk cache
+      - name: Restore jpkg binary cache (x86_64)
         uses: actions/cache@v4
+        id: jpkg-cache-x86_64
         with:
-          path: /var/cache/apk
-          key: apk-x86_64-${{ hashFiles('.github/workflows/publish-packages.yml') }}
-          restore-keys: apk-x86_64-
+          path: /tmp/jpkg-bin-x86_64
+          key: jpkg-bin-x86_64-${{ hashFiles('packages/jpkg/src/**') }}
 
-      - name: Install build tools (no openssl-dev / zlib-dev from Alpine)
-        run: |
-          mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
-          apk update
-          apk add \
-            clang lld musl-dev make \
-            curl patch tar xz bash \
-            zstd libarchive-tools \
-            linux-headers git \
-            github-cli \
-            cmake samurai \
-            byacc m4 meson python3 && \
-          ln -sf /usr/bin/samu /usr/local/bin/ninja
-
-      - name: Restore jpkg build cache
-        uses: actions/cache@v4
-        with:
-          path: packages/jpkg/src/*.o
-          key: jpkg-obj-x86_64-${{ hashFiles('packages/jpkg/src/**') }}
-
-      - name: Build jpkg
-        run: |
-          cd packages/jpkg
-          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
-          install -m 755 jpkg /usr/local/bin/jpkg
-
-      - name: Upload jpkg artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: jpkg-x86_64
-          path: packages/jpkg/jpkg
-          retention-days: 1
-
-      - name: Install jonerix runtime deps (LibreSSL, zlib) from release
+      - name: Download existing x86_64 packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Use the prebuilt jpkg x86_64 binary (already in /usr/local/bin/jpkg)
-          # to install jonerix's LibreSSL and zlib into / so packages link against
-          # the correct shared libraries (libssl.so.58, libz.so.1.x).
-          jpkg update
-          jpkg install openssl zlib || true
-          # Ensure libz.so symlink exists for cmake find_package(ZLIB)
-          [ -f /lib/libz.so ] || ln -sf libz.so.1 /lib/libz.so || true
-          echo "=== Installed SSL libs ==="
-          ls /lib/libssl* /lib/libcrypto* 2>/dev/null || true
-          echo "=== OpenSSL headers ==="
-          ls /include/openssl/ssl.h 2>/dev/null || true
-
-      - name: Download existing packages from release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p /var/cache/jpkg-published /var/cache/jpkg
+          mkdir -p /tmp/jpkg-published /tmp/jpkg-output
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.jpkg" \
-            --dir /var/cache/jpkg-published 2>/dev/null || true
-          echo "Existing x86_64 packages: $(ls /var/cache/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
+            --dir /tmp/jpkg-published 2>/dev/null || true
+          echo "Existing x86_64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
 
-      - name: Build packages
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build packages in jonerix:all container
+        env:
+          PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
-          PKG_INPUT="${{ github.event.inputs.package }}"
-          if [ -n "$PKG_INPUT" ]; then
-            recipe_dir="packages/core/${PKG_INPUT}"
-            [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}/recipe.toml"; exit 1; }
-            echo "=== Building ${PKG_INPUT} (forced) ==="
-            timeout 600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
-          else
-            for recipe in packages/core/*/recipe.toml; do
-              pkg_dir="$(dirname "$recipe")"
-              pkg_name="$(basename "$pkg_dir")"
-              pkg_ver=$(grep '^version' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-              expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-x86_64.jpkg"
-              legacy="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
-              if [ -f "$expected" ] || [ -f "$legacy" ]; then
-                echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
-                continue
-              fi
-              echo "=== Building ${pkg_name} ==="
-              timeout 300 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
-            done
-          fi
-
-      - name: List built packages
-        run: ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+          mkdir -p /tmp/jpkg-bin-x86_64
+          docker run --rm --privileged --entrypoint "" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "/tmp/jpkg-output:/var/cache/jpkg" \
+            -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
+            -v "/tmp/jpkg-bin-x86_64:/jpkg-bin" \
+            -w /workspace \
+            -e PKG_INPUT="$PKG_INPUT" \
+            ghcr.io/stormj-uh/jonerix:all /bin/zsh /workspace/scripts/ci-build-x86_64.sh
 
       - name: Upload packages to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           count=0
-          for pkg in /var/cache/jpkg/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
           [ "$count" -eq 0 ] && { echo "No new packages to upload."; exit 0; }
-          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /var/cache/jpkg/*.jpkg
+          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (x86_64)."
 
-  # ── aarch64: checkout on Ubuntu ARM host, build inside jonerix:all ────────
-  # JS GitHub Actions (checkout@v4) don't work in Alpine containers on ARM64;
-  # run bare on ubuntu-24.04-arm and exec the jonerix build via docker run.
-  # jonerix:all already has clang, cmake, samu, LibreSSL 4.0.0, zlib — no apk.
   build-aarch64:
     name: Build packages (aarch64)
     if: ${{ github.event.inputs.index_only != 'true' }}
@@ -233,7 +171,7 @@ jobs:
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (aarch64)."
 
-  # ── Generate combined INDEX from all uploaded packages ────────────────────
+  # Ã¢â€â‚¬Ã¢â€â‚¬ Generate combined INDEX from all uploaded packages Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   index:
     name: Generate combined INDEX
     if: ${{ always() }}
