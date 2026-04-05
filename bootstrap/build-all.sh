@@ -31,6 +31,11 @@ else
 fi
 ORDER_FILE="${SCRIPT_DIR}/build-order.txt"
 OUTPUT="${OUTPUT:-/var/cache/jpkg}"
+# Auto-set source cache if sources/ directory exists in repo
+if [ -z "$JPKG_SOURCE_CACHE" ] && [ -d "${REPO_ROOT}/sources" ]; then
+    JPKG_SOURCE_CACHE="${REPO_ROOT}/sources"
+    export JPKG_SOURCE_CACHE
+fi
 FORCE_PKG=""
 DRY_RUN=0
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
