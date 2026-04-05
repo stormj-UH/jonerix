@@ -123,10 +123,13 @@ jobs:
 
       - name: Build all packages from source
         run: |
-          export PATH="/jonerix/bin:$PATH"
           mkdir -p /tmp/jpkg-output
           DRY_RUN_FLAG=""
           [ "${{ inputs.dry_run }}" = "true" ] && DRY_RUN_FLAG="--dry-run"
+          # For real builds, use jonerix toolchain. For dry run, use Ubuntu tools.
+          if [ -z "$DRY_RUN_FLAG" ]; then
+            export PATH="/jonerix/bin:$PATH"
+          fi
           bash bootstrap/build-all.sh --output /tmp/jpkg-output $DRY_RUN_FLAG
 
       - name: List built packages
