@@ -58,7 +58,7 @@ jobs:
           key: build-from-source-aarch64-${{ hashFiles('bootstrap/build-order.txt') }}
           restore-keys: build-from-source-aarch64-
 
-      - name: Extract jonerix:minimal rootfs
+      - name: Extract jonerix:minimal rootfs and set up chroot
         run: |
           IMAGE=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:minimal' | tr '[:upper:]' '[:lower:]')
           docker pull "$IMAGE"
@@ -66,71 +66,68 @@ jobs:
           CID=$(docker create "$IMAGE" /bin/true)
           docker export "$CID" | sudo tar -xf - -C /jonerix
           docker rm "$CID" > /dev/null
-          # Make musl-linked jonerix binaries runnable on the glibc host
-          sudo ln -sf /jonerix/lib/ld-musl-aarch64.so.1 /lib/ld-musl-aarch64.so.1
-          sudo ln -sf /jonerix/lib/libc.so /lib/ld-musl-aarch64.so.1 2>/dev/null || true
-          # Also add jonerix libs to the library search path
-          echo "/jonerix/lib" | sudo tee /etc/ld-musl-aarch64.path
-          echo "Extracted jonerix:minimal to /jonerix"
-          ls /jonerix/bin/ | head -10
-
-      - name: Install build toolchain via jpkg
-        if: ${{ !inputs.dry_run }}
-        run: |
-          # Run jpkg inside the extracted rootfs via chroot
+          # Mount filesystems for chroot
           sudo mount -t proc proc /jonerix/proc
           sudo mount -t sysfs sys /jonerix/sys
           sudo mount --bind /dev /jonerix/dev
           sudo mount --bind /tmp /jonerix/tmp
+          sudo mkdir -p /jonerix/workspace
+          sudo mount --bind "$GITHUB_WORKSPACE" /jonerix/workspace
+          echo "Extracted jonerix:minimal to /jonerix"
 
+      - name: Install build toolchain via jpkg
+        if: ${{ !inputs.dry_run }}
+        run: |
           sudo chroot /jonerix /bin/sh -c '
             jpkg update
             for pkg in llvm cmake bmake samurai flex bc byacc perl python3 pip \
                        zsh ncurses zlib xz zstd lz4 curl bsdtar libcxx libatomic; do
               jpkg install "$pkg" || echo "WARN: $pkg"
             done
-          '
-
-          # Add jonerix bin to PATH and set up symlinks
-          sudo ln -sf /jonerix/bin/clang   /jonerix/bin/cc
-          sudo ln -sf /jonerix/bin/clang++ /jonerix/bin/c++
-          sudo ln -sf /jonerix/bin/ld.lld  /jonerix/bin/ld
-          sudo ln -sf /jonerix/bin/bmake   /jonerix/bin/make
-          sudo ln -sf /jonerix/bin/samu    /jonerix/bin/ninja
-          sudo ln -sf /jonerix/bin/python3 /jonerix/bin/python
-          sudo ln -sf /jonerix/bin/byacc   /jonerix/bin/yacc
-          sudo ln -sf /jonerix/bin/flex    /jonerix/bin/lex
-
-          for d in /jonerix/lib/llvm*/bin; do
-            if [ -d "$d" ]; then
+            # Build symlinks
+            ln -sf clang   /bin/cc      2>/dev/null || true
+            ln -sf clang++ /bin/c++     2>/dev/null || true
+            ln -sf ld.lld  /bin/ld      2>/dev/null || true
+            ln -sf bmake   /bin/make    2>/dev/null || true
+            ln -sf samu    /bin/ninja   2>/dev/null || true
+            ln -sf python3 /bin/python  2>/dev/null || true
+            ln -sf byacc   /bin/yacc    2>/dev/null || true
+            ln -sf flex    /bin/lex     2>/dev/null || true
+            LLVM_BIN=
+            for d in /lib/llvm*/bin; do [ -d "$d" ] && LLVM_BIN="$d" && break; done
+            if [ -n "$LLVM_BIN" ]; then
               for tool in ar nm ranlib strip objcopy objdump readelf; do
-                sudo ln -sf "$d/llvm-$tool" "/jonerix/bin/$tool" 2>/dev/null || true
-                sudo ln -sf "$d/llvm-$tool" "/jonerix/bin/llvm-$tool" 2>/dev/null || true
+                ln -sf "$LLVM_BIN/llvm-$tool" "/bin/$tool"       2>/dev/null || true
+                ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool"  2>/dev/null || true
               done
             fi
-          done
-
-          echo "/jonerix/bin" >> "$GITHUB_PATH"
+          '
           echo "Build toolchain installed"
 
       - name: Build jpkg from source
         if: ${{ !inputs.dry_run }}
         run: |
-          export PATH="/jonerix/bin:$PATH"
-          cd packages/jpkg && samu
-          sudo install -m 755 jpkg /jonerix/bin/jpkg
-          jpkg --version
+          sudo chroot /jonerix /bin/sh -c '
+            cd /workspace/packages/jpkg && samu
+            install -m 755 jpkg /bin/jpkg
+            jpkg --version
+          '
 
       - name: Build all packages from source
         run: |
           mkdir -p /tmp/jpkg-output
           DRY_RUN_FLAG=""
           [ "${{ inputs.dry_run }}" = "true" ] && DRY_RUN_FLAG="--dry-run"
-          # For real builds, use jonerix toolchain. For dry run, use Ubuntu tools.
-          if [ -z "$DRY_RUN_FLAG" ]; then
-            export PATH="/jonerix/bin:$PATH"
+          if [ -n "$DRY_RUN_FLAG" ]; then
+            # Dry run: use Ubuntu's bash/grep/sed (no musl needed)
+            bash bootstrap/build-all.sh --output /tmp/jpkg-output --dry-run
+          else
+            # Real build: run inside jonerix chroot
+            sudo chroot /jonerix /bin/sh -c "
+              mkdir -p /tmp/jpkg-output
+              sh /workspace/bootstrap/build-all.sh --output /tmp/jpkg-output
+            "
           fi
-          bash bootstrap/build-all.sh --output /tmp/jpkg-output $DRY_RUN_FLAG
 
       - name: List built packages
         run: ls -lhS /tmp/jpkg-output/*.jpkg 2>/dev/null || echo "(none)"
@@ -158,10 +155,11 @@ jobs:
       - name: Cleanup mounts
         if: always()
         run: |
+          sudo umount /jonerix/workspace 2>/dev/null || true
+          sudo umount /jonerix/tmp 2>/dev/null || true
           sudo umount /jonerix/dev 2>/dev/null || true
           sudo umount /jonerix/sys 2>/dev/null || true
           sudo umount /jonerix/proc 2>/dev/null || true
-          sudo umount /jonerix/tmp 2>/dev/null || true
 
   # ── x86_64: Alpine container (no x86_64 jonerix:minimal exists yet) ──────
   build-x86_64:
