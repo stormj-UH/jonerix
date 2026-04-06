@@ -1,0 +1,19 @@
+# jonerix router — network interface configuration
+#
+# Edit to match your hardware. Common setup:
+#   eth0 = WAN (uplink, DHCP from ISP)
+#   eth1 = LAN (local network, static IP)
+#   wlan0 = WiFi AP (bridged to LAN via hostapd)
+
+auto lo
+iface lo inet loopback
+
+# WAN — uplink (DHCP from upstream)
+auto eth0
+iface eth0 inet dhcp
+
+# LAN — local network
+auto eth1
+iface eth1 inet static
+    address 192.168.1.1
+    netmask 255.255.255.0

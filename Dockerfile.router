@@ -1,0 +1,58 @@
+# jonerix:router — Networking appliance image
+#
+# Starts from jonerix:core, adds routing/firewall/DNS/WiFi packages.
+# Designed for use as a home router, access point, or network gateway.
+# Shell: mksh (MirOS, POSIX-compliant)
+#
+# Packages:
+#   unbound        (BSD-3-Clause)  — validating DNS resolver
+#   dhcpcd         (BSD-2-Clause)  — DHCP client
+#   ifupdown-ng    (ISC)           — network interface management
+#   hostapd        (BSD-3-Clause)  — wireless access point
+#   wpa_supplicant (BSD-3-Clause)  — wireless client
+#   dropbear       (MIT)           — SSH (from core)
+#   socklog        (BSD-3-Clause)  — syslog (from core)
+#
+# Build: docker build -f Dockerfile.router --tag jonerix:router .
+
+ARG CORE_IMAGE=jonerix:core
+
+FROM ${CORE_IMAGE}
+
+# Install networking packages via jpkg
+# Core already provides: dropbear, dhcpcd, ifupdown-ng, unbound, socklog, doas
+# Router adds: hostapd, wpa_supplicant, btop for monitoring
+RUN jpkg update && \
+    for pkg in \
+      hostapd wpa_supplicant btop; \
+    do \
+      echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
+    done
+
+# Default network configuration
+RUN mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network
+
+# Unbound: recursive DNS resolver with DNSSEC
+COPY config/router/etc/unbound/unbound.conf /etc/unbound/unbound.conf
+
+# Default network interfaces
+COPY config/router/etc/network/interfaces /etc/network/interfaces
+
+# Hostapd: default AP config (disabled by default — user must configure)
+COPY config/router/etc/hostapd/hostapd.conf /etc/hostapd/hostapd.conf
+
+# IP forwarding sysctl
+COPY config/router/etc/sysctl.conf /etc/sysctl.conf
+
+# Router-specific hostname
+RUN echo "jonerix-router" > /etc/hostname
+
+ENV PATH=/bin
+ENV HOME=/root
+ENV SHELL=/bin/sh
+ENV TERM=xterm
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+WORKDIR /root
+CMD ["/bin/sh", "-l"]
