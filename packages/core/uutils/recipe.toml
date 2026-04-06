@@ -12,7 +12,7 @@ sha256 = "5f0c3f97b807e72edccc844c6a685ec9862199f16a665df07de5b1d20ec21233"
 [build]
 system = "custom"
 build = """cargo fetch
-RUSTFLAGS="-C strip=symbols" cargo build --release"""
+RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release"""
 install = """make PROFILE=release DESTDIR=$DESTDIR PREFIX=/ install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi

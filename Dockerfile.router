@@ -22,15 +22,16 @@ FROM ${CORE_IMAGE}
 # Install networking packages via jpkg
 # Core already provides: dropbear, dhcpcd, ifupdown-ng, unbound, socklog, doas
 # Router adds: hostapd, wpa_supplicant, btop for monitoring
+#
+# Note: directories are created inline because /bin/mkdir may be from uutils
+# (dynamically linked against libunwind) and libcxx is not in the core image.
 RUN jpkg update && \
     for pkg in \
       hostapd wpa_supplicant btop; \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
-    done
-
-# Default network configuration
-RUN mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network
+    done && \
+    toybox mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network
 
 # Unbound: recursive DNS resolver with DNSSEC
 COPY config/router/etc/unbound/unbound.conf /etc/unbound/unbound.conf
@@ -44,7 +45,7 @@ COPY config/router/etc/hostapd/hostapd.conf /etc/hostapd/hostapd.conf
 # IP forwarding sysctl
 COPY config/router/etc/sysctl.conf /etc/sysctl.conf
 
-# Router-specific hostname
+# Router-specific hostname (use shell builtin echo, not /bin/echo)
 RUN echo "jonerix-router" > /etc/hostname
 
 ENV PATH=/bin
