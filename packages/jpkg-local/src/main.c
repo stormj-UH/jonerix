@@ -302,7 +302,8 @@ static build_recipe_t *load_recipe(const char *path) {
 
 /*
  * Run a single build step in a shell script (same logic as cmd_build.c).
- * Prefers zsh or mksh over /bin/sh to avoid toybox deadlocks on $(...).
+ * Uses /bin/sh (toybox sh on jonerix). Pre-expands $(nproc) to avoid
+ * command substitution issues in minimal shells.
  */
 static int run_build_step(const char *step_name, const char *cmd,
                           const char *work_dir, const char *dest_dir) {
@@ -314,8 +315,6 @@ static int run_build_step(const char *step_name, const char *cmd,
     log_info("  %s: %s", step_name, cmd);
 
     const char *shell = "/bin/sh";
-    if (access("/bin/zsh",  X_OK) == 0) shell = "/bin/zsh";
-    else if (access("/bin/mksh", X_OK) == 0) shell = "/bin/mksh";
 
     char script_path[256];
     snprintf(script_path, sizeof(script_path), "/tmp/jpkg-local-build-%d.sh", (int)getpid());
@@ -325,7 +324,14 @@ static int run_build_step(const char *step_name, const char *cmd,
         log_error("failed to create build script: %s", strerror(errno));
         return -1;
     }
-    fprintf(sf, "#!%s\nset -e\n", shell);
+    fprintf(sf, "#!%s\n", shell);
+
+    /* Export NPROC so $(nproc) can be pre-expanded */
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpu < 1) ncpu = 1;
+    fprintf(sf, "export NPROC=%ld\n", ncpu);
+    fprintf(sf, "nproc() { printf '%%ld\\n' %ld; }\n", ncpu);
+
     fprintf(sf, "cd '%s'\n", work_dir);
     fprintf(sf, "export CC=clang\nexport LD=ld.lld\n");
     fprintf(sf, "export AR=llvm-ar\nexport NM=llvm-nm\nexport RANLIB=llvm-ranlib\n");
@@ -334,7 +340,26 @@ static int run_build_step(const char *step_name, const char *cmd,
     fprintf(sf, "export DESTDIR='%s'\n", dest_dir);
     fprintf(sf, "export C_INCLUDE_PATH=/include\n");
     fprintf(sf, "export LIBRARY_PATH=/lib\n");
-    fprintf(sf, "%s\n", cmd);
+
+    /* Replace $(nproc) with literal CPU count */
+    {
+        char nproc_str[32];
+        snprintf(nproc_str, sizeof(nproc_str), "%ld", ncpu);
+        const char *p = cmd;
+        while (*p) {
+            if (strncmp(p, "$(nproc)", 8) == 0) {
+                fputs(nproc_str, sf);
+                p += 8;
+            } else if (strncmp(p, "`nproc`", 7) == 0) {
+                fputs(nproc_str, sf);
+                p += 7;
+            } else {
+                fputc(*p, sf);
+                p++;
+            }
+        }
+        fputc('\n', sf);
+    }
     fclose(sf);
     chmod(script_path, 0755);
 
