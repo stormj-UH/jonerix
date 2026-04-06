@@ -26,21 +26,29 @@ COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
 # Install core runtime packages via jpkg
 # Order: base libs -> system -> networking -> user tools
+#
+# IMPORTANT: mksh is installed first (before ncurses) and immediately
+# symlinked to /bin/sh.  The aarch64 ncurses package has a known bug
+# where it overwrites /bin/toybox with the tic binary, which breaks
+# /bin/sh (symlinked to toybox) and all subsequent curl calls.
+# Installing mksh first ensures /bin/sh remains functional throughout.
+# toybox is then reinstalled at the end to restore the multicall binary.
 RUN jpkg update && \
+    jpkg install mksh && \
+    ln -sf mksh /bin/sh && \
     for pkg in \
       musl zlib zstd lz4 xz ncurses openssl curl nghttp2 \
       toybox bsdtar openrc doas snooze socklog \
       dropbear dhcpcd ifupdown-ng unbound \
       uutils pigz mandoc \
-      micro fastfetch ripgrep gitoxide \
-      mksh; \
+      micro fastfetch ripgrep gitoxide; \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
-    done
+    done && \
+    jpkg install toybox || echo "WARN: toybox reinstall failed"
 
-# Symlinks
-RUN ln -sf mksh /bin/sh 2>/dev/null || true && \
-    ln -sf bsdtar /bin/tar 2>/dev/null || true && \
+# Symlinks (mksh -> /bin/sh already set above; add remaining)
+RUN ln -sf bsdtar /bin/tar 2>/dev/null || true && \
     ln -sf dbclient /bin/ssh 2>/dev/null || true && \
     ln -sf micro /bin/editor 2>/dev/null || true && \
     ln -sf micro /bin/vi 2>/dev/null || true
