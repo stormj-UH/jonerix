@@ -50,14 +50,11 @@ fi
 # to extract sources.
 if ! bsdtar --version >/dev/null 2>&1; then
     if [ -x /workspace/tools/bsdtar-static-x86_64 ]; then
-    elif command -v apk >/dev/null 2>&1; then
-        apk add --no-cache libarchive-tools 2>/dev/null || true
-        echo "bsdtar: installed from Alpine packages"
         install -m 755 /workspace/tools/bsdtar-static-x86_64 /bin/bsdtar
+        echo "bsdtar: restored static fallback (dynamic libarchive artifact expects OpenSSL 3)"
     elif command -v apk >/dev/null 2>&1; then
         apk add --no-cache libarchive-tools 2>/dev/null || true
         echo "bsdtar: installed from Alpine packages"
-        echo "bsdtar: restored static fallback (dynamic libarchive artifact expects OpenSSL 3)"
     fi
 fi
 

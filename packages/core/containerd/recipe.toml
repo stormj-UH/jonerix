@@ -11,14 +11,21 @@ sha256 = "d6e8e6424c544cdab9b51cae320c3a9aa5590e8e1ffbd1f862eb395fd8c5bc28"
 
 [build]
 system = "custom"
-build = """go mod download
-make GOFLAGS="-trimpath" GO_LDFLAGS="-s -w" -j$(nproc)"""
-install = """make DESTDIR=$DESTDIR install
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+build = """set -e
+go mod download
+# Build all containerd binaries without GNU make
+for cmd in containerd containerd-shim-runc-v2 ctr; do
+  echo "Building: $cmd"
+  go build -trimpath -ldflags "-s -w" -o "bin/$cmd" "./cmd/$cmd"
+done
+"""
+install = """set -e
+mkdir -p $DESTDIR/bin
+for bin in containerd containerd-shim-runc-v2 ctr; do
+  install -m755 "bin/$bin" "$DESTDIR/bin/$bin"
+  llvm-strip --strip-all "$DESTDIR/bin/$bin" 2>/dev/null || true
+done"""
 
 [depends]
 runtime = ["musl"]
-build = ["go", "make"]
+build = ["go"]

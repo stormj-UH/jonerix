@@ -31,6 +31,9 @@ CONFIG_WPS=y
 CONFIG_CTRL_IFACE=y
 CONFIG_READLINE=y
 CONF"""
+# NOTE: wpa_supplicant's Makefile uses GNU make features (ifdef/ifndef/ifeq,
+# $(wildcard), $(shell)). Build requires GNU make at build time (Alpine container).
+# Also needs nl80211 kernel headers which are not yet packaged for jonerix.
 build = "make -C wpa_supplicant CC=clang LDFLAGS=\"--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\" -j$(nproc)"
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/wpa_supplicant
 install -m 755 wpa_supplicant/wpa_supplicant $DESTDIR/bin/wpa_supplicant
