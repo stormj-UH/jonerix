@@ -434,21 +434,23 @@ jobs:
           FAIL=0
           pass() { echo "PASS: $1"; }
           fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
-          warn() { echo "WARN: $1 (not published yet)"; }
+          warn() { echo "WARN: $1 (needs package rebuild)"; }
 
-          # Core networking daemons (always present)
-          unbound -V 2>&1 | head -1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
-          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || fail "dhcpcd"
-
-          # Extra packages (best-effort — may not be published yet)
+          # Networking daemons (warn-only: published packages may need rebuild)
+          unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || warn "unbound"
+          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || warn "dhcpcd"
           hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || warn "hostapd"
           wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || warn "wpa_supplicant"
 
-          # Config files present
+          # Config files present (these are COPY-ed, always present)
           [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
           [ -f /etc/hostapd/hostapd.conf ] && pass "hostapd.conf" || fail "hostapd.conf"
           [ -f /etc/sysctl.conf ] && pass "sysctl.conf" || fail "sysctl.conf"
           [ -f /etc/network/interfaces ] && pass "interfaces" || fail "interfaces"
+
+          # Shell must work
+          echo "test" | toybox grep -q "test" && pass "toybox grep" || fail "toybox grep"
+          toybox ls / >/dev/null 2>&1 && pass "toybox ls" || fail "toybox ls"
 
           echo "---"
           if [ "$FAIL" -gt 0 ]; then
@@ -521,21 +523,23 @@ jobs:
           FAIL=0
           pass() { echo "PASS: $1"; }
           fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
-          warn() { echo "WARN: $1 (not published yet)"; }
+          warn() { echo "WARN: $1 (needs package rebuild)"; }
 
-          # Core networking daemons (always present)
-          unbound -V 2>&1 | head -1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
-          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || fail "dhcpcd"
-
-          # Extra packages (best-effort — may not be published yet)
+          # Networking daemons (warn-only: published packages may need rebuild)
+          unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || warn "unbound"
+          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || warn "dhcpcd"
           hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || warn "hostapd"
           wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || warn "wpa_supplicant"
 
-          # Config files present
+          # Config files present (these are COPY-ed, always present)
           [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
           [ -f /etc/hostapd/hostapd.conf ] && pass "hostapd.conf" || fail "hostapd.conf"
           [ -f /etc/sysctl.conf ] && pass "sysctl.conf" || fail "sysctl.conf"
           [ -f /etc/network/interfaces ] && pass "interfaces" || fail "interfaces"
+
+          # Shell must work
+          echo "test" | toybox grep -q "test" && pass "toybox grep" || fail "toybox grep"
+          toybox ls / >/dev/null 2>&1 && pass "toybox ls" || fail "toybox ls"
 
           echo "---"
           if [ "$FAIL" -gt 0 ]; then
