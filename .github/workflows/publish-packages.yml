@@ -1,7 +1,7 @@
 name: Publish packages
 
 on:
-  # Push trigger disabled Ã¢â‚¬â€ building locally and uploading manually.
+  # Push trigger disabled --- building locally and uploading manually.
   # Re-enable when ready to use CI for package builds.
   # push:
   #   branches: [master]
@@ -21,14 +21,14 @@ on:
         default: 'false'
         type: boolean
 
-# Cancel in-progress runs when a new commit arrives Ã¢â‚¬â€ safe because
+# Cancel in-progress runs when a new commit arrives --- safe because
 # skip-if-published means the next run picks up where this one left off.
 concurrency:
   group: publish-packages
   cancel-in-progress: true
 
 jobs:
-  # Ã¢â€â‚¬Ã¢â€â‚¬ Create the packages release once Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  # ------ Create the packages release once ------------------------------------------------------------------------------------------------------------------
   create-release:
     name: Create packages release
     runs-on: ubuntu-latest
@@ -48,10 +48,10 @@ jobs:
               --prerelease
           fi
 
-  # Ã¢â€â‚¬Ã¢â€â‚¬ x86_64: Alpine runner + jonerix packages for runtime deps Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  # ------ x86_64: Alpine runner + jonerix packages for runtime deps ---------------------------------------
   # Build tools (clang, cmake, samu) come from Alpine.
   # Runtime/library deps (LibreSSL, zlib, musl) come from the jonerix release
-  # via the prebuilt bin/jpkg-x86_64 binary Ã¢â‚¬â€ so packages link against
+  # via the prebuilt bin/jpkg-x86_64 binary --- so packages link against
   # jonerix's LibreSSL (libssl.so.58), not Alpine's OpenSSL 3.x.
   # ── x86_64: checkout on Ubuntu host, build inside jonerix:all ─────────────
   # Uses the same container-based approach as aarch64 — jonerix:all has the
@@ -171,7 +171,7 @@ jobs:
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (aarch64)."
 
-  # Ã¢â€â‚¬Ã¢â€â‚¬ Generate combined INDEX from all uploaded packages Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  # ------ Generate combined INDEX from all uploaded packages ------------------------------------------------------------
   index:
     name: Generate combined INDEX
     if: ${{ always() }}
