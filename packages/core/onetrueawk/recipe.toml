@@ -1,0 +1,30 @@
+[package]
+name = "onetrueawk"
+version = "20240728"
+license = "MIT"
+pre_bootstrap = false
+description = "Brian Kernighan's one true awk"
+
+[source]
+url = "https://github.com/onetrueawk/awk/archive/refs/tags/20240728.tar.gz"
+sha256 = "2d479817f95d5997fc4348ecebb1d8a1b25c81cebedb46ca4f59434247e08543"
+
+[build]
+system = "custom"
+configure = ""
+build = """byacc -d awkgram.y
+cp y.tab.c awkgram.tab.c
+cp y.tab.h awkgram.tab.h
+clang -O2 --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld maketab.c -o maketab
+./maketab awkgram.tab.h > proctab.c
+clang -O2 --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld \
+  awkgram.tab.c b.c lex.c lib.c main.c parse.c proctab.c run.c tran.c \
+  -lm -o awk"""
+install = """mkdir -p $DESTDIR/bin $DESTDIR/share/man/man1
+install -m 755 awk $DESTDIR/bin/awk
+install -m 644 awk.1 $DESTDIR/share/man/man1/awk.1
+llvm-strip --strip-all $DESTDIR/bin/awk 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "byacc"]

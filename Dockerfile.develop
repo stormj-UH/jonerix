@@ -3,7 +3,7 @@
 # Pure jpkg installation — no Alpine overlay. jonerix builds its own
 # development environment using only jpkg packages.
 #
-# Shell: zsh (MIT, bash-compatible) — replaces mksh for develop
+# Shell: mksh (MirOS, POSIX-compliant — zsh deadlocks on musl)
 #
 # Build: docker build -f Dockerfile.develop --tag jonerix-develop:latest .
 #
@@ -16,19 +16,16 @@ FROM ${MINIMAL_IMAGE}
 
 SHELL ["/bin/sh", "-c"]
 
-# Update jpkg binary to latest (fixes bsdtar warning handling)
-COPY bin/jpkg-aarch64 /bin/jpkg
-
 # ── Install all development packages via jpkg ────────────────────────────
 # Install one at a time to avoid parallel download race conditions.
-# Order: base libs → compilers → build tools → languages → utilities
+# Order: base libs -> compilers -> build tools -> languages -> utilities
 RUN jpkg update && \
     for pkg in \
       musl ncurses openssl zlib xz lz4 zstd \
       llvm rust go \
       cmake bmake samurai flex bc byacc \
       perl python3 pip nodejs \
-      zsh gitoxide ripgrep micro mandoc pigz fastfetch \
+      mksh gitoxide ripgrep micro mandoc pigz fastfetch \
       curl doas dropbear \
       containerd runc nerdctl; \
     do \
@@ -37,6 +34,8 @@ RUN jpkg update && \
 
 # ── Symlinks for standard tool names ────────────────────────────────────
 RUN \
+    # Shell: mksh as /bin/sh (zsh deadlocks on musl with nested $())
+    ln -sf mksh /bin/sh && \
     # Compiler
     ln -sf clang /bin/cc && \
     ln -sf clang++ /bin/c++ && \
@@ -55,8 +54,6 @@ RUN \
     ln -sf samu /bin/ninja && \
     # Python
     ln -sf python3 /bin/python && \
-    # Shell: zsh as bash (bash-compatible mode)
-    ln -sf zsh /bin/bash && \
     # Editor
     ln -sf micro /bin/editor && \
     ln -sf micro /bin/vi && \
@@ -68,7 +65,7 @@ RUN \
 # ── Environment ─────────────────────────────────────────────────────────
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/zsh
+ENV SHELL=/bin/mksh
 ENV TERM=xterm
 ENV EDITOR=micro
 ENV VISUAL=micro
@@ -78,5 +75,5 @@ ENV LC_ALL=C.UTF-8
 
 WORKDIR /root
 
-ENTRYPOINT ["/bin/zsh"]
+ENTRYPOINT ["/bin/mksh"]
 CMD ["-l"]
