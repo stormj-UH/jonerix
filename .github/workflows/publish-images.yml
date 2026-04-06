@@ -289,3 +289,118 @@ jobs:
             -t ${{ env.IMAGE }}:builder-${{ github.sha }} \
             ${{ env.IMAGE }}:builder-arm64 \
             ${{ env.IMAGE }}:builder-amd64
+
+  # ── Smoke tests ─────────────────────────────────────────────────────────
+  smoke-test-arm64:
+    name: Smoke test (arm64)
+    needs: builder-manifest
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test compilers and tools
+        run: |
+          docker run --rm ${{ env.IMAGE }}:builder-arm64 -c '
+          set -e
+          FAIL=0
+          pass() { echo "PASS: $1"; }
+          fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
+
+          # C compiler
+          echo "int main(){return 0;}" | clang -x c - -o /tmp/test_c && pass "C (clang)" || fail "C (clang)"
+
+          # C++ compiler
+          printf "#include <iostream>\nint main(){std::cout<<\"ok\";return 0;}" | \
+            clang++ -x c++ -std=c++17 - -o /tmp/test_cpp && /tmp/test_cpp >/dev/null && pass "C++ (clang++)" || fail "C++ (clang++)"
+
+          # Go
+          printf "package main\nimport \"fmt\"\nfunc main(){fmt.Println(\"ok\")}" > /tmp/t.go && \
+            go build -o /tmp/test_go /tmp/t.go && pass "Go" || fail "Go"
+
+          # Rust
+          echo "fn main(){}" > /tmp/t.rs && \
+            rustc /tmp/t.rs -o /tmp/test_rust 2>/dev/null && pass "Rust" || fail "Rust"
+
+          # Node.js
+          node -e "process.exit(0)" && pass "Node.js" || fail "Node.js"
+
+          # Python
+          python3 -c "pass" && pass "Python" || fail "Python"
+
+          # Build tools
+          cmake --version >/dev/null 2>&1 && pass "cmake" || fail "cmake"
+          samu --version >/dev/null 2>&1 && pass "samu (ninja)" || fail "samu"
+
+          # jpkg
+          jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
+
+          echo "---"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "$FAIL test(s) failed"
+            exit 1
+          fi
+          echo "All tests passed"
+          '
+
+  smoke-test-amd64:
+    name: Smoke test (amd64)
+    needs: builder-manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test compilers and tools
+        run: |
+          docker run --rm ${{ env.IMAGE }}:builder-amd64 -c '
+          set -e
+          FAIL=0
+          pass() { echo "PASS: $1"; }
+          fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
+
+          # C compiler
+          echo "int main(){return 0;}" | clang -x c - -o /tmp/test_c && pass "C (clang)" || fail "C (clang)"
+
+          # C++ compiler
+          printf "#include <iostream>\nint main(){std::cout<<\"ok\";return 0;}" | \
+            clang++ -x c++ -std=c++17 - -o /tmp/test_cpp && /tmp/test_cpp >/dev/null && pass "C++ (clang++)" || fail "C++ (clang++)"
+
+          # Go
+          printf "package main\nimport \"fmt\"\nfunc main(){fmt.Println(\"ok\")}" > /tmp/t.go && \
+            go build -o /tmp/test_go /tmp/t.go && pass "Go" || fail "Go"
+
+          # Rust
+          echo "fn main(){}" > /tmp/t.rs && \
+            rustc /tmp/t.rs -o /tmp/test_rust 2>/dev/null && pass "Rust" || fail "Rust"
+
+          # Node.js
+          node -e "process.exit(0)" && pass "Node.js" || fail "Node.js"
+
+          # Python
+          python3 -c "pass" && pass "Python" || fail "Python"
+
+          # Build tools
+          cmake --version >/dev/null 2>&1 && pass "cmake" || fail "cmake"
+          samu --version >/dev/null 2>&1 && pass "samu (ninja)" || fail "samu"
+
+          # jpkg
+          jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
+
+          echo "---"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "$FAIL test(s) failed"
+            exit 1
+          fi
+          echo "All tests passed"
+          '

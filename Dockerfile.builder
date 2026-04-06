@@ -44,7 +44,20 @@ RUN ln -sf clang /bin/cc 2>/dev/null || true && \
     # Linker fixups (GCC runtime compat)
     ln -sf libgcc_s.so.1 /lib/libgcc_s.so 2>/dev/null || true && \
     ln -sf libstdc++.so.6 /lib/libstdc++.so 2>/dev/null || true && \
-    printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true
+    printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true && \
+    # Ensure clang config exists for the actual triple (may be *-alpine-* or *-jonerix-*)
+    TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "") && \
+    if [ -n "$TRIPLE" ]; then \
+      mkdir -p /etc/clang && \
+      CFG="/etc/clang/${TRIPLE}.cfg" && \
+      printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n--stdlib=libc++\n' > "$CFG"; \
+    fi
+
+# Tell clang to load /etc/clang/<triple>.cfg automatically.
+# Alpine (and jonerix) clang doesn't set CLANG_CONFIG_FILE_SYSTEM_DIR,
+# so without this, --rtlib=compiler-rt/--unwindlib=libunwind/-fuse-ld=lld
+# are NOT applied and clang falls back to GCC CRT (crtbeginS.o/libgcc).
+ENV CLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang
 
 WORKDIR /root
 ENTRYPOINT ["/bin/mksh"]
