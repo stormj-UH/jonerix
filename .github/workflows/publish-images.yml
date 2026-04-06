@@ -485,7 +485,7 @@ jobs:
           # Compilers (warn-only on amd64: x86_64 packages need rebuild)
           echo "int main(){return 0;}" | clang -x c - -o /tmp/test_c && pass "C (clang)" || warn "C (clang)"
           echo "fn main(){}" > /tmp/t.rs && \
-            rustc /tmp/t.rs -o /tmp/test_rust 2>/dev/null && pass "Rust" || fail "Rust"
+            rustc /tmp/t.rs -o /tmp/test_rust 2>/dev/null && pass "Rust" || warn "Rust"
 
           # Languages (warn-only: published x86_64 packages broken)
           go version >/dev/null 2>&1 && pass "Go" || warn "Go"
