@@ -580,25 +580,48 @@ char *repo_fetch_package(const repo_config_t *cfg, const repo_entry_t *entry) {
         }
     }
 
-    /* All downloads failed. Fall back to any local cached file
-     * even if hash doesn't match — supports offline/Docker builds
-     * where packages were pre-seeded but INDEX has different hashes. */
+    /* All downloads failed. Fall back to a local cached file only if
+     * it passes hash verification. Never serve unverified packages. */
     char *fb_name = pkg_filename(entry->name, entry->version);
     char *fb_path = path_join(cfg->cache_dir, fb_name);
     if (file_exists(fb_path)) {
-        log_info("using cached %s (hash not verified — offline fallback)", fb_name);
-        free(fb_name);
-        free(legacy_name);
-        free(legacy_path);
-        return fb_path;
+        if (entry->sha256 && entry->sha256[0]) {
+            char hash[65];
+            if (sha256_file(fb_path, hash) == 0 &&
+                strcmp(hash, entry->sha256) == 0) {
+                log_info("using cached %s (offline, hash verified)", fb_name);
+                free(fb_name);
+                free(legacy_name);
+                free(legacy_path);
+                return fb_path;
+            }
+            log_error("cached %s has wrong hash — refusing to install", fb_name);
+        } else {
+            log_info("using cached %s (offline, no hash to verify)", fb_name);
+            free(fb_name);
+            free(legacy_name);
+            free(legacy_path);
+            return fb_path;
+        }
     }
     free(fb_name);
     free(fb_path);
 
     if (file_exists(legacy_path)) {
-        log_info("using cached %s (hash not verified — offline fallback)", legacy_name);
-        free(legacy_name);
-        return legacy_path;
+        if (entry->sha256 && entry->sha256[0]) {
+            char hash[65];
+            if (sha256_file(legacy_path, hash) == 0 &&
+                strcmp(hash, entry->sha256) == 0) {
+                log_info("using cached %s (offline, hash verified)", legacy_name);
+                free(legacy_name);
+                return legacy_path;
+            }
+            log_error("cached %s has wrong hash — refusing to install", legacy_name);
+        } else {
+            log_info("using cached %s (offline, no hash to verify)", legacy_name);
+            free(legacy_name);
+            return legacy_path;
+        }
     }
 
     log_error("failed to download %s from any mirror", legacy_name);
