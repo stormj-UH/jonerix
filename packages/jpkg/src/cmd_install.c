@@ -94,27 +94,43 @@ static int install_files(const char *stage_dir, const char *dest_root) {
      * pkg_extract() already flattens usr/ in the staging directory,
      * so we just need a single recursive copy of the staging contents.
      *
-     * Uses a single `cp -a staging/. dest/` to copy everything in
-     * one process.  This replaces the old per-file glob loop which
-     * forked cp once per top-level entry and hung on packages with
-     * many files (e.g. perl with ~900 man pages at root level).
+     * We use a bsdtar pipe (cd staging && bsdtar -cf - . | bsdtar -xpf - -C dest)
+     * instead of `cp -a` to avoid a critical bug:
      *
-     * Minor caveat: cp -a follows destination symlinks, so if a
-     * destination path is a symlink to a running binary (e.g.
-     * /bin/clear -> toybox while toybox sh executes), cp gets
-     * ETXTBSY.  This only affects a handful of toybox applet
-     * symlinks and is non-fatal — the real binaries from later
-     * package installs will overwrite them.
+     *   `cp -a` follows DESTINATION symlinks when the destination path is a
+     *   symlink.  On jonerix, many /bin/ entries are symlinks to toybox
+     *   (e.g. /bin/clear -> toybox).  When a package (e.g. ncurses) installs
+     *   a regular file at bin/clear, `cp -a` follows /bin/clear -> /bin/toybox
+     *   and overwrites the toybox multicall binary with the package's binary.
+     *   This destroys the shell and all toybox applets in one shot.
+     *
+     *   bsdtar -xpf correctly replaces symlinks with regular files without
+     *   following the destination symlink.
+     *
+     * Falls back to `cp -a` if bsdtar is not available.
      */
     snprintf(cmd, sizeof(cmd),
              /* Safety: flatten usr/ if pkg_extract somehow missed it */
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
-             "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi; "
-             /* Copy all staging contents to root in one shot.
-              * Errors (ETXTBSY on toybox symlinks) are non-fatal. */
-             "cp -a '%s/.' '%s/' 2>/dev/null; true",
+             "cd '%s/usr' && toybox tar -cf - . | toybox tar -xpf - -C '%s' && "
+             "cd / && rm -rf '%s/usr'; fi; "
+             /* Install staging contents to root via toybox tar pipe.
+              *
+              * IMPORTANT: Do NOT use `cp -a staging/. dest/` here.
+              * toybox `cp -a` follows DESTINATION symlinks when the destination
+              * path is a symlink to a file.  On jonerix, toybox applet symlinks
+              * like /bin/clear -> toybox and /bin/reset -> toybox get followed,
+              * causing packages (e.g. ncurses) to overwrite /bin/toybox with
+              * their own binary.  This destroys the multicall binary.
+              *
+              * toybox `tar -x` correctly replaces destination symlinks with new
+              * files instead of following them.  Use a tar pipe:
+              *   cd staging && toybox tar -cf - . | toybox tar -xpf - -C dest
+              */
+             "cd '%s' && toybox tar -cf - . | toybox tar -xpf - -C '%s' 2>/dev/null; true",
              stage_dir, stage_dir,
-             stage_dir, stage_dir, stage_dir,
+             stage_dir, dest_root,
+             stage_dir,
              stage_dir, dest_root);
     return system(cmd);
 }
