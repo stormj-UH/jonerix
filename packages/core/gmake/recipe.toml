@@ -1,0 +1,24 @@
+[package]
+name = "gmake"
+version = "4.4.1"
+license = "GPL-3.0-or-later"
+pre_bootstrap = false
+description = "GNU Make — build-time only, not shipped in runtime images"
+
+[source]
+url = "https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz"
+sha256 = "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3"
+
+[build]
+system = "custom"
+configure = """GREP=/bin/grep CC=clang AR=llvm-ar RANLIB=llvm-ranlib \
+CFLAGS="-O2" LDFLAGS="" \
+./configure --prefix=/ --without-guile --disable-nls"""
+build = "sh build.sh"
+install = """mkdir -p $DESTDIR/bin
+install -m 755 make $DESTDIR/bin/gmake
+llvm-strip --strip-all $DESTDIR/bin/gmake 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]
