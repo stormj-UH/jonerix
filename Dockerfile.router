@@ -56,4 +56,5 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
 WORKDIR /root
-CMD ["/bin/sh", "-l"]
+ENTRYPOINT ["/bin/sh"]
+CMD ["-l"]
