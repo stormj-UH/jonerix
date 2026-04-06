@@ -78,7 +78,7 @@ jobs:
           tags: ${{ env.IMAGE }}:minimal-arm64
           platforms: linux/arm64
           build-args: |
-            BUILDER=ghcr.io/stormj-uh/jonerix:minimal
+            BUILDER=alpine:latest
           cache-from: type=gha,scope=minimal-arm64
           cache-to: type=gha,mode=max,scope=minimal-arm64
 
