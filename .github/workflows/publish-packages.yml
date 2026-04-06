@@ -48,11 +48,6 @@ jobs:
               --prerelease
           fi
 
-  # ------ x86_64: Alpine runner + jonerix packages for runtime deps ---------------------------------------
-  # Build tools (clang, cmake, samu) come from Alpine.
-  # Runtime/library deps (LibreSSL, zlib, musl) come from the jonerix release
-  # via the prebuilt bin/jpkg-x86_64 binary --- so packages link against
-  # jonerix's LibreSSL (libssl.so.58), not Alpine's OpenSSL 3.x.
   # ── x86_64: checkout on Ubuntu host, build inside jonerix:all ─────────────
   # Uses the same container-based approach as aarch64 — jonerix:all has the
   # full LLVM toolchain with compiler-rt, libunwind, and libc++ so packages
@@ -268,9 +263,13 @@ jobs:
           zstd -19 -f -o "$INDEX_ZST" "$INDEX_PLAIN"
           echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
 
-      - name: Install jpkg for signing
+      - name: Build jpkg from source for signing
         run: |
-          install -m 755 "$GITHUB_WORKSPACE/bin/jpkg-x86_64" /usr/local/bin/jpkg
+          apk add --no-cache clang lld musl-dev samurai zstd-dev
+          cd "$GITHUB_WORKSPACE/packages/jpkg"
+          samu clean 2>/dev/null || true
+          samu
+          install -m 755 jpkg /usr/local/bin/jpkg
           jpkg --version || true
 
       - name: Sign INDEX.zst
