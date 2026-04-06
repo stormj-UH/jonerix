@@ -16,7 +16,7 @@ system = "custom"
 # wrapper script that nginx will use as its compiler.
 configure = """cat > /tmp/clang-jonerix << 'WRAPPER'
 #!/bin/sh
-exec clang --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -Wno-unused-command-line-argument "$@"
+exec clang --rtlib=compiler-rt -fuse-ld=lld -Wno-unused-command-line-argument "$@"
 WRAPPER
 chmod +x /tmp/clang-jonerix
 ./configure \
