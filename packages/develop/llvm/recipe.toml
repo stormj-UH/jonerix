@@ -14,6 +14,12 @@ system = "custom"
 build = """
 set -e
 
+# Override jpkg's -fPIE with -fPIC: LLVM's static libraries need
+# position-independent code for the final link.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/-pie/-fPIC/g')"
+
 # Zero-GNU LLVM from-source build.
 # Produces clang, lld, and compiler-rt linked against libc++/libunwind.
 # No libstdc++, no libgcc_s, no GCC CRT objects.
