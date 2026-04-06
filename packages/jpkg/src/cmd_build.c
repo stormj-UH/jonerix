@@ -226,6 +226,67 @@ static int run_build_step(const char *step_name, const char *cmd,
     return 0;
 }
 
+/* Try to find a cached source tarball before downloading.
+ * Searches JPKG_SOURCE_CACHE env var (colon-separated dirs) for files
+ * matching the URL basename or <name>-<version>.* pattern. */
+static int try_source_cache(const build_recipe_t *recipe, const char *dest) {
+    const char *cache = getenv("JPKG_SOURCE_CACHE");
+    if (!cache || !cache[0]) return -1;
+
+    const char *url_base = strrchr(recipe->source_url, '/');
+    url_base = url_base ? url_base + 1 : recipe->source_url;
+
+    /* Build name-version prefix for fuzzy match */
+    char prefix[256];
+    if (recipe->name && recipe->version)
+        snprintf(prefix, sizeof(prefix), "%s-%s.", recipe->name, recipe->version);
+    else
+        prefix[0] = '\0';
+
+    /* Walk colon-separated cache dirs */
+    char buf[4096];
+    strncpy(buf, cache, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char *saveptr = NULL;
+    for (char *dir = strtok_r(buf, ":", &saveptr); dir;
+         dir = strtok_r(NULL, ":", &saveptr)) {
+        char path[1024];
+
+        /* Exact basename match first */
+        snprintf(path, sizeof(path), "%s/%s", dir, url_base);
+        if (access(path, R_OK) == 0) {
+            char cmd[2048];
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", path, dest);
+            if (system(cmd) == 0) {
+                log_info("  source from cache: %s", path);
+                return 0;
+            }
+        }
+
+        /* Fuzzy match: name-version.* */
+        if (prefix[0]) {
+            DIR *d = opendir(dir);
+            if (!d) continue;
+            struct dirent *ent;
+            while ((ent = readdir(d)) != NULL) {
+                if (strncmp(ent->d_name, prefix, strlen(prefix)) == 0) {
+                    snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
+                    char cmd[2048];
+                    snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", path, dest);
+                    if (system(cmd) == 0) {
+                        log_info("  source from cache: %s", path);
+                        closedir(d);
+                        return 0;
+                    }
+                }
+            }
+            closedir(d);
+        }
+    }
+    return -1;
+}
+
 static int fetch_source(const build_recipe_t *recipe, const char *work_dir) {
     if (!recipe->source_url) {
         log_debug("no source URL, assuming local build");
@@ -237,13 +298,16 @@ static int fetch_source(const build_recipe_t *recipe, const char *work_dir) {
     basename = basename ? basename + 1 : recipe->source_url;
     snprintf(tarball, sizeof(tarball), "%s/%s", work_dir, basename);
 
-    /* Download */
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "curl -fsSL -o '%s' '%s'", tarball, recipe->source_url);
-    log_info("  downloading source: %s", recipe->source_url);
-    if (system(cmd) != 0) {
-        log_error("failed to download source");
-        return -1;
+    /* Try local source cache before downloading */
+    if (try_source_cache(recipe, tarball) != 0) {
+        /* Download */
+        char cmd[2048];
+        snprintf(cmd, sizeof(cmd), "curl -fsSL -o '%s' '%s'", tarball, recipe->source_url);
+        log_info("  downloading source: %s", recipe->source_url);
+        if (system(cmd) != 0) {
+            log_error("failed to download source");
+            return -1;
+        }
     }
 
     /* Verify SHA256 if provided */
@@ -264,17 +328,18 @@ static int fetch_source(const build_recipe_t *recipe, const char *work_dir) {
 
     /* Extract with a tar implementation that does not depend on the
      * system /bin/tar being functional. */
+    char extract_cmd[2048];
     if (access("/bin/toybox", X_OK) == 0) {
-        snprintf(cmd, sizeof(cmd), "cd '%s' && /bin/toybox tar xf '%s'",
+        snprintf(extract_cmd, sizeof(extract_cmd), "cd '%s' && /bin/toybox tar xf '%s'",
                  work_dir, tarball);
     } else if (access("/root/jonerix/tools/bsdtar-static-aarch64", X_OK) == 0) {
-        snprintf(cmd, sizeof(cmd),
+        snprintf(extract_cmd, sizeof(extract_cmd),
                  "cd '%s' && /root/jonerix/tools/bsdtar-static-aarch64 xf '%s'",
                  work_dir, tarball);
     } else {
-        snprintf(cmd, sizeof(cmd), "cd '%s' && tar xf '%s'", work_dir, tarball);
+        snprintf(extract_cmd, sizeof(extract_cmd), "cd '%s' && tar xf '%s'", work_dir, tarball);
     }
-    if (system(cmd) != 0) {
+    if (system(extract_cmd) != 0) {
         log_error("failed to extract source");
         return -1;
     }
