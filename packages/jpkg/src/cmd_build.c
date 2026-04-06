@@ -576,15 +576,20 @@ static char *fetch_remote_recipe(const char *pkg_name) {
         if (!m->enabled) continue;
 
         char url[2048];
-        /* Try GitHub raw content URL pattern for stormj-UH/jonerix */
-        snprintf(url, sizeof(url),
-                 "https://raw.githubusercontent.com/stormj-UH/jonerix/master/"
-                 "packages/core/%s/recipe.toml", pkg_name);
-
+        /* Try GitHub raw content URL — search core, develop, extra */
+        static const char *pkg_dirs[] = {
+            "packages/core", "packages/develop", "packages/extra", NULL
+        };
         log_info("fetching recipe for %s...", pkg_name);
-        if (fetch_to_file(url, recipe_path) == 0) {
-            fetched = true;
-        } else {
+        for (const char **pd = pkg_dirs; *pd && !fetched; pd++) {
+            snprintf(url, sizeof(url),
+                     "https://raw.githubusercontent.com/stormj-UH/jonerix/master/"
+                     "%s/%s/recipe.toml", *pd, pkg_name);
+            if (fetch_to_file(url, recipe_path) == 0) {
+                fetched = true;
+            }
+        }
+        if (!fetched) {
             /* Fallback: try <mirror>/recipes/<name>.toml */
             snprintf(url, sizeof(url), "%s/recipes/%s.toml", m->url, pkg_name);
             if (fetch_to_file(url, recipe_path) == 0) {
@@ -834,7 +839,7 @@ cleanup:
 
 /*
  * Build-world rebuilds the entire jonerix system from source.
- * It looks for recipes in /packages/core/ (or a specified directory).
+ * It looks for recipes in the specified directory (default: packages/core).
  */
 
 /* Build order for the core system (dependencies first) */

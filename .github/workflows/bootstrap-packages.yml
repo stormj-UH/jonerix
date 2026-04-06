@@ -5,7 +5,7 @@ name: Bootstrap packages (from source)
 # a working jpkg binary. Bootstrap builds every package from source,
 # replacing the pre_bootstrap APK-extracted versions in the release.
 #
-# After successful builds, packages graduate: their packages/core/*/recipe.toml
+# After successful builds, packages graduate: their recipe.toml
 # gets pre_bootstrap set to false, and a PR is created with the changes.
 on:
   workflow_dispatch:
@@ -278,8 +278,11 @@ jobs:
 
           CHANGED=false
           for pkg in $GRADUATED; do
-            recipe="packages/core/${pkg}/recipe.toml"
-            if [ -f "$recipe" ] && grep -q 'pre_bootstrap = true' "$recipe"; then
+            recipe=""
+            for _d in core develop extra; do
+              [ -f "packages/${_d}/${pkg}/recipe.toml" ] && recipe="packages/${_d}/${pkg}/recipe.toml" && break
+            done
+            if [ -n "$recipe" ] && grep -q 'pre_bootstrap = true' "$recipe"; then
               sed -i 's/pre_bootstrap = true/pre_bootstrap = false/' "$recipe"
               echo "Graduated: ${pkg}"
               CHANGED=true
@@ -299,7 +302,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add packages/core/*/recipe.toml
+          git add packages/core/*/recipe.toml packages/develop/*/recipe.toml packages/extra/*/recipe.toml
           COMMIT_BODY="Packages built from source on both x86_64 and aarch64:"
           for pkg in $GRADUATED; do COMMIT_BODY="${COMMIT_BODY}
             - ${pkg}"; done
