@@ -11,7 +11,12 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 
 [build]
 system = "custom"
-build = "make defconfig && make CC=clang CFLAGS=\"-Os -fomit-frame-pointer\" -j$(nproc)"
+build = """make defconfig
+for opt in SH CD DECLARE EXIT SET UNSET EVAL EXEC EXPORT JOBS LOCAL READ RETURN SHIFT SOURCE TRAP WAIT; do
+  sed -i "s/# CONFIG_${opt} is not set/CONFIG_${opt}=y/" .config
+done
+make oldconfig CC=clang CFLAGS="-Os -fomit-frame-pointer" < /dev/null
+make CC=clang CFLAGS="-Os -fomit-frame-pointer" -j$(nproc)"""
 install = """make CC=clang PREFIX=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
