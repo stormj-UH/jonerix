@@ -1,5 +1,7 @@
-name: Build from source
+name: Build from source (disabled)
 
+# Disabled: OOM on 4GB ARM runners building LLVM/Node/Go/Rust.
+# TODO: re-enable when larger runners or tiered builds are available.
 on:
   workflow_dispatch:
     inputs:
