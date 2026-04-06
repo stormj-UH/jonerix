@@ -257,25 +257,27 @@ audit_installed() {
 }
 
 audit_recipes() {
-    local recipes_path="${RECIPES_DIR:-packages/core}"
+    local script_dir
+    script_dir="$(cd "$(dirname "$0")" && pwd)"
+    local project_root="$(dirname "$script_dir")"
 
-    # Try relative to script location, then project root
-    if [ ! -d "$recipes_path" ]; then
-        local script_dir
-        script_dir="$(cd "$(dirname "$0")" && pwd)"
-        local project_root="$(dirname "$script_dir")"
-        recipes_path="$project_root/packages/core"
+    # Search all recipe directories: core, develop, extra
+    local recipes_paths=""
+    for subdir in core develop extra; do
+        local candidate="${RECIPES_DIR:-$project_root/packages}/$subdir"
+        [ -d "$candidate" ] && recipes_paths="$recipes_paths $candidate"
+    done
+
+    if [ -z "$recipes_paths" ]; then
+        die "No package recipe directories found. Specify with --recipes <dir>"
     fi
 
-    if [ ! -d "$recipes_path" ]; then
-        die "Package recipes directory not found. Specify with --recipes <dir>"
-    fi
-
-    info "Auditing package recipes in $recipes_path"
+    info "Auditing package recipes in packages/{core,develop,extra}"
     printf "\n"
 
     local had_failure=0
 
+    for recipes_path in $recipes_paths; do
     for recipe_dir in "$recipes_path"/*/; do
         [ -d "$recipe_dir" ] || continue
         local pkg_name
@@ -300,6 +302,7 @@ audit_recipes() {
         fi
 
         audit_package "$pkg_name" "$license" || had_failure=1
+    done
     done
 
     return $had_failure

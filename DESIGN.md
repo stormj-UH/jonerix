@@ -76,7 +76,7 @@ minimal -> core -> builder   (compilers + dev tools)
 ### Build Pipeline
 
 1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
-2. **Packages** are built from source using `bootstrap/build-all.sh` and per-package `packages/core/*/recipe.toml` recipes
+2. **Packages** are built from source using `bootstrap/build-all.sh` and per-package `recipe.toml` recipes in `packages/{core,develop,extra}/`
 3. **Images** are assembled using Dockerfiles that install packages via `jpkg install`
 4. **CI** builds and publishes all images and packages for both x86_64 and aarch64
 
@@ -438,15 +438,21 @@ jonerix/
 │   └── JONERIX-BUILD-ENVIRONMENT.md  ← build environment reference
 │
 ├── packages/
-│   ├── core/                ← all package recipes (60+ packages)
-│   │   ├── musl/
-│   │   │   └── recipe.toml  ← package metadata + build instructions
+│   ├── core/                ← runtime packages (minimal + core images)
+│   │   ├── musl/            ← each has recipe.toml
 │   │   ├── toybox/
 │   │   ├── mksh/
+│   │   └── ... (29 packages)
+│   ├── develop/             ← compilers + build tools (builder image)
 │   │   ├── llvm/
-│   │   ├── ruby/
+│   │   ├── rust/
+│   │   ├── go/
+│   │   └── ... (17 packages)
+│   ├── extra/               ← apps, router packages, container tools
 │   │   ├── headscale/
-│   │   └── ... (60+ packages)
+│   │   ├── hostapd/
+│   │   ├── containerd/
+│   │   └── ... (18 packages)
 │   └── jpkg/                ← the package manager source code
 │       ├── src/*.c, src/*.h
 │       └── build.ninja      ← built with samu (ninja-compatible)
@@ -493,7 +499,7 @@ jonerix/
 
 ## 11. Build Recipe Format
 
-Each package has a `recipe.toml` in `packages/core/`. Recipes contain metadata, source URL, build instructions, and dependencies.
+Each package has a `recipe.toml` in `packages/{core,develop,extra}/`. Recipes contain metadata, source URL, build instructions, and dependencies.
 
 ```toml
 # packages/core/toybox/recipe.toml
@@ -531,7 +537,7 @@ runtime = ["musl"]
 build = ["clang"]
 ```
 
-`bootstrap/build-all.sh` processes recipes in dependency order from `bootstrap/build-order.txt`, building each package with `jpkg build`. jpkg sets `CC=clang`, `LD=ld.lld`, hardening flags, and an isolated `DESTDIR` automatically.
+`bootstrap/build-all.sh` processes recipes in dependency order from `bootstrap/build-order.txt`, searching across `packages/{core,develop,extra}/` for each recipe. jpkg sets `CC=clang`, `LD=ld.lld`, hardening flags, and an isolated `DESTDIR` automatically.
 
 ---
 

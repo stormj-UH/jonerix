@@ -1,5 +1,6 @@
 .cas/
 .claude/
+CLAUDE.md
 # Worktree-specific files (generated per worktree)
 .env.worktree
 # Build artifacts
