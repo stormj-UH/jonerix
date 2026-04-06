@@ -184,15 +184,14 @@ bash/GNU tools are used only at build time inside Alpine CI and never ship in th
 ## fastfetch
 
 ```
-   _                       _
-  (_) ___  _ __   ___ _ __(_)_  __       root@jonerix
-  | |/ _ \| '_ \ / _ \ '__| \ \/ /      -----------------
-  | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.0 aarch64
- _/ |\___/|_| |_|\___|_|  |_/_/\_\      Kernel -> Linux 6.18.5
-|__/                                     Shell -> mksh (core/builder) / toybox sh (minimal)
-  ========= permissive + linux =========  CPU -> Virtualized Apple Silicon (4)
-                                         Memory -> 102 MiB / 1.01 GiB (10%)
-                                         Disk (/) -> 726 MiB / 504 GiB - ext4
+   _                       _        root@jonerix
+  (_) ___  _ __   ___ _ __(_)_  __  -----------------
+  | |/ _ \| '_ \ / _ \ '__| \ \/ /  OS -> jonerix 1.0 aarch64
+  | | (_) | | | |  __/ |  | |>  <   Kernel -> Linux 6.18.5
+ _/ |\___/|_| |_|\___|_|  |_/_/\_\  Shell -> mksh (core/builder) / toybox sh (minimal)
+|__/                                CPU -> Virtualized Apple Silicon (4)
+======= permissive + linux =======  Memory -> 102 MiB / 1.01 GiB (10%)
+                                    Disk (/) -> 726 MiB / 504 GiB - ext4
 ```
 
 ## License
