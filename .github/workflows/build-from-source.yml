@@ -136,9 +136,12 @@ jobs:
             bash bootstrap/build-all.sh --output /tmp/jpkg-output --dry-run
           else
             # Real build: run inside jonerix chroot
+            # Skip heavy toolchain packages (built separately or via prebuilt)
             sudo chroot /jonerix /bin/sh -c "
               mkdir -p /tmp/jpkg-output
-              sh /workspace/bootstrap/build-all.sh --output /tmp/jpkg-output
+              sh /workspace/bootstrap/build-all.sh --output /tmp/jpkg-output \
+                --skip llvm --skip nodejs --skip go-bootstrap --skip go \
+                --skip go-current --skip rust
             "
           fi
 
@@ -222,7 +225,9 @@ jobs:
           mkdir -p /var/cache/jpkg
           DRY_RUN_FLAG=""
           [ "${{ inputs.dry_run }}" = "true" ] && DRY_RUN_FLAG="--dry-run"
-          sh bootstrap/build-all.sh --output /var/cache/jpkg $DRY_RUN_FLAG
+          sh bootstrap/build-all.sh --output /var/cache/jpkg $DRY_RUN_FLAG \
+            --skip llvm --skip nodejs --skip go-bootstrap --skip go \
+            --skip go-current --skip rust
 
       - name: List built packages
         run: ls -lhS /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
