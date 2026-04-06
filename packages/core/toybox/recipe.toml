@@ -12,7 +12,7 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 [build]
 system = "custom"
 build = """make defconfig
-for opt in SH CD DECLARE EXIT SET UNSET EVAL EXEC EXPORT JOBS LOCAL READ RETURN SHIFT SOURCE TRAP WAIT; do
+for opt in SH CD DECLARE EXIT SET UNSET EVAL EXEC EXPORT JOBS LOCAL READ RETURN SHIFT SOURCE TRAP WAIT GETTY LOGIN PASSWD SU; do
   sed -i "s/# CONFIG_${opt} is not set/CONFIG_${opt}=y/" .config
 done
 make oldconfig CC=clang CFLAGS="-Os -fomit-frame-pointer" < /dev/null
