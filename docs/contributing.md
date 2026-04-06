@@ -41,8 +41,9 @@ docker run -it -v $(pwd):/workspace -w /workspace jonerix-develop:latest
 ```
 jonerix/
   bootstrap/            build-all.sh and build environment docs
-  packages/core/        Package metadata (recipe.toml per package)
-  packages/bootstrap/   From-source build recipes (recipe.toml per package)
+  packages/core/        Runtime packages (minimal + core images)
+  packages/develop/     Compilers + build tools (builder image)
+  packages/extra/       Apps, router packages, container tools
   packages/jpkg/        Package manager source code (C)
   config/               OpenRC services, system defaults
   scripts/              Utility scripts (license audit)
