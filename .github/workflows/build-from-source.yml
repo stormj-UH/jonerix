@@ -104,6 +104,19 @@ jobs:
           '
           echo "Build toolchain installed"
 
+      - name: Build samurai (samu) from source
+        if: ${{ !inputs.dry_run }}
+        run: |
+          sudo chroot /jonerix /bin/sh -c '
+            cd /tmp
+            tar xf /workspace/sources/samurai-1.2.tar.gz
+            cd samurai-1.2
+            cc -O2 -o samu *.c
+            install -m 755 samu /bin/samu
+            ln -sf samu /bin/ninja
+            samu --version
+          '
+
       - name: Build jpkg from source
         if: ${{ !inputs.dry_run }}
         run: |
