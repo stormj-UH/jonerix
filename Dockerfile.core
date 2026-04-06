@@ -56,10 +56,14 @@ RUN jpkg update && \
     ln -sf micro /bin/editor 2>/dev/null || true && \
     ln -sf micro /bin/vi 2>/dev/null || true
 
+# Set SUID bits on login utilities (required for multi-user auth)
+RUN chmod 4755 /bin/su /bin/passwd /bin/login 2>/dev/null || true
+
 # Default config
 COPY config/defaults/etc/hostname     /etc/hostname
 COPY config/defaults/etc/resolv.conf  /etc/resolv.conf
 COPY config/defaults/etc/os-release   /etc/os-release
+COPY config/defaults/etc/securetty    /etc/securetty
 COPY config/defaults/etc/fastfetch/   /etc/fastfetch/
 
 ENV PATH=/bin
