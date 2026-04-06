@@ -49,12 +49,12 @@ FreeBSD/OpenBSD are excellent. jonerix targets a different niche:
 jonerix is bootstrapped from Alpine Linux using jpkg (the custom package manager) and per-package `recipe.toml` build recipes. Alpine is used only as a build host — nothing from it enters the final image.
 
 ```
-Alpine build host              jpkg packages              Final rootfs
-┌──────────────────┐         ┌───────────────────┐      ┌───────────────────┐
-│ Alpine + clang   │──build──▶│ .jpkg archives    │──install──▶│ Pure permissive  │
-│ jpkg, build deps │         │ both arches, signed│      │ system. No GPL.  │
-└──────────────────┘         └───────────────────┘      └───────────────────┘
-       GPL is OK                 from-source builds           no GPL at all
+ Alpine build host               jpkg packages                        Final rootfs
+┌──────────────────┐          ┌─────────────────────┐            ┌──────────────────┐
+│ Alpine + clang   │──build──▶│ .jpkg archives      │──install──▶│ Pure permissive  │
+│ jpkg, build deps │          │ both arches, signed │            │ system. No GPL.  │
+└──────────────────┘          └─────────────────────┘            └──────────────────┘
+     GPL is OK                  from-source builds                   no GPL at all
 ```
 
 ### Image Chain
