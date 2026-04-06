@@ -1,0 +1,43 @@
+[package]
+name = "hostapd"
+version = "2.11"
+license = "BSD-3-Clause"
+pre_bootstrap = false
+description = "IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator"
+
+[source]
+url = "https://w1.fi/releases/hostapd-2.11.tar.gz"
+sha256 = "2b3facb632fd4f65e32f4bf82a76b4b72c501f995a4f62e330219fe7aed1747a"
+
+[build]
+system = "custom"
+configure = """cd hostapd-2.11/hostapd
+cat > .config << 'CONF'
+CONFIG_DRIVER_HOSTAP=y
+CONFIG_DRIVER_NL80211=y
+CONFIG_DRIVER_NONE=y
+CONFIG_RSN_PREAUTH=y
+CONFIG_IEEE80211W=y
+CONFIG_IEEE80211N=y
+CONFIG_IEEE80211AC=y
+CONFIG_IEEE80211AX=y
+CONFIG_TLS=openssl
+CONFIG_EAP=y
+CONFIG_EAP_MD5=y
+CONFIG_EAP_TLS=y
+CONFIG_EAP_PEAP=y
+CONFIG_EAP_TTLS=y
+CONFIG_EAP_MSCHAPV2=y
+CONFIG_PKCS12=y
+CONFIG_WPS=y
+CONFIG_ACS=y
+CONF"""
+build = "make -C hostapd-2.11/hostapd CC=clang LDFLAGS=\"--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\" -j$(nproc)"
+install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/hostapd
+install -m 755 hostapd-2.11/hostapd/hostapd $DESTDIR/bin/hostapd
+install -m 755 hostapd-2.11/hostapd/hostapd_cli $DESTDIR/bin/hostapd_cli
+llvm-strip --strip-all $DESTDIR/bin/hostapd $DESTDIR/bin/hostapd_cli 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl", "openssl"]
+build = ["clang", "make"]
