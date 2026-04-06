@@ -12,7 +12,7 @@ sha256 = "046fa01a216793b8bd2750f9d68d4ad43986eb9c0d6122600f993906012972e8"
 [build]
 system = "custom"
 build = """cargo fetch
-RUSTFLAGS="-C strip=symbols" cargo build --release"""
+RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release"""
 install = """install -Dm755 target/release/rg $DESTDIR/bin/rg
 ln -sf rg $DESTDIR/bin/ripgrep
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

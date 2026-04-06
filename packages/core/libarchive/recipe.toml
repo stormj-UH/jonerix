@@ -11,7 +11,7 @@ sha256 = "8ac57c1f5e99550948d1fe755c806d26026e71827da228f36bef24527e372e6f"
 
 [build]
 system = "cmake"
-configure = 'cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DENABLE_TEST=OFF -DENABLE_ACL=OFF -DENABLE_XATTR=OFF -DENABLE_OPENSSL=ON -DENABLE_LIBB2=OFF -DENABLE_LZ4=ON -DENABLE_LZMA=ON -DENABLE_ZSTD=ON -DENABLE_ZLIB=ON "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"'
+configure = 'cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DENABLE_TEST=OFF -DENABLE_ACL=OFF -DENABLE_XATTR=OFF -DENABLE_OPENSSL=ON -DENABLE_LIBB2=OFF -DENABLE_LZ4=ON -DENABLE_LZMA=ON -DENABLE_ZSTD=ON -DENABLE_ZLIB=ON "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld"'
 build = "perl -0pi -e 's/^#define HAVE_READPASSPHRASE 1$/\/\* #undef HAVE_READPASSPHRASE \*\//m; s/^#define HAVE_CLOSEFROM 1$/\/\* #undef HAVE_CLOSEFROM \*\//m' build/config.h && samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
