@@ -8,7 +8,7 @@
 # Prerequisites:
 #   - jonerix:all image (ghcr.io/stormj-uh/jonerix:all)
 #   - libcxx jpkg uploaded to GitHub
-#   - bin/jpkg-aarch64 in repo
+#   - packages/jpkg/ source in repo
 #
 # Usage:
 #   sh scripts/build-llvm-libcxx.sh
@@ -37,8 +37,13 @@ docker run --rm \
     -c '
 set -e
 
+echo "Building jpkg from source..."
+cd /workspace/packages/jpkg
+samu clean 2>/dev/null || true
+samu && install -m 755 jpkg /bin/jpkg
+cd /
+
 echo "Installing libc++..."
-cp /workspace/bin/jpkg-aarch64 /bin/jpkg && chmod +x /bin/jpkg
 jpkg update
 jpkg install libcxx || {
     echo "jpkg install failed, trying direct download..."
