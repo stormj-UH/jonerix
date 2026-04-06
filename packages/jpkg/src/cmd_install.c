@@ -94,45 +94,60 @@ static int install_files(const char *stage_dir, const char *dest_root) {
      * pkg_extract() already flattens usr/ in the staging directory,
      * so we just need a single recursive copy of the staging contents.
      *
-     * We use a bsdtar pipe (cd staging && bsdtar -cf - . | bsdtar -xpf - -C dest)
-     * instead of `cp -a` to avoid a critical bug:
+     * IMPORTANT: Do NOT use `cp -a staging/. dest/` here.
+     * toybox `cp -a` follows DESTINATION symlinks when the destination
+     * path is a symlink to a file.  On jonerix, toybox applet symlinks
+     * like /bin/clear -> toybox and /bin/reset -> toybox get followed,
+     * causing packages (e.g. ncurses) to overwrite /bin/toybox with
+     * their own binary.  This destroys the multicall binary.
      *
-     *   `cp -a` follows DESTINATION symlinks when the destination path is a
-     *   symlink.  On jonerix, many /bin/ entries are symlinks to toybox
-     *   (e.g. /bin/clear -> toybox).  When a package (e.g. ncurses) installs
-     *   a regular file at bin/clear, `cp -a` follows /bin/clear -> /bin/toybox
-     *   and overwrites the toybox multicall binary with the package's binary.
-     *   This destroys the shell and all toybox applets in one shot.
+     * We use a two-step tar approach (create archive, then extract)
+     * instead of a pipe.  Pipes can deadlock on large packages because
+     * toybox sh keeps the read end of the pipe open in its fd table
+     * while waiting for children — once the pipe buffer fills, the
+     * writer blocks forever.  The LLVM package (200MB+, 1300+ files)
+     * reliably triggers this.
      *
-     *   bsdtar -xpf correctly replaces symlinks with regular files without
-     *   following the destination symlink.
-     *
-     * Falls back to `cp -a` if bsdtar is not available.
+     * toybox `tar -x` correctly replaces destination symlinks with new
+     * files instead of following them.
      */
+
+    /* Safety: flatten usr/ if pkg_extract somehow missed it */
     snprintf(cmd, sizeof(cmd),
-             /* Safety: flatten usr/ if pkg_extract somehow missed it */
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
              "cd '%s/usr' && toybox tar -cf - . | toybox tar -xpf - -C '%s' && "
-             "cd / && rm -rf '%s/usr'; fi; "
-             /* Install staging contents to root via toybox tar pipe.
-              *
-              * IMPORTANT: Do NOT use `cp -a staging/. dest/` here.
-              * toybox `cp -a` follows DESTINATION symlinks when the destination
-              * path is a symlink to a file.  On jonerix, toybox applet symlinks
-              * like /bin/clear -> toybox and /bin/reset -> toybox get followed,
-              * causing packages (e.g. ncurses) to overwrite /bin/toybox with
-              * their own binary.  This destroys the multicall binary.
-              *
-              * toybox `tar -x` correctly replaces destination symlinks with new
-              * files instead of following them.  Use a tar pipe:
-              *   cd staging && toybox tar -cf - . | toybox tar -xpf - -C dest
-              */
-             "cd '%s' && toybox tar -cf - . | toybox tar -xpf - -C '%s' 2>/dev/null; true",
+             "cd / && rm -rf '%s/usr'; fi",
              stage_dir, stage_dir,
              stage_dir, dest_root,
-             stage_dir,
-             stage_dir, dest_root);
-    return system(cmd);
+             stage_dir);
+    system(cmd);
+
+    /* Create a temp tarball from the staging directory, then extract it
+     * into the destination root.  Two steps avoids the pipe deadlock. */
+    char tmp_tar[256];
+    snprintf(tmp_tar, sizeof(tmp_tar), "/tmp/jpkg-install-%d.tar", (int)getpid());
+
+    snprintf(cmd, sizeof(cmd),
+             "cd '%s' && toybox tar -cf '%s' .",
+             stage_dir, tmp_tar);
+    int rc = system(cmd);
+    if (rc != 0) {
+        log_error("failed to create install tarball (exit %d)", rc);
+        unlink(tmp_tar);
+        return -1;
+    }
+
+    snprintf(cmd, sizeof(cmd),
+             "toybox tar -xf '%s' -C '%s'",
+             tmp_tar, dest_root);
+    rc = system(cmd);
+    unlink(tmp_tar);
+    if (rc != 0 && rc != 256) {
+        log_error("failed to extract install tarball (exit %d)", rc);
+        return -1;
+    }
+
+    return 0;
 }
 
 static int install_single_package(const repo_config_t *cfg, const repo_index_t *idx,
