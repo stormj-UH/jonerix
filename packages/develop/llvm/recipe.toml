@@ -18,7 +18,7 @@ set -e
 # position-independent code for the final link.
 export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
 export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
-export LDFLAGS="$(echo "$LDFLAGS" | sed 's/-pie/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
 # Zero-GNU LLVM from-source build.
 # Produces clang, lld, and compiler-rt linked against libc++/libunwind.
@@ -90,6 +90,7 @@ cmake -S llvm -B build -G Ninja \
     -DLLVM_ENABLE_LIBCXX=ON \
     -DLLVM_BUILD_LLVM_DYLIB=OFF \
     -DCLANG_BUILD_CLANG_DYLIB=OFF \
+    -DCLANG_LINK_CLANG_DYLIB=OFF \
     -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
     -DLLVM_TOOL_LTO_BUILD=OFF \
     -DCLANG_TOOL_C_INDEX_TEST_BUILD=OFF \
