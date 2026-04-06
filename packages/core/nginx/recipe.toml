@@ -11,7 +11,15 @@ sha256 = "2c96a946bfb0882a21744ed429770a2123ae1828c7c48665092993ddee91a918"
 
 [build]
 system = "custom"
-configure = """./configure \
+# jonerix uses compiler-rt instead of GCC CRT. nginx's configure tests
+# compile with bare CC, so we must bake the rtlib/unwindlib flags into a
+# wrapper script that nginx will use as its compiler.
+configure = """cat > /tmp/clang-jonerix << 'WRAPPER'
+#!/bin/sh
+exec clang --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -Wno-unused-command-line-argument "$@"
+WRAPPER
+chmod +x /tmp/clang-jonerix
+./configure \
   --prefix=/etc/nginx \
   --sbin-path=/bin/nginx \
   --modules-path=/lib/nginx/modules \
@@ -25,15 +33,18 @@ configure = """./configure \
   --with-http_realip_module \
   --with-http_gzip_static_module \
   --with-http_stub_status_module \
-  --with-pcre \
   --with-threads \
-  --with-cc=clang"""
-build = "make -j$(nproc)"
+  --with-cc=/tmp/clang-jonerix \
+  --with-cc-opt="-Os -Wno-error" \
+  --with-ld-opt=""
+"""
+build = "make -r -j$(nproc)"
 install = """make install DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 mkdir -p $DESTDIR/var/log/nginx
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+rm -rf $DESTDIR/etc/nginx/html"""
 
 [depends]
 runtime = ["musl", "openssl", "zlib", "pcre2"]
-build = ["clang", "make"]
+build = ["clang", "make", "mksh"]
