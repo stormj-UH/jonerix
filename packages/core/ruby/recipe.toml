@@ -1,0 +1,69 @@
+[package]
+name = "ruby"
+version = "3.4.3"
+license = "BSD-2-Clause AND Ruby"
+pre_bootstrap = false
+description = "Ruby programming language interpreter"
+
+[source]
+url = "https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.3.tar.gz"
+sha256 = "55a4cd1dcbe5ca27cf65e89a935a482c2bb2284832939266551c0ec68b437f46"
+
+[build]
+system = "custom"
+configure = """
+set -e
+
+# Ruby on musl / clang / lld — zero GNU runtime.
+#
+# Build notes:
+# - YJIT disabled: requires rustc; enable later with --enable-yjit if rust is
+#   a build dep.
+# - --with-bundled-libyaml: libyaml is not yet a standalone jonerix package;
+#   use the copy bundled in Ruby's ext/psych/yaml/.
+# - --without-gdbm --without-readline: neither gdbm nor readline/libedit are
+#   jonerix packages yet.  Ruby core is fully functional without them.
+# - --with-openssl-dir=/: LibreSSL 4.0.0 installs headers/libs under /.
+# - --enable-load-relative: required on musl so extension .so files are found
+#   relative to the ruby binary rather than relying on DT_RPATH/RUNPATH tricks.
+# - --disable-install-doc: skips rdoc/ri generation (large, slow, optional).
+# - --without-valgrind: no valgrind on jonerix.
+
+CC=clang \
+CXX=clang++ \
+AR=llvm-ar \
+RANLIB=llvm-ranlib \
+NM=llvm-nm \
+CFLAGS="-O2 --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \
+CXXFLAGS="-O2 --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \
+LDFLAGS="--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \
+./configure \
+  --prefix=/ \
+  --enable-shared \
+  --enable-load-relative \
+  --disable-install-doc \
+  --disable-install-rdoc \
+  --disable-dependency-tracking \
+  --with-openssl-dir=/ \
+  --with-bundled-libyaml \
+  --without-gdbm \
+  --without-readline \
+  --without-valgrind \
+  --without-dtrace \
+  --disable-yjit \
+  --with-static-linked-ext
+"""
+build = "make -j$(nproc)"
+install = """make install DESTDIR=$DESTDIR
+# Flatten merged-usr: /usr -> / symlink means usr/ must not exist in archive.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# Convenience symlinks.
+ln -sf ruby "$DESTDIR/bin/ruby3" 2>/dev/null || true
+# Strip binaries and shared libraries.
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find "$DESTDIR/lib" -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl", "openssl", "zlib"]
+build = ["clang", "make", "mksh"]
