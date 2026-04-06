@@ -1,15 +1,33 @@
 [package]
 name = "python3"
-version = "3.12.12"
+version = "3.14.3"
 license = "PSF-2.0"
 pre_bootstrap = false
 description = "Python programming language interpreter"
 
+[source]
+url = "https://www.python.org/ftp/python/3.14.3/Python-3.14.3.tar.xz"
+sha256 = "a97d5549e9ad81fe17159ed02c68774ad5d266c72f8d9a0b5a9c371fe85d902b"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+configure = """CC=clang CXX=clang++ ./configure \
+  --prefix=/ \
+  --enable-shared \
+  --enable-optimizations \
+  --with-lto \
+  --with-system-ffi=no \
+  --with-ensurepip=no \
+  --with-openssl=/ \
+  --disable-test-modules"""
+build = "make -j$(nproc)"
+install = """make install DESTDIR=$DESTDIR
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+ln -sf python3 $DESTDIR/bin/python 2>/dev/null || true
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "zstd", "ncurses"]
-build = []
+runtime = ["musl", "zlib", "zstd", "ncurses", "openssl", "xz"]
+build = ["clang", "make"]

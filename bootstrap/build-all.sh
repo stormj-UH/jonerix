@@ -37,6 +37,7 @@ if [ -z "$JPKG_SOURCE_CACHE" ] && [ -d "${REPO_ROOT}/sources" ]; then
     export JPKG_SOURCE_CACHE
 fi
 FORCE_PKG=""
+SKIP_PKGS=""
 DRY_RUN=0
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
 
@@ -45,13 +46,15 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --output)  OUTPUT="$2"; shift 2 ;;
         --force)   FORCE_PKG="$2"; shift 2 ;;
+        --skip)    SKIP_PKGS="$SKIP_PKGS $2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
         --continue-on-error) shift ;;  # default behavior, accepted for compat
         -h|--help)
-            echo "Usage: $0 [--output DIR] [--force PKG] [--dry-run]"
+            echo "Usage: $0 [--output DIR] [--force PKG] [--skip PKG] [--dry-run]"
             echo ""
             echo "  --output DIR   Directory for built .jpkg files (default: /var/cache/jpkg)"
             echo "  --force PKG    Force rebuild of a specific package"
+            echo "  --skip PKG     Skip a package (repeatable, also skips dependents)"
             echo "  --dry-run      Show what would be built without building"
             exit 0
             ;;
@@ -79,9 +82,16 @@ log_err() {
     printf "[build-all] ERROR: %s\n" "$*" >&2
 }
 
-# Check if a package name is in the failed list
+# Check if a package name is in the failed/skipped list
 is_failed() {
     case " $FAILED " in
+        *" $1 "*) return 0 ;;
+        *)        return 1 ;;
+    esac
+}
+
+is_skipped() {
+    case " $SKIP_PKGS " in
         *" $1 "*) return 0 ;;
         *)        return 1 ;;
     esac
@@ -142,6 +152,14 @@ for pkg in $PACKAGES; do
     fi
 
     pkg_ver=$(grep '^version' "${pkg_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+
+    # Check if package is in skip list
+    if is_skipped "$pkg"; then
+        log "SKIP  ${pkg}-${pkg_ver} (--skip)"
+        FAILED="$FAILED $pkg"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+    fi
 
     # Check if any dependency has failed
     dep_failed=""
