@@ -30,42 +30,57 @@ jonerix can rebuild itself from source using only the tools it ships:
 - **Python 3 + Node.js**: Built from source with Clang/musl
 - **Container runtime**: containerd + runc + nerdctl + CNI plugins, all from source
 
-The jpkg-only develop image (`Dockerfile.develop`) installs every tool from jpkg packages with no Alpine overlay. It compiles C, Go, and Rust programs out of the box.
+The `jonerix:builder` image installs every tool from jpkg packages with no Alpine overlay. It compiles C, Go, and Rust programs out of the box.
 
 ## Quick Start
 
 ```sh
 # Pull from GHCR (fastest)
-docker pull ghcr.io/stormj-uh/jonerix:minimal   # shell + init + network + SSH (~47MB)
-docker pull ghcr.io/stormj-uh/jonerix:all        # full dev environment (~1.6GB)
+docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, openssl, openrc
+docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh, uutils, micro, ripgrep, networking
+docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, go, nodejs, python3
 
-docker run -it ghcr.io/stormj-uh/jonerix:minimal
-docker run -it ghcr.io/stormj-uh/jonerix:all
+# Per-arch tags: -amd64 and -arm64 are also available
+docker run -it ghcr.io/stormj-uh/jonerix:core
+docker run -it ghcr.io/stormj-uh/jonerix:builder
 ```
 
 Or build locally:
 
 ```sh
-# Minimal runtime image
+# Minimal base image
 docker build -f Dockerfile.minimal --tag jonerix:minimal .
 
-# Full image with all packages (compilers, languages, container runtime)
-docker build -f Dockerfile.all.new --tag jonerix:all .
+# Core runtime image (FROM minimal)
+docker build -f Dockerfile.core --tag jonerix:core .
+
+# Builder dev image (FROM core)
+docker build -f Dockerfile.builder --tag jonerix:builder .
 ```
 
 ## What's Inside
+
+### Image Layers
+
+| Image | Based on | Contents |
+|-------|----------|----------|
+| `minimal` | scratch | musl, toybox, dropbear, curl, openssl, openrc, jpkg |
+| `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
+| `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, bmake, samurai, perl |
 
 ### Core System
 
 | Component | License | Role |
 |-----------|---------|------|
 | musl | MIT | C standard library |
-| toybox | 0BSD | Coreutils (ls, cp, cat, grep, ...) |
+| toybox | 0BSD | Base coreutils (ls, cp, cat, ...) |
 | uutils | MIT | Extended coreutils (sort, wc, tr, ...) |
-| zsh | MIT | Shell |
+| mksh | MirOS | Shell (/bin/sh) — POSIX-compliant, musl-safe |
 | jpkg | MIT | Package manager |
 | OpenRC | BSD-2-Clause | Init system |
 | dropbear | MIT | SSH server/client |
+| bsdsed | BSD-2-Clause | sed (BSD implementation) |
+| onetrueawk | MIT | awk (one true awk) |
 
 ### Compilers and Languages
 
@@ -96,9 +111,12 @@ docker build -f Dockerfile.all.new --tag jonerix:all .
 |-----------|---------|------|
 | curl | MIT | HTTP client |
 | LibreSSL | ISC | TLS library (OpenSSL fork) |
+| pcre2 | BSD-3-Clause | Regular expressions library |
+| nginx | BSD-2-Clause | HTTP server |
 | unbound | BSD-3-Clause | DNS resolver |
 | dhcpcd | BSD-2-Clause | DHCP client |
 | ifupdown-ng | ISC | Network configuration |
+| hostapd | BSD-3-Clause | Wi-Fi access point / WPA supplicant |
 
 ### Container Runtime
 
@@ -146,7 +164,7 @@ jonerix uses a merged `/usr` layout where `/usr` is a symlink to `/`. All binari
 1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
 2. **All packages** are installed from the jpkg repository into a clean rootfs via `Dockerfile.minimal`
 3. **Final image** is assembled `FROM scratch` with zero GPL runtime components
-4. **Self-hosting**: `jonerix:all` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:all → jonerix:minimal` is proven at v1.0.
+4. **Self-hosting**: `jonerix:builder` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:builder → jonerix:minimal` is proven at v1.0.
 
 Package recipes live in `packages/*/recipe.toml`. Build dependencies are declared explicitly; the package manager resolves and installs them in order.
 
@@ -161,7 +179,7 @@ Every package must carry a permissive license:
 | Zlib, PSF-2.0, Artistic-2.0 | CC-BY-SA |
 | Public Domain, MirOS | Any copyleft |
 
-bash/GNU tools are used only at build time inside Alpine CI and never ship in the final image. zsh (MIT) is the interactive shell.
+bash/GNU tools are used only at build time inside Alpine CI and never ship in the final image. mksh (MirOS) is the runtime shell (/bin/sh). zsh was removed because it deadlocks on musl libc with nested command substitutions.
 
 ## fastfetch
 
@@ -171,7 +189,7 @@ bash/GNU tools are used only at build time inside Alpine CI and never ship in th
   | |/ _ \| '_ \ / _ \ '__| \ \/ /      -----------------
   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.0 aarch64
  _/ |\___/|_| |_|\___|_|  |_/_/\_\      Kernel -> Linux 6.18.5
-|__/                                     Shell -> zsh (develop) / toybox sh (minimal)
+|__/                                     Shell -> mksh (core/builder) / toybox sh (minimal)
   ========= permissive + linux =========  CPU -> Virtualized Apple Silicon (4)
                                          Memory -> 102 MiB / 1.01 GiB (10%)
                                          Disk (/) -> 726 MiB / 504 GiB - ext4
