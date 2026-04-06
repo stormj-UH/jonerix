@@ -8,6 +8,7 @@ on:
       - 'config/**'
       - 'packages/jpkg/**'
       - 'scripts/**'
+      - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 
 env:
