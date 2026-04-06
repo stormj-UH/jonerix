@@ -109,9 +109,6 @@ build_builder() {
 
 build_router() {
     require_image "${TAG_PREFIX}:core"
-    if [ ! -f "$REPO_ROOT/Dockerfile.router" ]; then
-        err "Dockerfile.router does not exist yet"
-    fi
     log "Building ${TAG_PREFIX}:router (${DOCKER_PLATFORM})"
     docker build \
         --platform "$DOCKER_PLATFORM" \

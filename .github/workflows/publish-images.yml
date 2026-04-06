@@ -290,10 +290,89 @@ jobs:
             ${{ env.IMAGE }}:builder-arm64 \
             ${{ env.IMAGE }}:builder-amd64
 
+  # ── Router image (both architectures) ────────────────────────────────────
+  router-arm64:
+    name: Build router (arm64)
+    needs: core-manifest
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push router (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.router
+          push: true
+          tags: ${{ env.IMAGE }}:router-arm64
+          platforms: linux/arm64
+          build-args: |
+            CORE_IMAGE=${{ env.IMAGE }}:core-arm64
+          cache-from: type=gha,scope=router-arm64
+          cache-to: type=gha,mode=max,scope=router-arm64
+
+  router-amd64:
+    name: Build router (amd64)
+    needs: core-manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push router (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.router
+          push: true
+          tags: ${{ env.IMAGE }}:router-amd64
+          platforms: linux/amd64
+          build-args: |
+            CORE_IMAGE=${{ env.IMAGE }}:core-amd64
+          cache-from: type=gha,scope=router-amd64
+          cache-to: type=gha,mode=max,scope=router-amd64
+
+  router-manifest:
+    name: Merge router manifest
+    needs: [router-arm64, router-amd64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifest
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.IMAGE }}:router \
+            -t ${{ env.IMAGE }}:router-${{ github.sha }} \
+            ${{ env.IMAGE }}:router-arm64 \
+            ${{ env.IMAGE }}:router-amd64
+
   # ── Smoke tests ─────────────────────────────────────────────────────────
   smoke-test-arm64:
     name: Smoke test (arm64)
-    needs: builder-manifest
+    needs: [builder-manifest, router-manifest]
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -347,10 +426,37 @@ jobs:
           fi
           echo "All tests passed"
           '
+      - name: Test router (arm64)
+        run: |
+          docker run --rm ${{ env.IMAGE }}:router-arm64 -c '
+          set -e
+          FAIL=0
+          pass() { echo "PASS: $1"; }
+          fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
+
+          # Networking daemons
+          unbound -V 2>&1 | head -1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
+          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || fail "dhcpcd"
+          hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || fail "hostapd"
+          wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || fail "wpa_supplicant"
+
+          # Config files present
+          [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
+          [ -f /etc/hostapd/hostapd.conf ] && pass "hostapd.conf" || fail "hostapd.conf"
+          [ -f /etc/sysctl.conf ] && pass "sysctl.conf" || fail "sysctl.conf"
+          [ -f /etc/network/interfaces ] && pass "interfaces" || fail "interfaces"
+
+          echo "---"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "$FAIL router test(s) failed"
+            exit 1
+          fi
+          echo "All router tests passed"
+          '
 
   smoke-test-amd64:
     name: Smoke test (amd64)
-    needs: builder-manifest
+    needs: [builder-manifest, router-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -361,7 +467,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Test compilers and tools
+      - name: Test builder (amd64)
         run: |
           docker run --rm ${{ env.IMAGE }}:builder-amd64 -c '
           set -e
@@ -399,8 +505,35 @@ jobs:
 
           echo "---"
           if [ "$FAIL" -gt 0 ]; then
-            echo "$FAIL test(s) failed"
+            echo "$FAIL builder test(s) failed"
             exit 1
           fi
-          echo "All tests passed"
+          echo "All builder tests passed"
+          '
+      - name: Test router (amd64)
+        run: |
+          docker run --rm ${{ env.IMAGE }}:router-amd64 -c '
+          set -e
+          FAIL=0
+          pass() { echo "PASS: $1"; }
+          fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
+
+          # Networking daemons
+          unbound -V 2>&1 | head -1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
+          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || fail "dhcpcd"
+          hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || fail "hostapd"
+          wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || fail "wpa_supplicant"
+
+          # Config files present
+          [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
+          [ -f /etc/hostapd/hostapd.conf ] && pass "hostapd.conf" || fail "hostapd.conf"
+          [ -f /etc/sysctl.conf ] && pass "sysctl.conf" || fail "sysctl.conf"
+          [ -f /etc/network/interfaces ] && pass "interfaces" || fail "interfaces"
+
+          echo "---"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "$FAIL router test(s) failed"
+            exit 1
+          fi
+          echo "All router tests passed"
           '
