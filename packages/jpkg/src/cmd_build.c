@@ -188,12 +188,9 @@ static int run_build_step(const char *step_name, const char *cmd,
     char env_cinclude[128] = "C_INCLUDE_PATH=/include";
     char env_libpath[128] = "LIBRARY_PATH=/lib";
 
-    /* Pick a shell that handles $(...) correctly.
-     * toybox sh deadlocks on command substitution in subshells (e.g. $(nproc)).
-     * Prefer zsh or mksh; fall back to /bin/sh. */
+    /* Use /bin/sh (toybox sh on jonerix).
+     * jpkg pre-expands $(nproc) below so even minimal shells work. */
     const char *shell = "/bin/sh";
-    if (access("/bin/zsh", X_OK) == 0)       shell = "/bin/zsh";
-    else if (access("/bin/mksh", X_OK) == 0)  shell = "/bin/mksh";
 
     /* Write the build script to a temp file to avoid quoting issues.
      * This also lets the chosen shell interpret $(...) correctly. */
@@ -205,23 +202,53 @@ static int run_build_step(const char *step_name, const char *cmd,
         log_error("failed to create build script: %s", strerror(errno));
         return -1;
     }
-    fprintf(sf, "#!%s\nset -e\n", shell);
+    fprintf(sf, "#!%s\n", shell);
+    /* toybox sh does not support set -e; skip it since jpkg checks
+     * the exit code of each build step (configure/build/install) anyway. */
+
+    /* Export NPROC and provide nproc() shim so $(nproc) works in all shells.
+     * toybox sh can deadlock on command substitution with external binaries. */
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpu < 1) ncpu = 1;
+    fprintf(sf, "export NPROC=%ld\n", ncpu);
+    fprintf(sf, "nproc() { printf '%%ld\\n' %ld; }\n", ncpu);
+
     fprintf(sf, "cd '%s'\n", work_dir);
     fprintf(sf, "export %s\nexport %s\nexport %s\nexport %s\nexport %s\n",
             env_cc, env_ld, env_ar, env_nm, env_ranlib);
     fprintf(sf, "export '%s'\nexport '%s'\n", env_cflags, env_ldflags);
     fprintf(sf, "export '%s'\n", env_destdir);
     fprintf(sf, "export %s\nexport %s\n", env_cinclude, env_libpath);
-    fprintf(sf, "%s\n", cmd);
+
+    /* Replace $(nproc) with the literal CPU count to avoid toybox sh deadlock
+     * on command substitution. Also handle `nproc` backtick form. */
+    {
+        char nproc_str[32];
+        snprintf(nproc_str, sizeof(nproc_str), "%ld", ncpu);
+        const char *p = cmd;
+        while (*p) {
+            if (strncmp(p, "$(nproc)", 8) == 0) {
+                fputs(nproc_str, sf);
+                p += 8;
+            } else if (strncmp(p, "`nproc`", 7) == 0) {
+                fputs(nproc_str, sf);
+                p += 7;
+            } else {
+                fputc(*p, sf);
+                p++;
+            }
+        }
+        fputc('\n', sf);
+    }
     fclose(sf);
     chmod(script_path, 0755);
 
     int rc = system(script_path);
-    unlink(script_path);
     if (rc != 0) {
-        log_error("%s failed (exit %d)", step_name, WEXITSTATUS(rc));
+        log_error("%s failed (exit %d) — script: %s", step_name, WEXITSTATUS(rc), script_path);
         return -1;
     }
+    unlink(script_path);
 
     return 0;
 }

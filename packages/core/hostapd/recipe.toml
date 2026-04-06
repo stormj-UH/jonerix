@@ -11,7 +11,7 @@ sha256 = "2b3facb632fd4f65e32f4bf82a76b4b72c501f995a4f62e330219fe7aed1747a"
 
 [build]
 system = "custom"
-configure = """cd hostapd-2.11/hostapd
+configure = """cd hostapd
 cat > .config << 'CONF'
 CONFIG_DRIVER_HOSTAP=y
 CONFIG_DRIVER_NL80211=y
@@ -32,10 +32,10 @@ CONFIG_PKCS12=y
 CONFIG_WPS=y
 CONFIG_ACS=y
 CONF"""
-build = "make -C hostapd-2.11/hostapd CC=clang LDFLAGS=\"--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\" -j$(nproc)"
+build = "make -C hostapd CC=clang LDFLAGS=\"--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\" -j$(nproc)"
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/hostapd
-install -m 755 hostapd-2.11/hostapd/hostapd $DESTDIR/bin/hostapd
-install -m 755 hostapd-2.11/hostapd/hostapd_cli $DESTDIR/bin/hostapd_cli
+install -m 755 hostapd/hostapd $DESTDIR/bin/hostapd
+install -m 755 hostapd/hostapd_cli $DESTDIR/bin/hostapd_cli
 llvm-strip --strip-all $DESTDIR/bin/hostapd $DESTDIR/bin/hostapd_cli 2>/dev/null || true"""
 
 [depends]

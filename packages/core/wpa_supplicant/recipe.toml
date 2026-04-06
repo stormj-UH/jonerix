@@ -11,7 +11,7 @@ sha256 = "912ea06f74e30a8e36fbb68064d6cdff218d8d591db0fc5d75dee6c81ac7fc0a"
 
 [build]
 system = "custom"
-configure = """cd wpa_supplicant-2.11/wpa_supplicant
+configure = """cd wpa_supplicant
 cat > .config << 'CONF'
 CONFIG_DRIVER_NL80211=y
 CONFIG_DRIVER_WEXT=y
@@ -31,11 +31,11 @@ CONFIG_WPS=y
 CONFIG_CTRL_IFACE=y
 CONFIG_READLINE=y
 CONF"""
-build = "make -C wpa_supplicant-2.11/wpa_supplicant CC=clang LDFLAGS=\"--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\" -j$(nproc)"
+build = "make -C wpa_supplicant CC=clang LDFLAGS=\"--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\" -j$(nproc)"
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/wpa_supplicant
-install -m 755 wpa_supplicant-2.11/wpa_supplicant/wpa_supplicant $DESTDIR/bin/wpa_supplicant
-install -m 755 wpa_supplicant-2.11/wpa_supplicant/wpa_cli $DESTDIR/bin/wpa_cli
-install -m 755 wpa_supplicant-2.11/wpa_supplicant/wpa_passphrase $DESTDIR/bin/wpa_passphrase
+install -m 755 wpa_supplicant/wpa_supplicant $DESTDIR/bin/wpa_supplicant
+install -m 755 wpa_supplicant/wpa_cli $DESTDIR/bin/wpa_cli
+install -m 755 wpa_supplicant/wpa_passphrase $DESTDIR/bin/wpa_passphrase
 llvm-strip --strip-all $DESTDIR/bin/wpa_supplicant $DESTDIR/bin/wpa_cli $DESTDIR/bin/wpa_passphrase 2>/dev/null || true"""
 
 [depends]
