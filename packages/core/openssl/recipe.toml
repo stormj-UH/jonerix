@@ -11,7 +11,7 @@ sha256 = "4d841955f0acc3dfc71d0e3dd35f283af461222350e26843fea9731c0246a1e4"
 
 [build]
 system = "cmake"
-configure = "cmake -B build -G \"Unix Makefiles\" -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_C_COMPILER=clang -DBUILD_SHARED_LIBS=ON -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF -DOPENSSLDIR=/etc/ssl -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \"-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\" \"-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\""
+configure = "cmake -B build -G \"Unix Makefiles\" -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_C_COMPILER=clang -DBUILD_SHARED_LIBS=ON -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF -DOPENSSLDIR=/etc/ssl -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \"-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld\" \"-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld\""
 build = "cmake --build build -j$(nproc)"
 install = """DESTDIR=$DESTDIR cmake --install build
 if [ -d "$DESTDIR/usr" ]; then (cd "$DESTDIR/usr" && bsdtar cf - .) | (cd "$DESTDIR" && bsdtar xf -) && rm -rf "$DESTDIR/usr"; fi

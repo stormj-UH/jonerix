@@ -15,9 +15,9 @@ configure = ""
 build = """byacc -d awkgram.y
 cp y.tab.c awkgram.tab.c
 cp y.tab.h awkgram.tab.h
-clang -O2 --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld maketab.c -o maketab
+clang -O2 --rtlib=compiler-rt -fuse-ld=lld maketab.c -o maketab
 ./maketab awkgram.tab.h > proctab.c
-clang -O2 --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld \
+clang -O2 --rtlib=compiler-rt -fuse-ld=lld \
   awkgram.tab.c b.c lex.c lib.c main.c parse.c proctab.c run.c tran.c \
   -lm -o awk"""
 install = """mkdir -p $DESTDIR/bin $DESTDIR/share/man/man1
