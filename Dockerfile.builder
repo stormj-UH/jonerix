@@ -24,8 +24,21 @@ RUN jpkg update && \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
     done
 
-# Compiler and build tool symlinks
-RUN ln -sf clang /bin/cc 2>/dev/null || true && \
+# Compiler wrappers and tool symlinks
+#
+# CLANG_CONFIG_FILE_SYSTEM_DIR is a compile-time CMake option, not a
+# runtime env var. Alpine/jonerix clang doesn't have it set, so the
+# config file at /etc/clang/<triple>.cfg is never auto-loaded.
+# We create wrapper scripts that pass --config explicitly.
+RUN TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "unknown") && \
+    mkdir -p /etc/clang && \
+    printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' \
+      > "/etc/clang/${TRIPLE}.cfg" && \
+    rm -f /bin/clang /bin/clang++ && \
+    printf '#!/bin/sh\nexec /bin/clang-21 --config="/etc/clang/%s.cfg" "$@"\n' "$TRIPLE" > /bin/clang && \
+    printf '#!/bin/sh\nexec /bin/clang-21 --config="/etc/clang/%s.cfg" -stdlib=libc++ -lc++ -lc++abi "$@"\n' "$TRIPLE" > /bin/clang++ && \
+    chmod 755 /bin/clang /bin/clang++ && \
+    ln -sf clang /bin/cc 2>/dev/null || true && \
     ln -sf clang++ /bin/c++ 2>/dev/null || true && \
     ln -sf ld.lld /bin/ld 2>/dev/null || true && \
     LLVM_BIN=; \
@@ -44,20 +57,7 @@ RUN ln -sf clang /bin/cc 2>/dev/null || true && \
     # Linker fixups (GCC runtime compat)
     ln -sf libgcc_s.so.1 /lib/libgcc_s.so 2>/dev/null || true && \
     ln -sf libstdc++.so.6 /lib/libstdc++.so 2>/dev/null || true && \
-    printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true && \
-    # Ensure clang config exists for the actual triple (may be *-alpine-* or *-jonerix-*)
-    TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "") && \
-    if [ -n "$TRIPLE" ]; then \
-      mkdir -p /etc/clang && \
-      CFG="/etc/clang/${TRIPLE}.cfg" && \
-      printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n--stdlib=libc++\n' > "$CFG"; \
-    fi
-
-# Tell clang to load /etc/clang/<triple>.cfg automatically.
-# Alpine (and jonerix) clang doesn't set CLANG_CONFIG_FILE_SYSTEM_DIR,
-# so without this, --rtlib=compiler-rt/--unwindlib=libunwind/-fuse-ld=lld
-# are NOT applied and clang falls back to GCC CRT (crtbeginS.o/libgcc).
-ENV CLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang
+    printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true
 
 WORKDIR /root
 ENTRYPOINT ["/bin/mksh"]
