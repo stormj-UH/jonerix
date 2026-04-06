@@ -1,0 +1,14 @@
+[package]
+name = "unzip"
+version = "3.8.6-r1"
+license = "Apache-2.0"
+pre_bootstrap = false
+description = "Compatibility package providing /bin/unzip via libarchive bsdunzip"
+
+[build]
+build = ""
+install = "mkdir -p $DESTDIR/bin && ln -sf bsdunzip $DESTDIR/bin/unzip"
+
+[depends]
+runtime = ["libarchive"]
+build = []
