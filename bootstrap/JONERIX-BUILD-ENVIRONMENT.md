@@ -1,7 +1,7 @@
 # jonerix Build Environment Reference
 
 This documents all fixups required to build packages from source on
-jonerix-develop. These are necessary because jonerix uses a merged-usr
+jonerix:builder. These are necessary because jonerix uses a merged-usr
 layout, musl libc, and permissive-only tools (clang, not gcc).
 
 ## 1. Compiler & Toolchain
@@ -15,9 +15,16 @@ export AR=llvm-ar
 export NM=llvm-nm
 export RANLIB=llvm-ranlib
 
-# cc symlink (many configure scripts look for 'cc')
-ln -sf clang /bin/cc
+# cc/c++ symlinks (many configure scripts look for 'cc')
+# Already set in builder image:
+#   cc -> clang, c++ -> clang++, ld -> ld.lld
+#   ar -> llvm-ar, nm -> llvm-nm, ranlib -> llvm-ranlib
+#   make -> bmake, ninja -> samu
 ```
+
+The builder image ships clang wrapper scripts at `/bin/clang` and
+`/bin/clang++` that pass `--config=/etc/clang/<triple>.cfg` to load
+`--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld` automatically.
 
 ## 2. Include & Library Paths (merged-usr layout)
 
@@ -69,41 +76,54 @@ done
 ln -sf "$LIBC_NAME" "/lib/libc.so"
 ```
 
-## 5. libstdc++ Path
+## 5. C++ Standard Library
 
-LLVM shared libs need libstdc++. It lives at `/lib/libstdc++.so.6`
-but some build systems (nodejs gyp) look at `/usr/lib/`.
+The builder ships libc++ (LLVM) as the C++ standard library.
+Compatibility symlinks for libstdc++ exist for packages that hardcode it:
 
 ```sh
-mkdir -p /usr/lib 2>/dev/null
-ln -sf /lib/libstdc++.so.6 /usr/lib/libstdc++.so
-ln -sf /lib/libstdc++.so.6 /usr/lib/libstdc++.so.6
+# Already set in builder image:
+ln -sf libgcc_s.so.1 /lib/libgcc_s.so
+ln -sf libstdc++.so.6 /lib/libstdc++.so
+
+# Empty libssp stub (some builds link -lssp_nonshared)
+printf '!<arch>\n' > /lib/libssp_nonshared.a
 ```
 
-## 6. Missing POSIX Tools
+## 6. Build Tools
 
-toybox provides most POSIX tools but some are missing or rejected
-by autoconf. These come from the Alpine overlay in Dockerfile.develop:
+The builder image includes all build tools needed. No Alpine overlay —
+everything is installed via jpkg.
 
-| Tool    | Source        | License     | Notes                          |
-|---------|---------------|-------------|--------------------------------|
-| grep    | Alpine grep   | GPL-3.0*    | Build-time only, not in runtime|
-| awk     | mawk          | BSD         | Permissive                     |
-| m4      | Alpine m4     | GPL-3.0*    | Build-time only                |
-| bash    | Alpine bash   | GPL-3.0*    | Build-time only (toybox genconfig.sh) |
-| tar     | bsdtar        | Apache-2.0  | Replaces toybox tar (symlink handling) |
-| yacc    | byacc         | Public Domain | Replaces GPL bison           |
-| ninja   | samurai       | Apache-2.0  | ninja-compatible build tool    |
-| make    | bmake         | BSD         | GNU make compat via gnu-compat.patch |
+| Tool    | Package     | License       | Notes                          |
+|---------|-------------|---------------|--------------------------------|
+| make    | bmake       | MIT           | BSD make, symlinked as /bin/make |
+| ninja   | samurai     | Apache-2.0    | ninja-compatible, symlinked as /bin/ninja |
+| awk     | onetrueawk  | MIT           | One True Awk (Kernighan)       |
+| tar     | bsdtar      | BSD-2-Clause  | Replaces toybox tar (symlink handling) |
+| yacc    | byacc       | Public Domain | Replaces GPL bison             |
+| lex     | flex        | BSD-2-Clause  | Lexer generator                |
+| cmake   | cmake       | BSD-3-Clause  | Build system generator         |
+| grep    | toybox      | 0BSD          | Pass GREP=/bin/grep for autoconf |
+| python  | python3     | PSF-2.0       | Needed by some build systems   |
+| perl    | perl        | Artistic-2.0  | Needed by autoconf/OpenSSL     |
 
-*GPL tools are ONLY in the build environment overlay, never in the runtime image.
+**Note on autoconf**: toybox grep is functional but autoconf's grep
+detection test fails to recognize it. Pass `GREP=/bin/grep` explicitly
+to `./configure` to work around this.
+
+**Note on GNU make**: Some upstream projects (Ruby, hostapd,
+wpa_supplicant) use GNU make-specific features (ifdef, $(wildcard),
+$(shell)) that bmake cannot handle. These must be built in an Alpine
+container with GNU make at build time. bmake works for most other
+packages.
 
 ## 7. Build System Specifics
 
 ### autoconf/configure packages
 ```sh
 # Most just need CC and the environment above
-CC=clang ./configure --prefix=/
+GREP=/bin/grep CC=clang ./configure --prefix=/
 make -j$(nproc)
 make DESTDIR=$DESTDIR install
 ```
@@ -127,6 +147,12 @@ export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 cargo build --release
 ```
 
+### Go packages
+```sh
+# Build directly — no GNU make needed
+go build -trimpath -ldflags "-s -w" -o binary ./cmd/...
+```
+
 ### Perl
 ```sh
 # Perl Configure needs explicit paths for merged-usr
@@ -141,10 +167,13 @@ cargo build --release
 
 ### toybox
 ```sh
-# Needs bash for genconfig.sh
-ln -sf bash /bin/bash 2>/dev/null || ln -sf sh /bin/bash
-make defconfig
-make CC=clang -j$(nproc)
+# Needs bash for genconfig.sh and scripts/make.sh
+bash scripts/genconfig.sh defconfig
+# Enable pending commands (sh, getty, login, etc.)
+for opt in SH GETTY LOGIN PASSWD SU; do
+    sed -i "s/# CONFIG_${opt} is not set/CONFIG_${opt}=y/" .config
+done
+CC=clang CFLAGS="-Os -fomit-frame-pointer" bash scripts/make.sh
 ```
 
 ### musl (from source)
@@ -173,8 +202,10 @@ These can be overridden by recipe.toml build commands.
 
 - **musl from-source**: Works but must use `--build-jpkg` (isolated DESTDIR).
   Installing directly contaminates system headers.
-- **nodejs**: Python subprocess can't find clang (PATH not propagated).
-  Needs explicit PATH in recipe configure step.
-- **toybox tar**: Can't handle symlinks in archives. Use bsdtar instead.
+- **toybox tar**: Can't handle symlinks in archives. bsdtar is the default
+  (`/bin/tar -> bsdtar`).
 - **Large Rust builds**: Disable LTO, limit codegen-units. 4GB+ RAM needed.
-- **C++ packages**: Need libstdc++ symlink at /usr/lib/.
+- **GNU make projects**: Ruby, hostapd, wpa_supplicant require GNU make
+  (not available on jonerix). Build these in Alpine containers.
+- **autoconf grep**: Always pass `GREP=/bin/grep` to configure — autoconf
+  rejects toybox grep.
