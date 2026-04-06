@@ -23,12 +23,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-# Prefer packages/bootstrap/ if it exists, fall back to packages/core/
-if [ -d "${REPO_ROOT}/packages/bootstrap" ]; then
-    RECIPE_DIR="${REPO_ROOT}/packages/bootstrap"
-else
-    RECIPE_DIR="${REPO_ROOT}/packages/core"
-fi
+# Recipe directories: core (runtime), develop (compilers), extra (apps)
+RECIPE_DIRS="${REPO_ROOT}/packages/core ${REPO_ROOT}/packages/develop ${REPO_ROOT}/packages/extra"
 ORDER_FILE="${SCRIPT_DIR}/build-order.txt"
 OUTPUT="${OUTPUT:-/var/cache/jpkg}"
 # Auto-set source cache if sources/ directory exists in repo
@@ -99,17 +95,24 @@ is_skipped() {
 
 # Get runtime dependencies for a package from its recipe.toml
 get_deps() {
-    _recipe="${RECIPE_DIR}/$1/recipe.toml"
-    [ -f "$_recipe" ] || return
-    grep '^runtime ' "$_recipe" 2>/dev/null | head -1 | \
-        sed 's/runtime = //; s/[][]//g; s/"//g; s/,/ /g'
+    for _rd in $RECIPE_DIRS; do
+        _recipe="${_rd}/$1/recipe.toml"
+        if [ -f "$_recipe" ]; then
+            grep '^runtime ' "$_recipe" 2>/dev/null | head -1 | \
+                sed 's/runtime = //; s/[][]//g; s/"//g; s/,/ /g'
+            return
+        fi
+    done
 }
 
 # Check if a .jpkg for this package already exists in OUTPUT
 is_built() {
     _pkg="$1"
-    _recipe="${RECIPE_DIR}/$_pkg/recipe.toml"
-    [ -f "$_recipe" ] || return 1
+    _recipe=""
+    for _rd in $RECIPE_DIRS; do
+        [ -f "${_rd}/$_pkg/recipe.toml" ] && _recipe="${_rd}/$_pkg/recipe.toml" && break
+    done
+    [ -z "$_recipe" ] && return 1
     _ver=$(grep '^version' "$_recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
     _arch=$(uname -m)
     [ -f "${OUTPUT}/${_pkg}-${_ver}-${_arch}.jpkg" ] && return 0
@@ -142,10 +145,14 @@ log ""
 
 for pkg in $PACKAGES; do
     TOTAL=$((TOTAL + 1))
-    pkg_dir="${RECIPE_DIR}/${pkg}"
+    # Find recipe in any package directory
+    pkg_dir=""
+    for _rd in $RECIPE_DIRS; do
+        [ -f "${_rd}/${pkg}/recipe.toml" ] && pkg_dir="${_rd}/${pkg}" && break
+    done
 
     # Check recipe exists
-    if [ ! -f "${pkg_dir}/recipe.toml" ]; then
+    if [ -z "$pkg_dir" ] || [ ! -f "${pkg_dir}/recipe.toml" ]; then
         log_err "No recipe found for '$pkg' — skipping"
         SKIPPED=$((SKIPPED + 1))
         continue
