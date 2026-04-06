@@ -30,7 +30,6 @@ set -e
 # - --without-valgrind: no valgrind on jonerix.
 
 GREP=/bin/grep \
-MAKE=gmake \
 CC=clang \
 CXX=clang++ \
 AR=llvm-ar \
@@ -55,8 +54,8 @@ LDFLAGS="" \
   --disable-yjit \
   --with-static-linked-ext
 """
-build = "gmake -j$(nproc)"
-install = """gmake install DESTDIR=$DESTDIR
+build = "make -j$(nproc)"
+install = """make install DESTDIR=$DESTDIR
 # Flatten merged-usr: /usr -> / symlink means usr/ must not exist in archive.
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
@@ -68,4 +67,4 @@ find "$DESTDIR/lib" -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \
 
 [depends]
 runtime = ["musl", "openssl", "zlib"]
-build = ["clang", "gmake", "onetrueawk", "mksh"]
+build = ["clang", "make", "onetrueawk", "mksh"]
