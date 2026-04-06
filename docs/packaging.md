@@ -22,11 +22,11 @@ Target package sizes:
 
 ## Build Recipe Format
 
-Each package lives in its own directory under `packages/core/` with a standardized `Makefile`:
+Each package lives in its own directory under `packages/{core,develop,extra}/` with a `recipe.toml`:
 
 ```
-packages/core/<package-name>/
-  Makefile        -- build recipe (required)
+packages/<category>/<package-name>/
+  recipe.toml     -- build recipe (required)
   patches/        -- patches to apply (optional)
   <name>.config   -- configuration files (optional)
   files/          -- additional files to install (optional)
