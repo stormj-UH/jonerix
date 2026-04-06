@@ -86,6 +86,37 @@ static pkg_file_t *build_file_manifest(const char *root_dir, const char *prefix)
 }
 
 /* Copy extracted files from staging to root filesystem */
+/*
+ * Find a working tar command.  Returns a static string.
+ *
+ * Preference: bsdtar (handles symlinks correctly, good format support),
+ * then toybox tar, then plain tar.  We test each by running it with
+ * --version / --help and checking the exit code.
+ */
+static const char *find_tar(void) {
+    static const char *cached = NULL;
+    if (cached) return cached;
+
+    /* bsdtar from libarchive — best option */
+    if (system("bsdtar --version >/dev/null 2>&1") == 0) {
+        cached = "bsdtar";
+        return cached;
+    }
+    /* toybox tar — available on jonerix */
+    if (system("toybox tar --help >/dev/null 2>&1") == 0) {
+        cached = "toybox tar";
+        return cached;
+    }
+    /* Generic tar (busybox, GNU, etc.) */
+    if (system("tar --help >/dev/null 2>&1") == 0) {
+        cached = "tar";
+        return cached;
+    }
+
+    log_error("no tar implementation found (tried bsdtar, toybox tar, tar)");
+    return NULL;
+}
+
 static int install_files(const char *stage_dir, const char *dest_root) {
     char cmd[4096];
     /*
@@ -108,17 +139,20 @@ static int install_files(const char *stage_dir, const char *dest_root) {
      * writer blocks forever.  The LLVM package (200MB+, 1300+ files)
      * reliably triggers this.
      *
-     * toybox `tar -x` correctly replaces destination symlinks with new
-     * files instead of following them.
+     * tar -x correctly replaces destination symlinks with new files
+     * instead of following them.
      */
+
+    const char *tar = find_tar();
+    if (!tar) return -1;
 
     /* Safety: flatten usr/ if pkg_extract somehow missed it */
     snprintf(cmd, sizeof(cmd),
              "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
-             "cd '%s/usr' && toybox tar -cf - . | toybox tar -xpf - -C '%s' && "
+             "cd '%s/usr' && %s -cf - . | %s -xpf - -C '%s' && "
              "cd / && rm -rf '%s/usr'; fi",
              stage_dir, stage_dir,
-             stage_dir, dest_root,
+             stage_dir, tar, tar, dest_root,
              stage_dir);
     system(cmd);
 
@@ -128,8 +162,8 @@ static int install_files(const char *stage_dir, const char *dest_root) {
     snprintf(tmp_tar, sizeof(tmp_tar), "/tmp/jpkg-install-%d.tar", (int)getpid());
 
     snprintf(cmd, sizeof(cmd),
-             "cd '%s' && toybox tar -cf '%s' .",
-             stage_dir, tmp_tar);
+             "cd '%s' && %s -cf '%s' .",
+             stage_dir, tar, tmp_tar);
     int rc = system(cmd);
     if (rc != 0) {
         log_error("failed to create install tarball (exit %d)", rc);
@@ -138,8 +172,8 @@ static int install_files(const char *stage_dir, const char *dest_root) {
     }
 
     snprintf(cmd, sizeof(cmd),
-             "toybox tar -xf '%s' -C '%s'",
-             tmp_tar, dest_root);
+             "%s -xf '%s' -C '%s'",
+             tar, tmp_tar, dest_root);
     rc = system(cmd);
     unlink(tmp_tar);
     if (rc != 0 && rc != 256) {
