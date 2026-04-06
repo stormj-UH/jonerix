@@ -9,6 +9,13 @@
 ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
 
 # Stage 0: Build jpkg from source in Alpine
+#
+# This build includes a fix for a critical aarch64 bug:
+#   jpkg previously used `cp -a staging/. /` to install files. toybox `cp -a`
+#   follows DESTINATION symlinks, so when ncurses installed bin/clear,
+#   bin/reset, etc., it would follow /bin/clear->toybox and overwrite
+#   /bin/toybox with the ncurses binary. This destroyed the shell.
+#   Fixed by using `toybox tar` pipe instead of `cp -a` in install_files().
 FROM alpine:latest AS jpkg-builder
 RUN apk add --no-cache clang lld musl-dev samurai zstd-dev
 COPY packages/jpkg/ /build/jpkg/
@@ -22,17 +29,16 @@ RUN if command -v apk >/dev/null 2>&1; then \
       apk add --no-cache curl tar zstd libarchive-tools; \
     fi
 
+# Install fixed jpkg (with toybox tar pipe instead of cp -a in install_files)
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
 # Install core runtime packages via jpkg
-# Order: base libs -> system -> networking -> user tools
 #
-# IMPORTANT: mksh is installed first (before ncurses) and immediately
-# symlinked to /bin/sh.  The aarch64 ncurses package has a known bug
-# where it overwrites /bin/toybox with the tic binary, which breaks
-# /bin/sh (symlinked to toybox) and all subsequent curl calls.
+# IMPORTANT: mksh is installed first and immediately symlinked to /bin/sh.
+# On aarch64, the ncurses package overwrites /bin/toybox (the multicall
+# binary that provides /bin/sh) via a cp -a symlink-following bug.
 # Installing mksh first ensures /bin/sh remains functional throughout.
-# toybox is then reinstalled at the end to restore the multicall binary.
+# All symlinks are created in the same RUN to avoid broken /bin/sh between layers.
 RUN jpkg update && \
     jpkg install mksh && \
     ln -sf mksh /bin/sh && \
@@ -45,10 +51,7 @@ RUN jpkg update && \
     do \
       echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
     done && \
-    jpkg install toybox || echo "WARN: toybox reinstall failed"
-
-# Symlinks (mksh -> /bin/sh already set above; add remaining)
-RUN ln -sf bsdtar /bin/tar 2>/dev/null || true && \
+    ln -sf bsdtar /bin/tar 2>/dev/null || true && \
     ln -sf dbclient /bin/ssh 2>/dev/null || true && \
     ln -sf micro /bin/editor 2>/dev/null || true && \
     ln -sf micro /bin/vi 2>/dev/null || true
@@ -61,7 +64,7 @@ COPY config/defaults/etc/fastfetch/   /etc/fastfetch/
 
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/mksh
+ENV SHELL=/bin/sh
 ENV TERM=xterm
 ENV EDITOR=micro
 ENV VISUAL=micro
@@ -69,5 +72,4 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
 WORKDIR /root
-ENTRYPOINT ["/bin/mksh"]
-CMD ["-l"]
+CMD ["/bin/sh", "-l"]
