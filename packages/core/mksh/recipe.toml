@@ -1,0 +1,26 @@
+[package]
+name = "mksh"
+version = "R59c"
+license = "MirOS"
+pre_bootstrap = false
+description = "MirBSD Korn Shell — POSIX shell for /bin/sh"
+
+[source]
+url = "https://www.mirbsd.org/MirOS/dist/mir/mksh/mksh-R59c.tgz"
+sha256 = "77ae1665a337f1c48c61d6b961db3e52119b38e58884d1c89684af31f87bc506"
+
+[build]
+system = "custom"
+configure = ""
+build = """CC=clang LDFLAGS="--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" /bin/sh Build.sh -r"""
+install = """mkdir -p $DESTDIR/bin $DESTDIR/share/man/man1 $DESTDIR/etc/skel
+install -m 755 mksh $DESTDIR/bin/mksh
+install -m 644 mksh.1 $DESTDIR/share/man/man1/mksh.1
+install -m 644 lksh.1 $DESTDIR/share/man/man1/lksh.1
+install -m 644 dot.mkshrc $DESTDIR/etc/skel/.mkshrc
+ln -sf mksh $DESTDIR/bin/sh
+llvm-strip --strip-all $DESTDIR/bin/mksh 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

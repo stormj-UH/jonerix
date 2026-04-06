@@ -14,19 +14,22 @@ system = "cmake"
 configure = """cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_C_FLAGS="-fvisibility=default" \
   -DCMAKE_INSTALL_PREFIX=/ \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DBUILD_SHARED_LIBS=ON \
   -DBUILD_STATIC_LIBS=OFF \
   -DPCRE2_BUILD_PCRE2GREP=ON \
   -DPCRE2_SUPPORT_JIT=ON \
-  -DPCRE2_SUPPORT_UNICODE=ON"""
+  -DPCRE2_SUPPORT_UNICODE=ON \
+  -DPCRE2_BUILD_TESTS=OFF"""
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR cmake --install build
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+rm -rf $DESTDIR/share/man $DESTDIR/share/doc $DESTDIR/lib/pkgconfig $DESTDIR/lib/cmake"""
 
 [depends]
 runtime = ["musl"]
