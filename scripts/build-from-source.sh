@@ -2,7 +2,7 @@
 # build-from-source.sh — Build all jpkg packages from source
 #
 # Runs inside a jonerix:builder container. Uses jpkg build to compile
-# every recipe in packages/core/ and output .jpkg files.
+# every recipe in packages/{core,develop,extra}/ and output .jpkg files.
 #
 # The builder image has everything needed: clang, go, rust, python3,
 # cmake, bmake, samu — so it can rebuild itself and all other images.
@@ -31,7 +31,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RECIPE_DIR="${REPO_ROOT}/packages/core"
+RECIPE_DIRS="${REPO_ROOT}/packages/core ${REPO_ROOT}/packages/develop ${REPO_ROOT}/packages/extra"
 
 # Output directory
 if [ -d /output ]; then
@@ -56,26 +56,35 @@ log() {
 # Ensure jpkg index is current
 jpkg update 2>/dev/null || true
 
+# Find recipe for a package name across all recipe dirs
+find_recipe() {
+    for _rd in $RECIPE_DIRS; do
+        [ -f "${_rd}/$1/recipe.toml" ] && echo "${_rd}/$1" && return 0
+    done
+    return 1
+}
+
 # Single package mode
 if [ -n "$PKG_INPUT" ]; then
-    recipe_dir="${RECIPE_DIR}/${PKG_INPUT}"
-    if [ ! -f "${recipe_dir}/recipe.toml" ]; then
-        log "ERROR: no recipe at ${recipe_dir}/recipe.toml"
+    recipe_dir=$(find_recipe "$PKG_INPUT") || {
+        log "ERROR: no recipe found for ${PKG_INPUT} in packages/{core,develop,extra}"
         exit 1
-    fi
+    }
     log "Building: ${PKG_INPUT}"
     jpkg build "${recipe_dir}" --build-jpkg --output "$OUTPUT"
     log "Done: $(ls -lh "$OUTPUT/${PKG_INPUT}"*".jpkg" 2>/dev/null)"
     exit 0
 fi
 
-# Build all packages
+# Build all packages from all recipe directories
 log "Building all recipes from source"
 log "Output: $OUTPUT"
 log "Arch: $ARCH"
 log ""
 
-for recipe in "${RECIPE_DIR}"/*/recipe.toml; do
+for recipe_dir_base in $RECIPE_DIRS; do
+for recipe in "${recipe_dir_base}"/*/recipe.toml; do
+    [ -f "$recipe" ] || continue
     pkg_dir="$(dirname "$recipe")"
     pkg_name="$(basename "$pkg_dir")"
     pkg_ver=$(grep "^version" "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
@@ -96,6 +105,7 @@ for recipe in "${RECIPE_DIR}"/*/recipe.toml; do
         ERRORS="$ERRORS $pkg_name"
         FAILED=$((FAILED + 1))
     fi
+done
 done
 
 log ""

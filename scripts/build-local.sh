@@ -132,7 +132,7 @@ build_packages() {
     if [ -n "$PKG_INPUT" ]; then
         log "Package: $PKG_INPUT"
     else
-        log "Building all recipes in packages/core/"
+        log "Building all recipes in packages/{core,develop,extra}/"
     fi
 
     # Run builder container with repo mounted, output to host
@@ -151,15 +151,19 @@ set -e
 jpkg update 2>/dev/null || true
 
 if [ -n "$PKG_INPUT" ]; then
-    recipe_dir="/workspace/packages/core/${PKG_INPUT}"
-    [ -f "${recipe_dir}/recipe.toml" ] || { echo "ERROR: no recipe at ${recipe_dir}"; exit 1; }
+    recipe_dir=""
+    for d in core develop extra; do
+      [ -f "/workspace/packages/$d/${PKG_INPUT}/recipe.toml" ] && recipe_dir="/workspace/packages/$d/${PKG_INPUT}" && break
+    done
+    [ -z "$recipe_dir" ] && { echo "ERROR: no recipe for ${PKG_INPUT} in packages/{core,develop,extra}"; exit 1; }
     echo "=== Building ${PKG_INPUT} ==="
     jpkg build "${recipe_dir}" --build-jpkg --output /output
 else
     BUILT=0
     FAILED=0
     SKIPPED=0
-    for recipe in /workspace/packages/core/*/recipe.toml; do
+    for recipe in /workspace/packages/core/*/recipe.toml /workspace/packages/develop/*/recipe.toml /workspace/packages/extra/*/recipe.toml; do
+        [ -f "$recipe" ] || continue
         pkg_dir="$(dirname "$recipe")"
         pkg_name="$(basename "$pkg_dir")"
         pkg_ver=$(grep "^version" "$recipe" | head -1 | sed "s/.*= *\"\(.*\)\"/\1/")
