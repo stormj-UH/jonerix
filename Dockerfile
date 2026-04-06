@@ -134,8 +134,10 @@ COPY config/defaults/etc/profile      /jonerix/etc/profile
 COPY config/defaults/etc/doas.conf    /jonerix/etc/doas.conf
 COPY config/defaults/etc/os-release   /jonerix/etc/os-release
 COPY config/defaults/etc/fastfetch/   /jonerix/etc/fastfetch/
+COPY config/defaults/etc/securetty    /jonerix/etc/securetty
 COPY config/openrc/init.d/            /jonerix/etc/init.d/
-RUN chmod 755 /jonerix/etc/init.d/* 2>/dev/null || true
+RUN chmod 755 /jonerix/etc/init.d/* 2>/dev/null || true && \
+    chmod 4755 /jonerix/bin/su /jonerix/bin/passwd /jonerix/bin/login 2>/dev/null || true
 
 COPY scripts/license-audit.sh /jonerix/bin/license-audit
 RUN chmod 755 /jonerix/bin/license-audit
