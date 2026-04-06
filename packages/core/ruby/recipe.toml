@@ -54,6 +54,9 @@ LDFLAGS="" \
   --disable-yjit \
   --with-static-linked-ext
 """
+# NOTE: Ruby's configure generates a GNU make-specific Makefile (makefile-gmake).
+# Build requires GNU make at build time (provided by Alpine container).
+# bmake CANNOT parse this Makefile — GNU make is not optional for Ruby.
 build = "make -j$(nproc)"
 install = """make install DESTDIR=$DESTDIR
 # Flatten merged-usr: /usr -> / symlink means usr/ must not exist in archive.

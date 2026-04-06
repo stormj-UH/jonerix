@@ -11,18 +11,25 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 
 [build]
 system = "custom"
-build = """make defconfig
+build = """set -e
+# Generate default config, then enable pending commands (sh, getty, etc.)
+# Uses scripts/make.sh instead of GNU make — requires bash at build time.
+bash scripts/genconfig.sh defconfig
 for opt in SH CD DECLARE EXIT SET UNSET EVAL EXEC EXPORT JOBS LOCAL READ RETURN SHIFT SOURCE TRAP WAIT GETTY LOGIN PASSWD SU; do
   sed -i "s/# CONFIG_${opt} is not set/CONFIG_${opt}=y/" .config
 done
-make oldconfig CC=clang CFLAGS="-Os -fomit-frame-pointer" < /dev/null
-make CC=clang CFLAGS="-Os -fomit-frame-pointer" -j$(nproc)"""
-install = """make CC=clang PREFIX=$DESTDIR install
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+CC=clang CFLAGS="-Os -fomit-frame-pointer" bash scripts/make.sh
+"""
+install = """set -e
+mkdir -p $DESTDIR/bin
+install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
+llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
+# Create applet symlinks
+for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1 | tr ' ' '\n'); do
+  [ "$applet" = "toybox" ] && continue
+  ln -sf toybox "$DESTDIR/bin/$applet" 2>/dev/null || true
+done"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "make"]
+build = ["clang"]

@@ -11,13 +11,17 @@ sha256 = "a09f5e2f5b3b5e488bd3ee45c0be8f1e9078692174411dc5193f56a7e0de8078"
 
 [build]
 system = "custom"
-build = """go mod download
-make static GOFLAGS="-trimpath" EXTRA_LDFLAGS="-s -w\""""
+build = """set -e
+go mod download
+# Build statically without GNU make — replaces 'make static'
+CGO_ENABLED=1 go build -trimpath \
+  -tags "seccomp netgo osusergo static_build" \
+  -ldflags "-s -w -extldflags '-static'" \
+  -o runc .
+"""
 install = """install -Dm755 runc $DESTDIR/bin/runc
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
+llvm-strip --strip-all $DESTDIR/bin/runc 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = ["go", "make"]
+build = ["go"]
