@@ -223,8 +223,11 @@ jobs:
             desc=$(printf '%s' "$meta"    | grep '^description ' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             arch=$(printf '%s' "$meta"    | grep '^arch '        | head -1 | sed 's/.*= *"\(.*\)"/\1/')
             # Prefer recipe.toml (source of truth) for depends; fall back to .jpkg metadata
-            recipe_file="${GITHUB_WORKSPACE}/packages/core/${name}/recipe.toml"
-            if [ -f "$recipe_file" ]; then
+            recipe_file=""
+            for _pkgdir in core develop extra; do
+              [ -f "${GITHUB_WORKSPACE}/packages/${_pkgdir}/${name}/recipe.toml" ] && recipe_file="${GITHUB_WORKSPACE}/packages/${_pkgdir}/${name}/recipe.toml" && break
+            done
+            if [ -n "$recipe_file" ]; then
               depends_arr=$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')
             else
               depends_arr=$(printf '%s' "$meta" | grep '^runtime = \[' | head -1 | sed 's/^runtime = //')
