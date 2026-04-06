@@ -77,10 +77,10 @@ cmake -S llvm -B build -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt" \
     -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
-    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
-    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DLLVM_ENABLE_LIBCXX=ON \
     -DLLVM_BUILD_LLVM_DYLIB=OFF \
     -DCLANG_BUILD_CLANG_DYLIB=OFF \

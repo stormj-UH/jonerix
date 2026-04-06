@@ -24,7 +24,9 @@ export RANLIB=llvm-ranlib
 
 The builder image ships clang wrapper scripts at `/bin/clang` and
 `/bin/clang++` that pass `--config=/etc/clang/<triple>.cfg` to load
-`--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld` automatically.
+`--rtlib=compiler-rt -fuse-ld=lld` automatically. The clang++ wrapper
+additionally passes `--unwindlib=libunwind -stdlib=libc++` — C programs
+do not need libunwind and must not link against it.
 
 ## 2. Include & Library Paths (merged-usr layout)
 

@@ -12,7 +12,7 @@ sha256 = "4e2e5df15c3f9c0594f4ba1b9d243c5e7aa87abac8721716635bb872eef46229"
 [build]
 system = "custom"
 configure = ""
-build = "make CC=clang LDFLAGS=\"--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld\""
+build = "make CC=clang LDFLAGS=\"--rtlib=compiler-rt -fuse-ld=lld\""
 install = """mkdir -p $DESTDIR/bin $DESTDIR/share/man/man1
 install -m 755 sed $DESTDIR/bin/bsdsed
 install -m 644 sed.1 $DESTDIR/share/man/man1/sed.1
