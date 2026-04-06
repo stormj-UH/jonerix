@@ -501,7 +501,8 @@ int version_compare(const char *v1, const char *v2) {
 static const char *permissive_licenses[] = {
     "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Apache-2.0",
     "0BSD", "CC0", "CC0-1.0", "Unlicense", "curl",
-    "MirOS", "OpenSSL", "SSLeay", "zlib", "public domain",
+    "MirOS", "OpenSSL", "SSLeay", "zlib", "Zlib",
+    "public domain", "Public-Domain",
     "BSD-2-Clause-Patent", "PSF-2.0", "BSL-1.0", "Artistic-2.0",
     NULL
 };
