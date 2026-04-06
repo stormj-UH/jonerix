@@ -7,7 +7,7 @@
   | | (_) | | | |  __/ |  | |>  <
  _/ |\___/|_| |_|\___|_|  |_/_/\_\
 |__/
-  ========= permissive + linux =========
+======= permissive + linux =======
 ```
 
 **A fully self-hosting Linux distribution with zero GPL in userland.**
