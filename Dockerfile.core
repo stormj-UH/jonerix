@@ -35,6 +35,9 @@ COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 # Install core runtime packages via jpkg
 #
 # IMPORTANT: mksh is installed first and immediately symlinked to /bin/sh.
+# Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
+ARG CACHEBUST=0
+
 # On aarch64, the ncurses package overwrites /bin/toybox (the multicall
 # binary that provides /bin/sh) via a cp -a symlink-following bug.
 # Installing mksh first ensures /bin/sh remains functional throughout.
