@@ -324,15 +324,7 @@ The `jonerix:router` image extends core with networking packages and ships defau
 - **Hostapd**: WiFi access point (WPA2, disabled by default — user must configure SSID/passphrase)
 - **Network interfaces**: WAN (eth0, DHCP) + LAN (eth1, static 192.168.1.1/24)
 - **Sysctl hardening**: IP forwarding enabled, SYN cookies, ICMP redirect rejection, reverse path filtering
-
-### The Firewall Gap
-
-The `nft` CLI (nftables userspace) is GPL-2.0+. The kernel's netfilter subsystem is part of the kernel (GPLv2, accepted). Options:
-
-1. **jnft** — Write a minimal MIT-licensed CLI that communicates with the kernel via the nftables netlink API (`libnftnl` is GPL, so we'd talk netlink directly). This is ~2-3K lines of C for basic rule management.
-2. **BPF-based filtering** — Use eBPF programs for packet filtering. Tools like `bpfilter` aim to provide a permissive userspace. This is the long-term direction.
-3. **Cloud-only** — For cloud VMs, security groups replace host firewalls. Document this as a valid deployment model.
-
+- 
 ---
 
 ## 8. Security Hardening
@@ -564,7 +556,6 @@ build = ["clang"]
 
 ### Future
 
-- [ ] Write `jnft` — minimal netlink-based firewall CLI (~2-3K lines of C)
 - [ ] Write `cloud-init-lite` — metadata-driven instance setup (~500 lines of sh)
 - [ ] **Desktop variant** — Wayland (MIT) + wlroots (MIT) + foot terminal (MIT) + Sway (MIT). All permissive.
 - [ ] **Raspberry Pi** support (device tree, kernel config)
