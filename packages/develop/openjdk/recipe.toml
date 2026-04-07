@@ -1,0 +1,129 @@
+# NOT YET BUILDABLE — draft recipe pending full clang/musl build verification
+#
+# This recipe builds OpenJDK 21 (LTS) from source using Eclipse Temurin 21 as a
+# bootstrap JDK. The Temurin prebuilt is used only during compilation and is NOT
+# installed into $DESTDIR — only the from-source build ships in the package.
+#
+# License policy note: GPL-2.0 WITH Classpath-exception-2.0 is a named exception
+# in jonerix's license policy for develop/ packages. It is NOT permitted in core/
+# or extra/ packages and must not be included in the minimal, core, or router images.
+#
+# Build requirements (all build-time only, in Alpine container):
+#   - GNU make (GPL, Alpine build-time only — never ships)
+#   - bash (GPL, Alpine build-time only — never ships)
+#   - clang (Apache-2.0 — jonerix default compiler)
+#   - lld (Apache-2.0 — jonerix default linker)
+#
+# See docs/plans/java-bootstrap.md for full analysis and bootstrap chain.
+
+[package]
+name = "openjdk"
+version = "21.0.7"
+license = "GPL-2.0-only WITH Classpath-exception-2.0"
+pre_bootstrap = false
+description = "OpenJDK 21 LTS — Java SE Development Kit (headless, server build)"
+
+[source]
+url = "https://github.com/openjdk/jdk21u/archive/refs/tags/jdk-21.0.7+6.tar.gz"
+sha256 = ""
+# TODO: populate sha256 after verifying the correct tag tarball
+
+[build]
+system = "custom"
+
+build = """
+set -e
+
+# --- Step 1: Obtain bootstrap JDK (Temurin 21 musl prebuilt) ---
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+  BOOT_URL="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.7%2B6/OpenJDK21U-jdk_aarch64_alpine-linux_hotspot_21.0.7_6.tar.gz"
+  BOOT_SHA="TODO_aarch64_sha256"
+else
+  BOOT_URL="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.7%2B6/OpenJDK21U-jdk_x64_alpine-linux_hotspot_21.0.7_6.tar.gz"
+  BOOT_SHA="TODO_x86_64_sha256"
+fi
+# TODO: populate actual sha256 values after verifying Temurin 21.0.7+6 release
+
+curl -fsSL "$BOOT_URL" -o boot-jdk.tar.gz
+printf '%s  boot-jdk.tar.gz\n' "$BOOT_SHA" | sha256sum -c
+mkdir -p boot-jdk
+tar xf boot-jdk.tar.gz --strip-components=1 -C boot-jdk
+
+# --- Step 2: Configure OpenJDK build ---
+# --with-toolchain-type=clang: use Clang instead of GCC
+# --with-x=no: headless build — no X11/AWT native libraries
+# --with-cups=no: no CUPS printing support
+# --with-fontconfig=no: no system fontconfig (bundled font metrics only)
+# --disable-warnings-as-errors: Clang may emit different warnings than GCC
+# --with-version-string: embed clean version in java -version output
+# --with-boot-jdk: path to bootstrap Temurin JDK
+# --with-extra-cflags/cxxflags: apply jonerix hardening flags
+# --with-extra-ldflags: apply jonerix RELRO/PIE link flags
+
+bash configure \
+  --with-toolchain-type=clang \
+  --with-boot-jdk="$PWD/boot-jdk" \
+  --with-x=no \
+  --with-cups=no \
+  --with-fontconfig=no \
+  --disable-warnings-as-errors \
+  --with-version-pre="" \
+  --with-version-build=6 \
+  --with-version-opt="jonerix" \
+  --with-native-debug-symbols=none \
+  --with-extra-cflags="-Os -fstack-protector-strong -D_FORTIFY_SOURCE=2" \
+  --with-extra-cxxflags="-Os -fstack-protector-strong -D_FORTIFY_SOURCE=2" \
+  --with-extra-ldflags="-Wl,-z,relro,-z,now" \
+  --with-jvm-variants=server
+
+# --- Step 3: Build ---
+# GNU make is required. Uses all available CPUs.
+# JOBS defaults to nproc; jpkg build env may set MAKEFLAGS.
+make JOBS=$(nproc) images
+"""
+
+install = """
+set -e
+
+# The build output is in build/linux-*/images/jdk/
+IMGDIR=$(find build -maxdepth 2 -name 'jdk' -type d | head -1)
+if [ -z "$IMGDIR" ]; then
+  echo "ERROR: could not find JDK image directory under build/"
+  exit 1
+fi
+
+# Install to /lib/jvm/openjdk-21 (jonerix merged-usr layout)
+JVMDIR="$DESTDIR/lib/jvm/openjdk-21"
+mkdir -p "$JVMDIR"
+cp -a "$IMGDIR/." "$JVMDIR/"
+
+# Strip native libraries to reduce package size
+find "$JVMDIR" -name '*.so' -exec llvm-strip --strip-unneeded {} + 2>/dev/null || true
+find "$JVMDIR/bin" -type f -exec llvm-strip --strip-all {} + 2>/dev/null || true
+
+# Create /bin symlinks for standard commands
+mkdir -p "$DESTDIR/bin"
+for cmd in java javac jar javap jdeps jlink jmod jshell; do
+  if [ -f "$JVMDIR/bin/$cmd" ]; then
+    ln -sf "/lib/jvm/openjdk-21/bin/$cmd" "$DESTDIR/bin/$cmd"
+  fi
+done
+
+# Create profile.d entry to set JAVA_HOME
+mkdir -p "$DESTDIR/etc/profile.d"
+cat > "$DESTDIR/etc/profile.d/java.sh" << 'EOF'
+export JAVA_HOME=/lib/jvm/openjdk-21
+EOF
+
+# Verify the build works (sanity check)
+# Note: this runs the newly built JVM, not the bootstrap JDK
+"$JVMDIR/bin/java" -version
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "llvm"]
+# Note: GNU make and bash are also required at build time.
+# These are provided by the Alpine build container and are not listed here
+# because they are not jonerix packages (they are build-host tools only).
