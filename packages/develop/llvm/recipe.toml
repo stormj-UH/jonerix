@@ -224,6 +224,14 @@ find "$DESTDIR/lib" -name '*.so*' -type f -size +0 \
 # Remove docs/man/cmake to save space
 rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc" "$DESTDIR/lib/cmake"
 
+# --- Verify DESTDIR contents before packaging ---
+echo "=== DESTDIR tree ==="
+find "$DESTDIR" -type f | head -100
+echo "=== DESTDIR lib/ ==="
+ls -laR "$DESTDIR/lib/" 2>/dev/null | head -50
+echo "=== DESTDIR etc/ ==="
+ls -laR "$DESTDIR/etc/" 2>/dev/null | head -20
+
 # --- Verify: warn if any GNU deps leaked through ---
 echo "=== Verifying clang binary dependencies ==="
 readelf -d "$DESTDIR/bin/clang-21" 2>/dev/null | grep NEEDED || true
