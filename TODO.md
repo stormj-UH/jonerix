@@ -1,7 +1,8 @@
 TODO:
 
-6. Add stormwall package. [EXTERNAL HOLD]
+6. Add stormwall package (NOT recipe). ~~[EXTERNAL HOLD]~~
 7. Add rush package. [EXTERNAL HOLD]
+8. Add jmake package (NOT recipe).
 9. ~~Build hostapd recipe and jpkg.~~ [DONE — recipe exists, needs nl80211 headers + GNU make to build]
 10. ~~Build wpa_supplicant recipe and jpkg.~~ [DONE — recipe exists, same blockers as hostapd]
 14. Low-level file system utilities and Grub or some other bootloader for raw metal installs. This should require BYOK Bring/Build Your Own Kernel
