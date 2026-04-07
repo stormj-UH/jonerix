@@ -19,7 +19,7 @@ TODO:
 17. ~~Clean up repository for isolated files and code that don't do anything anymore.~~ [DONE — partial, legacy Makefiles removed]
 18. Build and customize a linux kernel in jonerix.
 19. Raspberry Pi pre-reqs.
-20. Build Ruby recipe and jpkg. [BLOCKED — needs GNU make at build time; jpkg license fixed for "BSD-2-Clause AND Ruby"]
+20. Build Ruby recipe and jpkg. [~~BLOCKED — needs GNU make at build time; jpkg license fixed for "BSD-2-Clause AND Ruby"~~Install jmake!]
 21. ~~Purge gmake from repo.~~ [DONE — gmake recipe deleted; runc/containerd/toybox rewritten to avoid GNU make; hostapd/wpa_supplicant/ruby documented as needing GNU make at Alpine build time]
 22. ~~Add local build script (build-local.sh).~~ [DONE — mirrors CI chain: minimal->core->builder->router + packages target]
 23. ~~Add build-from-source.sh script.~~ [DONE — runs inside builder to rebuild all recipes]
@@ -33,9 +33,9 @@ TODO:
 | ca-certificates | Was blocked by MPL-2.0 license — now fixed, needs build |
 | hostapd | Needs nl80211 kernel headers + GNU make (Alpine build) |
 | wpa_supplicant | Needs nl80211 kernel headers + GNU make (Alpine build) |
-| ruby | Needs GNU make (Alpine build); license now unblocked |
+| ruby | Needs jmake ~~GNU make (Alpine build)~~; license now unblocked |
 | linux | Kernel recipe — large project, separate effort |
-| m4 | GPL build tool, pre_bootstrap=true |
+~~| m4 | GPL build tool, pre_bootstrap=true |~~
 
 ## Missing architecture (have one arch, need the other)
 
