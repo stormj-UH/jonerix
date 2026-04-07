@@ -55,6 +55,7 @@ printf '!<arch>\n' > /lib/libssp_nonshared.a
 # Build builtins for the BOOTSTRAP clang's triple so that --rtlib=compiler-rt
 # test links pass during the main cmake configure step.
 BOOTSTRAP_TRIPLE=$(clang -dumpmachine)
+rm -rf /tmp/llvm-builtins-bootstrap
 mkdir -p /tmp/llvm-builtins-bootstrap
 cmake -S compiler-rt/lib/builtins -B /tmp/llvm-builtins-bootstrap -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
@@ -159,6 +160,7 @@ ln -sf llvm-objdump  "$DESTDIR/bin/objdump"  2>/dev/null || true
 # --- Step 6: jonerix compiler-rt builtins ---
 # Build builtins with the newly-built clang targeting the jonerix triple.
 # Installed to the per-target layout that the new clang expects.
+rm -rf /tmp/llvm-builtins-jonerix
 mkdir -p /tmp/llvm-builtins-jonerix
 cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/llvm-builtins-jonerix -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
@@ -182,20 +184,6 @@ if [ -d "$RT_LINUX" ]; then
     cp "$RT_LINUX/clang_rt.crtbegin-${ARCH}.o"     "$RT_TARGET/clang_rt.crtbegin.o"     2>/dev/null || true
     cp "$RT_LINUX/clang_rt.crtend-${ARCH}.o"       "$RT_TARGET/clang_rt.crtend.o"       2>/dev/null || true
 fi
-
-# --- Step 7: GCC compat CRT dir ---
-# Clang probes /lib/gcc/<triple>/<ver>/crtbeginS.o when linking.
-# Populate with compiler-rt objects so no GCC CRT is needed.
-GCC_VER="21"
-GCC_DIR="$DESTDIR/lib/gcc/$LLVM_TRIPLE/$GCC_VER"
-mkdir -p "$GCC_DIR"
-[ -f "$RT_TARGET/clang_rt.crtbegin.o" ] && \
-    cp "$RT_TARGET/clang_rt.crtbegin.o" "$GCC_DIR/crtbeginS.o" && \
-    cp "$RT_TARGET/clang_rt.crtbegin.o" "$GCC_DIR/crtbeginT.o"
-[ -f "$RT_TARGET/clang_rt.crtend.o" ] && \
-    cp "$RT_TARGET/clang_rt.crtend.o"   "$GCC_DIR/crtendS.o"
-[ -f "$RT_TARGET/libclang_rt.builtins.a" ] && \
-    cp "$RT_TARGET/libclang_rt.builtins.a" "$GCC_DIR/libgcc.a"
 
 # Empty libssp_nonshared.a in DESTDIR (musl provides __stack_chk_fail)
 printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
