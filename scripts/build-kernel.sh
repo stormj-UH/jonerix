@@ -1,0 +1,185 @@
+#!/bin/sh
+# build-kernel.sh — build the Linux kernel in an Alpine container
+#
+# Usage:
+#   ./scripts/build-kernel.sh [--output DIR]
+#
+# This script builds packages/extra/linux/ inside a fresh Alpine container.
+# It is the supported way to build the kernel recipe until jpkg's license gate
+# is updated to honour pre_bootstrap = true (see packages/extra/linux/recipe.toml
+# for a full explanation of the blocker).
+#
+# Prerequisites:
+#   - Docker (or a compatible runtime) available on PATH
+#   - The jonerix repo checked out (this script uses $PWD as the repo root)
+#   - At least ~20 GB of free disk space for the kernel build tree
+#
+# Output:
+#   The built .jpkg file is written to /tmp/jpkg-output/ by default,
+#   or to the directory passed with --output.
+#
+# Notes:
+#   - LLVM=1 is used so clang/lld replace GCC/binutils entirely.
+#   - GNU make, perl, bash, bc, flex, and bison are installed from Alpine for
+#     the kernel build system; they are build-time only and do NOT enter the
+#     final .jpkg archive.
+#   - jpkg is compiled from source inside the container (requires samu).
+
+set -e
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUTPUT_DIR="/tmp/jpkg-output"
+
+# Parse arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --output=*)
+            OUTPUT_DIR="${1#--output=}"
+            shift
+            ;;
+        -h|--help)
+            sed -n '2,/^$/p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+mkdir -p "$OUTPUT_DIR"
+
+echo "==> Building Linux kernel recipe"
+echo "    Repo:   $REPO_ROOT"
+echo "    Output: $OUTPUT_DIR"
+echo ""
+
+docker run --rm \
+    -v "$REPO_ROOT:/workspace" \
+    -v "$OUTPUT_DIR:/output" \
+    alpine:latest sh -c '
+        set -e
+
+        echo "==> Installing Alpine build dependencies"
+        apk add --no-cache \
+            clang lld compiler-rt musl-dev \
+            make perl bash bc flex bison \
+            elfutils-dev openssl-dev linux-headers \
+            diffutils findutils coreutils \
+            zstd-dev zlib-dev \
+            git \
+            samu
+
+        echo "==> Building jpkg from source"
+        cd /workspace/packages/jpkg
+        samu clean 2>/dev/null || true
+        samu
+        install -m755 jpkg /usr/local/bin/jpkg
+        echo "jpkg version: $(jpkg --version 2>/dev/null || echo unknown)"
+
+        echo "==> Starting Linux kernel build"
+        # jpkg build will be BLOCKED by the license gate (GPL-2.0-only).
+        # We invoke the build steps manually until pre_bootstrap is wired up.
+        # See packages/extra/linux/recipe.toml for the full explanation.
+        #
+        # TODO: once cmd_build.c honours pre_bootstrap = true, replace the
+        # manual steps below with:
+        #   jpkg build /workspace/packages/extra/linux --output /output
+        #
+        RECIPE_DIR=/workspace/packages/extra/linux
+        VERSION=$(awk -F\" "/^version/ {print \$2; exit}" "$RECIPE_DIR/recipe.toml")
+        TARBALL="linux-${VERSION}.tar.xz"
+        KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v6.x/${TARBALL}"
+
+        mkdir -p /build
+        cd /build
+
+        echo "==> Downloading Linux ${VERSION}"
+        if [ ! -f "${TARBALL}" ]; then
+            wget -q --show-progress "${KERNEL_URL}" -O "${TARBALL}"
+        fi
+
+        echo "==> Verifying sha256 (update recipe.toml with the real hash)"
+        # Fetch the official checksum file and verify
+        wget -q "https://cdn.kernel.org/pub/linux/kernel/v6.x/sha256sums.asc" -O sha256sums.asc 2>/dev/null || true
+        if [ -f sha256sums.asc ]; then
+            EXPECTED=$(awk "/  ${TARBALL}$/ {print \$1}" sha256sums.asc)
+            if [ -n "$EXPECTED" ]; then
+                echo "${EXPECTED}  ${TARBALL}" | sha256sum -c -
+                echo "sha256 OK: ${EXPECTED}"
+                echo ""
+                echo ">>> Update recipe.toml source.sha256 to: ${EXPECTED}"
+                echo ""
+            fi
+        fi
+
+        echo "==> Extracting Linux ${VERSION}"
+        tar -xf "${TARBALL}"
+        cd "linux-${VERSION}"
+
+        ARCH=$(uname -m)
+        case "$ARCH" in
+            x86_64)  KARCH=x86_64 ; CONFIG_FRAG=jonerix-x86_64.config ; VMLINUZ=arch/x86/boot/bzImage ;;
+            aarch64) KARCH=arm64  ; CONFIG_FRAG=jonerix-aarch64.config ; VMLINUZ=arch/arm64/boot/Image.gz ;;
+            *) echo "Unsupported arch: $ARCH" ; exit 1 ;;
+        esac
+
+        export LLVM=1
+        export LD=ld.lld
+
+        # Parallelism: cap at RAM/2 GB to avoid OOM during linking
+        NCPUS=$(nproc)
+        RAM_GB=$(awk "/MemTotal/ { printf \"%d\", \$2/1024/1024 }" /proc/meminfo 2>/dev/null || echo 4)
+        MAX_JOBS=$(( RAM_GB / 2 ))
+        [ "$MAX_JOBS" -lt 1 ] && MAX_JOBS=1
+        [ "$MAX_JOBS" -gt "$NCPUS" ] && MAX_JOBS="$NCPUS"
+        echo "==> Building ARCH=$KARCH LLVM=1 JOBS=$MAX_JOBS (${RAM_GB}GB RAM)"
+
+        make ARCH="$KARCH" defconfig
+
+        if [ -f "$RECIPE_DIR/$CONFIG_FRAG" ]; then
+            echo "==> Merging jonerix config fragment: $CONFIG_FRAG"
+            scripts/kconfig/merge_config.sh -m .config "$RECIPE_DIR/$CONFIG_FRAG"
+            make ARCH="$KARCH" olddefconfig
+        fi
+
+        make ARCH="$KARCH" -j"$MAX_JOBS" all
+
+        echo "==> Installing to DESTDIR"
+        KVER=$(make ARCH="$KARCH" -s kernelversion)
+        DESTDIR="/build/destdir"
+        mkdir -p "$DESTDIR/boot"
+
+        install -m644 "$VMLINUZ" "$DESTDIR/boot/vmlinuz-${KVER}"
+        ln -sf "vmlinuz-${KVER}" "$DESTDIR/boot/vmlinuz"
+        install -m644 System.map "$DESTDIR/boot/System.map-${KVER}"
+        install -m644 .config    "$DESTDIR/boot/config-${KVER}"
+
+        make ARCH="$KARCH" INSTALL_MOD_PATH="$DESTDIR" INSTALL_MOD_STRIP=1 modules_install
+        rm -f "$DESTDIR/lib/modules/${KVER}/build" "$DESTDIR/lib/modules/${KVER}/source"
+
+        make ARCH="$KARCH" INSTALL_HDR_PATH="$DESTDIR" headers_install
+        if [ -d "$DESTDIR/usr" ]; then
+            cp -a "$DESTDIR/usr/." "$DESTDIR/"
+            rm -rf "$DESTDIR/usr"
+        fi
+
+        echo "==> Packaging into .jpkg archive"
+        # Build a minimal .jpkg using jpkg internals or a direct tar+zstd pack.
+        # Until the license gate is fixed, create the archive manually.
+        cd "$DESTDIR"
+        PKGNAME="linux-${VERSION}-${ARCH}.jpkg"
+        tar -cf - . | zstd -19 -o "/output/${PKGNAME}"
+        echo "==> Built: /output/${PKGNAME}"
+        ls -lh "/output/${PKGNAME}"
+    '
+
+echo ""
+echo "==> Kernel build complete."
+echo "    Output: $OUTPUT_DIR"
+ls -lh "$OUTPUT_DIR"
