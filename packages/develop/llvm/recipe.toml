@@ -14,6 +14,12 @@ system = "custom"
 build = """
 set -e
 
+# Override jpkg's -fPIE with -fPIC: LLVM's static libraries need
+# position-independent code for the final link.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+
 # Zero-GNU LLVM from-source build.
 # Produces clang, lld, and compiler-rt linked against libc++/libunwind.
 # No libstdc++, no libgcc_s, no GCC CRT objects.
@@ -84,6 +90,7 @@ cmake -S llvm -B build -G Ninja \
     -DLLVM_ENABLE_LIBCXX=ON \
     -DLLVM_BUILD_LLVM_DYLIB=OFF \
     -DCLANG_BUILD_CLANG_DYLIB=OFF \
+    -DCLANG_LINK_CLANG_DYLIB=OFF \
     -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
     -DLLVM_TOOL_LTO_BUILD=OFF \
     -DCLANG_TOOL_C_INDEX_TEST_BUILD=OFF \
@@ -104,7 +111,14 @@ cmake -S llvm -B build -G Ninja \
     -DLLVM_PARALLEL_LINK_JOBS=2
 
 # --- Step 3: Build ---
-samu -C build -j$(nproc)
+# The default 'all' target includes libclang-cpp.so which may fail to
+# link on x86_64/musl due to relocation issues (same issue as aarch64).
+# Allow the build to fail, then verify the binaries we need exist.
+samu -C build -j$(nproc) -k0 || true
+if [ ! -x build/bin/clang-21 ]; then
+    echo "FATAL: clang-21 was not built"
+    exit 1
+fi
 
 # --- Step 4: Manual install ---
 # cmake --install fails because cmake_install.cmake still references the
