@@ -33,9 +33,24 @@ RUN jpkg update && \
 # runtime env var. Alpine/jonerix clang doesn't have it set, so the
 # config file at /etc/clang/<triple>.cfg is never auto-loaded.
 # We create wrapper scripts that pass --config explicitly.
-RUN TRIPLE=$(clang -dumpmachine 2>/dev/null || echo "unknown") && \
+# Fixup: bsdtar sometimes extracts the uutils multicall binary into a
+# GNUSparseFile.0/ subdirectory. Move it to the correct path so coreutils
+# symlinks (rm, printf, chmod, ln, etc.) work.
+RUN if [ -f /bin/GNUSparseFile.0/uutils ] && [ ! -f /bin/uutils ]; then \
+      /bin/toybox cp /bin/GNUSparseFile.0/uutils /bin/uutils && \
+      /bin/toybox chmod 755 /bin/uutils && \
+      /bin/toybox rm -rf /bin/GNUSparseFile.0; \
+    fi
+
+# Compiler wrappers and tool symlinks
+#
+# CLANG_CONFIG_FILE_SYSTEM_DIR is a compile-time CMake option, not a
+# runtime env var. Alpine/jonerix clang doesn't have it set, so the
+# config file at /etc/clang/<triple>.cfg is never auto-loaded.
+# We create wrapper scripts that pass --config explicitly.
+RUN TRIPLE=$(/bin/clang-21 -dumpmachine 2>/dev/null || echo "unknown") && \
     mkdir -p /etc/clang && \
-    printf -- '--rtlib=compiler-rt\n-fuse-ld=lld\n' \
+    printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' \
       > "/etc/clang/${TRIPLE}.cfg" && \
     rm -f /bin/clang /bin/clang++ && \
     printf '#!/bin/sh\nexec /bin/clang-21 --config="/etc/clang/%s.cfg" "$@"\n' "$TRIPLE" > /bin/clang && \
