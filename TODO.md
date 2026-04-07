@@ -13,17 +13,18 @@ TODO:
 11. ~~Build pico recipe and jpkg.~~ [REMOVED — mistake]
 12. ~~Create BUILDER, CORE, ROUTER container images.~~ [DONE — Dockerfile.builder, Dockerfile.core, Dockerfile.router; CI pipeline builds minimal->core->{builder,router} with smoke tests]
 13. ~~Multi-user mode.~~ [DONE — getty, inittab, system accounts, SUID bits, securetty]
-14. Low-level file system utilities and Grub or some other bootloader for raw metal installs.
-15. Java bootstrap?
-16. ~~Clean up repository for isolated files and code that don't do anything anymore.~~ [DONE — partial, legacy Makefiles removed]
-17. Build and customize a linux kernel in jonerix.
-18. Raspberry Pi pre-reqs.
-19. Build Ruby recipe and jpkg. [BLOCKED — needs GNU make at build time; jpkg license fixed for "BSD-2-Clause AND Ruby"]
-20. ~~Purge gmake from repo.~~ [DONE — gmake recipe deleted; runc/containerd/toybox rewritten to avoid GNU make; hostapd/wpa_supplicant/ruby documented as needing GNU make at Alpine build time]
-21. ~~Add local build script (build-local.sh).~~ [DONE — mirrors CI chain: minimal->core->builder->router + packages target]
-22. ~~Add build-from-source.sh script.~~ [DONE — runs inside builder to rebuild all recipes]
-23. ~~Fix jpkg license allowlist.~~ [DONE — added Ruby, MPL-2.0]
-24. ~~Fix ci-build-x86_64.sh bsdtar fallback bug.~~ [DONE]
+14. Low-level file system utilities and Grub or some other bootloader for raw metal installs. This should require BYOK Bring/Build Your Own Kernel
+      Since we do not distribute the kernel! Curl links to reliable prebuilt kernels can be selected, or the user can build their own from the          setup.
+16. Java bootstrap?
+17. ~~Clean up repository for isolated files and code that don't do anything anymore.~~ [DONE — partial, legacy Makefiles removed]
+18. Build and customize a linux kernel in jonerix.
+19. Raspberry Pi pre-reqs.
+20. Build Ruby recipe and jpkg. [BLOCKED — needs GNU make at build time; jpkg license fixed for "BSD-2-Clause AND Ruby"]
+21. ~~Purge gmake from repo.~~ [DONE — gmake recipe deleted; runc/containerd/toybox rewritten to avoid GNU make; hostapd/wpa_supplicant/ruby documented as needing GNU make at Alpine build time]
+22. ~~Add local build script (build-local.sh).~~ [DONE — mirrors CI chain: minimal->core->builder->router + packages target]
+23. ~~Add build-from-source.sh script.~~ [DONE — runs inside builder to rebuild all recipes]
+24. ~~Fix jpkg license allowlist.~~ [DONE — added Ruby, MPL-2.0]
+25. ~~Fix ci-build-x86_64.sh bsdtar fallback bug.~~ [DONE]
 
 ## Unpublished packages (have recipe, no .jpkg)
 
