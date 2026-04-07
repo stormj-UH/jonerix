@@ -1,0 +1,155 @@
+[package]
+name = "linux"
+version = "6.14.2"
+# NOTE: GPL-2.0-only will be BLOCKED by jpkg's license gate (cmd_build.c line 150).
+# pre_bootstrap = true is present as a marker of intent (the kernel is the project's
+# sole accepted GPL exception per DESIGN.md), but jpkg does NOT currently parse
+# pre_bootstrap — it is not in the build_recipe_t struct and is not read during
+# recipe_load(). This is a KNOWN BLOCKER: cmd_build.c must be updated to read
+# pre_bootstrap and skip the license check when it is true before this recipe can
+# be built with `jpkg build`. Until then, use scripts/build-kernel.sh which
+# invokes the build steps directly inside an Alpine container without going through
+# jpkg's license gate.
+license = "GPL-2.0-only"
+pre_bootstrap = true
+description = "Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers."
+
+[source]
+# Verify this sha256 against https://kernel.org/pub/linux/kernel/v6.x/sha256sums.asc
+# before use. The placeholder below is intentionally wrong to force verification.
+url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.14.2.tar.xz"
+sha256 = "PLACEHOLDER_VERIFY_AT_https://kernel.org/pub/linux/kernel/v6.x/sha256sums.asc"
+
+[build]
+system = "custom"
+# Build notes:
+# - LLVM=1 enables the full LLVM toolchain for the kernel build (clang, lld,
+#   llvm-ar, llvm-nm, llvm-objcopy, llvm-strip). Avoids GCC entirely.
+# - LD=ld.lld is required when LLVM=1 is set, as ld.bfd is not present.
+# - The kernel requires GNU make, perl, bash, bc, flex, and bison — all available
+#   in Alpine but absent from the jonerix runtime. This recipe MUST be built inside
+#   an Alpine container (see scripts/build-kernel.sh).
+# - defconfig produces a reasonable x86_64 baseline. The jonerix-x86_64.config
+#   fragment is merged afterwards via scripts/kconfig/merge_config.sh to apply
+#   jonerix-specific overrides.
+# - CONFIG_MODULES=y: modules are built so drivers that are rarely needed at boot
+#   do not inflate vmlinuz. Core storage, network, and container drivers are set
+#   to =y (built-in) in jonerix-x86_64.config.
+build = """
+set -e
+
+# Resolve absolute path to the recipe directory (contains jonerix-x86_64.config)
+RECIPE_DIR="$(dirname "$(realpath "$0" 2>/dev/null || echo "$PWD/recipe.toml")")"
+# Fallback: if $0 is not set usefully, look in the standard location
+if [ ! -f "$RECIPE_DIR/jonerix-x86_64.config" ]; then
+    RECIPE_DIR="$(find /workspace/packages/extra/linux /workspace/packages/extra/linux -maxdepth 1 -name 'jonerix-x86_64.config' 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)"
+fi
+
+# Determine architecture
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64)  KARCH=x86_64  ; CONFIG_FRAG="jonerix-x86_64.config" ;;
+    aarch64) KARCH=arm64   ; CONFIG_FRAG="jonerix-aarch64.config" ;;
+    *)
+        echo "ERROR: unsupported arch: $ARCH"
+        exit 1
+    ;;
+esac
+
+# Use LLVM toolchain for zero-GCC kernel build
+export LLVM=1
+export LD=ld.lld
+
+# Use all available CPUs, but cap based on available RAM to avoid OOM.
+# Kernel builds are link-heavy — 2 GB per parallel job is a safe heuristic.
+NCPUS=$(nproc)
+RAM_GB=$(awk '/MemTotal/ { printf "%d", $2/1024/1024 }' /proc/meminfo 2>/dev/null || echo 4)
+MAX_JOBS=$(( RAM_GB / 2 ))
+[ "$MAX_JOBS" -lt 1 ] && MAX_JOBS=1
+[ "$MAX_JOBS" -gt "$NCPUS" ] && MAX_JOBS="$NCPUS"
+
+echo "Building Linux $KARCH with LLVM=1, JOBS=$MAX_JOBS (${RAM_GB}GB RAM detected)"
+
+# Step 1: Generate base defconfig
+make ARCH="$KARCH" defconfig
+
+# Step 2: Merge jonerix config fragment if available
+if [ -f "$RECIPE_DIR/$CONFIG_FRAG" ]; then
+    echo "Merging jonerix config fragment: $CONFIG_FRAG"
+    # merge_config.sh is part of the kernel source tree
+    scripts/kconfig/merge_config.sh -m .config "$RECIPE_DIR/$CONFIG_FRAG"
+    # Re-run olddefconfig to resolve any new symbols introduced by the fragment
+    make ARCH="$KARCH" olddefconfig
+else
+    echo "WARNING: $CONFIG_FRAG not found at $RECIPE_DIR — building with plain defconfig"
+fi
+
+# Step 3: Build kernel, modules, and device tree blobs
+make ARCH="$KARCH" -j"$MAX_JOBS" all
+"""
+
+install = """
+set -e
+
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64)  KARCH=x86_64  ; VMLINUZ="arch/x86/boot/bzImage" ;;
+    aarch64) KARCH=arm64   ; VMLINUZ="arch/arm64/boot/Image.gz" ;;
+    *)
+        echo "ERROR: unsupported arch: $ARCH"
+        exit 1
+    ;;
+esac
+
+# Kernel version string (e.g., "6.14.2")
+KVER=$(make ARCH="$KARCH" -s kernelversion)
+
+echo "Installing Linux $KVER ($KARCH) to $DESTDIR"
+
+# -- vmlinuz to /boot/ --
+mkdir -p "$DESTDIR/boot"
+install -m644 "$VMLINUZ" "$DESTDIR/boot/vmlinuz-$KVER"
+# Unversioned symlink for bootloaders that expect a fixed name
+ln -sf "vmlinuz-$KVER" "$DESTDIR/boot/vmlinuz"
+
+# System.map for ksym lookups (optional but useful for debugging)
+install -m644 System.map "$DESTDIR/boot/System.map-$KVER"
+
+# Kernel config snapshot
+install -m644 .config "$DESTDIR/boot/config-$KVER"
+
+# -- Kernel modules to /lib/modules/<kver>/ --
+make ARCH="$KARCH" INSTALL_MOD_PATH="$DESTDIR" INSTALL_MOD_STRIP=1 modules_install
+
+# Remove the build/ and source/ symlinks that point to the build tree —
+# they are meaningless inside the package archive.
+rm -f "$DESTDIR/lib/modules/$KVER/build"
+rm -f "$DESTDIR/lib/modules/$KVER/source"
+
+# -- Kernel headers to /include/ --
+# Install the minimal set of headers needed by userspace (e.g., for BPF tools,
+# perf, or anything that includes <linux/...> at runtime).
+make ARCH="$KARCH" INSTALL_HDR_PATH="$DESTDIR" headers_install
+
+# Flatten usr/ for jonerix merged-usr layout (headers_install puts files under
+# include/, but some make targets may create usr/include/).
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+
+echo "Linux install complete:"
+echo "  /boot/vmlinuz -> vmlinuz-$KVER"
+echo "  /lib/modules/$KVER/"
+echo "  /include/linux/"
+"""
+
+[depends]
+# Runtime: no userspace dependencies beyond musl for module loading tools.
+# The kernel itself is a standalone binary at /boot/vmlinuz.
+runtime = []
+# Build: GNU make, perl, bash, bc, flex, bison are required by the kernel build
+# system. They are all provided by Alpine in the build container and must NOT
+# be installed as jonerix packages (all are GPL).
+# clang and lld (via LLVM=1) replace GCC/binutils entirely.
+build = []
