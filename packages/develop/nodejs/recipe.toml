@@ -50,8 +50,13 @@ python3 configure.py \
     --without-snapshot \
     --without-node-snapshot
 
-# Single-job build to stay within memory limits.
-samu -C out/Release -j1
+# V8 compiles use ~2GB per job; pick parallelism from available RAM.
+MEM_GB=$(awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 2)
+JOBS=$((MEM_GB / 2))
+[ "$JOBS" -lt 1 ] && JOBS=1
+[ "$JOBS" -gt "$(nproc)" ] && JOBS=$(nproc)
+echo "Building with -j$JOBS (${MEM_GB}GB available)"
+samu -C out/Release -j$JOBS
 
 # Stage install using Node's own installer.
 python3 tools/install.py install --dest-dir "$DESTDIR" --prefix /
