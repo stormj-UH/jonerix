@@ -25,6 +25,7 @@ FROM ${CORE_IMAGE}
 #
 # Note: directories are created inline because /bin/mkdir may be from uutils
 # (dynamically linked against libunwind) and libcxx is not in the core image.
+ARG CACHEBUST=0
 RUN jpkg update && \
     for pkg in \
       hostapd wpa_supplicant btop; \
