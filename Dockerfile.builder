@@ -13,6 +13,9 @@ ARG CORE_IMAGE=jonerix:core
 
 FROM ${CORE_IMAGE}
 
+# Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
+ARG CACHEBUST=0
+
 # Install compilers, build tools, and languages via jpkg
 # Order: compilers -> build tools -> languages -> extras
 RUN jpkg update && \
