@@ -165,7 +165,7 @@ A `.jpkg` file is a zstd-compressed tarball with a prepended metadata header:
 │ PKG magic (8 bytes)    │  "JPKG\x00\x01\x00\x00"
 │ Header length (4 bytes)│
 │ PKG metadata (TOML)    │
-│ ────────────────────────
+│────────────────────────|
 │ zstd-compressed tar    │  (the actual files)
 └────────────────────────┘
 ```
