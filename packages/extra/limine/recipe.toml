@@ -1,0 +1,64 @@
+[package]
+name = "limine"
+version = "11.2.1"
+license = "BSD-2-Clause"
+pre_bootstrap = false
+description = "Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-2-Clause)"
+
+[source]
+url = "https://github.com/limine-bootloader/limine/releases/download/v11.2.1/limine-11.2.1.tar.gz"
+# sha256: run `sha256sum limine-11.2.1.tar.gz` after downloading to fill this in
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[build]
+system = "custom"
+# Limine is built in an Alpine container (make and nasm are GNU/BSD build-time
+# tools only — neither ships in the jonerix rootfs).
+# make  — GNU make (GPL, build-time only, acceptable per jonerix policy)
+# nasm  — Netwide Assembler (BSD-2-Clause)
+# clang — Apache-2.0, already the jonerix compiler
+#
+# The build produces:
+#   bin/limine              — host utility for BIOS install (limine bios-install)
+#   share/limine/BOOTX64.EFI        — UEFI bootloader binary (x86_64)
+#   share/limine/BOOTAA64.EFI       — UEFI bootloader binary (aarch64)
+#   share/limine/limine-bios.sys    — BIOS stage-2 code (loaded from boot partition)
+#   share/limine/limine-bios-pxe.bin — PXE network boot binary
+configure = """./configure \
+  --prefix=/ \
+  CC=clang \
+  CFLAGS="-Os -pipe"
+"""
+build = "make -j$(nproc)"
+install = """set -e
+make install DESTDIR="$DESTDIR"
+
+# Flatten usr/ for jonerix merged-usr layout (/usr -> /)
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+
+# Limine installs its data files to share/limine/ — ensure they are present
+mkdir -p "$DESTDIR/share/limine"
+
+# Copy EFI binaries if not already placed by `make install`
+for f in BOOTX64.EFI BOOTAA64.EFI limine-bios.sys limine-bios-pxe.bin; do
+    [ -f "$f" ] && cp "$f" "$DESTDIR/share/limine/" 2>/dev/null || true
+done
+
+# Install the example config
+install -m644 /workspace/packages/extra/limine/limine.conf.example \
+    "$DESTDIR/share/limine/limine.conf.example" 2>/dev/null || true
+
+# Strip the host utility
+llvm-strip --strip-all "$DESTDIR/bin/limine" 2>/dev/null || true
+"""
+
+[depends]
+# Runtime: the `limine` host utility (for bios-install) links musl.
+# EFI/BIOS binaries are self-contained and need no runtime deps.
+runtime = ["musl"]
+# Build deps: built in Alpine container where make and nasm are available via apk.
+# Listing them here is informational — they are not jonerix packages.
+build = []
