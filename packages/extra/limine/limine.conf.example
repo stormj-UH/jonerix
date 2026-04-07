@@ -1,0 +1,28 @@
+# Limine bootloader configuration for jonerix
+# Place this file on the EFI System Partition at:
+#   /boot/limine/limine.conf   (for UEFI: ESP:/boot/limine/limine.conf)
+#   /boot/limine/limine.conf   (for BIOS: on the root or boot partition)
+#
+# Full configuration reference:
+#   https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md
+
+# Show the boot menu for 5 seconds, then boot the default entry.
+timeout: 5
+default_entry: 1
+
+# ── jonerix ────────────────────────────────────────────────────────────────
+/ jonerix
+    protocol: linux
+
+    # Path to the kernel image on the boot partition.
+    # boot() refers to the partition Limine was loaded from (the ESP or the
+    # partition containing limine-bios.sys for BIOS installs).
+    path: boot():/vmlinuz
+
+    # Kernel command line.
+    # Replace UUID=CHANGEME with the actual UUID of the root partition.
+    # Get it with: blkid /dev/sdaX
+    cmdline: root=UUID=CHANGEME rootfstype=ext4 init=/bin/openrc-init console=tty0 quiet
+
+    # Optional: initramfs (not required if all drivers are compiled into the kernel)
+    # module_path: boot():/initramfs.cpio.gz
