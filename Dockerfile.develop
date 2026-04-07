@@ -21,7 +21,7 @@ SHELL ["/bin/sh", "-c"]
 # Order: base libs -> compilers -> build tools -> languages -> utilities
 RUN jpkg update && \
     for pkg in \
-      musl ncurses openssl zlib xz lz4 zstd \
+      musl ncurses libcxx openssl zlib xz lz4 zstd \
       llvm rust go \
       cmake bmake samurai flex bc byacc \
       perl python3 pip nodejs \
