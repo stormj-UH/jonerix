@@ -434,13 +434,13 @@ jobs:
           FAIL=0
           pass() { echo "PASS: $1"; }
           fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
-          warn() { echo "WARN: $1 (needs package rebuild)"; }
 
-          # Networking daemons (warn-only: published packages may need rebuild)
-          unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || warn "unbound"
-          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || warn "dhcpcd"
-          hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || warn "hostapd"
-          wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || warn "wpa_supplicant"
+
+          # Networking daemons
+          unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
+          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || fail "dhcpcd"
+          hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || fail "hostapd"
+          wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || fail "wpa_supplicant"
 
           # Config files present (these are COPY-ed, always present)
           [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
@@ -480,17 +480,17 @@ jobs:
           FAIL=0
           pass() { echo "PASS: $1"; }
           fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
-          warn() { echo "WARN: $1 (needs package rebuild)"; }
 
-          # Compilers (warn-only on amd64: x86_64 packages need rebuild)
-          echo "int main(){return 0;}" | clang -x c - -o /tmp/test_c && pass "C (clang)" || warn "C (clang)"
+
+          # Compilers
+          echo "int main(){return 0;}" | clang -x c - -o /tmp/test_c && pass "C (clang)" || fail "C (clang)"
           echo "fn main(){}" > /tmp/t.rs && \
-            rustc /tmp/t.rs -o /tmp/test_rust 2>/dev/null && pass "Rust" || warn "Rust"
+            rustc /tmp/t.rs -o /tmp/test_rust 2>/dev/null && pass "Rust" || fail "Rust"
 
-          # Languages (warn-only: published x86_64 packages broken)
-          go version >/dev/null 2>&1 && pass "Go" || warn "Go"
-          node -e "process.exit(0)" && pass "Node.js" || warn "Node.js"
-          python3 -c "pass" && pass "Python" || warn "Python"
+          # Languages
+          go version >/dev/null 2>&1 && pass "Go" || fail "Go"
+          node -e "process.exit(0)" && pass "Node.js" || fail "Node.js"
+          python3 -c "pass" && pass "Python" || fail "Python"
 
           # Build tools (always present — these work)
           cmake --version >/dev/null 2>&1 && pass "cmake" || fail "cmake"
@@ -513,13 +513,13 @@ jobs:
           FAIL=0
           pass() { echo "PASS: $1"; }
           fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
-          warn() { echo "WARN: $1 (needs package rebuild)"; }
 
-          # Networking daemons (warn-only: published packages may need rebuild)
-          unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || warn "unbound"
-          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || warn "dhcpcd"
-          hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || warn "hostapd"
-          wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || warn "wpa_supplicant"
+
+          # Networking daemons
+          unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
+          dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || fail "dhcpcd"
+          hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || fail "hostapd"
+          wpa_supplicant -v 2>&1 | grep -qi "wpa_supplicant" && pass "wpa_supplicant" || fail "wpa_supplicant"
 
           # Config files present (these are COPY-ed, always present)
           [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
