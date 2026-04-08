@@ -16,16 +16,6 @@ FROM ${CORE_IMAGE}
 # Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
 ARG CACHEBUST=0
 
-# Diagnostic: check if shell and curl work (arm64 debugging)
-RUN echo "=== DIAGNOSTIC ===" && \
-    toybox ls -la /bin/sh /bin/curl /bin/mksh /bin/toybox 2>&1 || true && \
-    toybox readlink -f /bin/sh 2>&1 || true && \
-    /bin/toybox echo "toybox echo: ok" && \
-    /bin/sh -c "echo 'sh -c echo: ok'" 2>&1 || echo "sh -c echo: FAILED (exit $?)" && \
-    /bin/sh -c "/bin/curl --version" 2>&1 || echo "sh -c curl: FAILED (exit $?)" && \
-    toybox ls -la /lib/ld-musl* /lib/libc.* /lib/libssl* /lib/libcrypto* /lib/libtls* 2>&1 || true && \
-    echo "=== END DIAGNOSTIC ==="
-
 # Install compilers, build tools, and languages via jpkg
 # Order: compilers -> build tools -> languages -> extras
 RUN jpkg update && \

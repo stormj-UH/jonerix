@@ -290,11 +290,21 @@ int fetch_init(void) {
         log_error("failed to create TLS config");
         return -1;
     }
-    /* Load system CA certificates */
+    /* Load system CA certificates — try multiple paths for
+     * jonerix, Alpine, and standard Linux locations */
+    static const char *ca_paths[] = {
+        "/etc/ssl/cert.pem",
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        NULL
+    };
     char cafile[512];
-    snprintf(cafile, sizeof(cafile), "%s/etc/ssl/cert.pem", g_rootfs);
-    if (file_exists(cafile)) {
-        tls_config_set_ca_file(g_tls_config, cafile);
+    for (int i = 0; ca_paths[i]; i++) {
+        snprintf(cafile, sizeof(cafile), "%s%s", g_rootfs, ca_paths[i]);
+        if (file_exists(cafile)) {
+            tls_config_set_ca_file(g_tls_config, cafile);
+            break;
+        }
     }
     return 0;
 }
