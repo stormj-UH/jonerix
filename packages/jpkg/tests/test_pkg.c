@@ -12,6 +12,7 @@
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/utsname.h>
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -167,7 +168,12 @@ static void test_pkg_filename(void) {
     TEST(pkg_filename);
     char *fn = pkg_filename("toybox", "0.8.11");
     ASSERT(fn != NULL, "NULL filename");
-    ASSERT(strcmp(fn, "toybox-0.8.11.jpkg") == 0, "wrong filename");
+    struct utsname uts;
+    const char *arch = "x86_64";
+    if (uname(&uts) == 0) arch = uts.machine;
+    char expected[128];
+    snprintf(expected, sizeof(expected), "toybox-0.8.11-%s.jpkg", arch);
+    ASSERT(strcmp(fn, expected) == 0, "wrong filename");
     free(fn);
     PASS();
 }

@@ -176,6 +176,62 @@ static char *serialize_files_list(const pkg_file_t *files) {
 
 /* ========== Package Loading ========== */
 
+static const char *find_hooks_section(const char *data) {
+    const char *p = data;
+    const char *needle = "[hooks]";
+    size_t nlen = strlen(needle);
+
+    while ((p = strstr(p, needle)) != NULL) {
+        bool at_line_start = (p == data || p[-1] == '\n');
+        char next = p[nlen];
+        bool section_end = (next == '\0' || next == '\n' || next == '\r');
+        if (at_line_start && section_end)
+            return p;
+        p++;
+    }
+
+    return NULL;
+}
+
+static toml_doc_t *parse_metadata_with_legacy_fallback(const char *data,
+                                                       const char *name,
+                                                       bool *repaired) {
+    char *err = NULL;
+    toml_doc_t *doc = toml_parse(data, &err);
+    if (doc) {
+        free(err);
+        return doc;
+    }
+
+    const char *hooks = find_hooks_section(data);
+    if (!hooks) {
+        log_warn("failed to parse metadata for %s: %s", name, err ? err : "?");
+        free(err);
+        return NULL;
+    }
+
+    char *prefix = xstrndup(data, (size_t)(hooks - data));
+    char *fallback_err = NULL;
+    doc = toml_parse(prefix, &fallback_err);
+    free(prefix);
+
+    if (!doc) {
+        log_warn("failed to parse metadata for %s: %s",
+                 name, fallback_err ? fallback_err : (err ? err : "?"));
+        free(fallback_err);
+        free(err);
+        return NULL;
+    }
+
+    free(fallback_err);
+    if (repaired)
+        *repaired = true;
+    log_warn("rewriting legacy malformed metadata for %s without hooks; reinstall or upgrade to restore remove hooks",
+             name);
+    free(err);
+    return doc;
+}
+
 static db_pkg_t *load_package(const char *db_dir, const char *name) {
     char meta_path[512];
     snprintf(meta_path, sizeof(meta_path), "%s/installed/%s/metadata.toml",
@@ -185,13 +241,20 @@ static db_pkg_t *load_package(const char *db_dir, const char *name) {
     ssize_t len = file_read(meta_path, &data);
     if (len <= 0) return NULL;
 
-    char *err = NULL;
-    toml_doc_t *doc = toml_parse((const char *)data, &err);
+    bool repaired = false;
+    toml_doc_t *doc = parse_metadata_with_legacy_fallback((const char *)data,
+                                                          name, &repaired);
+    if (repaired) {
+        char *sanitized = toml_serialize(doc);
+        if (file_write(meta_path, (const uint8_t *)sanitized, strlen(sanitized)) != 0) {
+            log_warn("failed to rewrite sanitized metadata for %s: %s",
+                     name, strerror(errno));
+        }
+        free(sanitized);
+    }
     free(data);
 
     if (!doc) {
-        log_warn("failed to parse metadata for %s: %s", name, err ? err : "?");
-        free(err);
         return NULL;
     }
 

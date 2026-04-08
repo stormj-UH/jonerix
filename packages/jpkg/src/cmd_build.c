@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <sys/utsname.h>
 #include <dirent.h>
+#include <limits.h>
 
 /* Build recipe is a directory containing:
  *   recipe.toml   - package metadata + build instructions
@@ -662,6 +663,7 @@ int cmd_build(int argc, char **argv) {
     const char *output_dir = ".";
     bool build_jpkg = false;
     char *fetched_recipe_dir = NULL;
+    char *local_recipe_dir = NULL;
 
     /* Parse options */
     for (int i = 1; i < argc; i++) {
@@ -677,7 +679,18 @@ int cmd_build(int argc, char **argv) {
 
     if (dir_exists(arg)) {
         /* Argument is a local directory */
-        recipe_dir = arg;
+        char resolved[PATH_MAX];
+        if (realpath(arg, resolved)) {
+            local_recipe_dir = xstrdup(resolved);
+        } else {
+            char cwd[PATH_MAX];
+            if (!getcwd(cwd, sizeof(cwd))) {
+                log_error("failed to resolve recipe path: %s", strerror(errno));
+                return 1;
+            }
+            local_recipe_dir = path_join(cwd, arg);
+        }
+        recipe_dir = local_recipe_dir;
     } else {
         /* Argument is a package name — fetch recipe from repo */
         fetched_recipe_dir = fetch_remote_recipe(arg);
@@ -694,6 +707,7 @@ int cmd_build(int argc, char **argv) {
             system(cmd);
             free(fetched_recipe_dir);
         }
+        free(local_recipe_dir);
         return 1;
     }
 
@@ -717,6 +731,7 @@ int cmd_build(int argc, char **argv) {
                 system(cmd);
                 free(fetched_recipe_dir);
             }
+            free(local_recipe_dir);
             return 1;
         }
 
@@ -859,6 +874,7 @@ cleanup:
         system(cmd2);
         free(fetched_recipe_dir);
     }
+    free(local_recipe_dir);
 
     recipe_free(recipe);
     return rc == 0 ? 0 : 1;
