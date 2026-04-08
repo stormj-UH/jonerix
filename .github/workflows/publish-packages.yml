@@ -27,6 +27,9 @@ concurrency:
   group: publish-packages
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ------ Create the packages release once ------------------------------------------------------------------------------------------------------------------
   create-release:
