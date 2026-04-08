@@ -14,7 +14,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define JPKG_VERSION "1.0.0"
+#define JPKG_VERSION "1.0.1"
 
 /* Command handlers (defined in cmd_*.c) */
 extern int cmd_update(int argc, char **argv);
@@ -44,7 +44,7 @@ static const command_t commands[] = {
     { "update",        NULL,  "Fetch package index from mirrors",        cmd_update,        true  },
     { "install",       "add", "Install package(s) and dependencies",     cmd_install,       true  },
     { "remove",        "del", "Remove installed package(s)",             cmd_remove,        true  },
-    { "upgrade",       NULL,  "Upgrade all installed packages",          cmd_upgrade,       true  },
+    { "upgrade",       NULL,  "Upgrade installed package(s)",            cmd_upgrade,       true  },
     { "search",        NULL,  "Search package names and descriptions",   cmd_search,        false },
     { "info",          NULL,  "Show package metadata",                   cmd_info,          false },
     { "build",         NULL,  "Build package from source recipe",        cmd_build,         false },

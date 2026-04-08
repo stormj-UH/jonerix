@@ -10,9 +10,12 @@ description = "jonerix package manager"
 [build]
 system = "custom"
 configure = "cp -a $RECIPE_DIR/src . && cp $RECIPE_DIR/build.ninja ."
-build = "samu -f build.ninja"
+build = """CPPFLAGS='-DJPKG_USE_LIBRESSL -I/include' \
+LDFLAGS='-L/lib' \
+LDLIBS='-ltls -lssl -lcrypto -lzstd' \
+samu -f build.ninja"""
 install = "install -Dm755 jpkg $DESTDIR/bin/jpkg && install -d $DESTDIR/etc/jpkg/keys && install -d $DESTDIR/var/db/jpkg/installed && install -d $DESTDIR/var/cache/jpkg"
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "llvm", "samurai"]
+build = ["clang", "llvm", "samurai", "libressl", "zstd"]

@@ -1,6 +1,6 @@
 [package]
 name = "bsdtar"
-version = "3.8.6-r1"
+version = "3.8.6-r2"
 license = "Apache-2.0"
 pre_bootstrap = false
 description = "Compatibility package providing /bin/tar via libarchive bsdtar"
@@ -10,7 +10,7 @@ build = ""
 install = "mkdir -p $DESTDIR/bin && ln -sf bsdtar $DESTDIR/bin/tar"
 
 [hooks]
-post_remove = '[ ! -e /bin/tar ] && [ -x /bin/toybox ] && ln -sf toybox /bin/tar'
+post_remove = "[ ! -e /bin/tar ] && [ -x /bin/toybox ] && ln -sf toybox /bin/tar"
 
 [depends]
 runtime = ["libarchive"]
