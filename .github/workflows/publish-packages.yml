@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Restore jpkg binary cache (x86_64)
         uses: actions/cache@v4
@@ -119,7 +119,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Restore jpkg binary cache (aarch64)
         uses: actions/cache@v4
@@ -180,7 +180,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install tools
         run: apk add --no-cache curl github-cli zstd
