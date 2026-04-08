@@ -1,6 +1,6 @@
 [package]
 name = "jpkg"
-version = "0.1.0-r1"
+version = "1.0.1"
 license = "MIT"
 description = "jonerix package manager"
 
