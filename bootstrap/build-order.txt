@@ -3,13 +3,13 @@
 # Dependency rules:
 #   musl      → (no deps, must be first)
 #   ncurses   → (no deps)
-#   openssl   → musl
+#   libressl   → musl
 #   zstd      → musl
-#   libarchive→ musl, openssl, zstd, lz4, xz
+#   libarchive→ musl, libressl, zstd, lz4, xz
 #   bsdtar    → libarchive
-#   curl      → musl, openssl
-#   python3   → musl, openssl
-#   unbound   → musl, openssl
+#   curl      → musl, libressl
+#   python3   → musl, libressl
+#   unbound   → musl, libressl
 #   nodejs    → musl, zlib
 #   go-bootstrap → musl, clang (x86_64 only)
 #   go        → musl, clang, go-bootstrap
@@ -42,12 +42,12 @@ toybox
 zlib
 xz
 zstd
-openssl
+libressl
 dropbear
 openrc
 flex
 fastfetch
-# Tier 4: depends on openssl or other tier-3 packages
+# Tier 4: depends on libressl or other tier-3 packages
 libarchive
 bsdtar
 unbound

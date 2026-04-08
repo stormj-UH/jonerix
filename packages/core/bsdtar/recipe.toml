@@ -9,6 +9,9 @@ description = "Compatibility package providing /bin/tar via libarchive bsdtar"
 build = ""
 install = "mkdir -p $DESTDIR/bin && ln -sf bsdtar $DESTDIR/bin/tar"
 
+[hooks]
+post_remove = '[ ! -e /bin/tar ] && [ -x /bin/toybox ] && ln -sf toybox /bin/tar'
+
 [depends]
 runtime = ["libarchive"]
 build = []

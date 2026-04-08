@@ -41,6 +41,12 @@ typedef struct build_recipe {
     char *configure_cmd;
     char *build_cmd;
     char *install_cmd;
+
+    /* install/remove hooks (embedded in .jpkg metadata) */
+    char *pre_install;
+    char *post_install;
+    char *pre_remove;
+    char *post_remove;
 } build_recipe_t;
 
 static void recipe_free(build_recipe_t *r) {
@@ -59,6 +65,10 @@ static void recipe_free(build_recipe_t *r) {
     free(r->configure_cmd);
     free(r->build_cmd);
     free(r->install_cmd);
+    free(r->pre_install);
+    free(r->post_install);
+    free(r->pre_remove);
+    free(r->post_remove);
     free(r);
 }
 
@@ -136,6 +146,16 @@ static build_recipe_t *load_recipe(const char *recipe_dir) {
         r->build_cmd = xstrdup(s);
     if ((s = toml_get_string(doc, "build.install")))
         r->install_cmd = xstrdup(s);
+
+    /* Hooks */
+    if ((s = toml_get_string(doc, "hooks.pre_install")))
+        r->pre_install = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.post_install")))
+        r->post_install = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.pre_remove")))
+        r->pre_remove = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.post_remove")))
+        r->post_remove = xstrdup(s);
 
     toml_free(doc);
 
@@ -434,6 +454,12 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
         toml_set_array(doc, "depends.build",
                        (const char **)recipe->build_deps, recipe->build_dep_count);
 
+    /* Hooks */
+    if (recipe->pre_install) toml_set_string(doc, "hooks.pre_install", recipe->pre_install);
+    if (recipe->post_install) toml_set_string(doc, "hooks.post_install", recipe->post_install);
+    if (recipe->pre_remove) toml_set_string(doc, "hooks.pre_remove", recipe->pre_remove);
+    if (recipe->post_remove) toml_set_string(doc, "hooks.post_remove", recipe->post_remove);
+
     char *toml_str = toml_serialize(doc);
     toml_free(doc);
 
@@ -693,7 +719,7 @@ int cmd_build(int argc, char **argv) {
 
         /* Warn if declared build dependencies are not installed.
          * We check the jpkg db and PATH (for tool packages like cmake).
-         * Library packages (ncurses, openssl) may be installed by the base OS
+         * Library packages (ncurses, libressl) may be installed by the base OS
          * without a matching binary, so this is a warning, not a hard error. */
         jpkg_db_t *db_chk = db_open();
         for (size_t i = 0; i < recipe->build_dep_count; i++) {

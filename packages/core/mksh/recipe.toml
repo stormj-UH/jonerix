@@ -21,6 +21,9 @@ install -m 644 dot.mkshrc $DESTDIR/etc/skel/.mkshrc
 ln -sf mksh $DESTDIR/bin/sh
 llvm-strip --strip-all $DESTDIR/bin/mksh 2>/dev/null || true"""
 
+[hooks]
+post_remove = '[ ! -e /bin/sh ] && [ -x /bin/toybox ] && ln -sf toybox /bin/sh'
+
 [depends]
 runtime = ["musl"]
 build = ["clang"]

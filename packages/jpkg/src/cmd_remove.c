@@ -11,8 +11,21 @@
 #include "util.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
+
+/* Run a package hook (pre_remove, post_remove, etc.) */
+static int run_hook(const char *hook_name, const char *cmd, const char *pkg_name) {
+    if (!cmd || !cmd[0]) return 0;
+    log_info("running %s hook for %s...", hook_name, pkg_name);
+    int rc = system(cmd);
+    if (rc != 0) {
+        log_error("%s hook failed for %s (exit %d)", hook_name, pkg_name, rc);
+        return -1;
+    }
+    return 0;
+}
 
 static int remove_package_files(const jpkg_db_t *db, const char *name) {
     db_pkg_t *pkg = db_get_package(db, name);
@@ -138,12 +151,29 @@ int cmd_remove(int argc, char **argv) {
 
             log_info("removing %s...", pkg_name);
 
+            /* Save post-remove hook before unregister frees the package */
+            db_pkg_t *rpkg = db_get_package(db, pkg_name);
+            char *post_remove_hook = NULL;
+            if (rpkg && rpkg->post_remove)
+                post_remove_hook = xstrdup(rpkg->post_remove);
+
+            /* Run pre-remove hook */
+            if (rpkg)
+                run_hook("pre_remove", rpkg->pre_remove, pkg_name);
+
             int rc = remove_package_files(db, pkg_name);
             if (rc > 0) {
                 log_warn("%d file(s) could not be removed from %s", rc, pkg_name);
             }
 
             db_unregister(db, pkg_name);
+
+            /* Run post-remove hook */
+            if (post_remove_hook) {
+                run_hook("post_remove", post_remove_hook, pkg_name);
+                free(post_remove_hook);
+            }
+
             log_info("removed %s", pkg_name);
         }
 
