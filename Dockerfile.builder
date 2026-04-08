@@ -24,7 +24,7 @@ RUN jpkg update && \
       cmake bmake samurai flex bc byacc \
       perl python3 pip nodejs; \
     do \
-      echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
+      echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
     done
 
 # Compiler wrappers and tool symlinks

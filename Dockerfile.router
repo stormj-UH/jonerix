@@ -29,7 +29,7 @@ RUN jpkg update && \
     for pkg in \
       hostapd wpa_supplicant btop; \
     do \
-      echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
+      echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
     done && \
     toybox mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network
 
