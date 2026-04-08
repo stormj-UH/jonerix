@@ -25,8 +25,7 @@ description = "OpenJDK 21 LTS — Java SE Development Kit (headless, server buil
 
 [source]
 url = "https://github.com/openjdk/jdk21u/archive/refs/tags/jdk-21.0.7+6.tar.gz"
-sha256 = ""
-# TODO: populate sha256 after verifying the correct tag tarball
+sha256 = "c5debf63c076409bad7a655de549241c038ae99cd8be80d00183eed5d1d7aeac"
 
 [build]
 system = "custom"

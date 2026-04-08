@@ -7,8 +7,7 @@ description = "Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-
 
 [source]
 url = "https://github.com/limine-bootloader/limine/releases/download/v11.2.1/limine-11.2.1.tar.gz"
-# sha256: run `sha256sum limine-11.2.1.tar.gz` after downloading to fill this in
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "1d0ab886b8ee213418f626b5cf8a4a89df35f967d7f421945124147ef04f3e01"
 
 [build]
 system = "custom"

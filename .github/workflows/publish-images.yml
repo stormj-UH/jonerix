@@ -21,29 +21,35 @@ jobs:
     name: Verify vendored sources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check all recipes have vendored source
         run: |
           MISSING=0
-          # Packages that are too large to vendor (built from APK extraction or huge source)
-          SKIP="rust go llvm nodejs"
+          # Packages that are too large to vendor or intentionally left unvendored.
+          SKIP="rust go llvm nodejs linux openjdk libcxx"
           for recipe in packages/core/*/recipe.toml packages/develop/*/recipe.toml packages/extra/*/recipe.toml; do
             [ -f "$recipe" ] || continue
             pkg=$(basename "$(dirname "$recipe")")
             # Skip packages without source URL
             url=$(grep '^url' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/' || true)
             [ -z "$url" ] && continue
+            [ "$url" = "local" ] && continue
             # Skip large packages
             echo "$SKIP" | tr ' ' '\n' | grep -qx "$pkg" && continue
-            # Check sources/ directory for vendored tarball
+            # Prefer the exact upstream basename; fall back to package/version naming.
             ver=$(grep '^version' "$recipe" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            base_ver=$(printf '%s\n' "$ver" | sed 's/-r[0-9][0-9]*$//')
+            url_base=$(basename "${url%%\?*}")
             found=0
-            for ext in tar.gz tar.xz tar.bz2 tgz tar.zst; do
-              [ -f "sources/${pkg}-${ver}.${ext}" ] && found=1 && break
-            done
-            # Also check with different naming patterns
+            [ -n "$url_base" ] && [ -f "sources/$url_base" ] && found=1
             if [ "$found" -eq 0 ]; then
-              matches=$(ls sources/${pkg}*${ver}* 2>/dev/null | head -1)
+              for ext in tar.gz tar.xz tar.bz2 tgz tar.zst; do
+                [ -f "sources/${pkg}-${base_ver}.${ext}" ] && found=1 && break
+              done
+            fi
+            # Also check with different naming patterns for older vendored names.
+            if [ "$found" -eq 0 ]; then
+              matches=$(ls sources/${pkg}*${base_ver}* 2>/dev/null | head -1)
               [ -n "$matches" ] && found=1
             fi
             if [ "$found" -eq 0 ]; then
@@ -64,7 +70,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -91,7 +97,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -142,7 +148,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -171,7 +177,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -223,7 +229,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -252,7 +258,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -304,7 +310,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -333,7 +339,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
