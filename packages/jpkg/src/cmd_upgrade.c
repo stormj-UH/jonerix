@@ -26,7 +26,6 @@ int cmd_upgrade(int argc, char **argv) {
 
     /* Initialize subsystems */
     sign_load_keys();
-    if (fetch_init() != 0) return 1;
 
     /* First, update the index */
     repo_config_t *cfg = repo_config_load();

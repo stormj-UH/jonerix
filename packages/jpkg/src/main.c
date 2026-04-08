@@ -171,6 +171,12 @@ int main(int argc, char **argv) {
         /* Continue anyway - let it fail naturally if permissions are denied */
     }
 
+    /* Initialize TLS for HTTPS fetches */
+    if (fetch_init() != 0) {
+        fprintf(stderr, "jpkg: TLS initialization failed\n");
+        return 1;
+    }
+
     /* Dispatch to command handler */
     int sub_argc = argc - cmd_idx - 1;
     char **sub_argv = argv + cmd_idx + 1;
@@ -178,6 +184,7 @@ int main(int argc, char **argv) {
     int rc = cmd->handler(sub_argc, sub_argv);
 
     /* Cleanup */
+    fetch_cleanup();
     sign_cleanup();
 
     return rc;
