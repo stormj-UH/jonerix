@@ -1,6 +1,6 @@
 [package]
 name = "jpkg"
-version = "0.1.0"
+version = "0.1.0-r1"
 license = "MIT"
 description = "jonerix package manager"
 
@@ -8,10 +8,11 @@ description = "jonerix package manager"
 # Local package — no upstream URL
 
 [build]
-system = "make"
-build = "make CC=clang LD=ld.lld"
+system = "custom"
+configure = "cp -a $RECIPE_DIR/src . && cp $RECIPE_DIR/build.ninja ."
+build = "samu -f build.ninja"
 install = "install -Dm755 jpkg $DESTDIR/bin/jpkg && install -d $DESTDIR/etc/jpkg/keys && install -d $DESTDIR/var/db/jpkg/installed && install -d $DESTDIR/var/cache/jpkg"
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "llvm"]
+build = ["clang", "llvm", "samurai"]
