@@ -1,0 +1,29 @@
+diff --git a/src/detection/localip/localip_linux.c b/src/detection/localip/localip_linux.c
+index 8c6971f..ef452b3 100644
+--- a/src/detection/localip/localip_linux.c
++++ b/src/detection/localip/localip_linux.c
+@@ -12,10 +12,15 @@
+ #include <sys/ioctl.h>
+ 
+ #ifdef __linux__
++#ifdef __has_include
++#if __has_include(<linux/ethtool.h>) && __has_include(<linux/sockios.h>) && __has_include(<linux/if.h>)
+ #include <linux/ethtool.h>
+ #include <linux/sockios.h>
+ #include <linux/if.h>
++#define FF_HAVE_LINUX_ETHTOOL 1
+ #endif
++#endif
++#endif
+ 
+ #if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__APPLE__) || defined(__NetBSD__) || defined(__HAIKU__)
+ #include <net/if_media.h>
+@@ -256,7 +261,7 @@ const char* ffDetectLocalIps(const FFLocalIpOptions* options, FFlist* results)
+ 
+                 if (options->showType & FF_LOCALIP_TYPE_SPEED_BIT)
+                 {
+-                    #ifdef __linux__
++                    #if defined(__linux__) && defined(FF_HAVE_LINUX_ETHTOOL)
+                     struct ethtool_cmd edata = { .cmd = ETHTOOL_GSET };
+                     ifr.ifr_data = (void*) &edata;
+                     if (ioctl(sockfd, SIOCETHTOOL, &ifr) == 0)
