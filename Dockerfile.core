@@ -17,7 +17,7 @@ ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
 #   /bin/toybox with the ncurses binary. This destroyed the shell.
 #   Fixed by using `toybox tar` pipe instead of `cp -a` in install_files().
 FROM alpine:latest AS jpkg-builder
-RUN apk add --no-cache clang lld musl-dev samurai zstd-dev cmake make
+RUN apk add --no-cache clang lld musl-dev samurai zstd-dev zstd-static cmake make
 
 # Build LibreSSL from source so jpkg has native TLS (no curl dependency).
 RUN wget -q https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz && \
