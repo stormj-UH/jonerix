@@ -48,10 +48,10 @@ jobs:
               --prerelease
           fi
 
-  # ── x86_64: checkout on Ubuntu host, build inside jonerix:all ─────────────
-  # Uses the same container-based approach as aarch64 — jonerix:all has the
-  # full LLVM toolchain with compiler-rt, libunwind, and libc++ so packages
-  # link against jonerix's runtime, not Alpine's.
+  # ── x86_64: checkout on Ubuntu host, build inside jonerix:builder ─────────
+  # Uses the builder image which has the full LLVM toolchain with
+  # compiler-rt, libunwind, and libc++ so packages link against
+  # jonerix's runtime, not Alpine's.
   build-x86_64:
     name: Build packages (x86_64)
     if: ${{ github.event.inputs.index_only != 'true' }}
@@ -85,7 +85,7 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build packages in jonerix:all container
+      - name: Build packages in jonerix:builder container
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
@@ -97,7 +97,7 @@ jobs:
             -v "/tmp/jpkg-bin-x86_64:/jpkg-bin" \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
-            ghcr.io/stormj-uh/jonerix:all /bin/zsh /workspace/scripts/ci-build-x86_64.sh
+            ghcr.io/stormj-uh/jonerix:builder-amd64 /bin/sh /workspace/scripts/ci-build-x86_64.sh
 
       - name: Upload packages to release
         env:
@@ -142,7 +142,7 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build packages in jonerix:all container
+      - name: Build packages in jonerix:builder container
         env:
           PKG_INPUT: ${{ github.event.inputs.package }}
         run: |
@@ -154,7 +154,7 @@ jobs:
             -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
-            ghcr.io/stormj-uh/jonerix:all /bin/zsh /workspace/scripts/ci-build-aarch64.sh
+            ghcr.io/stormj-uh/jonerix:builder-arm64 /bin/sh /workspace/scripts/ci-build-aarch64.sh
 
       - name: Upload packages to release
         env:
