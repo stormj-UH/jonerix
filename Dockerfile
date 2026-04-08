@@ -79,7 +79,7 @@ RUN jpkg --root /jonerix update && \
       perl python3 nodejs \
       npm pip \
       curl dropbear openrc doas \
-      snooze socklog dhcpcd ifupdown-ng unbound \
+      snooze dhcpcd ifupdown-ng unbound \
       mandoc pigz fastfetch \
       micro; \
     do \
