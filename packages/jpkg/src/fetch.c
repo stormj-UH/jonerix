@@ -231,13 +231,27 @@ static int http_fetch(const parsed_url_t *url, fetch_buf_t *buf) {
  * On jonerix itself, curl is always available as a core package.
  */
 static int https_fetch_curl(const char *url, fetch_buf_t *buf) {
+    /* Find curl binary — use absolute path for jonerix FROM-scratch images
+     * where PATH may not be set in all contexts (e.g. system() via /bin/sh) */
+    const char *curl_bin = NULL;
+    if (access("/bin/curl", X_OK) == 0)
+        curl_bin = "/bin/curl";
+    else if (access("/usr/bin/curl", X_OK) == 0)
+        curl_bin = "/usr/bin/curl";
+
+    if (!curl_bin) {
+        log_error("curl not found (/bin/curl, /usr/bin/curl) — "
+                  "HTTPS requires curl when jpkg is built without LibreSSL");
+        return -1;
+    }
+
     char tmppath[256];
     snprintf(tmppath, sizeof(tmppath), "/tmp/jpkg-fetch-%d.tmp", (int)getpid());
 
     char cmd[4096];
     snprintf(cmd, sizeof(cmd),
-             "curl -fsSL --connect-timeout 30 --max-time 3600 -o '%s' '%s' 2>/dev/null",
-             tmppath, url);
+             "%s -fsSL --connect-timeout 30 --max-time 3600 -o '%s' '%s' 2>/dev/null",
+             curl_bin, tmppath, url);
 
     int rc = system(cmd);
     if (rc != 0) {
