@@ -12,12 +12,9 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 [build]
 system = "custom"
 build = """set -e
-# Generate default config, then enable pending commands (sh, getty, etc.)
-# Uses scripts/make.sh instead of GNU make — requires bash at build time.
-bash scripts/genconfig.sh defconfig
-for opt in SH CD DECLARE EXIT SET UNSET EVAL EXEC EXPORT JOBS LOCAL READ RETURN SHIFT SOURCE TRAP WAIT GETTY LOGIN PASSWD SU; do
-  sed -i "s/# CONFIG_${opt} is not set/CONFIG_${opt}=y/" .config
-done
+# Use jonerix custom config from the recipe directory.
+# Requires bash for scripts/make.sh (toybox build system).
+cp "$RECIPE_DIR/toybox.config" .config
 CC=clang CFLAGS="-Os -fomit-frame-pointer" bash scripts/make.sh
 """
 install = """set -e
