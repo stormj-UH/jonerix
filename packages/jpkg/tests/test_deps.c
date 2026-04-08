@@ -210,6 +210,79 @@ static void test_resolve_multi_packages(void) {
     PASS();
 }
 
+static void test_resolve_upgrade_for_outdated_installed_package(void) {
+    TEST(resolve_upgrade_for_outdated_installed_package);
+    repo_index_t *idx = build_test_index();
+
+    jpkg_db_t db = {0};
+    db_pkg_t curl = {0};
+    db_pkg_t libressl = {0};
+    db_pkg_t musl = {0};
+
+    curl.name = xstrdup("curl");
+    curl.version = xstrdup("8.4.0");
+    libressl.name = xstrdup("libressl");
+    libressl.version = xstrdup("3.9.0");
+    musl.name = xstrdup("musl");
+    musl.version = xstrdup("1.2.5");
+
+    db.packages = &curl;
+    curl.next = &libressl;
+    libressl.next = &musl;
+
+    dep_list_t *list = deps_resolve(idx, &db, "curl", false);
+    ASSERT(list != NULL, "resolve failed");
+    ASSERT(list->count == 1, "should only reinstall curl");
+    ASSERT(strcmp(list->packages[0], "curl") == 0, "should reinstall curl");
+
+    dep_list_free(list);
+    free(curl.name);
+    free(curl.version);
+    free(libressl.name);
+    free(libressl.version);
+    free(musl.name);
+    free(musl.version);
+    free_test_index(idx);
+    PASS();
+}
+
+static void test_resolve_upgrade_for_outdated_dependency_only(void) {
+    TEST(resolve_upgrade_for_outdated_dependency_only);
+    repo_index_t *idx = build_test_index();
+
+    jpkg_db_t db = {0};
+    db_pkg_t curl = {0};
+    db_pkg_t libressl = {0};
+    db_pkg_t musl = {0};
+
+    curl.name = xstrdup("curl");
+    curl.version = xstrdup("8.5.0");
+    libressl.name = xstrdup("libressl");
+    libressl.version = xstrdup("3.8.0");
+    musl.name = xstrdup("musl");
+    musl.version = xstrdup("1.2.5");
+
+    db.packages = &curl;
+    curl.next = &libressl;
+    libressl.next = &musl;
+
+    dep_list_t *list = deps_resolve(idx, &db, "curl", false);
+    ASSERT(list != NULL, "resolve failed");
+    ASSERT(list->count == 1, "should only upgrade the outdated dependency");
+    ASSERT(strcmp(list->packages[0], "libressl") == 0,
+           "should upgrade the outdated dependency");
+
+    dep_list_free(list);
+    free(curl.name);
+    free(curl.version);
+    free(libressl.name);
+    free(libressl.version);
+    free(musl.name);
+    free(musl.version);
+    free_test_index(idx);
+    PASS();
+}
+
 static void test_no_cycle(void) {
     TEST(no_cycle);
     repo_index_t *idx = build_test_index();
@@ -261,6 +334,8 @@ int main(void) {
     test_resolve_deep_deps();
     test_resolve_not_found();
     test_resolve_multi_packages();
+    test_resolve_upgrade_for_outdated_installed_package();
+    test_resolve_upgrade_for_outdated_dependency_only();
     test_no_cycle();
     test_version_compare();
     test_license_check();
