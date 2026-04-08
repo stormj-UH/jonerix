@@ -42,5 +42,5 @@ install -m 755 hostapd/hostapd_cli $DESTDIR/bin/hostapd_cli
 llvm-strip --strip-all $DESTDIR/bin/hostapd $DESTDIR/bin/hostapd_cli 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "openssl"]
+runtime = ["musl", "libressl"]
 build = ["clang", "make"]

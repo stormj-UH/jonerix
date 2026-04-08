@@ -20,7 +20,7 @@
 #   JOBS        Parallelism hint (default: nproc)
 #
 # After building, the .jpkg files can be used to assemble any image:
-#   minimal:  musl zlib toybox dropbear openrc openssl curl zstd
+#   minimal:  musl zlib toybox dropbear openrc libressl curl zstd
 #   core:     minimal + mksh ncurses micro ripgrep gitoxide ...
 #   builder:  core + llvm rust go cmake bmake samurai perl python3 nodejs ...
 #   router:   core + hostapd wpa_supplicant btop

@@ -72,7 +72,7 @@ RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 # Order: base libs → compilers → build tools → languages → utilities
 RUN jpkg --root /jonerix update && \
     for pkg in \
-      musl ncurses openssl zlib xz lz4 zstd ca-certificates \
+      musl ncurses libressl zlib xz lz4 zstd ca-certificates \
       toybox bsdtar zsh \
       llvm \
       cmake bmake samurai flex bc byacc \

@@ -1,9 +1,9 @@
 [package]
-name = "openssl"
+name = "libressl"
 version = "4.0.0"
 license = "ISC"
 pre_bootstrap = false
-description = "LibreSSL — free TLS/crypto stack (provides libssl, libcrypto, libtls)"
+description = "Free TLS/crypto stack from OpenBSD (provides libssl, libcrypto, libtls)"
 
 [source]
 url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz"

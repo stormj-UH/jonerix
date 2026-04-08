@@ -9,7 +9,7 @@
 #   bsdtar         (Apache-2.0)   â€” via jpkg (replaces toybox tar)
 #   dropbear SSH   (MIT)          â€” via jpkg
 #   openrc         (BSD-2-Clause) â€” via jpkg
-#   openssl        (Apache-2.0)   â€” via jpkg
+#   libressl       (ISC)          â€” via jpkg
 #   curl           (MIT)          â€” via jpkg
 #   zstd           (BSD)          â€” via jpkg
 #
@@ -76,7 +76,7 @@ COPY --from=jpkg-builder /build/bsdtar /bin/bsdtar
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl zlib toybox dropbear openrc openssl curl zstd
+        musl zlib toybox dropbear openrc libressl curl zstd
 
 # Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \

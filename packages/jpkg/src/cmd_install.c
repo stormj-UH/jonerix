@@ -19,6 +19,24 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* Run a package hook (pre_install, post_install, etc.) */
+static int run_hook(const char *hook_name, const char *cmd, const char *pkg_name) {
+    if (!cmd || !cmd[0]) return 0;
+    log_info("running %s hook for %s...", hook_name, pkg_name);
+    int rc = system(cmd);
+    if (rc != 0) {
+        log_error("%s hook failed for %s (exit %d)", hook_name, pkg_name, rc);
+        return -1;
+    }
+    return 0;
+}
+
+/* Callback for db_check_conflicts — logs each conflict */
+static void conflict_cb(const char *path, const char *owner, void *ctx) {
+    (void)ctx;
+    log_error("  %s: owned by %s", path, owner);
+}
+
 /* Build a file manifest by walking a directory tree */
 static pkg_file_t *build_file_manifest(const char *root_dir, const char *prefix) {
     pkg_file_t *head = NULL;
@@ -185,7 +203,7 @@ static int install_files(const char *stage_dir, const char *dest_root) {
 }
 
 static int install_single_package(const repo_config_t *cfg, const repo_index_t *idx,
-                                  jpkg_db_t *db, const char *name) {
+                                  jpkg_db_t *db, const char *name, bool force) {
     repo_entry_t *entry = repo_find_package(idx, name);
     if (!entry) {
         log_error("package not found: %s", name);
@@ -242,6 +260,38 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
         return -1;
     }
 
+    /* Check for file conflicts with other installed packages */
+    int conflicts = db_check_conflicts(db, files,
+                                       installed ? name : NULL,
+                                       conflict_cb, NULL);
+    if (conflicts > 0) {
+        if (!force) {
+            log_error("%d file conflict(s) detected for %s — use --force to override",
+                      conflicts, meta->name);
+            char cmd[512];
+            snprintf(cmd, sizeof(cmd), "rm -rf '%s'", stage_dir);
+            system(cmd);
+            pkg_file_t *f = files;
+            while (f) { pkg_file_t *n = f->next; free(f->path); free(f->link_target); free(f); f = n; }
+            pkg_meta_free(meta);
+            free(pkg_path);
+            return -1;
+        }
+        log_warn("%d file conflict(s) detected — proceeding (--force)", conflicts);
+    }
+
+    /* Run pre-install hook */
+    if (run_hook("pre_install", meta->pre_install, meta->name) != 0) {
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", stage_dir);
+        system(cmd);
+        pkg_file_t *f = files;
+        while (f) { pkg_file_t *n = f->next; free(f->path); free(f->link_target); free(f); f = n; }
+        pkg_meta_free(meta);
+        free(pkg_path);
+        return -1;
+    }
+
     /* Copy files to root filesystem */
     char dest_root[512];
     snprintf(dest_root, sizeof(dest_root), "%s/", g_rootfs[0] ? g_rootfs : "");
@@ -266,6 +316,9 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
     }
     db_register(db, meta, files);
 
+    /* Run post-install hook */
+    run_hook("post_install", meta->post_install, meta->name);
+
     /* Clean up */
     char cmd[512];
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", stage_dir);
@@ -289,7 +342,25 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
 
 int cmd_install(int argc, char **argv) {
     if (argc < 1) {
-        fprintf(stderr, "usage: jpkg install <package> [package...]\n");
+        fprintf(stderr, "usage: jpkg install [--force] <package> [package...]\n");
+        return 1;
+    }
+
+    /* Parse options */
+    bool force = false;
+    int pkg_start = 0;
+
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--force") == 0 || strcmp(argv[i], "-f") == 0) {
+            force = true;
+            pkg_start = i + 1;
+        } else {
+            break;
+        }
+    }
+
+    if (pkg_start >= argc) {
+        fprintf(stderr, "usage: jpkg install [--force] <package> [package...]\n");
         return 1;
     }
 
@@ -311,7 +382,7 @@ int cmd_install(int argc, char **argv) {
 
     /* Resolve dependencies for all requested packages */
     dep_list_t *install_list = deps_resolve_multi(idx, db,
-        (const char **)argv, (size_t)argc, false);
+        (const char **)(argv + pkg_start), (size_t)(argc - pkg_start), false);
 
     if (!install_list) {
         log_error("dependency resolution failed");
@@ -344,7 +415,7 @@ int cmd_install(int argc, char **argv) {
     /* Install each package in dependency order */
     int failures = 0;
     for (size_t i = 0; i < install_list->count; i++) {
-        if (install_single_package(cfg, idx, db, install_list->packages[i]) != 0) {
+        if (install_single_package(cfg, idx, db, install_list->packages[i], force) != 0) {
             failures++;
         }
     }
