@@ -21,7 +21,7 @@ ARG BUILDER=ghcr.io/stormj-uh/jonerix:minimal
 # Stage 0: Build jpkg from source in Alpine
 # ============================================================
 FROM alpine:latest AS jpkg-builder
-RUN apk add --no-cache clang lld musl-dev samurai zstd-dev cmake make
+RUN apk add --no-cache clang lld musl-dev samurai zstd-dev zstd-static cmake make
 
 # Build LibreSSL from source so jpkg has native TLS (no curl dependency).
 # Static-only build — the resulting jpkg is fully self-contained.
