@@ -198,4 +198,4 @@ bash/GNU tools are used only at build time inside Alpine CI and never ship in th
 
 All original jonerix code is released under the **MIT License**.
 
-The Linux kernel (GPLv2) is the sole GPL exception. It ships as a single blob under `/boot` and is the only non-permissive component on a running jonerix system.
+The Linux kernel (GPLv2) is the sole GPL exception, but it does not ship with jonerix, which is a BYOK (bring/build your own kernel) distro.
