@@ -14,6 +14,7 @@
 #include "fetch.h"
 #include "util.h"
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -316,90 +317,182 @@ void fetch_cleanup(void) {
     }
 }
 
+/* Write all bytes, retrying on TLS_WANT_POLLIN/TLS_WANT_POLLOUT */
+static ssize_t tls_write_all(struct tls *ctx, const void *data, size_t len) {
+    size_t off = 0;
+    while (off < len) {
+        ssize_t w = tls_write(ctx, (const uint8_t *)data + off, len - off);
+        if (w == TLS_WANT_POLLIN || w == TLS_WANT_POLLOUT)
+            continue;
+        if (w < 0)
+            return -1;
+        off += (size_t)w;
+    }
+    return (ssize_t)off;
+}
+
+/* Read until EOF, retrying on TLS_WANT_POLLIN/TLS_WANT_POLLOUT */
+static int tls_read_all(struct tls *ctx, fetch_buf_t *out) {
+    uint8_t chunk[8192];
+    for (;;) {
+        ssize_t n = tls_read(ctx, chunk, sizeof(chunk));
+        if (n == TLS_WANT_POLLIN || n == TLS_WANT_POLLOUT)
+            continue;
+        if (n == 0)
+            break;
+        if (n < 0)
+            return -1;
+        buf_append(out, chunk, (size_t)n);
+    }
+    return 0;
+}
+
+/* Case-insensitive header search: extracts value for "Name: value\r\n".
+ * Returns pointer into headers (not NUL-terminated) and sets *vlen. */
+static const char *find_header_value(const char *headers, size_t hdr_len,
+                                     const char *name, size_t *vlen) {
+    size_t nlen = strlen(name);
+    const char *p = headers;
+    const char *end = headers + hdr_len;
+    while (p < end) {
+        const char *eol = NULL;
+        for (const char *s = p; s + 1 < end; s++) {
+            if (s[0] == '\r' && s[1] == '\n') { eol = s; break; }
+        }
+        if (!eol) break;
+        /* Check "Name:" prefix (case-insensitive) */
+        if ((size_t)(eol - p) > nlen + 1 && p[nlen] == ':' &&
+            strncasecmp(p, name, nlen) == 0) {
+            const char *v = p + nlen + 1;
+            while (v < eol && *v == ' ') v++;
+            *vlen = (size_t)(eol - v);
+            return v;
+        }
+        p = eol + 2;
+    }
+    return NULL;
+}
+
+#define MAX_REDIRECTS 5
+
 static int https_fetch_tls(const parsed_url_t *url, fetch_buf_t *buf) {
-    struct tls *ctx = tls_client();
-    if (!ctx) {
-        log_error("failed to create TLS client");
-        return -1;
-    }
-    if (tls_configure(ctx, g_tls_config) != 0) {
-        log_error("TLS configure failed: %s", tls_error(ctx));
-        tls_free(ctx);
-        return -1;
-    }
-    if (tls_connect(ctx, url->host, url->port) != 0) {
-        log_error("TLS connect failed: %s", tls_error(ctx));
-        tls_free(ctx);
-        return -1;
-    }
+    parsed_url_t current = *url;
 
-    /* Send HTTP request */
-    char req[4096];
-    int rlen = snprintf(req, sizeof(req),
-        "GET %s HTTP/1.0\r\n"
-        "Host: %s\r\n"
-        "User-Agent: jpkg/1.0\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        url->path, url->host);
+    for (int redir = 0; redir <= MAX_REDIRECTS; redir++) {
+        struct tls *ctx = tls_client();
+        if (!ctx) {
+            log_error("failed to create TLS client");
+            return -1;
+        }
+        if (tls_configure(ctx, g_tls_config) != 0) {
+            log_error("TLS configure failed: %s", tls_error(ctx));
+            tls_free(ctx);
+            return -1;
+        }
+        if (tls_connect(ctx, current.host, current.port) != 0) {
+            log_error("TLS connect failed: %s", tls_error(ctx));
+            tls_free(ctx);
+            return -1;
+        }
 
-    ssize_t w = tls_write(ctx, req, (size_t)rlen);
-    if (w < 0) {
-        log_error("TLS write failed: %s", tls_error(ctx));
+        /* Send HTTP request */
+        char req[4096];
+        int rlen = snprintf(req, sizeof(req),
+            "GET %s HTTP/1.0\r\n"
+            "Host: %s\r\n"
+            "User-Agent: jpkg/1.0\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            current.path, current.host);
+
+        if (tls_write_all(ctx, req, (size_t)rlen) < 0) {
+            log_error("TLS write failed: %s", tls_error(ctx));
+            tls_close(ctx);
+            tls_free(ctx);
+            return -1;
+        }
+
+        /* Read full response */
+        fetch_buf_t raw;
+        buf_init(&raw);
+        if (tls_read_all(ctx, &raw) < 0) {
+            log_error("TLS read failed: %s", tls_error(ctx));
+            tls_close(ctx);
+            tls_free(ctx);
+            fetch_buf_free(&raw);
+            return -1;
+        }
+
         tls_close(ctx);
         tls_free(ctx);
-        return -1;
-    }
 
-    /* Read response */
-    fetch_buf_t raw;
-    buf_init(&raw);
-    uint8_t chunk[8192];
-    ssize_t n;
-    while ((n = tls_read(ctx, chunk, sizeof(chunk))) > 0) {
-        buf_append(&raw, chunk, (size_t)n);
-    }
-    if (n == TLS_WANT_POLLIN || n == TLS_WANT_POLLOUT) {
-        /* Non-blocking retry needed - simplified for blocking mode */
-    }
-
-    tls_close(ctx);
-    tls_free(ctx);
-
-    /* Parse HTTP response */
-    const char *hdr_end = NULL;
-    for (size_t i = 0; i + 3 < raw.len; i++) {
-        if (raw.data[i] == '\r' && raw.data[i+1] == '\n' &&
-            raw.data[i+2] == '\r' && raw.data[i+3] == '\n') {
-            hdr_end = (const char *)(raw.data + i + 4);
-            break;
+        /* Find end of headers */
+        const char *hdr_end = NULL;
+        size_t hdr_len = 0;
+        for (size_t i = 0; i + 3 < raw.len; i++) {
+            if (raw.data[i] == '\r' && raw.data[i+1] == '\n' &&
+                raw.data[i+2] == '\r' && raw.data[i+3] == '\n') {
+                hdr_len = i;
+                hdr_end = (const char *)(raw.data + i + 4);
+                break;
+            }
         }
-    }
 
-    if (!hdr_end) {
-        log_error("malformed HTTPS response");
+        if (!hdr_end) {
+            log_error("malformed HTTPS response (no header end, got %zu bytes)",
+                      raw.len);
+            fetch_buf_free(&raw);
+            return -1;
+        }
+
+        /* Parse status code */
+        int status = 0;
+        if (raw.len >= 12) {
+            status = atoi((const char *)raw.data + 9);
+        }
+
+        /* Handle redirects */
+        if (status == 301 || status == 302 || status == 307 || status == 308) {
+            size_t loc_len = 0;
+            const char *loc = find_header_value(
+                (const char *)raw.data, hdr_len, "Location", &loc_len);
+            if (!loc || loc_len == 0) {
+                log_error("HTTPS %d redirect with no Location header", status);
+                fetch_buf_free(&raw);
+                return -1;
+            }
+            char loc_url[2048];
+            if (loc_len >= sizeof(loc_url)) loc_len = sizeof(loc_url) - 1;
+            memcpy(loc_url, loc, loc_len);
+            loc_url[loc_len] = '\0';
+
+            log_debug("redirect %d -> %s", status, loc_url);
+            fetch_buf_free(&raw);
+
+            if (parse_url(loc_url, &current) != 0) {
+                log_error("failed to parse redirect URL: %s", loc_url);
+                return -1;
+            }
+            continue;
+        }
+
+        if (status < 200 || status >= 400) {
+            log_error("HTTPS %d fetching %s%s", status, current.host, current.path);
+            fetch_buf_free(&raw);
+            return -1;
+        }
+
+        /* Extract body */
+        size_t body_off = (size_t)((const uint8_t *)hdr_end - raw.data);
+        size_t body_len = raw.len - body_off;
+        buf_init(buf);
+        buf_append(buf, raw.data + body_off, body_len);
         fetch_buf_free(&raw);
-        return -1;
+        return 0;
     }
 
-    /* Check status code */
-    int status = 0;
-    if (raw.len >= 12) {
-        status = atoi((const char *)raw.data + 9);
-    }
-    if (status < 200 || status >= 400) {
-        log_error("HTTPS %d fetching %s%s", status, url->host, url->path);
-        fetch_buf_free(&raw);
-        return -1;
-    }
-
-    size_t body_off = (size_t)((const uint8_t *)hdr_end - raw.data);
-    size_t body_len = raw.len - body_off;
-    buf_init(buf);
-    buf_append(buf, raw.data + body_off, body_len);
-    fetch_buf_free(&raw);
-
-    return 0;
+    log_error("too many redirects (max %d)", MAX_REDIRECTS);
+    return -1;
 }
 
 #else /* !JPKG_USE_LIBRESSL */
