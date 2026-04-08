@@ -19,9 +19,6 @@
 extern int cmd_install(int argc, char **argv);
 
 int cmd_upgrade(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-
     log_info("checking for upgrades...");
 
     /* Initialize subsystems */
@@ -58,26 +55,68 @@ int cmd_upgrade(int argc, char **argv) {
     size_t upgrade_cap = 32;
     size_t upgrade_count = 0;
     char **upgrades = xcalloc(upgrade_cap, sizeof(char *));
+    int selection_failures = 0;
+    bool explicit_targets = argc > 0;
 
-    for (db_pkg_t *pkg = db->packages; pkg; pkg = pkg->next) {
-        repo_entry_t *entry = repo_find_package(idx, pkg->name);
-        if (!entry) {
-            log_debug("package %s not found in repository index", pkg->name);
-            continue;
-        }
+    if (explicit_targets) {
+        for (int i = 0; i < argc; i++) {
+            const char *name = argv[i];
+            db_pkg_t *pkg = db_get_package(db, name);
+            if (!pkg) {
+                log_error("package %s is not installed", name);
+                selection_failures++;
+                continue;
+            }
 
-        int cmp = version_compare(entry->version, pkg->version);
-        if (cmp > 0) {
+            repo_entry_t *entry = repo_find_package(idx, pkg->name);
+            if (!entry) {
+                log_error("package %s not found in repository index", pkg->name);
+                selection_failures++;
+                continue;
+            }
+
             if (upgrade_count >= upgrade_cap) {
                 upgrade_cap *= 2;
                 upgrades = xrealloc(upgrades, upgrade_cap * sizeof(char *));
             }
             upgrades[upgrade_count++] = xstrdup(pkg->name);
-            log_info("  %s: %s -> %s", pkg->name, pkg->version, entry->version);
+
+            int cmp = version_compare(entry->version, pkg->version);
+            if (cmp > 0) {
+                log_info("  %s: %s -> %s", pkg->name, pkg->version, entry->version);
+            }
+        }
+    } else {
+        for (db_pkg_t *pkg = db->packages; pkg; pkg = pkg->next) {
+            repo_entry_t *entry = repo_find_package(idx, pkg->name);
+            if (!entry) {
+                log_debug("package %s not found in repository index", pkg->name);
+                continue;
+            }
+
+            int cmp = version_compare(entry->version, pkg->version);
+            if (cmp > 0) {
+                if (upgrade_count >= upgrade_cap) {
+                    upgrade_cap *= 2;
+                    upgrades = xrealloc(upgrades, upgrade_cap * sizeof(char *));
+                }
+                upgrades[upgrade_count++] = xstrdup(pkg->name);
+                log_info("  %s: %s -> %s", pkg->name, pkg->version, entry->version);
+            }
         }
     }
 
     if (upgrade_count == 0) {
+        if (selection_failures > 0) {
+            log_error("%d requested package(s) could not be upgraded", selection_failures);
+            free(upgrades);
+            db_close(db);
+            repo_index_free(idx);
+            repo_config_free(cfg);
+            fetch_cleanup();
+            return 1;
+        }
+
         log_info("all packages are up to date");
         free(upgrades);
         db_close(db);
@@ -87,7 +126,11 @@ int cmd_upgrade(int argc, char **argv) {
         return 0;
     }
 
-    log_info("%zu package(s) to upgrade", upgrade_count);
+    if (explicit_targets) {
+        log_info("%zu package(s) requested for upgrade", upgrade_count);
+    } else {
+        log_info("%zu package(s) to upgrade", upgrade_count);
+    }
 
     /* Use install command to upgrade each package (it handles upgrades) */
     int rc = cmd_install((int)upgrade_count, upgrades);
@@ -98,6 +141,11 @@ int cmd_upgrade(int argc, char **argv) {
     repo_index_free(idx);
     repo_config_free(cfg);
     fetch_cleanup();
+
+    if (selection_failures > 0) {
+        log_error("%d requested package(s) could not be upgraded", selection_failures);
+        return 1;
+    }
 
     return rc;
 }

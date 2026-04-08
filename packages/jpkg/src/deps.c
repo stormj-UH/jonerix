@@ -94,6 +94,24 @@ static void dep_list_append(dep_list_t *list, const char *name) {
     list->packages[list->count++] = xstrdup(name);
 }
 
+static bool should_include_node(const dep_node_t *node, const jpkg_db_t *db, bool force) {
+    if (force || !node)
+        return true;
+    if (!db)
+        return true;
+
+    db_pkg_t *installed = db_get_package(db, node->name);
+    if (!installed)
+        return true;
+
+    if (node->entry && node->entry->version &&
+        version_compare(node->entry->version, installed->version) > 0) {
+        return true;
+    }
+
+    return false;
+}
+
 void dep_list_free(dep_list_t *list) {
     if (!list) return;
     for (size_t i = 0; i < list->count; i++)
@@ -144,8 +162,8 @@ static int topo_visit(dep_graph_t *g, dep_node_t *node,
 
     node->state = NODE_VISITED;
 
-    /* Add to result if not already installed (or force) */
-    if (force || !db || !db_is_installed(db, node->name)) {
+    /* Add to result if missing, forced, or the repo has a newer version. */
+    if (should_include_node(node, db, force)) {
         dep_list_append(result, node->name);
     }
 
