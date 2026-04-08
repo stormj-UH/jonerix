@@ -119,7 +119,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | HTTP client | curl | curl license (MIT-like) | wget (GPL) |
 | DNS resolver | unbound | BSD-3-Clause | — |
 | DHCP client | dhcpcd | BSD-2-Clause | — |
-| Logging | socklog | BSD-3-Clause | syslog-ng (GPL) |
+| Logging | toybox syslogd | 0BSD | syslog-ng (GPL) |
 | Cron | snooze | CC0 (public domain) | cronie (GPL) |
 | Man pages | mandoc | ISC | groff (GPL) |
 | Network config | ifupdown-ng | ISC | — |
@@ -255,7 +255,7 @@ Merged `/usr` — all binaries live in `/bin`, all libraries in `/lib`. Symlinks
 │   ├── doas.conf     ← privilege escalation rules
 │   └── securetty     ← allowed TTYs for root login
 ├── var/
-│   ├── log/          ← socklog output
+│   ├── log/          ← syslogd output
 │   ├── cache/jpkg/   ← downloaded packages
 │   └── db/jpkg/      ← installed package database
 ├── home/
@@ -290,7 +290,7 @@ UEFI firmware
   → OpenRC default runlevel:
       - networking (ifupdown-ng: configure interfaces)
       - sshd (dropbear)
-      - socklog (logging)
+      - syslogd (logging via toybox)
       - snooze (cron jobs)
   → getty spawns on tty1-tty3
   → User logs in → mksh
