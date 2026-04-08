@@ -366,7 +366,6 @@ int cmd_install(int argc, char **argv) {
 
     /* Initialize subsystems */
     sign_load_keys();
-    if (fetch_init() != 0) return 1;
 
     repo_config_t *cfg = repo_config_load();
     repo_index_t *idx = repo_index_load();
