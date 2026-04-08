@@ -15,6 +15,9 @@ concurrency:
   group: wsl-rootfs
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ── x86_64 rootfs ────────────────────────────────────────────────────────
   build-x86_64:
