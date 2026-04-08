@@ -17,9 +17,27 @@ ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
 #   /bin/toybox with the ncurses binary. This destroyed the shell.
 #   Fixed by using `toybox tar` pipe instead of `cp -a` in install_files().
 FROM alpine:latest AS jpkg-builder
-RUN apk add --no-cache clang lld musl-dev samurai zstd-dev
+RUN apk add --no-cache clang lld musl-dev samurai zstd-dev cmake make
+
+# Build LibreSSL from source so jpkg has native TLS (no curl dependency).
+RUN wget -q https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz && \
+    tar xf libressl-4.0.0.tar.gz && cd libressl-4.0.0 && \
+    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DBUILD_SHARED_LIBS=OFF -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF && \
+    cmake --build build -j$(nproc) && cmake --install build && \
+    cd / && rm -rf libressl-4.0.0*
+
 COPY packages/jpkg/ /build/jpkg/
-RUN cd /build/jpkg && samu && strip jpkg
+RUN cd /build/jpkg && \
+    clang -std=c11 -Os -fuse-ld=lld \
+      -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
+      -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
+      -fstack-protector-strong \
+      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
+      -I/usr/local/include \
+      -o jpkg src/*.c \
+      -L/usr/local/lib -ltls -lssl -lcrypto -lzstd -static && \
+    strip jpkg
 
 # Stage 1: Install core packages on minimal
 FROM ${MINIMAL_IMAGE}
