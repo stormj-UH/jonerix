@@ -1,6 +1,6 @@
 [package]
 name = "nginx"
-version = "1.28.3"
+version = "1.28.3-r1"
 license = "BSD-2-Clause"
 pre_bootstrap = false
 description = "High-performance HTTP server and reverse proxy"
@@ -19,6 +19,9 @@ configure = """cat > /tmp/clang-jonerix << 'WRAPPER'
 exec clang --rtlib=compiler-rt -fuse-ld=lld -Wno-unused-command-line-argument "$@"
 WRAPPER
 chmod +x /tmp/clang-jonerix
+PCRE2_PREFIX="${JPKG_PCRE2_PREFIX:-/}"
+OPENSSL_PREFIX="${JPKG_LIBRESSL_PREFIX:-/}"
+export LD_LIBRARY_PATH="$PCRE2_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 ./configure \
   --prefix=/etc/nginx \
   --sbin-path=/bin/nginx \
@@ -35,16 +38,16 @@ chmod +x /tmp/clang-jonerix
   --with-http_stub_status_module \
   --with-threads \
   --with-cc=/tmp/clang-jonerix \
-  --with-cc-opt="-Os -Wno-error" \
-  --with-ld-opt=""
+  --with-cc-opt="-I$PCRE2_PREFIX/include -I$OPENSSL_PREFIX/include -Os -Wno-error" \
+  --with-ld-opt="-L$PCRE2_PREFIX/lib -L$OPENSSL_PREFIX/lib -L/lib -Wl,-Bstatic -lssl -lcrypto -Wl,-Bdynamic -lpcre2-8 -lz"
 """
 build = "make -r -j$(nproc)"
-install = """make install DESTDIR=$DESTDIR
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-mkdir -p $DESTDIR/var/log/nginx
+install = """install -Dm755 objs/nginx "$DESTDIR/bin/nginx"
+mkdir -p "$DESTDIR/etc/nginx" "$DESTDIR/var/log/nginx" "$DESTDIR/run"
+cp -a conf/. "$DESTDIR/etc/nginx/"
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-rm -rf $DESTDIR/etc/nginx/html"""
+rm -rf "$DESTDIR/etc/nginx/html" """
 
 [depends]
 runtime = ["musl", "libressl", "zlib", "pcre2"]
-build = ["clang", "make", "mksh"]
+build = ["clang", "make", "mksh", "libressl", "zlib", "pcre2"]
