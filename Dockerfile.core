@@ -71,7 +71,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       uutils pigz mandoc onetrueawk \
       micro fastfetch ripgrep gitoxide; \
     do \
-      echo "Installing: $pkg" && jpkg install "$pkg" || echo "WARN: $pkg failed"; \
+      echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
     done && \
     ln -sf bsdtar /bin/tar 2>/dev/null || true && \
     ln -sf dbclient /bin/ssh 2>/dev/null || true && \
