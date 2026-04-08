@@ -19,6 +19,9 @@ install -m 644 sed.1 $DESTDIR/share/man/man1/sed.1
 ln -sf bsdsed $DESTDIR/bin/sed
 llvm-strip --strip-all $DESTDIR/bin/bsdsed 2>/dev/null || true"""
 
+[hooks]
+post_remove = '[ ! -e /bin/sed ] && [ -x /bin/toybox ] && ln -sf toybox /bin/sed'
+
 [depends]
 runtime = ["musl"]
 build = ["clang", "make"]

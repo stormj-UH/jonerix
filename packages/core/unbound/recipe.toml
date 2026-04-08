@@ -20,5 +20,5 @@ find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "openssl"]
+runtime = ["musl", "libressl"]
 build = ["clang", "make"]

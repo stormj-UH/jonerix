@@ -19,6 +19,11 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
+[hooks]
+post_remove = """for cmd in clear reset; do
+  [ ! -e "/bin/$cmd" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/$cmd"
+done"""
+
 [depends]
 runtime = []
 build = ["clang", "make"]

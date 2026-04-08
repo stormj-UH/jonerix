@@ -46,5 +46,5 @@ find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 rm -rf $DESTDIR/etc/nginx/html"""
 
 [depends]
-runtime = ["musl", "openssl", "zlib", "pcre2"]
+runtime = ["musl", "libressl", "zlib", "pcre2"]
 build = ["clang", "make", "mksh"]

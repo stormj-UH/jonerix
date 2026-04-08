@@ -42,5 +42,5 @@ install -m 755 wpa_supplicant/wpa_passphrase $DESTDIR/bin/wpa_passphrase
 llvm-strip --strip-all $DESTDIR/bin/wpa_supplicant $DESTDIR/bin/wpa_cli $DESTDIR/bin/wpa_passphrase 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "openssl"]
+runtime = ["musl", "libressl"]
 build = ["clang", "make"]

@@ -36,7 +36,7 @@ The `jonerix:builder` image installs every tool from jpkg packages with no Alpin
 
 ```sh
 # Pull from GHCR (fastest)
-docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, openssl, openrc
+docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, libressl, openrc
 docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh, uutils, micro, ripgrep, networking
 docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, go, nodejs, python3
 
@@ -64,7 +64,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 
 | Image | Based on | Contents |
 |-------|----------|----------|
-| `minimal` | scratch | musl, toybox, dropbear, curl, openssl, openrc, jpkg |
+| `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, bmake, samurai, perl |
 

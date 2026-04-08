@@ -46,7 +46,7 @@ RUN jpkg update && \
     jpkg install mksh && \
     ln -sf mksh /bin/sh && \
     for pkg in \
-      musl zlib zstd lz4 xz ncurses openssl curl nghttp2 \
+      musl zlib zstd lz4 xz ncurses libressl curl nghttp2 \
       toybox bsdtar openrc doas snooze socklog \
       dropbear dhcpcd ifupdown-ng unbound \
       uutils pigz mandoc onetrueawk \

@@ -34,6 +34,13 @@ typedef struct db_pkg {
     pkg_file_t *files;
     size_t file_count;
     time_t install_time;
+
+    /* install/remove hooks (shell commands, may be NULL) */
+    char *pre_install;
+    char *post_install;
+    char *pre_remove;
+    char *post_remove;
+
     struct db_pkg *next;
 } db_pkg_t;
 
@@ -81,5 +88,18 @@ int db_verify_files(const jpkg_db_t *db, const char *name,
                     int (*callback)(const char *path, const char *expected,
                                     const char *actual, void *ctx),
                     void *ctx);
+
+/* Find which package owns a file path.
+ * Returns the package name (owned by the db — do NOT free) or NULL. */
+const char *db_find_file_owner(const jpkg_db_t *db, const char *path);
+
+/* Check for file conflicts between a file list and installed packages.
+ * skip_pkg is excluded from checks (for upgrades, may be NULL).
+ * Calls callback for each conflict found. Returns total conflict count. */
+int db_check_conflicts(const jpkg_db_t *db, const pkg_file_t *files,
+                       const char *skip_pkg,
+                       void (*callback)(const char *path, const char *owner,
+                                        void *ctx),
+                       void *ctx);
 
 #endif /* JPKG_DB_H */

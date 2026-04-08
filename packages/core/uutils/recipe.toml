@@ -19,6 +19,19 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
+[hooks]
+post_remove = """# Restore toybox symlinks for commands uutils replaced
+CMDS="base64 basename cat chgrp chmod chown chroot cksum comm cp cut
+ date dd df dirname du echo env expand factor false fold groups head
+ id install kill link ln logname ls md5sum mkdir mkfifo mknod mktemp
+ mv nice nl nohup nproc od paste printf pwd readlink realpath rm rmdir
+ seq sha1sum sha256sum sha512sum shred sleep sort split stat sync tail
+ tee test timeout touch tr true truncate tty uname unexpand uniq unlink
+ uptime wc who whoami yes"
+for cmd in $CMDS; do
+  [ ! -e "/bin/$cmd" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/$cmd"
+done"""
+
 [depends]
 runtime = ["musl"]
 build = ["rust", "make"]
