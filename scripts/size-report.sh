@@ -385,7 +385,7 @@ main() {
                 printf '\n'
                 printf 'Targets:\n'
                 printf '  minimal  8 MB  (toybox + musl + jpkg)\n'
-                printf '  server   15 MB (adds dropbear, curl, OpenRC, socklog)\n'
+                printf '  server   15 MB (adds dropbear, curl, OpenRC)\n'
                 printf '  full     500 MB (adds LLVM/Clang)\n'
                 exit 0
                 ;;

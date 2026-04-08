@@ -27,7 +27,6 @@ ncurses
 # Tier 1: depends on musl only (tiny)
 snooze
 doas
-socklog
 pigz
 lz4
 # Tier 2: depends on musl only (small)

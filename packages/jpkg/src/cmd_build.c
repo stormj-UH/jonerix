@@ -884,7 +884,6 @@ static const char *build_world_order[] = {
     "dhcpcd",
     "unbound",
     "doas",
-    "socklog",
     "snooze",
     "mandoc",
     "ifupdown-ng",
