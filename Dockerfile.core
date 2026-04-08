@@ -60,8 +60,9 @@ ARG CACHEBUST=0
 # binary that provides /bin/sh) via a cp -a symlink-following bug.
 # Installing mksh first ensures /bin/sh remains functional throughout.
 # All symlinks are created in the same RUN to avoid broken /bin/sh between layers.
-RUN jpkg update && \
-    jpkg install mksh && \
+RUN echo "cache: ${CACHEBUST}" > /dev/null && \
+    jpkg update && \
+    jpkg install --force mksh && \
     ln -sf mksh /bin/sh && \
     for pkg in \
       musl zlib zstd lz4 xz ncurses libressl curl nghttp2 \
