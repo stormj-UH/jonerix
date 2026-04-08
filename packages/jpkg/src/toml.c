@@ -452,6 +452,46 @@ bool toml_has_key(const toml_doc_t *doc, const char *key) {
 
 /* ========== Serialization ========== */
 
+static void ensure_capacity(char **buf, size_t *cap, size_t len, size_t needed) {
+    while (len + needed >= *cap) {
+        *cap *= 2;
+        *buf = xrealloc(*buf, *cap);
+    }
+}
+
+static void append_char(char **buf, size_t *len, size_t *cap, char ch) {
+    ensure_capacity(buf, cap, *len, 2);
+    (*buf)[(*len)++] = ch;
+    (*buf)[*len] = '\0';
+}
+
+static void append_cstr(char **buf, size_t *len, size_t *cap, const char *s) {
+    size_t slen = strlen(s);
+    ensure_capacity(buf, cap, *len, slen + 1);
+    memcpy(*buf + *len, s, slen);
+    *len += slen;
+    (*buf)[*len] = '\0';
+}
+
+static void append_toml_string(char **buf, size_t *len, size_t *cap, const char *s) {
+    append_char(buf, len, cap, '"');
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        switch (*p) {
+            case '"':  append_cstr(buf, len, cap, "\\\""); break;
+            case '\\': append_cstr(buf, len, cap, "\\\\"); break;
+            case '\n': append_cstr(buf, len, cap, "\\n"); break;
+            case '\r': append_cstr(buf, len, cap, "\\r"); break;
+            case '\t': append_cstr(buf, len, cap, "\\t"); break;
+            case '\b': append_cstr(buf, len, cap, "\\b"); break;
+            case '\f': append_cstr(buf, len, cap, "\\f"); break;
+            default:
+                append_char(buf, len, cap, (char)*p);
+                break;
+        }
+    }
+    append_char(buf, len, cap, '"');
+}
+
 char *toml_serialize(const toml_doc_t *doc) {
     if (!doc) return xstrdup("");
 
@@ -481,7 +521,7 @@ char *toml_serialize(const toml_doc_t *doc) {
         if (strcmp(section, last_section) != 0) {
             if (section[0]) {
                 size_t needed = strlen(section) + 8;
-                while (len + needed >= cap) { cap *= 2; buf = xrealloc(buf, cap); }
+                ensure_capacity(&buf, &cap, len, needed);
                 len += (size_t)snprintf(buf + len, cap - len, "\n[%s]\n", section);
             }
             strncpy(last_section, section, sizeof(last_section) - 1);
@@ -490,12 +530,14 @@ char *toml_serialize(const toml_doc_t *doc) {
 
         /* Emit key = value */
         size_t needed = strlen(key_part) + 256;
-        while (len + needed >= cap) { cap *= 2; buf = xrealloc(buf, cap); }
+        ensure_capacity(&buf, &cap, len, needed);
 
         switch (v->type) {
             case TOML_STRING:
-                len += (size_t)snprintf(buf + len, cap - len, "%s = \"%s\"\n",
-                                        key_part, v->v.string ? v->v.string : "");
+                append_cstr(&buf, &len, &cap, key_part);
+                append_cstr(&buf, &len, &cap, " = ");
+                append_toml_string(&buf, &len, &cap, v->v.string ? v->v.string : "");
+                append_char(&buf, &len, &cap, '\n');
                 break;
             case TOML_INTEGER:
                 len += (size_t)snprintf(buf + len, cap - len, "%s = %lld\n",
@@ -508,15 +550,14 @@ char *toml_serialize(const toml_doc_t *doc) {
             case TOML_ARRAY: {
                 len += (size_t)snprintf(buf + len, cap - len, "%s = [", key_part);
                 for (size_t i = 0; i < v->v.array.count; i++) {
-                    needed = strlen(v->v.array.items[i]) + 8;
-                    while (len + needed >= cap) { cap *= 2; buf = xrealloc(buf, cap); }
+                    needed = strlen(v->v.array.items[i]) * 2 + 8;
+                    ensure_capacity(&buf, &cap, len, needed);
                     if (i > 0) {
                         len += (size_t)snprintf(buf + len, cap - len, ", ");
                     }
-                    len += (size_t)snprintf(buf + len, cap - len, "\"%s\"",
-                                            v->v.array.items[i]);
+                    append_toml_string(&buf, &len, &cap, v->v.array.items[i]);
                 }
-                while (len + 4 >= cap) { cap *= 2; buf = xrealloc(buf, cap); }
+                ensure_capacity(&buf, &cap, len, 4);
                 len += (size_t)snprintf(buf + len, cap - len, "]\n");
                 break;
             }
