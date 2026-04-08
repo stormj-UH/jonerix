@@ -1,5 +1,5 @@
-#!/bin/zsh
-# ci-build-x86_64.sh â€” Run inside ghcr.io/stormj-uh/jonerix:all container
+#!/bin/sh
+# ci-build-x86_64.sh — Run inside ghcr.io/stormj-uh/jonerix:builder-amd64 container
 # Mounts: /workspace (repo), /var/cache/jpkg (output), /var/cache/jpkg-published, /jpkg-bin
 # Env: PKG_INPUT (optional package name to force-build)
 set -e
