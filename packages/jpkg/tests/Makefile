@@ -13,7 +13,7 @@ SRCDIR   = ../src
 COMMON_SRCS = $(SRCDIR)/util.c $(SRCDIR)/toml.c
 
 # Test binaries
-TESTS    = test_toml test_pkg test_deps
+TESTS    = test_toml test_pkg test_deps test_db
 
 .PHONY: all clean run
 
@@ -50,6 +50,11 @@ test_deps: test_deps.c $(COMMON_SRCS) $(SRCDIR)/deps.c $(SRCDIR)/repo.c \
 	$(CC) $(CFLAGS) -o $@ test_deps.c $(COMMON_SRCS) \
 		$(SRCDIR)/deps.c $(SRCDIR)/repo.c $(SRCDIR)/fetch.c \
 		$(SRCDIR)/sign.c $(SRCDIR)/pkg.c $(SRCDIR)/db.c
+
+test_db: test_db.c $(COMMON_SRCS) $(SRCDIR)/db.c $(SRCDIR)/pkg.c \
+         $(SRCDIR)/db.h $(SRCDIR)/pkg.h $(SRCDIR)/util.h
+	$(CC) $(CFLAGS) -o $@ test_db.c $(COMMON_SRCS) \
+		$(SRCDIR)/db.c $(SRCDIR)/pkg.c
 
 clean:
 	rm -f $(TESTS)
