@@ -27,7 +27,7 @@ RUN apk add --no-cache clang lld musl-dev samurai zstd-dev zstd-static cmake mak
 # Static-only build — the resulting jpkg is fully self-contained.
 RUN wget -q https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz && \
     tar xf libressl-4.0.0.tar.gz && cd libressl-4.0.0 && \
-    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local \
+    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr \
       -DBUILD_SHARED_LIBS=OFF -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF && \
     cmake --build build -j$(nproc) && cmake --install build && \
     cd / && rm -rf libressl-4.0.0*
@@ -39,9 +39,9 @@ RUN cd /build/jpkg && \
       -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
       -fstack-protector-strong \
       -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
-      -I/usr/local/include \
+      -I/usr/include \
       -o jpkg src/*.c \
-      -L/usr/local/lib -ltls -lssl -lcrypto -lzstd -static && \
+      -L/usr/lib -ltls -lssl -lcrypto -lzstd -static && \
     strip jpkg
 
 # Build a static bsdtar from Alpine libarchive (works on any arch)
