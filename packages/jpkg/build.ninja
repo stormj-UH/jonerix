@@ -19,12 +19,12 @@ cflags = -std=c11 -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration
 ldflags = -static -fuse-ld=lld --rtlib=compiler-rt --unwindlib=none
 
 rule cc
-  command = $cc $cflags -MMD -MF $out.d -c $in -o $out
+  command = $cc $cflags $$CPPFLAGS $$CFLAGS -MMD -MF $out.d -c $in -o $out
   depfile = $out.d
   description = CC $in
 
 rule link
-  command = $cc $in $ldflags -o $out 2>/dev/null || $cc $in -static -fuse-ld=lld -o $out
+  command = $cc $in $ldflags $$LDFLAGS $$LDLIBS -o $out 2>/dev/null || $cc $in -static -fuse-ld=lld $$LDFLAGS $$LDLIBS -o $out
   description = LINK $out
 
 build src/main.o: cc src/main.c
