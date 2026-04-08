@@ -178,7 +178,8 @@ static build_recipe_t *load_recipe(const char *recipe_dir) {
 }
 
 static int run_build_step(const char *step_name, const char *cmd,
-                          const char *work_dir, const char *dest_dir) {
+                          const char *work_dir, const char *dest_dir,
+                          const char *recipe_dir) {
     if (!cmd || cmd[0] == '\0') {
         log_debug("skipping %s (no command)", step_name);
         return 0;
@@ -239,6 +240,8 @@ static int run_build_step(const char *step_name, const char *cmd,
     fprintf(sf, "export '%s'\nexport '%s'\n", env_cflags, env_ldflags);
     fprintf(sf, "export '%s'\n", env_destdir);
     fprintf(sf, "export %s\nexport %s\n", env_cinclude, env_libpath);
+    if (recipe_dir)
+        fprintf(sf, "export RECIPE_DIR='%s'\n", recipe_dir);
 
     /* Replace $(nproc) with the literal CPU count to avoid toybox sh deadlock
      * on command substitution. Also handle `nproc` backtick form. */
@@ -785,16 +788,16 @@ int cmd_build(int argc, char **argv) {
     if (rc != 0) goto cleanup;
 
     /* Step 4: Configure */
-    rc = run_build_step("configure", recipe->configure_cmd, src_dir, dest_dir);
+    rc = run_build_step("configure", recipe->configure_cmd, src_dir, dest_dir, recipe_dir);
     if (rc != 0) goto cleanup;
 
     /* Step 5: Build */
-    rc = run_build_step("build", recipe->build_cmd, src_dir, dest_dir);
+    rc = run_build_step("build", recipe->build_cmd, src_dir, dest_dir, recipe_dir);
     if (rc != 0) goto cleanup;
 
     if (build_jpkg) {
         /* Step 6: Install to staging directory */
-        rc = run_build_step("install", recipe->install_cmd, src_dir, dest_dir);
+        rc = run_build_step("install", recipe->install_cmd, src_dir, dest_dir, recipe_dir);
         if (rc != 0) goto cleanup;
 
         /* Step 6.5: Flatten lib64/ → lib/ (cmake defaults to lib64 on x86_64) */
@@ -814,7 +817,7 @@ int cmd_build(int argc, char **argv) {
         char real_dest[512];
         snprintf(real_dest, sizeof(real_dest), "%s", g_rootfs[0] ? g_rootfs : "");
         rc = run_build_step("install", recipe->install_cmd, src_dir,
-                            real_dest[0] ? real_dest : "/");
+                            real_dest[0] ? real_dest : "/", recipe_dir);
         if (rc != 0) goto cleanup;
 
         /* Register in the package database */
