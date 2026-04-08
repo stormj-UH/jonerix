@@ -4,20 +4,14 @@
 # Env: PKG_INPUT (optional package name to force-build)
 set -e
 
-# Get jpkg binary: prefer host cache, then container pre-installed, then compile.
-# The jonerix:all container COPYs packages/jpkg/jpkg â†’ /bin/jpkg at build time,
-# so the pre-installed path is always available for containers built that way.
+# Get jpkg binary: prefer host cache, then compile from source.
+# Always build from source on cache miss so the binary matches the current
+# repo checkout (important for new features like RECIPE_DIR).
 if [ -f /jpkg-bin/jpkg ]; then
     install -m 755 /jpkg-bin/jpkg /bin/jpkg
-    echo "jpkg: using cached binary"
-elif /bin/jpkg --version >/dev/null 2>&1; then
-    echo "jpkg: using container pre-installed binary"
-    cp /bin/jpkg /jpkg-bin/jpkg 2>/dev/null || true
+    echo “jpkg: using cached binary”
 else
     cd /workspace/packages/jpkg
-    # Use clang directly â€” jonerix has bmake, not GNU make, so Makefile pattern
-    # rules (%.o: %.c) don't work; compile all sources in one shot instead.
-    # --rtlib=compiler-rt avoids GCC CRT (crtbeginS.o/libgcc) path dependency.
     clang -std=c11 -Os -fuse-ld=lld \
       -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
       -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
@@ -27,6 +21,7 @@ else
       -o jpkg src/*.c
     install -m 755 jpkg /bin/jpkg
     cp jpkg /jpkg-bin/jpkg
+    cd /workspace
 fi
 
 # Ensure the clang cfg exists (written by LLVM recipe; recreate if absent).
