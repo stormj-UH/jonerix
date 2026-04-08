@@ -224,6 +224,16 @@ static db_pkg_t *load_package(const char *db_dir, const char *name) {
             pkg->runtime_deps[i] = xstrdup(arr->items[i]);
     }
 
+    /* Hooks */
+    if ((s = toml_get_string(doc, "hooks.pre_install")))
+        pkg->pre_install = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.post_install")))
+        pkg->post_install = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.pre_remove")))
+        pkg->pre_remove = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.post_remove")))
+        pkg->post_remove = xstrdup(s);
+
     toml_free(doc);
 
     /* Load file list */
@@ -344,6 +354,12 @@ int db_register(jpkg_db_t *db, const pkg_meta_t *meta, const pkg_file_t *files) 
                        (const char **)meta->runtime_deps, meta->runtime_dep_count);
     }
 
+    /* Hooks */
+    if (meta->pre_install) toml_set_string(doc, "hooks.pre_install", meta->pre_install);
+    if (meta->post_install) toml_set_string(doc, "hooks.post_install", meta->post_install);
+    if (meta->pre_remove) toml_set_string(doc, "hooks.pre_remove", meta->pre_remove);
+    if (meta->post_remove) toml_set_string(doc, "hooks.post_remove", meta->post_remove);
+
     char *toml_str = toml_serialize(doc);
     toml_free(doc);
 
@@ -384,6 +400,12 @@ int db_register(jpkg_db_t *db, const pkg_meta_t *meta, const pkg_file_t *files) 
         for (size_t i = 0; i < meta->runtime_dep_count; i++)
             pkg->runtime_deps[i] = xstrdup(meta->runtime_deps[i]);
     }
+
+    /* Copy hooks */
+    if (meta->pre_install) pkg->pre_install = xstrdup(meta->pre_install);
+    if (meta->post_install) pkg->post_install = xstrdup(meta->post_install);
+    if (meta->pre_remove) pkg->pre_remove = xstrdup(meta->pre_remove);
+    if (meta->post_remove) pkg->post_remove = xstrdup(meta->post_remove);
 
     /* Copy file list */
     for (const pkg_file_t *f = files; f; f = f->next) {
@@ -480,6 +502,11 @@ void db_pkg_free(db_pkg_t *pkg) {
         free(pkg->runtime_deps[i]);
     free(pkg->runtime_deps);
 
+    free(pkg->pre_install);
+    free(pkg->post_install);
+    free(pkg->pre_remove);
+    free(pkg->post_remove);
+
     pkg_file_t *f = pkg->files;
     while (f) {
         pkg_file_t *next = f->next;
@@ -557,4 +584,46 @@ int db_verify_files(const jpkg_db_t *db, const char *name,
     }
 
     return mismatches;
+}
+
+const char *db_find_file_owner(const jpkg_db_t *db, const char *path) {
+    if (!db || !path) return NULL;
+
+    for (db_pkg_t *p = db->packages; p; p = p->next) {
+        for (pkg_file_t *f = p->files; f; f = f->next) {
+            if (strcmp(f->path, path) == 0)
+                return p->name;
+        }
+    }
+
+    return NULL;
+}
+
+int db_check_conflicts(const jpkg_db_t *db, const pkg_file_t *files,
+                       const char *skip_pkg,
+                       void (*callback)(const char *path, const char *owner,
+                                        void *ctx),
+                       void *ctx) {
+    if (!db || !files) return 0;
+
+    int conflicts = 0;
+
+    for (const pkg_file_t *f = files; f; f = f->next) {
+        for (db_pkg_t *p = db->packages; p; p = p->next) {
+            if (skip_pkg && strcmp(p->name, skip_pkg) == 0)
+                continue;
+
+            for (pkg_file_t *pf = p->files; pf; pf = pf->next) {
+                if (strcmp(f->path, pf->path) == 0) {
+                    conflicts++;
+                    if (callback)
+                        callback(f->path, p->name, ctx);
+                    goto next_file; /* found owner, check next file */
+                }
+            }
+        }
+        next_file:;
+    }
+
+    return conflicts;
 }

@@ -29,5 +29,5 @@ find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "zlib", "zstd", "ncurses", "openssl", "xz"]
+runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz"]
 build = ["clang", "make"]

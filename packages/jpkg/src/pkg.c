@@ -87,6 +87,16 @@ pkg_meta_t *pkg_meta_from_toml(const char *toml_str) {
     if (toml_get_integer(doc, "files.size", &size))
         meta->content_size = (uint64_t)size;
 
+    /* Hooks */
+    if ((s = toml_get_string(doc, "hooks.pre_install")))
+        meta->pre_install = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.post_install")))
+        meta->post_install = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.pre_remove")))
+        meta->pre_remove = xstrdup(s);
+    if ((s = toml_get_string(doc, "hooks.post_remove")))
+        meta->post_remove = xstrdup(s);
+
     toml_free(doc);
     return meta;
 }
@@ -322,6 +332,11 @@ void pkg_meta_free(pkg_meta_t *meta) {
 
     free(meta->content_sha256);
 
+    free(meta->pre_install);
+    free(meta->post_install);
+    free(meta->pre_remove);
+    free(meta->post_remove);
+
     pkg_file_t *f = meta->files;
     while (f) {
         pkg_file_t *next = f->next;
@@ -359,6 +374,12 @@ char *pkg_meta_to_toml(const pkg_meta_t *meta) {
     if (meta->content_sha256) toml_set_string(doc, "files.sha256", meta->content_sha256);
     if (meta->content_size > 0)
         toml_set_integer(doc, "files.size", (int64_t)meta->content_size);
+
+    /* Hooks */
+    if (meta->pre_install) toml_set_string(doc, "hooks.pre_install", meta->pre_install);
+    if (meta->post_install) toml_set_string(doc, "hooks.post_install", meta->post_install);
+    if (meta->pre_remove) toml_set_string(doc, "hooks.pre_remove", meta->pre_remove);
+    if (meta->post_remove) toml_set_string(doc, "hooks.post_remove", meta->post_remove);
 
     char *result = toml_serialize(doc);
     toml_free(doc);

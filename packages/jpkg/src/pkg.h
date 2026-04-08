@@ -50,6 +50,12 @@ typedef struct pkg_meta {
     /* file manifest */
     pkg_file_t *files;
     size_t file_count;
+
+    /* install/remove hooks (shell commands, may be NULL) */
+    char *pre_install;
+    char *post_install;
+    char *pre_remove;
+    char *post_remove;
 } pkg_meta_t;
 
 /* Parse a .jpkg file from a memory buffer.

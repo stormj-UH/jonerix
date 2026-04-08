@@ -25,6 +25,9 @@ install -m 755 awk $DESTDIR/bin/awk
 install -m 644 awk.1 $DESTDIR/share/man/man1/awk.1
 llvm-strip --strip-all $DESTDIR/bin/awk 2>/dev/null || true"""
 
+[hooks]
+post_remove = '[ ! -e /bin/awk ] && [ -x /bin/toybox ] && ln -sf toybox /bin/awk'
+
 [depends]
 runtime = ["musl"]
 build = ["clang", "byacc"]

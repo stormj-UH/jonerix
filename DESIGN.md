@@ -68,7 +68,7 @@ minimal -> core -> builder   (compilers + dev tools)
 
 | Image | Base | Contents |
 |-------|------|----------|
-| `minimal` | scratch | musl, toybox, dropbear, curl, openssl, openrc, jpkg |
+| `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, ncurses, networking |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, bmake, samurai, perl |
 | `router` | core | hostapd, wpa_supplicant, btop, unbound DNS config, sysctl hardening |
@@ -84,7 +84,7 @@ minimal -> core -> builder   (compilers + dev tools)
 
 All 60+ packages build from source on jonerix itself (both x86_64 and aarch64):
 
-- **C/C++**: musl, toybox, OpenSSL, curl, dropbear, OpenRC, ncurses, etc.
+- **C/C++**: musl, toybox, LibreSSL, curl, dropbear, OpenRC, ncurses, etc.
 - **LLVM/Clang/LLD**: Full compiler toolchain from source
 - **Go chain**: C → Go 1.4 → 1.17 → 1.20 → 1.22 → 1.24 → 1.26 (bootstrapped from C)
 - **Go packages**: containerd, runc, nerdctl, CNI plugins, headscale, derper
@@ -114,7 +114,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | Shell | mksh | MirOS (ISC-like) | bash (GPL) |
 | Init system | OpenRC | BSD-2-Clause | systemd (LGPL) |
 | Privilege escalation | doas | ISC | sudo |
-| TLS library | OpenSSL | Apache-2.0 | — |
+| TLS library | LibreSSL | ISC | OpenSSL (Apache-2.0) |
 | SSH server | dropbear | MIT | OpenSSH (BSD, but depends on GPL OpenSSL historically) |
 | HTTP client | curl | curl license (MIT-like) | wget (GPL) |
 | DNS resolver | unbound | BSD-3-Clause | — |
@@ -230,7 +230,7 @@ Packages and the INDEX manifest are signed with Ed25519. The distribution's publ
 
 ### Implementation
 
-Written in C (~5000 lines), built with `samu` (ninja). Linked statically against musl. Dependencies: OpenSSL (HTTPS), zstd (decompression), tweetnacl (Ed25519).
+Written in C (~5000 lines), built with `samu` (ninja). Linked statically against musl. Dependencies: LibreSSL (HTTPS), zstd (decompression), tweetnacl (Ed25519).
 
 ---
 
