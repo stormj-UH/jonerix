@@ -2,7 +2,6 @@
 name = "ruby"
 version = "3.4.3"
 license = "BSD-2-Clause AND Ruby"
-pre_bootstrap = false
 description = "Ruby programming language interpreter"
 
 [source]

@@ -7,6 +7,7 @@
  */
 
 #include "util.h"
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -544,4 +545,202 @@ bool license_is_permissive(const char *license) {
     }
 
     return false;
+}
+
+static bool audit_path_is_doc_payload(const char *rel_path) {
+    if (!rel_path || !rel_path[0]) return false;
+
+    return str_starts_with(rel_path, "share/man/") ||
+           strcmp(rel_path, "share/man") == 0 ||
+           str_starts_with(rel_path, "share/doc/") ||
+           strcmp(rel_path, "share/doc") == 0 ||
+           str_starts_with(rel_path, "share/info/") ||
+           strcmp(rel_path, "share/info") == 0 ||
+           str_starts_with(rel_path, "man/") ||
+           strcmp(rel_path, "man") == 0 ||
+           str_starts_with(rel_path, "doc/") ||
+           strcmp(rel_path, "doc") == 0 ||
+           str_starts_with(rel_path, "info/") ||
+           strcmp(rel_path, "info") == 0;
+}
+
+static bool audit_buffer_is_elf(const uint8_t *buf, size_t len) {
+    return len >= 4 && buf[0] == 0x7f && buf[1] == 'E' &&
+           buf[2] == 'L' && buf[3] == 'F';
+}
+
+static bool audit_buffer_is_text(const uint8_t *buf, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (buf[i] == '\0') return false;
+    }
+    return true;
+}
+
+static bool audit_file_contains_string(const char *path, const char *needle) {
+    size_t needle_len = strlen(needle);
+    if (needle_len == 0) return false;
+
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return false;
+
+    size_t buf_size = 8192 + needle_len;
+    uint8_t *buf = xmalloc(buf_size);
+    size_t carry = 0;
+
+    while (1) {
+        ssize_t n = read(fd, buf + carry, buf_size - carry);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            close(fd);
+            free(buf);
+            return false;
+        }
+        if (n == 0) break;
+
+        size_t total = carry + (size_t)n;
+        for (size_t i = 0; i + needle_len <= total; i++) {
+            if (memcmp(buf + i, needle, needle_len) == 0) {
+                close(fd);
+                free(buf);
+                return true;
+            }
+        }
+
+        carry = needle_len > 1 ? needle_len - 1 : 0;
+        if (carry > total) carry = total;
+        if (carry > 0)
+            memmove(buf, buf + total - carry, carry);
+    }
+
+    close(fd);
+    free(buf);
+    return false;
+}
+
+static tree_audit_result_t audit_layout_tree_recursive(const char *root,
+                                                       const char *rel_path,
+                                                       char *problem_path,
+                                                       size_t problem_path_len) {
+    char *scan_dir = rel_path[0] ? path_join(root, rel_path) : xstrdup(root);
+    DIR *dir = opendir(scan_dir);
+    if (!dir) {
+        free(scan_dir);
+        return TREE_AUDIT_OK;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+            continue;
+
+        char *child_rel = rel_path[0] ? path_join(rel_path, ent->d_name)
+                                      : xstrdup(ent->d_name);
+        char *child_full = path_join(root, child_rel);
+
+        struct stat st;
+        if (lstat(child_full, &st) != 0) {
+            free(child_rel);
+            free(child_full);
+            continue;
+        }
+
+        if (strncmp(child_rel, "lib64", 5) == 0 &&
+            (child_rel[5] == '\0' || child_rel[5] == '/')) {
+            snprintf(problem_path, problem_path_len, "/%s", child_rel);
+            free(child_rel);
+            free(child_full);
+            closedir(dir);
+            free(scan_dir);
+            return TREE_AUDIT_LIB64_PATH;
+        }
+
+        if (!strchr(child_rel, '/') && str_ends_with(child_rel, ".0")) {
+            snprintf(problem_path, problem_path_len, "/%s", child_rel);
+            free(child_rel);
+            free(child_full);
+            closedir(dir);
+            free(scan_dir);
+            return TREE_AUDIT_ROOT_DOT_ZERO;
+        }
+
+        if (S_ISLNK(st.st_mode)) {
+            char target[1024];
+            ssize_t tlen = readlink(child_full, target, sizeof(target) - 1);
+            if (tlen > 0) {
+                target[tlen] = '\0';
+                if (strstr(target, "/lib64") != NULL) {
+                    snprintf(problem_path, problem_path_len, "/%s -> %s",
+                             child_rel, target);
+                    free(child_rel);
+                    free(child_full);
+                    closedir(dir);
+                    free(scan_dir);
+                    return TREE_AUDIT_LIB64_REFERENCE;
+                }
+            }
+        } else if (S_ISREG(st.st_mode) && !audit_path_is_doc_payload(child_rel)) {
+            uint8_t head[256];
+            int fd = open(child_full, O_RDONLY);
+            ssize_t n = -1;
+            if (fd >= 0) {
+                n = read(fd, head, sizeof(head));
+                close(fd);
+            }
+            if (n > 0 &&
+                (audit_buffer_is_elf(head, (size_t)n) ||
+                 audit_buffer_is_text(head, (size_t)n)) &&
+                audit_file_contains_string(child_full, "/lib64")) {
+                snprintf(problem_path, problem_path_len, "/%s", child_rel);
+                free(child_rel);
+                free(child_full);
+                closedir(dir);
+                free(scan_dir);
+                return TREE_AUDIT_LIB64_REFERENCE;
+            }
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            tree_audit_result_t rc = audit_layout_tree_recursive(root, child_rel,
+                                                                 problem_path,
+                                                                 problem_path_len);
+            if (rc != TREE_AUDIT_OK) {
+                free(child_rel);
+                free(child_full);
+                closedir(dir);
+                free(scan_dir);
+                return rc;
+            }
+        }
+
+        free(child_rel);
+        free(child_full);
+    }
+
+    closedir(dir);
+    free(scan_dir);
+    return TREE_AUDIT_OK;
+}
+
+tree_audit_result_t audit_layout_tree(const char *root, char *problem_path,
+                                      size_t problem_path_len) {
+    if (problem_path && problem_path_len > 0)
+        problem_path[0] = '\0';
+    if (!root || !dir_exists(root))
+        return TREE_AUDIT_OK;
+    return audit_layout_tree_recursive(root, "", problem_path, problem_path_len);
+}
+
+const char *audit_layout_result_string(tree_audit_result_t result) {
+    switch (result) {
+        case TREE_AUDIT_OK:
+            return "ok";
+        case TREE_AUDIT_ROOT_DOT_ZERO:
+            return "root-level *.0 payload";
+        case TREE_AUDIT_LIB64_PATH:
+            return "staged /lib64 payload";
+        case TREE_AUDIT_LIB64_REFERENCE:
+            return "embedded /lib64 reference";
+        default:
+            return "unknown layout audit failure";
+    }
 }

@@ -5,9 +5,8 @@
 #   ./scripts/build-kernel.sh [--output DIR]
 #
 # This script builds packages/extra/linux/ inside a fresh Alpine container.
-# It is the supported way to build the kernel recipe until jpkg's license gate
-# is updated to honour pre_bootstrap = true (see packages/extra/linux/recipe.toml
-# for a full explanation of the blocker).
+# It is the supported way to build the kernel recipe while jpkg's permissive-only
+# license gate intentionally blocks GPL packages.
 #
 # Prerequisites:
 #   - Docker (or a compatible runtime) available on PATH
@@ -83,14 +82,8 @@ docker run --rm \
         echo "jpkg version: $(jpkg --version 2>/dev/null || echo unknown)"
 
         echo "==> Starting Linux kernel build"
-        # jpkg build will be BLOCKED by the license gate (GPL-2.0-only).
-        # We invoke the build steps manually until pre_bootstrap is wired up.
-        # See packages/extra/linux/recipe.toml for the full explanation.
-        #
-        # TODO: once cmd_build.c honours pre_bootstrap = true, replace the
-        # manual steps below with:
-        #   jpkg build /workspace/packages/extra/linux --output /output
-        #
+        # jpkg build is blocked by the GPL license gate, so the kernel build
+        # stays manual here.
         RECIPE_DIR=/workspace/packages/extra/linux
         VERSION=$(awk -F\" "/^version/ {print \$2; exit}" "$RECIPE_DIR/recipe.toml")
         TARBALL="linux-${VERSION}.tar.xz"

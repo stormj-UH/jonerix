@@ -248,6 +248,22 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
         return -1;
     }
 
+    {
+        char problem[1024];
+        tree_audit_result_t audit = audit_layout_tree(stage_dir, problem, sizeof(problem));
+        if (audit != TREE_AUDIT_OK) {
+            log_error("refusing to install %s: %s at %s",
+                      meta->name, audit_layout_result_string(audit),
+                      problem[0] ? problem : "(unknown)");
+            char cmd[512];
+            snprintf(cmd, sizeof(cmd), "rm -rf '%s'", stage_dir);
+            system(cmd);
+            pkg_meta_free(meta);
+            free(pkg_path);
+            return -1;
+        }
+    }
+
     /* Build file manifest from extracted files */
     pkg_file_t *files = build_file_manifest(stage_dir, "/");
     if (!files) {

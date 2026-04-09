@@ -56,12 +56,12 @@ docker run -it jonerix:latest
 
 ## Building Packages from Source
 
-All 40+ packages have from-source build recipes in `packages/bootstrap/*/recipe.toml`. The build script processes them in dependency order:
+Packages are built from the source recipes in `packages/{core,develop,extra}/*/recipe.toml`. The build script processes them in dependency order:
 
 ```sh
 # Inside a jonerix-develop container
 docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
-  sh bootstrap/build-all.sh --output /workspace/.build/pkgs
+  sh scripts/build-all.sh --output /workspace/.build/pkgs
 ```
 
 ### Build Order
@@ -79,7 +79,7 @@ Dependencies are built first. Key tiers:
 | 7 | Go (bootstrap chain: C → 1.4 → 1.17 → ... → 1.26) | Go language |
 | 8 | containerd, runc, nerdctl, CNI plugins | Container runtime |
 | 9 | Rust, uutils, gitoxide, ripgrep | Rust ecosystem |
-| 10 | Python 3, Node.js, Perl, pip, npm | Scripting languages |
+| 10 | Python 3, Node.js, Perl | Scripting languages |
 
 ### Compiler Flags
 

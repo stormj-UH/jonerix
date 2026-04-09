@@ -2,7 +2,6 @@
 name = "jpkg"
 version = "1.0.1"
 license = "MIT"
-pre_bootstrap = false
 description = "jonerix package manager"
 
 [build]

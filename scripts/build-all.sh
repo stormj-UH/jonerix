@@ -1,5 +1,5 @@
 #!/bin/sh
-# bootstrap/build-all.sh — Build all bootstrap packages from source
+# scripts/build-all.sh — Build packages from source
 #
 # Builds packages in dependency+size order using jpkg build.
 # Supports resuming: skips packages whose .jpkg already exists in OUTPUT.
@@ -7,7 +7,7 @@
 # any packages that depend on it.
 #
 # Usage:
-#   sh bootstrap/build-all.sh [--output DIR] [--force PKG] [--dry-run]
+#   sh scripts/build-all.sh [--output DIR] [--force PKG] [--dry-run]
 #
 # Intended to run inside a jonerix-develop container where bmake (as make),
 # clang, cmake, meson, and jpkg are available.
@@ -138,7 +138,7 @@ PACKAGES=$(sed 's/#.*//; s/[[:space:]]//g' "$ORDER_FILE" | grep -v '^$' | tr '\n
 # Build loop
 # =========================================================================
 
-log "Bootstrap build starting"
+log "Package build starting"
 log "Output directory: $OUTPUT"
 log "Parallelism: $NPROC"
 log ""
@@ -218,7 +218,7 @@ done
 
 log ""
 log "================================================================"
-log "  Bootstrap build complete"
+log "  Package build complete"
 log "================================================================"
 log "  Built:   $BUILT"
 log "  Skipped: $SKIPPED"

@@ -2,7 +2,6 @@
 name = "openrc"
 version = "0.54"
 license = "BSD-2-Clause"
-pre_bootstrap = false
 description = "Dependency-based init system for Unix-like systems"
 
 [source]
@@ -11,7 +10,7 @@ sha256 = "c84ff1d8e468c043fe136d11d3d34d6bb28328267d1352526a5d18cdf4c60fb0"
 
 [build]
 system = "meson"
-configure = "meson setup build --prefix=/ --bindir=bin --sbindir=bin -Dbuildtype=release -Dpam=false -Dselinux=disabled"
+configure = "meson setup build --prefix=/ --libdir=lib --bindir=bin --sbindir=bin -Dbuildtype=release -Dpam=false -Dselinux=disabled"
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

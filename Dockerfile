@@ -77,7 +77,6 @@ RUN jpkg --root /jonerix update && \
       llvm \
       cmake bmake samurai flex bc byacc \
       perl python3 nodejs \
-      npm pip \
       curl dropbear openrc doas \
       snooze dhcpcd ifupdown-ng unbound \
       mandoc pigz fastfetch \
@@ -86,6 +85,9 @@ RUN jpkg --root /jonerix update && \
       echo "=== Installing: $pkg ===" && \
       jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \
     done
+
+RUN chroot /jonerix /bin/python3 -m ensurepip --upgrade && \
+    chroot /jonerix /bin/python3 -m pip install --break-system-packages --no-cache-dir --disable-pip-version-check meson
 
 # Flatten usr/ into / (merged-usr layout), then add the symlink
 RUN if [ -d /jonerix/usr ]; then \

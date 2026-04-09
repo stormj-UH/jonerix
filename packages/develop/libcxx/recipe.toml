@@ -2,7 +2,6 @@
 name = "libcxx"
 version = "21.1.2"
 license = "Apache-2.0"
-pre_bootstrap = false
 description = "LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME"
 
 [source]

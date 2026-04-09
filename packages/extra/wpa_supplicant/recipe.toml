@@ -2,7 +2,6 @@
 name = "wpa_supplicant"
 version = "2.11"
 license = "BSD-3-Clause"
-pre_bootstrap = false
 description = "WPA/WPA2/WPA3 supplicant for wireless network authentication"
 
 [source]

@@ -2,7 +2,6 @@
 name = "m4"
 version = "1.4.20"
 license = "GPL-3.0"
-pre_bootstrap = true
 description = "GNU m4 macro processor (build tool only, not in runtime)"
 
 [build]

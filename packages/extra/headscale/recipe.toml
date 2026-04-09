@@ -2,7 +2,6 @@
 name = "headscale"
 version = "0.28.0"
 license = "BSD-3-Clause"
-pre_bootstrap = false
 description = "Open-source self-hosted Tailscale control server"
 
 [source]

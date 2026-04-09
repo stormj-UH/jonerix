@@ -20,7 +20,6 @@
 name = "openjdk"
 version = "21.0.7"
 license = "GPL-2.0-only WITH Classpath-exception-2.0"
-pre_bootstrap = false
 description = "OpenJDK 21 LTS — Java SE Development Kit (headless, server build)"
 
 [source]
