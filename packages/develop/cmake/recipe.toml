@@ -2,7 +2,6 @@
 name = "cmake"
 version = "4.1.0"
 license = "BSD-3-Clause"
-pre_bootstrap = false
 description = "Cross-platform build system generator"
 
 [build]

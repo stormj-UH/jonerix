@@ -2,7 +2,6 @@
 name = "derper"
 version = "1.96.5"
 license = "BSD-3-Clause"
-pre_bootstrap = false
 description = "Tailscale DERP relay server"
 
 [source]

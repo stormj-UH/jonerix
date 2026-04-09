@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build LLVM from source with libc++ on jonerix (aarch64)
 #
-# Produces: .build/bootstrap-aarch64/llvm-21.1.2-aarch64.jpkg
+# Produces: .build/packages-aarch64/llvm-21.1.2-aarch64.jpkg
 # Time: ~45-60 min on M4 Mac
 # Memory: needs 12GB+ Docker memory
 #
@@ -16,7 +16,7 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-OUTPUT_DIR="$REPO_DIR/.build/bootstrap-aarch64"
+OUTPUT_DIR="$REPO_DIR/.build/packages-aarch64"
 IMAGE="ghcr.io/stormj-uh/jonerix:all"
 
 mkdir -p "$OUTPUT_DIR"
@@ -62,7 +62,7 @@ echo "Verifying libc++..."
 ls /lib/libc++.so* /lib/libunwind.so* || { echo "FATAL: libc++ not found"; exit 1; }
 
 echo "Building LLVM..."
-jpkg build /workspace/packages/bootstrap/llvm --build-jpkg --output /output 2>&1
+jpkg build /workspace/packages/develop/llvm --build-jpkg --output /output 2>&1
 
 echo ""
 echo "=== LLVM build complete ==="

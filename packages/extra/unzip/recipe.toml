@@ -2,7 +2,6 @@
 name = "unzip"
 version = "3.8.6-r1"
 license = "Apache-2.0"
-pre_bootstrap = false
 description = "Compatibility package providing /bin/unzip via libarchive bsdunzip"
 
 [build]

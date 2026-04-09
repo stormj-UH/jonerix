@@ -40,13 +40,12 @@ docker run -it -v $(pwd):/workspace -w /workspace jonerix-develop:latest
 
 ```
 jonerix/
-  bootstrap/            build-all.sh and build environment docs
   packages/core/        Runtime packages (minimal + core images)
   packages/develop/     Compilers + build tools (builder image)
   packages/extra/       Apps, router packages, container tools
   packages/jpkg/        Package manager source code (C)
   config/               OpenRC services, system defaults
-  scripts/              Utility scripts (license audit)
+  scripts/              Utility scripts (license audit, package builds)
   docs/                 Documentation
   .github/              CI workflows
 ```
@@ -61,7 +60,7 @@ Quick checklist:
 - [ ] License is permissive (run `scripts/license-audit.sh`)
 - [ ] Source URL is stable (prefer tagged releases, not `master` branches)
 - [ ] SHA256 hash is correct
-- [ ] Package builds cleanly with `bootstrap/build-all.sh`
+- [ ] Package builds cleanly with `scripts/build-all.sh`
 - [ ] Package installs to `$DESTDIR` correctly (no hardcoded paths)
 - [ ] Patches are minimal and well-documented
 
@@ -73,7 +72,7 @@ Quick checklist:
 
 ### 3. Bootstrap Improvements
 
-The build system (`bootstrap/build-all.sh` and `packages/bootstrap/*/recipe.toml`) is a critical path. Changes here should be:
+The package build system (`scripts/build-all.sh` and `packages/{core,develop,extra}/*/recipe.toml`) is a critical path. Changes here should be:
 - Well-tested (ideally in CI)
 - Backward-compatible where possible
 - Documented if they change the build process
@@ -187,7 +186,7 @@ Guidelines:
    ```sh
    # Build inside develop container
    docker run --rm -v "$PWD:/workspace" -w /workspace jonerix-develop:latest \
-     sh bootstrap/build-all.sh --package mypackage
+     sh scripts/build-all.sh --force mypackage
 
    # License audit
    sh scripts/license-audit.sh --recipes --verbose

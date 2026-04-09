@@ -2,7 +2,6 @@
 name = "fastfetch"
 version = "2.36.1"
 license = "MIT"
-pre_bootstrap = false
 description = "Feature-rich system information tool"
 
 [source]

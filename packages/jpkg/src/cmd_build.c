@@ -479,6 +479,18 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
              dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
     system(flatten);
 
+    {
+        char problem[1024];
+        tree_audit_result_t audit = audit_layout_tree(dest_dir, problem, sizeof(problem));
+        if (audit != TREE_AUDIT_OK) {
+            log_error("refusing to package %s: %s at %s",
+                      recipe->name, audit_layout_result_string(audit),
+                      problem[0] ? problem : "(unknown)");
+            free(toml_str);
+            return -1;
+        }
+    }
+
     /* Create the payload in two steps to avoid shell pipe deadlocks.
      * toybox sh can keep pipe fds open while waiting, which wedges a tar|zstd
      * pipeline once the reader exits. Write an uncompressed tar first, then

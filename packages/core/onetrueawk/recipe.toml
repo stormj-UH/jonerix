@@ -2,7 +2,6 @@
 name = "onetrueawk"
 version = "20240728"
 license = "MIT"
-pre_bootstrap = false
 description = "Brian Kernighan's one true awk"
 
 [source]

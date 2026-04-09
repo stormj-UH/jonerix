@@ -2,7 +2,6 @@
 name = "cni-plugins"
 version = "1.9.1"
 license = "Apache-2.0"
-pre_bootstrap = false
 description = "CNI network plugins for container networking"
 
 [source]

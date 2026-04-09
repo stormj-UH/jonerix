@@ -2,7 +2,6 @@
 name = "python3"
 version = "3.14.3"
 license = "PSF-2.0"
-pre_bootstrap = false
 description = "Python programming language interpreter"
 
 [source]
@@ -11,13 +10,17 @@ sha256 = "a97d5549e9ad81fe17159ed02c68774ad5d266c72f8d9a0b5a9c371fe85d902b"
 
 [build]
 system = "custom"
-configure = """CC=clang CXX=clang++ ./configure \
+configure = """mkdir -p .jpkg-tools
+printf '#!/bin/sh\nexec rg --text "$@"\n' > .jpkg-tools/grep
+printf '#!/bin/sh\nexec rg -E --text "$@"\n' > .jpkg-tools/egrep
+printf '#!/bin/sh\nexec rg -F --text "$@"\n' > .jpkg-tools/fgrep
+chmod 755 .jpkg-tools/grep .jpkg-tools/egrep .jpkg-tools/fgrep
+PATH="$PWD/.jpkg-tools:$PATH" CC=clang CXX=clang++ ./configure \
   --prefix=/ \
   --enable-shared \
   --enable-optimizations \
   --with-lto \
-  --with-system-ffi=no \
-  --with-ensurepip=no \
+  --with-ensurepip=install \
   --with-openssl=/ \
   --disable-test-modules"""
 build = "make -j$(nproc)"
@@ -25,9 +28,10 @@ install = """make install DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 ln -sf python3 $DESTDIR/bin/python 2>/dev/null || true
+ln -sf pip3 $DESTDIR/bin/pip 2>/dev/null || true
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz"]
-build = ["clang", "make"]
+build = ["clang", "bmake"]

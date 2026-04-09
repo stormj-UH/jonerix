@@ -2,7 +2,6 @@
 name = "byacc"
 version = "20241231"
 license = "public domain"
-pre_bootstrap = false
 description = "Berkeley Yacc parser generator"
 
 [source]

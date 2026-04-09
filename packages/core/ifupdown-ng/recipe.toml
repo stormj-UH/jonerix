@@ -2,7 +2,6 @@
 name = "ifupdown-ng"
 version = "0.12.1"
 license = "ISC"
-pre_bootstrap = false
 description = "Next-generation network interface configuration tool"
 
 [source]

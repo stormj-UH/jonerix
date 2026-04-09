@@ -2,7 +2,6 @@
 name = "jmake"
 version = "1.0.0"
 license = "MIT"
-pre_bootstrap = false
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 
 [source]
