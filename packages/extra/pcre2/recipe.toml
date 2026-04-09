@@ -2,7 +2,6 @@
 name = "pcre2"
 version = "10.47"
 license = "BSD-3-Clause"
-pre_bootstrap = false
 description = "Perl Compatible Regular Expressions library (v2)"
 
 [source]

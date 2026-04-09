@@ -403,7 +403,7 @@ is a blunt instrument. Alternatively, specific `-Wno-X` flags can be passed via
 
 ### 6.4 GCC CRT Files Not Needed
 
-Unlike LLVM itself (which needs GCC CRT files like `crtbeginS.o` per `bootstrap/JONERIX-BUILD-ENVIRONMENT.md`),
+Unlike LLVM itself (which needs GCC CRT files like `crtbeginS.o` per `docs/JONERIX-BUILD-ENVIRONMENT.md`),
 OpenJDK links as a normal userland application. With `--with-toolchain-type=clang` and
 `LD=ld.lld`, the standard musl CRT files (`crt1.o`, `crti.o`, `crtn.o`) are sufficient.
 

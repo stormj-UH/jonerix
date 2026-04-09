@@ -2,7 +2,6 @@
 name = "btop"
 version = "1.4.5"
 license = "Apache-2.0"
-pre_bootstrap = false
 description = "Terminal resource monitor with CPU, memory, disk, network, and process views"
 
 [source]

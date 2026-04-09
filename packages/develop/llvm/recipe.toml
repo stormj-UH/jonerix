@@ -2,7 +2,6 @@
 name = "llvm"
 version = "21.1.2"
 license = "Apache-2.0"
-pre_bootstrap = false
 description = "LLVM toolchain with clang, lld, and compiler-rt — zero GCC dependencies"
 
 [source]

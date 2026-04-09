@@ -88,6 +88,17 @@ int version_compare(const char *v1, const char *v2);
 /* Permitted licenses */
 bool license_is_permissive(const char *license);
 
+typedef enum {
+    TREE_AUDIT_OK = 0,
+    TREE_AUDIT_ROOT_DOT_ZERO,
+    TREE_AUDIT_LIB64_PATH,
+    TREE_AUDIT_LIB64_REFERENCE
+} tree_audit_result_t;
+
+tree_audit_result_t audit_layout_tree(const char *root, char *problem_path,
+                                      size_t problem_path_len);
+const char *audit_layout_result_string(tree_audit_result_t result);
+
 /* Root filesystem prefix (for testing, normally "") */
 extern const char *g_rootfs;
 void set_rootfs(const char *prefix);

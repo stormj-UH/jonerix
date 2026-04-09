@@ -7,7 +7,7 @@
 #
 # Usage (build packages from source):
 #   docker run --rm -v "$PWD:/workspace" -w /workspace jonerix:builder \
-#     sh bootstrap/build-all.sh --output /workspace/.build/pkgs
+#     sh scripts/build-all.sh --output /workspace/.build/pkgs
 
 ARG CORE_IMAGE=jonerix:core
 
@@ -22,10 +22,12 @@ RUN jpkg update && \
     for pkg in \
       llvm libcxx rust go \
       cmake bmake samurai flex bc byacc \
-      perl python3 pip nodejs; \
+      perl python3 nodejs; \
     do \
       echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
-    done
+    done && \
+    (python3 -m pip --version >/dev/null 2>&1 || python3 -m ensurepip --upgrade) && \
+    python3 -m pip install --break-system-packages --no-cache-dir --disable-pip-version-check meson
 
 # Compiler wrappers and tool symlinks
 #

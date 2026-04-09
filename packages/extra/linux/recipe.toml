@@ -2,16 +2,9 @@
 name = "linux"
 version = "6.14.2"
 # NOTE: GPL-2.0-only will be BLOCKED by jpkg's license gate (cmd_build.c line 150).
-# pre_bootstrap = true is present as a marker of intent (the kernel is the project's
-# sole accepted GPL exception per DESIGN.md), but jpkg does NOT currently parse
-# pre_bootstrap — it is not in the build_recipe_t struct and is not read during
-# recipe_load(). This is a KNOWN BLOCKER: cmd_build.c must be updated to read
-# pre_bootstrap and skip the license check when it is true before this recipe can
-# be built with `jpkg build`. Until then, use scripts/build-kernel.sh which
-# invokes the build steps directly inside an Alpine container without going through
-# jpkg's license gate.
+# The kernel remains the project's sole GPL exception per DESIGN.md, but it is
+# built via scripts/build-kernel.sh rather than the normal jpkg build path.
 license = "GPL-2.0-only"
-pre_bootstrap = true
 description = "Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers."
 
 [source]
