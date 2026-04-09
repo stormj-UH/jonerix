@@ -2,7 +2,6 @@
 name = "libressl"
 version = "4.0.0"
 license = "ISC"
-pre_bootstrap = false
 description = "Free TLS/crypto stack from OpenBSD (provides libssl, libcrypto, libtls)"
 
 [source]

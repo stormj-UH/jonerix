@@ -2,7 +2,6 @@
 name = "limine"
 version = "11.2.1"
 license = "BSD-2-Clause"
-pre_bootstrap = false
 description = "Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-2-Clause)"
 
 [source]

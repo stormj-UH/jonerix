@@ -1,4 +1,4 @@
-# Bootstrap build order — dependency + size ordered
+# Package build order — dependency + size ordered
 #
 # Dependency rules:
 #   musl      → (no deps, must be first)
@@ -56,9 +56,6 @@ perl
 python3
 # Tier 5: depends on multiple tier-3/4 packages (large)
 nodejs
-# Tier 5b: package managers (pure JS/Python, no compilation)
-npm
-pip
 # Tier 6: LLVM from source (requires cmake, samurai, python3)
 llvm
 # Tier 7: Go bootstrap chain (x86_64: C→1.4→1.17→1.26, aarch64: prebuilt)

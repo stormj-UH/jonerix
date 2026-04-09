@@ -2,7 +2,6 @@
 name = "nerdctl"
 version = "2.2.1"
 license = "Apache-2.0"
-pre_bootstrap = false
 description = "Docker-compatible CLI for containerd"
 
 [source]

@@ -2,7 +2,6 @@
 name = "nginx"
 version = "1.28.3-r1"
 license = "BSD-2-Clause"
-pre_bootstrap = false
 description = "High-performance HTTP server and reverse proxy"
 
 [source]

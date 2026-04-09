@@ -2,7 +2,6 @@
 name = "micro"
 version = "2.0.15"
 license = "MIT"
-pre_bootstrap = false
 description = "Modern terminal text editor (intuitive keybindings, syntax highlighting)"
 
 [source]

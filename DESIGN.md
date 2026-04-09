@@ -76,7 +76,7 @@ minimal -> core -> builder   (compilers + dev tools)
 ### Build Pipeline
 
 1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
-2. **Packages** are built from source using `bootstrap/build-all.sh` and per-package `recipe.toml` recipes in `packages/{core,develop,extra}/`
+2. **Packages** are built from source using `scripts/build-all.sh` and per-package `recipe.toml` recipes in `packages/{core,develop,extra}/`
 3. **Images** are assembled using Dockerfiles that install packages via `jpkg install`
 4. **CI** builds and publishes all images and packages for both x86_64 and aarch64
 
@@ -413,7 +413,6 @@ Package builds (`publish-packages.yml`) compile recipes inside `jonerix:all` con
 jonerix/
 ├── DESIGN.md                ← this document
 ├── README.md                ← quick start and overview
-├── TODO.md                  ← current status and remaining work
 ├── LICENSE                  ← MIT
 │
 ├── Dockerfile.minimal       ← base rootfs (FROM scratch)
@@ -424,10 +423,14 @@ jonerix/
 ├── Dockerfile.develop       ← development environment (jpkg-only)
 ├── Dockerfile.build         ← build environment (FROM develop)
 │
-├── bootstrap/
+├── scripts/
 │   ├── build-all.sh         ← build all packages from source in dependency order
 │   ├── build-order.txt      ← 10-tier dependency ordering (60+ packages)
-│   └── JONERIX-BUILD-ENVIRONMENT.md  ← build environment reference
+│   └── ...                  ← utility scripts
+│
+├── docs/
+│   ├── JONERIX-BUILD-ENVIRONMENT.md  ← build environment reference
+│   └── ...
 │
 ├── packages/
 │   ├── core/                ← runtime packages (minimal + core images)
@@ -477,7 +480,6 @@ jonerix/
 │   └── workflows/
 │       ├── publish-images.yml    ← CI: build + push Docker images
 │       ├── publish-packages.yml  ← CI: build + upload jpkg packages
-│       ├── bootstrap-packages.yml
 │       ├── license-check.yml
 │       └── wsl-rootfs.yml
 │
@@ -499,7 +501,6 @@ Each package has a `recipe.toml` in `packages/{core,develop,extra}/`. Recipes co
 name = "toybox"
 version = "0.8.11"
 license = "0BSD"
-pre_bootstrap = false
 description = "BSD-licensed coreutils replacement"
 
 [source]
@@ -529,7 +530,7 @@ runtime = ["musl"]
 build = ["clang"]
 ```
 
-`bootstrap/build-all.sh` processes recipes in dependency order from `bootstrap/build-order.txt`, searching across `packages/{core,develop,extra}/` for each recipe. jpkg sets `CC=clang`, `LD=ld.lld`, hardening flags, and an isolated `DESTDIR` automatically.
+`scripts/build-all.sh` processes recipes in dependency order from `scripts/build-order.txt`, searching across `packages/{core,develop,extra}/` for each recipe. jpkg sets `CC=clang`, `LD=ld.lld`, hardening flags, and an isolated `DESTDIR` automatically.
 
 ---
 
@@ -550,7 +551,7 @@ build = ["clang"]
 ### In Progress
 
 - [ ] Build Ruby 3.4.3 jpkg (license unblocked, needs GNU make in Alpine)
-- [ ] Build remaining x86_64 packages (btop, sqlite, npm, libatomic, unzip)
+- [ ] Build remaining x86_64 packages (btop, sqlite, libatomic, unzip)
 - [ ] Linux kernel recipe + custom build
 - [ ] Bootloader for bare metal (EFISTUB + fallback)
 

@@ -2,7 +2,6 @@
 name = "bsdsed"
 version = "0.99.2"
 license = "BSD-2-Clause"
-pre_bootstrap = false
 description = "FreeBSD sed made portable — POSIX stream editor"
 
 [source]

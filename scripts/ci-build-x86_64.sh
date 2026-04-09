@@ -1,7 +1,7 @@
 #!/bin/sh
 # ci-build-x86_64.sh — Run inside ghcr.io/stormj-uh/jonerix:builder-amd64 container
 # Mounts: /workspace (repo), /var/cache/jpkg (output), /var/cache/jpkg-published, /jpkg-bin
-# Env: PKG_INPUT (optional package name to force-build)
+# Env: PKG_INPUT (optional package name to target), REBUILD_INPUT (optional boolean)
 set -e
 
 # Get jpkg binary: prefer host cache, then compile from source.
@@ -56,28 +56,50 @@ fi
 # Update package index
 jpkg update
 
+# Meson is bootstrapped with pip inside the builder image rather than as a jpkg package.
+if ! python3 -m pip --version >/dev/null 2>&1; then
+    python3 -m ensurepip --upgrade
+fi
+if ! command -v meson >/dev/null 2>&1; then
+    python3 -m pip install --break-system-packages --no-cache-dir --disable-pip-version-check meson
+fi
+
+build_one() {
+    recipe="$1"
+    pkg_dir="$(dirname "$recipe")"
+    pkg_name="$(basename "$pkg_dir")"
+    pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+    expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-x86_64.jpkg"
+    legacy="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
+
+    if [ "${REBUILD_INPUT:-false}" != "true" ] && { [ -f "$expected" ] || [ -f "$legacy" ]; }; then
+        echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
+        return 0
+    fi
+
+    echo "=== Building ${pkg_name} ==="
+    timeout 1200 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+}
+
 if [ -n "$PKG_INPUT" ]; then
     recipe_dir=""
     for d in core develop extra; do
       [ -f "/workspace/packages/$d/${PKG_INPUT}/recipe.toml" ] && recipe_dir="/workspace/packages/$d/${PKG_INPUT}" && break
     done
     [ -z "$recipe_dir" ] && { echo "ERROR: no recipe for ${PKG_INPUT} in packages/{core,develop,extra}"; exit 1; }
-    echo "=== Building ${PKG_INPUT} (forced) ==="
-    timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+    pkg_ver=$(grep "^version" "${recipe_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+    expected="/var/cache/jpkg-published/${PKG_INPUT}-${pkg_ver}-x86_64.jpkg"
+    legacy="/var/cache/jpkg-published/${PKG_INPUT}-${pkg_ver}.jpkg"
+    if [ "${REBUILD_INPUT:-false}" != "true" ] && { [ -f "$expected" ] || [ -f "$legacy" ]; }; then
+        echo "=== Skipping ${PKG_INPUT}-${pkg_ver} (already published) ==="
+    else
+        [ "${REBUILD_INPUT:-false}" = "true" ] && echo "=== Rebuilding ${PKG_INPUT} ===" || echo "=== Building ${PKG_INPUT} ==="
+        timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+    fi
 else
     for recipe in /workspace/packages/core/*/recipe.toml /workspace/packages/develop/*/recipe.toml /workspace/packages/extra/*/recipe.toml; do
         [ -f "$recipe" ] || continue
-        pkg_dir="$(dirname "$recipe")"
-        pkg_name="$(basename "$pkg_dir")"
-        pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-        expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-x86_64.jpkg"
-        legacy="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
-        if [ -f "$expected" ] || [ -f "$legacy" ]; then
-            echo "=== Skipping ${pkg_name}-${pkg_ver} (already published) ==="
-            continue
-        fi
-        echo "=== Building ${pkg_name} ==="
-        timeout 1200 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+        build_one "$recipe"
     done
 fi
 

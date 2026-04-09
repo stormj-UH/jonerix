@@ -2,7 +2,6 @@
 name = "zsh"
 version = "5.9"
 license = "MIT"
-pre_bootstrap = false
 description = "Z shell — feature-rich interactive shell"
 
 [source]

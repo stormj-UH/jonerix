@@ -2,7 +2,6 @@
 name = "ca-certificates"
 version = "20260211"
 license = "MPL-2.0"
-pre_bootstrap = false
 description = "Mozilla CA certificate bundle for TLS verification"
 
 [source]
