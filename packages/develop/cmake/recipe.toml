@@ -10,17 +10,22 @@ sha256 = "81ee8170028865581a8e10eaf055afb620fa4baa0beb6387241241a975033508"
 
 [build]
 system = "custom"
-configure = """CC=clang CXX=clang++ ./bootstrap \
-  --prefix=/ \
-  --parallel=$(nproc) \
-  --generator=Ninja \
-  -- \
+configure = """cmake -S . -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_INSTALL_PREFIX=/ \
   -DCMAKE_INSTALL_LIBDIR=lib \
+  -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
   -DCMAKE_USE_OPENSSL=OFF \
-  -DBUILD_CursesDialog=OFF"""
-build = "samu -j$(nproc)"
-install = """DESTDIR=$DESTDIR samu install
+  -DBUILD_CursesDialog=OFF \
+  "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
+  "-DCMAKE_CXX_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -stdlib=libc++" \
+  "-DCMAKE_EXE_LINKER_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \
+  "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \
+  -DBUILD_TESTING=OFF"""
+build = "samu -C build -j$(nproc)"
+install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" "$DESTDIR"
