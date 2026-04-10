@@ -13,6 +13,8 @@ ARG CORE_IMAGE=jonerix:core
 
 FROM ${CORE_IMAGE}
 
+COPY scripts/bootstrap-meson.sh /usr/local/bin/bootstrap-meson
+
 # Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
 ARG CACHEBUST=0
 
@@ -26,8 +28,7 @@ RUN jpkg update && \
     do \
       echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
     done && \
-    (python3 -m pip --version >/dev/null 2>&1 || python3 -m ensurepip --upgrade) && \
-    python3 -m pip install --break-system-packages --no-cache-dir --disable-pip-version-check meson
+    /usr/local/bin/bootstrap-meson
 
 # Compiler wrappers and tool symlinks
 #

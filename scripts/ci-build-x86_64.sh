@@ -56,13 +56,9 @@ fi
 # Update package index
 jpkg update
 
-# Meson is bootstrapped with pip inside the builder image rather than as a jpkg package.
-if ! python3 -m pip --version >/dev/null 2>&1; then
-    python3 -m ensurepip --upgrade
-fi
-if ! command -v meson >/dev/null 2>&1; then
-    python3 -m pip install --break-system-packages --no-cache-dir --disable-pip-version-check meson
-fi
+# Meson is bootstrapped from its upstream source tarball to avoid depending
+# on pip/SSL support in older builder images.
+/workspace/scripts/bootstrap-meson.sh
 
 build_one() {
     recipe="$1"
