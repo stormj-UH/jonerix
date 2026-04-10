@@ -15,6 +15,9 @@ work_root="/tmp/bootstrap-cmake-$arch"
 src_root="$work_root/src"
 prefix_root="$work_root/prefix"
 tool_root="$work_root/tools"
+bootstrap_log="$work_root/bootstrap.log"
+build_log="$work_root/build.log"
+install_log="$work_root/install.log"
 
 if [ ! -f "$src_tar" ]; then
     echo "bootstrap-cmake: missing source tarball: $src_tar" >&2
@@ -128,7 +131,7 @@ export LDFLAGS='-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwi
 
 echo "bootstrap-cmake: bootstrapping with $generator via $make_cmd" >&2
 echo "bootstrap-cmake: clang=$clang_real clangxx=$clangxx_real" >&2
-./bootstrap \
+if ! ./bootstrap \
   --prefix="$prefix_root" \
   --parallel="$nproc" \
   --generator="$generator" \
@@ -136,10 +139,23 @@ echo "bootstrap-cmake: clang=$clang_real clangxx=$clangxx_real" >&2
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_USE_OPENSSL=OFF \
-  -DBUILD_CursesDialog=OFF
+  -DBUILD_CursesDialog=OFF >"$bootstrap_log" 2>&1; then
+    echo "bootstrap-cmake: upstream bootstrap failed" >&2
+    cat "$bootstrap_log" >&2
+    exit 1
+fi
 
-"$make_cmd" -j"$nproc"
-"$make_cmd" install
+if ! "$make_cmd" -j"$nproc" >"$build_log" 2>&1; then
+    echo "bootstrap-cmake: build failed" >&2
+    tail -n 200 "$build_log" >&2
+    exit 1
+fi
+
+if ! "$make_cmd" install >"$install_log" 2>&1; then
+    echo "bootstrap-cmake: install failed" >&2
+    tail -n 200 "$install_log" >&2
+    exit 1
+fi
 
 if [ ! -x "$prefix_root/bin/cmake" ]; then
     echo "bootstrap-cmake: expected bootstrap binary missing at $prefix_root/bin/cmake" >&2
