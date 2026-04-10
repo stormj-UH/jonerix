@@ -35,6 +35,7 @@ FROM alpine:latest AS rootfs
 RUN apk add --no-cache curl ca-certificates zstd tar libarchive-tools
 
 COPY --from=jpkg-builder /src/jpkg /usr/local/bin/jpkg
+COPY scripts/bootstrap-meson.sh /usr/local/bin/bootstrap-meson
 
 # Create rootfs skeleton
 RUN mkdir -p \
@@ -86,8 +87,9 @@ RUN jpkg --root /jonerix update && \
       jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \
     done
 
-RUN chroot /jonerix /bin/python3 -m ensurepip --upgrade && \
-    chroot /jonerix /bin/python3 -m pip install --break-system-packages --no-cache-dir --disable-pip-version-check meson
+RUN install -m 755 /usr/local/bin/bootstrap-meson /jonerix/bin/bootstrap-meson && \
+    chroot /jonerix /bin/bootstrap-meson && \
+    rm -f /jonerix/bin/bootstrap-meson
 
 # Flatten usr/ into / (merged-usr layout), then add the symlink
 RUN if [ -d /jonerix/usr ]; then \
