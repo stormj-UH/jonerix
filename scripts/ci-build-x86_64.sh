@@ -60,6 +60,8 @@ jpkg update
 # on pip/SSL support in older builder images.
 /workspace/scripts/bootstrap-meson.sh
 
+failures=0
+
 build_one() {
     recipe="$1"
     pkg_dir="$(dirname "$recipe")"
@@ -74,7 +76,10 @@ build_one() {
     fi
 
     echo "=== Building ${pkg_name} ==="
-    timeout 1200 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${pkg_name}"
+    if ! timeout 1200 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg; then
+        echo "FAILED: ${pkg_name}"
+        failures=$((failures + 1))
+    fi
 }
 
 if [ -n "$PKG_INPUT" ]; then
@@ -90,7 +95,10 @@ if [ -n "$PKG_INPUT" ]; then
         echo "=== Skipping ${PKG_INPUT}-${pkg_ver} (already published) ==="
     else
         [ "${REBUILD_INPUT:-false}" = "true" ] && echo "=== Rebuilding ${PKG_INPUT} ===" || echo "=== Building ${PKG_INPUT} ==="
-        timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg || echo "FAILED: ${PKG_INPUT}"
+        if ! timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg; then
+            echo "FAILED: ${PKG_INPUT}"
+            failures=$((failures + 1))
+        fi
     fi
 else
     for recipe in /workspace/packages/core/*/recipe.toml /workspace/packages/develop/*/recipe.toml /workspace/packages/extra/*/recipe.toml; do
@@ -101,3 +109,5 @@ fi
 
 echo "Built/cached packages (x86_64):"
 ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+
+[ "$failures" -eq 0 ]
