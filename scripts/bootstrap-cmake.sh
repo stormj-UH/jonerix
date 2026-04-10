@@ -39,16 +39,28 @@ find_tool() {
     return 1
 }
 
-clang_real=$(find_tool clang-21 clang clang-20 || true)
-clangxx_real=$(find_tool clang++-21 clang++ clang++-20 || true)
+emit_tool_diagnostics() {
+    echo "bootstrap-cmake: PATH=$PATH" >&2
+    for tool in clang clang-21 clang++ clang++-21 cc c++ ld ld.lld ld.lld-21 llvm-ar llvm-ranlib; do
+        found=$(command -v "$tool" 2>/dev/null || true)
+        [ -n "$found" ] && echo "bootstrap-cmake: $tool -> $found" >&2
+    done
+    for d in /bin /usr/bin /usr/local/bin /lib/llvm*/bin /usr/lib/llvm*/bin /usr/local/lib/llvm*/bin; do
+        [ -d "$d" ] || continue
+        echo "bootstrap-cmake: scanned $d" >&2
+    done
+}
+
+clang_real=$(find_tool clang clang-21 cc clang-20 || true)
+clangxx_real=$(find_tool clang++ clang++-21 c++ clang++-20 || true)
 clangxx_mode=
 if [ -z "$clangxx_real" ] && [ -n "$clang_real" ]; then
     clangxx_real="$clang_real"
     clangxx_mode='--driver-mode=g++'
 fi
-lld_real=$(find_tool ld.lld-21 ld.lld lld-21 lld || true)
-if [ -z "$clang_real" ] || [ -z "$clangxx_real" ] || [ -z "$lld_real" ]; then
-    echo "bootstrap-cmake: LLVM toolchain is incomplete" >&2
+if [ -z "$clang_real" ] || [ -z "$clangxx_real" ]; then
+    echo "bootstrap-cmake: compiler toolchain is incomplete" >&2
+    emit_tool_diagnostics
     exit 1
 fi
 
@@ -87,7 +99,6 @@ EOF
 chmod 755 "$tool_root/clang" "$tool_root/clang++"
 ln -sf clang "$tool_root/cc"
 ln -sf clang++ "$tool_root/c++"
-ln -sf "$lld_real" "$tool_root/ld"
 
 if command -v bsdtar >/dev/null 2>&1 && bsdtar --version >/dev/null 2>&1; then
     bsdtar -xf "$src_tar" -C "$src_root"
@@ -116,7 +127,7 @@ export CXXFLAGS='-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 --
 export LDFLAGS='-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -stdlib=libc++ -lc++ -lc++abi'
 
 echo "bootstrap-cmake: bootstrapping with $generator via $make_cmd" >&2
-echo "bootstrap-cmake: clang=$clang_real clangxx=$clangxx_real ld=$lld_real" >&2
+echo "bootstrap-cmake: clang=$clang_real clangxx=$clangxx_real" >&2
 ./bootstrap \
   --prefix="$prefix_root" \
   --parallel="$nproc" \
