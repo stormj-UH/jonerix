@@ -60,10 +60,23 @@ jpkg update
 # on pip/SSL support in older builder images.
 /workspace/scripts/bootstrap-meson.sh
 
+ensure_bootstrap_llvm() {
+    if [ -x /bin/clang-21 ] && [ -x /bin/clang++-21 ] && [ -x /bin/ld.lld ]; then
+        return 0
+    fi
+    echo "cmake: repairing stale LLVM toolchain from published packages"
+    jpkg install --force llvm
+    if [ ! -x /bin/clang-21 ] || [ ! -x /bin/clang++-21 ] || [ ! -x /bin/ld.lld ]; then
+        echo "FATAL: llvm package repair did not restore clang-21/clang++-21/ld.lld"
+        exit 1
+    fi
+}
+
 # Some older published builder images have a broken packaged cmake and no apk.
 # Build a temporary bootstrap cmake from the vendored source tarball, then use
 # it to rebuild the final cmake package cleanly.
 if [ "${PKG_INPUT:-}" = "cmake" ]; then
+    ensure_bootstrap_llvm
     export BOOTSTRAP_CMAKE=$(/workspace/scripts/bootstrap-cmake.sh)
     "$BOOTSTRAP_CMAKE" --version >/dev/null 2>&1 || {
         echo "FATAL: bootstrap cmake is unusable"
