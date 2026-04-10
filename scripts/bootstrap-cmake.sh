@@ -21,14 +21,32 @@ if [ ! -f "$src_tar" ]; then
     exit 1
 fi
 
-clang_real=$(command -v clang-21 2>/dev/null || command -v clang 2>/dev/null || true)
-clangxx_real=$(command -v clang++-21 2>/dev/null || command -v clang++ 2>/dev/null || true)
+find_tool() {
+    for candidate in "$@"; do
+        resolved=$(command -v "$candidate" 2>/dev/null || true)
+        if [ -n "$resolved" ] && [ -x "$resolved" ]; then
+            printf '%s\n' "$resolved"
+            return 0
+        fi
+        for d in /lib/llvm*/bin /usr/lib/llvm*/bin /usr/local/lib/llvm*/bin; do
+            [ -d "$d" ] || continue
+            if [ -x "$d/$candidate" ]; then
+                printf '%s\n' "$d/$candidate"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+clang_real=$(find_tool clang-21 clang clang-20 || true)
+clangxx_real=$(find_tool clang++-21 clang++ clang++-20 || true)
 clangxx_mode=
 if [ -z "$clangxx_real" ] && [ -n "$clang_real" ]; then
     clangxx_real="$clang_real"
     clangxx_mode='--driver-mode=g++'
 fi
-lld_real=$(command -v ld.lld-21 2>/dev/null || command -v ld.lld 2>/dev/null || command -v lld 2>/dev/null || true)
+lld_real=$(find_tool ld.lld-21 ld.lld lld-21 lld || true)
 if [ -z "$clang_real" ] || [ -z "$clangxx_real" ] || [ -z "$lld_real" ]; then
     echo "bootstrap-cmake: LLVM toolchain is incomplete" >&2
     exit 1
