@@ -72,17 +72,33 @@ ensure_bootstrap_llvm() {
     fi
 }
 
+ensure_bootstrap_cmake_pkg() {
+    if cmake --version >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "cmake: repairing stale cmake from published package"
+    if jpkg install --force cmake >/dev/null 2>&1 && cmake --version >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 # Some older published builder images have a broken packaged cmake and no apk.
 # Build a temporary bootstrap cmake from the vendored source tarball, then use
 # it to rebuild the final cmake package cleanly.
 if [ "${PKG_INPUT:-}" = "cmake" ]; then
-    ensure_bootstrap_llvm
-    export BOOTSTRAP_CMAKE=$(/workspace/scripts/bootstrap-cmake.sh)
-    "$BOOTSTRAP_CMAKE" --version >/dev/null 2>&1 || {
-        echo "FATAL: bootstrap cmake is unusable"
-        exit 1
-    }
-    echo "cmake: using local bootstrap binary at $BOOTSTRAP_CMAKE"
+    if ensure_bootstrap_cmake_pkg; then
+        export BOOTSTRAP_CMAKE=cmake
+        echo "cmake: using published package bootstrap"
+    else
+        ensure_bootstrap_llvm
+        export BOOTSTRAP_CMAKE=$(/workspace/scripts/bootstrap-cmake.sh)
+        "$BOOTSTRAP_CMAKE" --version >/dev/null 2>&1 || {
+            echo "FATAL: bootstrap cmake is unusable"
+            exit 1
+        }
+        echo "cmake: using local bootstrap binary at $BOOTSTRAP_CMAKE"
+    fi
 elif ! cmake --version >/dev/null 2>&1; then
     if command -v apk >/dev/null 2>&1; then
         broken_cmake=$(command -v cmake 2>/dev/null || true)
