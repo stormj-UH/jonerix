@@ -23,9 +23,14 @@ fi
 
 clang_real=$(command -v clang-21 2>/dev/null || command -v clang 2>/dev/null || true)
 clangxx_real=$(command -v clang++-21 2>/dev/null || command -v clang++ 2>/dev/null || true)
-lld_real=$(command -v ld.lld 2>/dev/null || true)
+clangxx_mode=
+if [ -z "$clangxx_real" ] && [ -n "$clang_real" ]; then
+    clangxx_real="$clang_real"
+    clangxx_mode='--driver-mode=g++'
+fi
+lld_real=$(command -v ld.lld-21 2>/dev/null || command -v ld.lld 2>/dev/null || command -v lld 2>/dev/null || true)
 if [ -z "$clang_real" ] || [ -z "$clangxx_real" ] || [ -z "$lld_real" ]; then
-    echo "bootstrap-cmake: clang/clang++/ld.lld are required" >&2
+    echo "bootstrap-cmake: LLVM toolchain is incomplete" >&2
     exit 1
 fi
 
@@ -59,7 +64,7 @@ exec "$clang_real" --config="$clang_cfg" "\$@"
 EOF
 cat > "$tool_root/clang++" <<EOF
 #!/bin/sh
-exec "$clangxx_real" --config="$clang_cfg" --unwindlib=libunwind -stdlib=libc++ -lc++ -lc++abi "\$@"
+exec "$clangxx_real" $clangxx_mode --config="$clang_cfg" --unwindlib=libunwind -stdlib=libc++ -lc++ -lc++abi "\$@"
 EOF
 chmod 755 "$tool_root/clang" "$tool_root/clang++"
 ln -sf clang "$tool_root/cc"
@@ -93,6 +98,7 @@ export CXXFLAGS='-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 --
 export LDFLAGS='-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -stdlib=libc++ -lc++ -lc++abi'
 
 echo "bootstrap-cmake: bootstrapping with $generator via $make_cmd" >&2
+echo "bootstrap-cmake: clang=$clang_real clangxx=$clangxx_real ld=$lld_real" >&2
 ./bootstrap \
   --prefix="$prefix_root" \
   --parallel="$nproc" \
