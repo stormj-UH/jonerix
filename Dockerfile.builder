@@ -21,13 +21,23 @@ ARG CACHEBUST=0
 # Install compilers, build tools, and languages via jpkg
 # Order: compilers -> build tools -> languages -> extras
 RUN jpkg update && \
+    failures=0 && \
+    failed='' && \
     for pkg in \
       llvm libcxx rust go \
       cmake bmake samurai flex bc byacc \
       perl python3 nodejs; \
     do \
-      echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
+      echo "Installing: $pkg" && \
+      if ! jpkg install --force "$pkg"; then \
+        failures=$((failures + 1)); \
+        failed="$failed $pkg"; \
+      fi; \
     done && \
+    if [ "$failures" -ne 0 ]; then \
+      echo "builder package install failures:$failed"; \
+      exit 1; \
+    fi && \
     /usr/local/bin/bootstrap-meson
 
 # Compiler wrappers and tool symlinks

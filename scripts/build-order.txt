@@ -11,6 +11,7 @@
 #   python3   → musl, libressl
 #   unbound   → musl, libressl
 #   nodejs    → musl, zlib
+#   cmake     → musl, clang, samurai, python3
 #   go-bootstrap → musl, clang (x86_64 only)
 #   go        → musl, clang, go-bootstrap
 #   go-current→ musl, clang, go
@@ -51,9 +52,9 @@ libarchive
 bsdtar
 unbound
 curl
-cmake
 perl
 python3
+cmake
 # Tier 5: depends on multiple tier-3/4 packages (large)
 nodejs
 # Tier 6: LLVM from source (requires cmake, samurai, python3)

@@ -425,6 +425,8 @@ jobs:
 
           # Python
           python3 -c "pass" && pass "Python" || fail "Python"
+          python3 -m pip --version >/dev/null 2>&1 && pass "pip" || fail "pip"
+          perl -e 'exit 0' && pass "Perl" || fail "Perl"
 
           # Build tools
           cmake --version >/dev/null 2>&1 && pass "cmake" || fail "cmake"
@@ -504,6 +506,8 @@ jobs:
           go version >/dev/null 2>&1 && pass "Go" || fail "Go"
           node -e "process.exit(0)" && pass "Node.js" || fail "Node.js"
           python3 -c "pass" && pass "Python" || fail "Python"
+          python3 -m pip --version >/dev/null 2>&1 && pass "pip" || fail "pip"
+          perl -e 'exit 0' && pass "Perl" || fail "Perl"
 
           # Build tools (always present — these work)
           cmake --version >/dev/null 2>&1 && pass "cmake" || fail "cmake"
