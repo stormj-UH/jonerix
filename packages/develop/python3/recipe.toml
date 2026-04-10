@@ -27,6 +27,18 @@ build = "make -j$(nproc)"
 install = """make install DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+LD_LIBRARY_PATH="$DESTDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  "$DESTDIR/bin/python3" -m ensurepip --upgrade --default-pip
+# Stale python packages bundled shared libs that already belong to other
+# runtime packages; drop any duplicates from the staged payload.
+rm -f "$DESTDIR"/lib/libbz2.so* \
+      "$DESTDIR"/lib/libexpat.so* \
+      "$DESTDIR"/lib/libffi.so* \
+      "$DESTDIR"/lib/liblzma.so* \
+      "$DESTDIR"/lib/libncursesw.so* \
+      "$DESTDIR"/lib/libpanelw.so* \
+      "$DESTDIR"/lib/libreadline.so* \
+      "$DESTDIR"/lib/libstdc++.so*
 ln -sf python3 $DESTDIR/bin/python 2>/dev/null || true
 ln -sf pip3 $DESTDIR/bin/pip 2>/dev/null || true
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true

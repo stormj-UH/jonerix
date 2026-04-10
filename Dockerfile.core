@@ -64,6 +64,8 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     jpkg update && \
     jpkg install --force mksh && \
     ln -sf mksh /bin/sh && \
+    failures=0 && \
+    failed='' && \
     for pkg in \
       musl zlib zstd lz4 xz ncurses libressl curl nghttp2 \
       toybox bsdtar openrc doas snooze \
@@ -71,8 +73,16 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       uutils pigz mandoc onetrueawk \
       micro fastfetch ripgrep gitoxide; \
     do \
-      echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
+      echo "Installing: $pkg" && \
+      if ! jpkg install --force "$pkg"; then \
+        failures=$((failures + 1)); \
+        failed="$failed $pkg"; \
+      fi; \
     done && \
+    if [ "$failures" -ne 0 ]; then \
+      echo "core package install failures:$failed"; \
+      exit 1; \
+    fi && \
     ln -sf bsdtar /bin/tar 2>/dev/null || true && \
     ln -sf dbclient /bin/ssh 2>/dev/null || true && \
     ln -sf micro /bin/editor 2>/dev/null || true && \

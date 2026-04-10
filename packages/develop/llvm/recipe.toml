@@ -211,6 +211,16 @@ find "$DESTDIR/lib" -name '*.so*' -type f -size +0 \
 # Remove docs/man/cmake to save space
 rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc" "$DESTDIR/lib/cmake"
 
+# Normalize any remaining upstream /lib64 search paths in scripts and ELF
+# string tables so the packaged toolchain matches jonerix's merged-lib
+# layout.
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+    "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/etc"
+if rg -n --text '/lib64' "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/etc" 2>/dev/null; then
+    echo "FATAL: llvm install still contains /lib64 references"
+    exit 1
+fi
+
 # --- Verify DESTDIR contents before packaging ---
 echo "=== DESTDIR tree ==="
 find "$DESTDIR" -type f | head -100

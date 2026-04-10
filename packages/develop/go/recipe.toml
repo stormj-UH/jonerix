@@ -4,14 +4,60 @@ version = "1.26.1"
 license = "BSD-3-Clause"
 description = "Go programming language compiler and tools"
 
-# No [source] section: the build step downloads the arch-appropriate prebuilt
-# toolchain directly from go.dev and verifies its sha256.
-
 [build]
 system = "custom"
-build = ""
+build = """
+set -e
+
+ARCH=$(uname -m)
+case "$ARCH" in
+  aarch64)
+    URL="https://go.dev/dl/go1.26.1.linux-arm64.tar.gz"
+    SHA="a290581cfe4fe28ddd737dde3095f3dbeb7f2e4065cab4eae44dfc53b760c2f7"
+    ;;
+  x86_64)
+    URL="https://go.dev/dl/go1.26.1.linux-amd64.tar.gz"
+    SHA="031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a"
+    ;;
+  *)
+    echo "unsupported architecture: $ARCH"
+    exit 1
+    ;;
+esac
+
+curl -fsSL "$URL" -o go.tar.gz
+printf '%s  go.tar.gz\n' "$SHA" | sha256sum -c
+
+mkdir -p stage "$DESTDIR/lib" "$DESTDIR/bin"
+tar xf go.tar.gz -C stage
+rm -rf "$DESTDIR/lib/go"
+mv stage/go "$DESTDIR/lib/go"
+
+# Upstream testdata embeds foreign /lib64 interpreters and is not needed
+# to use the shipped toolchain.
+find "$DESTDIR/lib/go/src" -type d -name testdata -exec rm -rf {} +
+
+# jonerix is merged-lib; patch the upstream linker defaults and docs.
+go_lib64_files=$(rg -l --text '/lib64' "$DESTDIR/lib/go/src" 2>/dev/null || true)
+if [ -n "$go_lib64_files" ]; then
+  printf '%s\n' "$go_lib64_files" | xargs sed -i 's#/lib64#/lib#g'
+fi
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+  "$DESTDIR/lib/go/bin" "$DESTDIR/lib/go/pkg/tool"
+
+ln -sf /lib/go/bin/go "$DESTDIR/bin/go"
+ln -sf /lib/go/bin/gofmt "$DESTDIR/bin/gofmt"
+
+find "$DESTDIR/lib/go/bin" "$DESTDIR/lib/go/pkg/tool" -type f \
+  -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+
+if rg -n --text '/lib64' "$DESTDIR/lib/go" 2>/dev/null; then
+  echo "FATAL: go install still contains /lib64 references"
+  exit 1
+fi
+"""
 install = ""
 
 [depends]
 runtime = ["musl"]
-build = []
+build = ["python3"]
