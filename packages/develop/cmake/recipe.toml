@@ -4,11 +4,34 @@ version = "4.1.0"
 license = "BSD-3-Clause"
 description = "Cross-platform build system generator"
 
+[source]
+url = "https://github.com/Kitware/CMake/releases/download/v4.1.0/cmake-4.1.0.tar.gz"
+sha256 = "81ee8170028865581a8e10eaf055afb620fa4baa0beb6387241241a975033508"
+
 [build]
 system = "custom"
-build = ""
-install = ""
+configure = """./bootstrap \
+  --prefix=/ \
+  --parallel=$(nproc) \
+  --generator=Ninja \
+  -- \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_INSTALL_LIBDIR=lib \
+  -DCMAKE_USE_OPENSSL=OFF \
+  -DBUILD_CursesDialog=OFF"""
+build = "samu -j$(nproc)"
+install = """DESTDIR=$DESTDIR samu install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" "$DESTDIR"
+if rg -n --text '/lib64' "$DESTDIR/bin" "$DESTDIR/share" 2>/dev/null; then
+  echo "FATAL: cmake install still contains /lib64 references"
+  exit 1
+fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "libressl"]
-build = []
+runtime = ["musl"]
+build = ["clang", "python3", "samurai"]
