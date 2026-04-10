@@ -57,13 +57,21 @@ jpkg update
 # on pip/SSL support in older builder images.
 /workspace/scripts/bootstrap-meson.sh
 
-# Some older published builder images are missing a usable cmake binary even
-# though the refreshed images should provide one via jpkg. Install a temporary
-# bootstrap copy so the cmake package can rebuild itself and unblock the image
-# refresh that will replace the stale builder image.
-if ! command -v cmake >/dev/null 2>&1; then
+# Some older published builder images either miss cmake entirely or carry a
+# broken packaged binary. Install a temporary bootstrap copy so the cmake
+# package can rebuild itself and unblock the image refresh that will replace
+# the stale builder image.
+if ! cmake --version >/dev/null 2>&1; then
     if command -v apk >/dev/null 2>&1; then
+        broken_cmake=$(command -v cmake 2>/dev/null || true)
+        if [ -n "$broken_cmake" ] && [ -e "$broken_cmake" ]; then
+            mv "$broken_cmake" "${broken_cmake}.broken" 2>/dev/null || true
+        fi
         apk add --no-cache cmake >/dev/null
+        cmake --version >/dev/null 2>&1 || {
+            echo "FATAL: bootstrap cmake is still unusable"
+            exit 1
+        }
         echo "cmake: installed temporary bootstrap copy from Alpine packages"
     fi
 fi
