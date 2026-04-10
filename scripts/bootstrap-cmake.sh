@@ -61,6 +61,7 @@ if [ -z "$clangxx_real" ] && [ -n "$clang_real" ]; then
     clangxx_real="$clang_real"
     clangxx_mode='--driver-mode=g++'
 fi
+ld_real=$(find_tool ld.lld ld.lld-21 lld ld || true)
 if [ -z "$clang_real" ] || [ -z "$clangxx_real" ]; then
     echo "bootstrap-cmake: compiler toolchain is incomplete" >&2
     emit_tool_diagnostics
@@ -102,6 +103,10 @@ EOF
 chmod 755 "$tool_root/clang" "$tool_root/clang++"
 ln -sf clang "$tool_root/cc"
 ln -sf clang++ "$tool_root/c++"
+if [ -n "$ld_real" ]; then
+    ln -sf "$ld_real" "$tool_root/ld"
+    ln -sf "$ld_real" "$tool_root/ld.lld"
+fi
 
 if command -v bsdtar >/dev/null 2>&1 && bsdtar --version >/dev/null 2>&1; then
     bsdtar -xf "$src_tar" -C "$src_root"
@@ -130,7 +135,7 @@ export CXXFLAGS='-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 --
 export LDFLAGS='-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -stdlib=libc++ -lc++ -lc++abi'
 
 echo "bootstrap-cmake: bootstrapping with $generator via $make_cmd" >&2
-echo "bootstrap-cmake: clang=$clang_real clangxx=$clangxx_real" >&2
+echo "bootstrap-cmake: clang=$clang_real clangxx=$clangxx_real ld=${ld_real:-missing}" >&2
 if ! ./bootstrap \
   --prefix="$prefix_root" \
   --parallel="$nproc" \
@@ -142,6 +147,10 @@ if ! ./bootstrap \
   -DBUILD_CursesDialog=OFF >"$bootstrap_log" 2>&1; then
     echo "bootstrap-cmake: upstream bootstrap failed" >&2
     cat "$bootstrap_log" >&2
+    if [ -f "$src_dir/Bootstrap.cmk/cmake_bootstrap.log" ]; then
+        echo "bootstrap-cmake: compiler probe log follows" >&2
+        cat "$src_dir/Bootstrap.cmk/cmake_bootstrap.log" >&2
+    fi
     exit 1
 fi
 
