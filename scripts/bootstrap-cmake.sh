@@ -173,6 +173,7 @@ if ! ./bootstrap \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_USE_OPENSSL=OFF \
+  -DLIBMD_LIBRARY=md \
   -DBUILD_CursesDialog=OFF >"$bootstrap_log" 2>&1; then
     echo "bootstrap-cmake: upstream bootstrap failed" >&2
     echo "bootstrap-cmake: tail of bootstrap.log follows" >&2
