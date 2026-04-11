@@ -149,8 +149,8 @@ if [ -n "$PKG_INPUT" ]; then
         echo "=== Skipping ${PKG_INPUT}-${pkg_ver} (already published) ==="
     else
         [ "${REBUILD_INPUT:-false}" = "true" ] && echo "=== Rebuilding ${PKG_INPUT} ===" || echo "=== Building ${PKG_INPUT} ==="
-        if [ "$PKG_INPUT" = "llvm" ] && [ -f /var/db/jpkg/installed/llvm/files ]; then
-            echo "=== Repacking installed llvm from builder image ==="
+        if [ "$PKG_INPUT" = "llvm" ]; then
+            echo "=== Repacking llvm from builder image state ==="
             if ! timeout 1200 /workspace/scripts/repack-installed-package.sh llvm /var/cache/jpkg "${recipe_dir}"; then
                 echo "llvm repack failed, falling back to source build"
                 if ! timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg; then
