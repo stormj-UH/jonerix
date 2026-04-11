@@ -62,7 +62,7 @@ jobs:
   # jonerix's runtime, not Alpine's.
   build-x86_64:
     name: Build packages (x86_64)
-    if: ${{ github.event.inputs.index_only != 'true' }}
+    if: ${{ !inputs.index_only }}
     needs: create-release
     runs-on: ubuntu-latest
     permissions:
@@ -95,8 +95,8 @@ jobs:
 
       - name: Build packages in jonerix:builder container
         env:
-          PKG_INPUT: ${{ github.event.inputs.package }}
-          REBUILD_INPUT: ${{ github.event.inputs.rebuild }}
+          PKG_INPUT: ${{ inputs.package }}
+          REBUILD_INPUT: ${{ inputs.rebuild && 'true' || 'false' }}
         run: |
           mkdir -p /tmp/jpkg-bin-x86_64
           docker run --rm --privileged --entrypoint "" \
@@ -121,7 +121,7 @@ jobs:
 
   build-aarch64:
     name: Build packages (aarch64)
-    if: ${{ github.event.inputs.index_only != 'true' }}
+    if: ${{ !inputs.index_only }}
     needs: create-release
     runs-on: ubuntu-24.04-arm
     permissions:
@@ -154,8 +154,8 @@ jobs:
 
       - name: Build packages in jonerix:builder container
         env:
-          PKG_INPUT: ${{ github.event.inputs.package }}
-          REBUILD_INPUT: ${{ github.event.inputs.rebuild }}
+          PKG_INPUT: ${{ inputs.package }}
+          REBUILD_INPUT: ${{ inputs.rebuild && 'true' || 'false' }}
         run: |
           mkdir -p /tmp/jpkg-bin-aarch64
           docker run --rm --privileged --entrypoint "" \
@@ -181,7 +181,7 @@ jobs:
   # ------ Generate combined INDEX from all uploaded packages ------------------------------------------------------------
   index:
     name: Generate combined INDEX
-    if: ${{ github.event.inputs.index_only == 'true' || ((needs.build-x86_64.result == 'success' || needs.build-x86_64.result == 'skipped') && (needs.build-aarch64.result == 'success' || needs.build-aarch64.result == 'skipped')) }}
+    if: ${{ inputs.index_only || ((needs.build-x86_64.result == 'success' || needs.build-x86_64.result == 'skipped') && (needs.build-aarch64.result == 'success' || needs.build-aarch64.result == 'skipped')) }}
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
     container:
