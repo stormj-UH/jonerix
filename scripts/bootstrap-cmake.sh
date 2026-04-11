@@ -24,6 +24,34 @@ if [ ! -f "$src_tar" ]; then
     exit 1
 fi
 
+ensure_linux_fs_header_compat() {
+    [ "$(uname -s)" = "Linux" ] || return 0
+    if [ -f /include/linux/fs.h ] || [ -f /usr/include/linux/fs.h ]; then
+        return 0
+    fi
+    mkdir -p /include/linux /usr/include/linux
+    cat > /include/linux/fs.h <<'EOF'
+#ifndef JONERIX_COMPAT_LINUX_FS_H
+#define JONERIX_COMPAT_LINUX_FS_H
+
+#include <sys/ioctl.h>
+
+#ifndef FS_IOC_GETFLAGS
+#define FS_IOC_GETFLAGS _IOR('f', 1, long)
+#endif
+
+#ifndef FICLONE
+#define FICLONE _IOW(0x94, 9, int)
+#endif
+
+#endif
+EOF
+    if [ ! -f /usr/include/linux/fs.h ]; then
+        cp /include/linux/fs.h /usr/include/linux/fs.h
+    fi
+    echo "bootstrap-cmake: installed minimal linux/fs.h compatibility header" >&2
+}
+
 find_tool() {
     for candidate in "$@"; do
         resolved=$(command -v "$candidate" 2>/dev/null || true)
@@ -88,6 +116,7 @@ if [ ! -f "$clang_cfg" ]; then
     mkdir -p /etc/clang
     printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' > "$clang_cfg"
 fi
+ensure_linux_fs_header_compat
 
 rm -rf "$work_root"
 mkdir -p "$src_root" "$prefix_root" "$tool_root"
