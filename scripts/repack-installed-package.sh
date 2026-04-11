@@ -98,13 +98,6 @@ elif [ "$pkg_name" = "llvm" ]; then
 #!/bin/sh
 set -e
 
-find_llvm_bin() {
-    for d in /lib/llvm*/bin /usr/lib/llvm*/bin /usr/local/lib/llvm*/bin; do
-        [ -d "$d" ] && { printf '%s\n' "$d"; return 0; }
-    done
-    return 1
-}
-
 copy_if_exists() {
     src="$1"
     dest_dir="$2"
@@ -113,31 +106,120 @@ copy_if_exists() {
     cp -a "$src" "$dest_dir/"
 }
 
-llvm_bin=$(find_llvm_bin || true)
-[ -n "$llvm_bin" ] || {
-    echo "repack-installed-package: no llvm bin directory found under /lib/llvm*/bin" >&2
+resolve_existing_path() {
+    path="$1"
+    [ -n "$path" ] || return 1
+    if resolved=$(readlink -f "$path" 2>/dev/null) && [ -e "$resolved" ]; then
+        printf '%s\n' "$resolved"
+        return 0
+    fi
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        printf '%s\n' "$path"
+        return 0
+    fi
+    return 1
+}
+
+install_tool() {
+    src="$1"
+    name="$2"
+    [ -n "$src" ] || return 0
+    resolved=$(resolve_existing_path "$src" || true)
+    [ -n "$resolved" ] || return 0
+    mkdir -p "$DESTDIR/bin"
+    cp -f "$resolved" "$DESTDIR/bin/$name"
+    chmod 755 "$DESTDIR/bin/$name" 2>/dev/null || true
+}
+
+find_working_tool() {
+    for candidate in "$@"; do
+        [ -x "$candidate" ] || continue
+        if "$candidate" --version >/dev/null 2>&1 || "$candidate" -dumpmachine >/dev/null 2>&1; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+clang_real=$(
+    find_working_tool \
+        /lib/llvm*/bin/clang-21 /lib/llvm*/bin/clang \
+        /usr/lib/llvm*/bin/clang-21 /usr/lib/llvm*/bin/clang \
+        /usr/local/lib/llvm*/bin/clang-21 /usr/local/lib/llvm*/bin/clang \
+        /usr/bin/clang-21 /usr/bin/clang \
+        /bin/clang-21 /bin/clang \
+        /usr/local/bin/clang-21 /usr/local/bin/clang || true
+)
+[ -n "$clang_real" ] || {
+    echo "repack-installed-package: no working clang binary found" >&2
+    ls -l /bin/clang /bin/clang-21 /usr/bin/clang /usr/bin/clang-21 2>/dev/null || true
+    find /bin /usr/bin /usr/local/bin /lib /usr/lib /usr/local/lib \
+        -maxdepth 4 \
+        \( -name 'clang*' -o -name 'ld.lld*' -o -name 'lld' -o -name 'llvm-*' \) \
+        2>/dev/null | sort >&2 || true
+    exit 1
+}
+
+clang_resolved=$(resolve_existing_path "$clang_real" || true)
+[ -n "$clang_resolved" ] || {
+    echo "repack-installed-package: failed to resolve clang path: $clang_real" >&2
     exit 1
 }
 
 mkdir -p "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/etc"
-cp -a "$llvm_bin/." "$DESTDIR/bin/"
+case "$(dirname "$clang_resolved")" in
+    /lib/llvm*/bin|/usr/lib/llvm*/bin|/usr/local/lib/llvm*/bin)
+        cp -a "$(dirname "$clang_resolved")/." "$DESTDIR/bin/"
+        ;;
+    *)
+        install_tool "$clang_resolved" "clang-21"
+        clangxx_real=$(
+            find_working_tool \
+                /lib/llvm*/bin/clang++-21 /lib/llvm*/bin/clang++ \
+                /usr/lib/llvm*/bin/clang++-21 /usr/lib/llvm*/bin/clang++ \
+                /usr/local/lib/llvm*/bin/clang++-21 /usr/local/lib/llvm*/bin/clang++ \
+                /usr/bin/clang++-21 /usr/bin/clang++ \
+                /bin/clang++-21 /bin/clang++ \
+                /usr/local/bin/clang++-21 /usr/local/bin/clang++ || true
+        )
+        ld_real=$(
+            find_working_tool \
+                /lib/llvm*/bin/ld.lld /lib/llvm*/bin/ld.lld-21 /lib/llvm*/bin/lld \
+                /usr/lib/llvm*/bin/ld.lld /usr/lib/llvm*/bin/ld.lld-21 /usr/lib/llvm*/bin/lld \
+                /usr/local/lib/llvm*/bin/ld.lld /usr/local/lib/llvm*/bin/ld.lld-21 /usr/local/lib/llvm*/bin/lld \
+                /usr/bin/ld.lld /usr/bin/ld.lld-21 /usr/bin/lld \
+                /bin/ld.lld /bin/ld.lld-21 /bin/lld \
+                /usr/local/bin/ld.lld /usr/local/bin/ld.lld-21 /usr/local/bin/lld || true
+        )
+        install_tool "$clangxx_real" "clang++-21"
+        install_tool "$ld_real" "ld.lld"
+        for tool in llvm-ar llvm-nm llvm-ranlib llvm-strip llvm-objcopy llvm-objdump llvm-readelf llvm-config; do
+            for base in /lib/llvm*/bin /usr/lib/llvm*/bin /usr/local/lib/llvm*/bin /bin /usr/bin /usr/local/bin; do
+                if [ -x "$base/$tool" ]; then
+                    install_tool "$base/$tool" "$tool"
+                    break
+                fi
+            done
+        done
+        ;;
+esac
 
-if [ ! -e "$DESTDIR/bin/clang-21" ] && [ -e "$DESTDIR/bin/clang" ]; then
-    ln -sf clang "$DESTDIR/bin/clang-21"
+if [ ! -e "$DESTDIR/bin/clang-21" ]; then
+    if [ -e "$DESTDIR/bin/clang" ]; then
+        install_tool "$DESTDIR/bin/clang" "clang-21"
+    fi
 fi
-if [ ! -e "$DESTDIR/bin/clang++-21" ] && [ -e "$DESTDIR/bin/clang++" ]; then
-    ln -sf clang++ "$DESTDIR/bin/clang++-21"
+if [ ! -e "$DESTDIR/bin/clang++-21" ]; then
+    if [ -e "$DESTDIR/bin/clang++" ]; then
+        install_tool "$DESTDIR/bin/clang++" "clang++-21"
+    else
+        ln -sf clang-21 "$DESTDIR/bin/clang++-21"
+    fi
 fi
 if [ ! -e "$DESTDIR/bin/ld.lld" ] && [ -e "$DESTDIR/bin/lld" ]; then
     ln -sf lld "$DESTDIR/bin/ld.lld"
 fi
-
-clang_real="$llvm_bin/clang-21"
-[ -x "$clang_real" ] || clang_real="$llvm_bin/clang"
-[ -x "$clang_real" ] || {
-    echo "repack-installed-package: no working clang binary found in $llvm_bin" >&2
-    exit 1
-}
 
 triple=$("$clang_real" -dumpmachine 2>/dev/null || echo "$(uname -m)-jonerix-linux-musl")
 mkdir -p "$DESTDIR/etc/clang"
