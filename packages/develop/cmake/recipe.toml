@@ -18,6 +18,7 @@ configure = """${BOOTSTRAP_CMAKE:-cmake} -S . -B build -G Ninja \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
   -DCMAKE_USE_OPENSSL=OFF \
+  -DLIBMD_LIBRARY=md \
   -DBUILD_CursesDialog=OFF \
   "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
   "-DCMAKE_CXX_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -stdlib=libc++" \
