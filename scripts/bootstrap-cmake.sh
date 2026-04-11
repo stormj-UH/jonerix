@@ -146,10 +146,13 @@ if ! ./bootstrap \
   -DCMAKE_USE_OPENSSL=OFF \
   -DBUILD_CursesDialog=OFF >"$bootstrap_log" 2>&1; then
     echo "bootstrap-cmake: upstream bootstrap failed" >&2
-    cat "$bootstrap_log" >&2
+    echo "bootstrap-cmake: tail of bootstrap.log follows" >&2
+    tail -n 200 "$bootstrap_log" >&2 || true
+    echo "bootstrap-cmake: recent error lines from bootstrap.log" >&2
+    grep -En 'error:|fatal error:|undefined reference|ld\.lld|collect2|cannot find|No such file|undefined symbol|library not found|ninja:' "$bootstrap_log" | tail -n 120 >&2 || true
     if [ -f "$src_dir/Bootstrap.cmk/cmake_bootstrap.log" ]; then
         echo "bootstrap-cmake: compiler probe log follows" >&2
-        cat "$src_dir/Bootstrap.cmk/cmake_bootstrap.log" >&2
+        tail -n 120 "$src_dir/Bootstrap.cmk/cmake_bootstrap.log" >&2 || true
     fi
     exit 1
 fi
