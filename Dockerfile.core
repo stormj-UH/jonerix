@@ -67,11 +67,12 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     failures=0 && \
     failed='' && \
     for pkg in \
-      musl zlib zstd lz4 xz ncurses libressl curl nghttp2 \
-      toybox bsdtar openrc doas snooze \
+      musl zlib zstd lz4 xz ncurses libressl curl \
+      toybox openrc doas snooze \
       dropbear dhcpcd ifupdown-ng unbound \
-      uutils pigz mandoc onetrueawk \
-      micro fastfetch ripgrep gitoxide; \
+      pigz mandoc onetrueawk \
+      micro libcxx fastfetch ripgrep gitoxide \
+      uutils; \
     do \
       echo "Installing: $pkg" && \
       if ! jpkg install --force "$pkg"; then \
