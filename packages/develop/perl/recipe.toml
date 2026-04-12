@@ -27,7 +27,7 @@ configure = """sh Configure -des \
   -Dinstallusrbinperl=n \
   -Ud_eaccess \
   -Dcc=clang \
-  -Dld=ld.lld \
+  -Dld=clang \
   -Dar=llvm-ar \
   -Dranlib=llvm-ranlib \
   -Dccflags="$CFLAGS" \
