@@ -37,13 +37,19 @@ mv stage/go "$DESTDIR/lib/go"
 # to use the shipped toolchain.
 find "$DESTDIR/lib/go/src" -type d -name testdata -exec rm -rf {} +
 
-# jonerix is merged-lib; patch the upstream linker defaults and docs.
-go_lib64_files=$(rg -l --text '/lib64' "$DESTDIR/lib/go/src" 2>/dev/null || true)
-if [ -n "$go_lib64_files" ]; then
-  printf '%s\n' "$go_lib64_files" | xargs sed -i 's#/lib64#/lib#g'
-fi
-python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
-  "$DESTDIR/lib/go/bin" "$DESTDIR/lib/go/pkg/tool"
+# jonerix is musl + merged-lib. Patch the linker defaults that upstream ships
+# for glibc, then normalize any remaining /lib64 paths in the whole tree.
+case "$ARCH" in
+  x86_64)
+    sed -i 's#/lib64/ld-linux-x86-64.so.2#/lib/ld-musl-x86_64.so.1#' \
+      "$DESTDIR/lib/go/src/cmd/link/internal/amd64/obj.go"
+    ;;
+  aarch64)
+    sed -i 's#/lib/ld-linux-aarch64.so.1#/lib/ld-musl-aarch64.so.1#' \
+      "$DESTDIR/lib/go/src/cmd/link/internal/arm64/obj.go"
+    ;;
+esac
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" "$DESTDIR/lib/go"
 
 ln -sf /lib/go/bin/go "$DESTDIR/bin/go"
 ln -sf /lib/go/bin/gofmt "$DESTDIR/bin/gofmt"
