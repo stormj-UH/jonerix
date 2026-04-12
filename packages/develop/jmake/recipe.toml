@@ -6,7 +6,7 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 
 [source]
 url = "https://castle.great-morpho.ts.net:3000/api/v1/repos/jonerik/jmake/archive/6c9dd2fe8ba38032b17440f07f9b85b45aa63501.tar.gz"
-sha256 = "1981a4ca648dc2e7e259d983339162b1495af8c516196a79d9a9900cfce41fd9"
+sha256 = "50406829ada3acf097e862bb36a2d08366e55a55ab930e8282faf7d3c65756d0"
 
 [build]
 system = "custom"
