@@ -56,9 +56,9 @@ COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 # Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
 ARG CACHEBUST=0
 
-# On aarch64, the ncurses package overwrites /bin/toybox (the multicall
-# binary that provides /bin/sh) via a cp -a symlink-following bug.
 # Installing mksh first ensures /bin/sh remains functional throughout.
+# toybox remains the coreutils provider in this image; uutils is not yet
+# reproducible with the musl-hosted Rust toolchain used in jonerix:builder.
 # All symlinks are created in the same RUN to avoid broken /bin/sh between layers.
 RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     jpkg update && \
@@ -71,8 +71,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       toybox openrc doas snooze \
       dropbear dhcpcd ifupdown-ng unbound \
       pigz mandoc onetrueawk \
-      micro libcxx fastfetch ripgrep gitoxide \
-      uutils; \
+      micro libcxx fastfetch ripgrep gitoxide; \
     do \
       echo "Installing: $pkg" && \
       if ! jpkg install --force "$pkg"; then \
@@ -87,14 +86,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     ln -sf bsdtar /bin/tar 2>/dev/null || true && \
     ln -sf dbclient /bin/ssh 2>/dev/null || true && \
     ln -sf micro /bin/editor 2>/dev/null || true && \
-    ln -sf micro /bin/vi 2>/dev/null || true && \
-    # Fixup: bsdtar sometimes extracts the uutils multicall binary into a
-    # GNUSparseFile.0/ subdirectory instead of the correct path. Move it back.
-    if [ -f /bin/GNUSparseFile.0/uutils ] && [ ! -f /bin/uutils ]; then \
-      /bin/toybox cp /bin/GNUSparseFile.0/uutils /bin/uutils && \
-      /bin/toybox chmod 755 /bin/uutils && \
-      /bin/toybox rm -rf /bin/GNUSparseFile.0; \
-    fi
+    ln -sf micro /bin/vi 2>/dev/null || true
 
 # Set SUID bits on login utilities (required for multi-user auth)
 RUN chmod 4755 /bin/su /bin/passwd /bin/login 2>/dev/null || true
