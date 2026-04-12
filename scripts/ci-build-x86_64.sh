@@ -164,8 +164,25 @@ install_target_build_deps() {
 
     for dep in $deps; do
         [ -n "$dep" ] || continue
-        echo "=== Ensuring build dependency: ${dep} ==="
-        jpkg install --force "$dep"
+        if command -v "$dep" >/dev/null 2>&1; then
+            continue
+        fi
+
+        dep_pkg="$dep"
+        case "$dep" in
+            clang|clang++|ld.lld|llvm-ar|llvm-ranlib|llvm-nm|llvm-strip)
+                dep_pkg=llvm
+                ;;
+            make)
+                dep_pkg=bmake
+                ;;
+            python)
+                dep_pkg=python3
+                ;;
+        esac
+
+        echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
+        jpkg install --force "$dep_pkg"
     done
 }
 
