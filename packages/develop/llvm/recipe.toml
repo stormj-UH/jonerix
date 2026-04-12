@@ -36,7 +36,7 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 case $(uname -m) in
     # GitHub's x86_64 runners can stall badly on LLVM with full nproc fan-out.
     # Cap compile parallelism there; aarch64 completes fine at host parallelism.
-    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-jonerix-linux-musl"; LLVM_BUILD_JOBS=2 ;;
+    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-jonerix-linux-musl"; LLVM_BUILD_JOBS=1 ;;
     aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
     *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
 esac
