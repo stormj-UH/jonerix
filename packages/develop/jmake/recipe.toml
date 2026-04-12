@@ -5,8 +5,8 @@ license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 
 [source]
-url = "https://castle.great-morpho.ts.net:3000/api/v1/repos/jonerik/jmake/archive/9daab69dc844e3c94059b95b852988c4a7d978d3.tar.gz"
-sha256 = "8bd3b2054e065ea30018bfd10f385e51dcea6ef3b01250fa6334f87b0ac82e34"
+url = "https://castle.great-morpho.ts.net:3000/api/v1/repos/jonerik/jmake/archive/6c9dd2fe8ba38032b17440f07f9b85b45aa63501.tar.gz"
+sha256 = "f38016278957de1f1869e652554cb40accff8402a877a79e9c13005807cd513c"
 
 [build]
 system = "custom"
