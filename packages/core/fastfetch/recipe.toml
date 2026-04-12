@@ -17,6 +17,8 @@ if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DE
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 install -Dm644 "$RECIPE_DIR/config.jsonc" "$DESTDIR/etc/fastfetch/config.jsonc"
 install -Dm644 "$RECIPE_DIR/logo.txt" "$DESTDIR/etc/fastfetch/logo.txt"
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+  "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/etc" "$DESTDIR/share"
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
