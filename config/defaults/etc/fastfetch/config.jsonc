@@ -4,6 +4,12 @@
     "logo": {
         "type": "file",
         "source": "/etc/fastfetch/logo.txt",
+        "color": {
+            "1": "blue",
+            "2": "black",
+            "3": "yellow",
+            "4": "white"
+        },
         "padding": {
             "top": 0,
             "left": 1,
