@@ -15,6 +15,10 @@ on:
         description: 'Package name to build (leave empty to build all)'
         required: false
         default: ''
+      arch:
+        description: 'Architecture to build (all, x86_64, or aarch64)'
+        required: false
+        default: 'all'
       index_only:
         description: 'Only regenerate INDEX (skip package builds)'
         required: false
@@ -67,7 +71,7 @@ jobs:
   # jonerix's runtime, not Alpine's.
   build-x86_64:
     name: Build packages (x86_64)
-    if: ${{ !inputs.index_only }}
+    if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'x86_64') }}
     needs: create-release
     runs-on: ubuntu-latest
     permissions:
@@ -126,7 +130,7 @@ jobs:
 
   build-aarch64:
     name: Build packages (aarch64)
-    if: ${{ !inputs.index_only }}
+    if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'aarch64') }}
     needs: create-release
     runs-on: ubuntu-24.04-arm
     permissions:
