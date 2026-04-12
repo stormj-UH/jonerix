@@ -116,6 +116,13 @@ fi
 
 failures=0
 
+package_timeout() {
+    case "$1" in
+        llvm) echo 14400 ;;
+        *) echo 3600 ;;
+    esac
+}
+
 build_one() {
     recipe="$1"
     pkg_dir="$(dirname "$recipe")"
@@ -130,7 +137,7 @@ build_one() {
     fi
 
     echo "=== Building ${pkg_name} ==="
-    if ! timeout 1200 jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg; then
+    if ! timeout "$(package_timeout "$pkg_name")" jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg; then
         echo "FAILED: ${pkg_name}"
         failures=$((failures + 1))
     fi
@@ -149,7 +156,7 @@ if [ -n "$PKG_INPUT" ]; then
         echo "=== Skipping ${PKG_INPUT}-${pkg_ver} (already published) ==="
     else
         [ "${REBUILD_INPUT:-false}" = "true" ] && echo "=== Rebuilding ${PKG_INPUT} ===" || echo "=== Building ${PKG_INPUT} ==="
-        if ! timeout 3600 jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg; then
+        if ! timeout "$(package_timeout "$PKG_INPUT")" jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg; then
             echo "FAILED: ${PKG_INPUT}"
             failures=$((failures + 1))
         fi
