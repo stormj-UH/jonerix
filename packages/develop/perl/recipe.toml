@@ -25,6 +25,7 @@ configure = """sh Configure -des \
   -Dvendorman1dir=none \
   -Dvendorman3dir=none \
   -Dinstallusrbinperl=n \
+  -Ud_eaccess \
   -Dcc=clang \
   -Dld=ld.lld \
   -Dar=llvm-ar \
