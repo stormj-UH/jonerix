@@ -60,14 +60,12 @@ if ! tar --version >/dev/null 2>&1; then
     fi
 fi
 
-bsdtar --version >/dev/null 2>&1 || {
-    echo "FATAL: bsdtar is unusable"
+if ! bsdtar --version >/dev/null 2>&1 && \
+   ! /bin/toybox tar --help >/dev/null 2>&1 && \
+   ! tar --version >/dev/null 2>&1; then
+    echo "FATAL: no usable tar implementation found"
     exit 1
-}
-tar --version >/dev/null 2>&1 || {
-    echo "FATAL: tar is unusable"
-    exit 1
-}
+fi
 
 # Update package index
 jpkg update
