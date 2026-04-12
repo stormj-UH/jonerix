@@ -25,7 +25,7 @@ RUN jpkg update && \
     failed='' && \
     for pkg in \
       llvm libcxx rust go \
-      cmake bmake samurai flex bc byacc \
+      cmake bmake jmake samurai flex bc byacc \
       perl python3 nodejs; \
     do \
       echo "Installing: $pkg" && \
