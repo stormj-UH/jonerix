@@ -32,7 +32,10 @@ configure = """sh Configure -des \
   -Dranlib=llvm-ranlib \
   -Dccflags="$CFLAGS" \
   -Dldflags="$LDFLAGS" """
-build = "jmake -j$(nproc)"
+# Perl's core extension bootstrap is order-sensitive under jmake. Keep the
+# initial package build serial so lib.pm and the other bootstrap modules land
+# before dependent Makefile.PL phases run.
+build = "jmake -j1"
 install = """jmake install DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
