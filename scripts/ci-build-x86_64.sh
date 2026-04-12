@@ -70,6 +70,10 @@ if ! bsdtar --version >/dev/null 2>&1 && \
     exit 1
 fi
 
+if [ -z "${JPKG_SOURCE_CACHE:-}" ] && [ -d /workspace/sources ]; then
+    export JPKG_SOURCE_CACHE=/workspace/sources
+fi
+
 # Update package index
 jpkg update
 
@@ -143,6 +147,28 @@ package_timeout() {
     esac
 }
 
+install_target_build_deps() {
+    recipe_dir="$1"
+    deps_line=$(awk '
+        $0 == "[depends]" { in_dep = 1; next }
+        /^\[/ { if (in_dep) exit }
+        in_dep && $1 == "build" { print; exit }
+    ' "$recipe_dir/recipe.toml")
+
+    [ -z "$deps_line" ] && return 0
+
+    deps=$(printf '%s\n' "$deps_line" |
+        sed -E 's/.*\[(.*)\].*/\1/' |
+        tr -d '"' |
+        tr ',' ' ')
+
+    for dep in $deps; do
+        [ -n "$dep" ] || continue
+        echo "=== Ensuring build dependency: ${dep} ==="
+        jpkg install --force "$dep"
+    done
+}
+
 build_one() {
     recipe="$1"
     pkg_dir="$(dirname "$recipe")"
@@ -169,6 +195,7 @@ if [ -n "$PKG_INPUT" ]; then
       [ -f "/workspace/packages/$d/${PKG_INPUT}/recipe.toml" ] && recipe_dir="/workspace/packages/$d/${PKG_INPUT}" && break
     done
     [ -z "$recipe_dir" ] && { echo "ERROR: no recipe for ${PKG_INPUT} in packages/{core,develop,extra}"; exit 1; }
+    install_target_build_deps "$recipe_dir"
     pkg_ver=$(grep "^version" "${recipe_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
     expected="/var/cache/jpkg-published/${PKG_INPUT}-${pkg_ver}-x86_64.jpkg"
     legacy="/var/cache/jpkg-published/${PKG_INPUT}-${pkg_ver}.jpkg"
