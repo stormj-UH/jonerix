@@ -40,8 +40,8 @@ fi
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
 # Ensure bsdtar/tar is functional. Some published libarchive artifacts were built
-# against OpenSSL 3 and require libcrypto.so.3, while jonerix ships LibreSSL. If the
-# container's dynamic bsdtar is broken, restore the static fallback before jpkg tries
+# against OpenSSL 3 or older lz4 sonames, while jonerix ships LibreSSL and the
+# current lz4 package set. Repair the stale tool before jpkg or package recipes try
 # to extract sources.
 if ! bsdtar --version >/dev/null 2>&1; then
     if [ -x /workspace/tools/bsdtar-static-x86_64 ]; then
@@ -52,6 +52,25 @@ if ! bsdtar --version >/dev/null 2>&1; then
         echo "bsdtar: installed from Alpine packages"
     fi
 fi
+
+if ! tar --version >/dev/null 2>&1; then
+    if bsdtar --version >/dev/null 2>&1; then
+        ln -sf /bin/bsdtar /bin/tar
+        echo "tar: linked to bsdtar fallback"
+    elif command -v toybox >/dev/null 2>&1; then
+        ln -sf /bin/toybox /bin/tar
+        echo "tar: linked to toybox fallback"
+    fi
+fi
+
+bsdtar --version >/dev/null 2>&1 || {
+    echo "FATAL: bsdtar is unusable"
+    exit 1
+}
+tar --version >/dev/null 2>&1 || {
+    echo "FATAL: tar is unusable"
+    exit 1
+}
 
 # Update package index
 jpkg update
