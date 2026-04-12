@@ -121,7 +121,7 @@ failures=0
 
 package_timeout() {
     case "$1" in
-        llvm) echo 14400 ;;
+        llvm) echo 20000 ;;
         *) echo 3600 ;;
     esac
 }
