@@ -32,9 +32,9 @@ CONFIG_WPS=y
 CONFIG_ACS=y
 CONF"""
 # NOTE: hostapd's Makefile uses GNU make features (ifdef/ifndef/ifeq, $(wildcard),
-# $(shell)). Build requires GNU make at build time (provided by Alpine container).
+# $(shell)). Build requires jmake at build time.
 # Also needs nl80211 kernel headers which are not yet packaged for jonerix.
-build = "make -C hostapd CC=clang LDFLAGS=\"--rtlib=compiler-rt -fuse-ld=lld\" -j$(nproc)"
+build = "jmake -C hostapd CC=clang LDFLAGS=\"--rtlib=compiler-rt -fuse-ld=lld\" -j$(nproc)"
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/hostapd
 install -m 755 hostapd/hostapd $DESTDIR/bin/hostapd
 install -m 755 hostapd/hostapd_cli $DESTDIR/bin/hostapd_cli
@@ -42,4 +42,4 @@ llvm-strip --strip-all $DESTDIR/bin/hostapd $DESTDIR/bin/hostapd_cli 2>/dev/null
 
 [depends]
 runtime = ["musl", "libressl"]
-build = ["clang", "make"]
+build = ["clang", "jmake"]
