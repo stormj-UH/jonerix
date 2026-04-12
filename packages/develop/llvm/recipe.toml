@@ -34,9 +34,11 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 # - llvm-ar/llvm-ranlib are at /lib/llvm21/bin/ in the bootstrap env.
 
 case $(uname -m) in
-    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-jonerix-linux-musl" ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl" ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl" ;;
+    # GitHub's x86_64 runners can stall badly on LLVM with full nproc fan-out.
+    # Cap compile parallelism there; aarch64 completes fine at host parallelism.
+    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-jonerix-linux-musl"; LLVM_BUILD_JOBS=2 ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
 esac
 
 SRC=$(pwd)
@@ -114,7 +116,7 @@ cmake -S llvm -B build -G Ninja \
 # The default 'all' target includes libclang-cpp.so which may fail to
 # link on x86_64/musl due to relocation issues (same issue as aarch64).
 # Allow the build to fail, then verify the binaries we need exist.
-samu -C build -j$(nproc) -k0 || true
+samu -C build -j"$LLVM_BUILD_JOBS" -k0 || true
 if [ ! -x build/bin/clang-21 ]; then
     echo "FATAL: clang-21 was not built"
     exit 1
