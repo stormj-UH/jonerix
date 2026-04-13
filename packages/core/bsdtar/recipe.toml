@@ -1,6 +1,6 @@
 [package]
 name = "bsdtar"
-version = "3.8.6-r3"
+version = "3.8.6-r4"
 license = "Apache-2.0"
 description = "Compatibility package providing /bin/tar via libarchive bsdtar"
 

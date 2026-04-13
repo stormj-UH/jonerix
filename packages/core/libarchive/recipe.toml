@@ -1,6 +1,6 @@
 [package]
 name = "libarchive"
-version = "3.8.6-r3"
+version = "3.8.6-r4"
 license = "Apache-2.0"
 description = "Multi-format archive and compression library with bsdtar"
 
@@ -10,7 +10,15 @@ sha256 = "8ac57c1f5e99550948d1fe755c806d26026e71827da228f36bef24527e372e6f"
 
 [build]
 system = "cmake"
-configure = """cmake -B build -G Ninja \
+configure = """# Ensure libressl dev symlinks exist (jpkg packages may omit them).
+# Without these, CMake finds Alpine's libcrypto.so.3 instead.
+for lib in crypto ssl tls; do
+  if [ ! -e /lib/lib${lib}.so ]; then
+    target=$(ls /lib/lib${lib}.so.* 2>/dev/null | grep -v '\\.so\\.[0-9]*\\.' | head -1)
+    [ -n "$target" ] && ln -sf "$(basename "$target")" /lib/lib${lib}.so
+  fi
+done
+cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_INSTALL_PREFIX=/ \
@@ -23,6 +31,8 @@ configure = """cmake -B build -G Ninja \
   -DENABLE_OPENSSL=ON \
   -DOPENSSL_ROOT_DIR=/ \
   -DOPENSSL_INCLUDE_DIR=/include \
+  -DOPENSSL_SSL_LIBRARY=/lib/libssl.so \
+  -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.so \
   -DENABLE_EXPAT=OFF \
   -DENABLE_LIBXML2=OFF \
   -DENABLE_LIBB2=OFF \
@@ -30,6 +40,8 @@ configure = """cmake -B build -G Ninja \
   -DENABLE_LZMA=ON \
   -DENABLE_ZSTD=ON \
   -DENABLE_ZLIB=ON \
+  -DACL_INCLUDE_DIR=NOTFOUND \
+  -DACL_LIBRARY=NOTFOUND \
   "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
   "-DCMAKE_EXE_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
   "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld"
