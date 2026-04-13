@@ -551,7 +551,7 @@ build = ["clang"]
 ### In Progress
 
 - [ ] Build Ruby 3.4.3 jpkg (license unblocked, needs GNU make in Alpine)
-- [ ] Build remaining x86_64 packages (btop, sqlite, libatomic, unzip)
+- [ ] Build remaining x86_64 packages (btop, sqlite, unzip)
 - [ ] Linux kernel recipe + custom build
 - [ ] Bootloader for bare metal (EFISTUB + fallback)
 
