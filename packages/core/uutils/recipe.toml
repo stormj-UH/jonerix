@@ -12,25 +12,12 @@ sha256 = "5f0c3f97b807e72edccc844c6a685ec9862199f16a665df07de5b1d20ec21233"
 system = "custom"
 build = """cargo fetch --locked
 RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release"""
-install = """# Install the multicall binary directly — no GNU make required.
-install -Dm755 target/release/uutils "$DESTDIR/bin/uutils"
-
-# Create per-command symlinks (mirrors what uutils GNUmakefile install target does).
-CMDS="base64 basename cat chgrp chmod chown chroot cksum comm cp cut
- date dd df dirname du echo env expand factor false fold groups head
- id install kill link ln logname ls md5sum mkdir mkfifo mknod mktemp
- mv nice nl nohup nproc od paste printf pwd readlink realpath rm rmdir
- seq sha1sum sha256sum sha512sum shred sleep sort split stat sync tail
- tee test timeout touch tr true truncate tty uname unexpand uniq unlink
- uptime wc who whoami yes"
-for cmd in $CMDS; do
-  ln -sf uutils "$DESTDIR/bin/$cmd"
-done
+install = """jmake PROFILE=release DESTDIR=$DESTDIR PREFIX=/ install
 
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if command -v readelf >/dev/null 2>&1 && \
-   readelf -d "$DESTDIR/bin/uutils" 2>/dev/null | grep -Eq 'libgcc_s|libstdc\+\+'; then
+   readelf -d "$DESTDIR/bin/uutils" 2>/dev/null | grep -Eq 'libgcc_s|libstdc\\+\\+'; then
   echo "FATAL: uutils still links against GCC runtime"
   exit 1
 fi
@@ -51,4 +38,4 @@ done"""
 
 [depends]
 runtime = ["musl"]
-build = ["rust"]
+build = ["rust", "jmake"]
