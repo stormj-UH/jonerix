@@ -1,0 +1,186 @@
+--- a/scripts/genconfig.sh	2026-04-13 16:07:58
++++ b/scripts/genconfig.sh	2026-04-13 16:07:58
+@@ -3,7 +3,7 @@
+ # This has to be a separate file from scripts/make.sh so it can be called
+ # before menuconfig. (It's called again from scripts/make.sh just to be sure.)
+ 
+-source scripts/portability.sh
++. scripts/portability.sh
+ 
+ mkdir -p "$GENDIR"
+ 
+@@ -16,9 +16,9 @@
+ # Symbol name is first argument, flags second, feed C file to stdin
+ probesymbol()
+ {
+-  probecc "${@:2}" 2>/dev/null && DEFAULT=y || DEFAULT=n
++  _ps_sym="$1"; shift; probecc "$@" 2>/dev/null && DEFAULT=y || DEFAULT=n
+   rm a.out 2>/dev/null
+-  echo -e "config $1\n\tbool\n\tdefault $DEFAULT\n" || exit 1
++  echo -e "config $_ps_sym\n\tbool\n\tdefault $DEFAULT\n" || exit 1
+ }
+ 
+ probeconfig()
+@@ -78,17 +78,17 @@
+ while IFS=":" read FILE NAME
+ do
+   echo -e "test_$NAME:\n\tscripts/test.sh $NAME\n"
+-  [ "$NAME" == help ] && continue
+-  [ "$NAME" == install ] && continue
+-  [ "$NAME" == sh ] && FILE="toys/*/*.c"
++  [ "$NAME" = help ] && continue
++  [ "$NAME" = install ] && continue
++  [ "$NAME" = sh ] && FILE="toys/*/*.c"
+   echo -e "$NAME: $FILE *.[ch] lib/*.[ch]\n\tscripts/single.sh $NAME\n"
+   [ "${FILE/example//}" != "$FILE" ] && EXAMPLE="$EXAMPLE $NAME" ||
+   [ "${FILE/pending//}" != "$FILE" ] && PENDING="$PENDING $NAME" ||
+     WORKING="$WORKING $NAME"
+ done &&
+ echo -e "clean::\n\t@rm -f $WORKING $PENDING" &&
+-echo -e "list:\n\t@echo $(echo $WORKING | tr ' ' '\n' | sort | xargs)" &&
+-echo -e "list_example:\n\t@echo $(echo $EXAMPLE | tr ' ' '\n' | sort | xargs)"&&
+-echo -e "list_pending:\n\t@echo $(echo $PENDING | tr ' ' '\n' | sort | xargs)"&&
++echo -e "list:\n\t@echo $(printf '%s\n' $WORKING | sort | xargs)" &&
++echo -e "list_example:\n\t@echo $(printf '%s\n' $EXAMPLE | sort | xargs)"&&
++echo -e "list_pending:\n\t@echo $(printf '%s\n' $PENDING | sort | xargs)"&&
+ echo -e ".PHONY: $WORKING $PENDING" | $SED 's/ \([^ ]\)/ test_\1/g'
+ ) > .singlemake
+--- a/scripts/portability.sh	2026-04-13 16:08:22
++++ b/scripts/portability.sh	2026-04-13 16:08:22
+@@ -1,6 +1,6 @@
+ # sourced to find alternate names for things
+ 
+-source ./configure
++. ./configure
+ 
+ if [ -z "$(command -v "$CROSS_COMPILE$CC")" ]
+ then
+@@ -14,9 +14,9 @@
+ fi
+ 
+ # Tell linker to do dead code elimination at function level
+-if [ "$(uname)" == "Darwin" ]
++if [ "$(uname)" = "Darwin" ]
+ then
+-  CFLAGS+=" -Wno-deprecated-declarations"
++  CFLAGS="$CFLAGS -Wno-deprecated-declarations"
+   : ${LDOPTIMIZE:=-Wl,-dead_strip} ${STRIP:=strip}
+ else
+   : ${LDOPTIMIZE:=-Wl,--gc-sections -Wl,--as-needed} ${STRIP:=strip -s -R .note* -R .comment}
+@@ -24,9 +24,9 @@
+ 
+ # Disable pointless warnings only clang produces
+ [ -n "$("$CROSS_COMPILE$CC" --version | grep -w clang)" ] &&
+-  CFLAGS+=" -Wno-string-plus-int -Wno-invalid-source-encoding" ||
++  CFLAGS="$CFLAGS -Wno-string-plus-int -Wno-invalid-source-encoding" ||
+ # And ones only gcc produces
+-  CFLAGS+=" -Wno-restrict -Wno-format-overflow"
++  CFLAGS="$CFLAGS -Wno-restrict -Wno-format-overflow"
+ 
+ # Address Sanitizer
+ if [ -n "$ASAN" ]; then
+--- a/configure	2026-04-13 16:08:22
++++ b/configure	2026-04-13 16:08:22
+@@ -4,7 +4,7 @@
+ 
+ # People run ./configure out of habit, so do "defconfig" for them.
+ 
+-if [ "$(basename "$0")" == configure ]
++if [ "$(basename "$0")" = configure ]
+ then
+   echo "Assuming you want 'make defconfig', but you should probably check the README."
+   make defconfig
+@@ -12,8 +12,8 @@
+ fi
+ 
+ # Warn about stuff, disable stupid warnings, be 8-bit clean for utf8.
+-[ "${CFLAGS/-funsigned-char//}" == "$CFLAGS" ] &&
+-  CFLAGS+=" -Wall -Wundef -Werror=implicit-function-declaration -Wno-char-subscripts -Wno-pointer-sign -funsigned-char"
++[ "${CFLAGS/-funsigned-char//}" = "$CFLAGS" ] &&
++  CFLAGS="$CFLAGS -Wall -Wundef -Werror=implicit-function-declaration -Wno-char-subscripts -Wno-pointer-sign -funsigned-char"
+ 
+ # Set default values if variable not already set
+ : ${CC:=cc} ${HOSTCC:=cc} ${GENDIR:=generated} ${KCONFIG_CONFIG:=.config}
+--- a/scripts/make.sh	2026-04-13 16:08:43
++++ b/scripts/make.sh	2026-04-13 16:08:43
+@@ -2,7 +2,7 @@
+ 
+ # Grab default values for $CFLAGS and such.
+ set -o pipefail
+-source scripts/portability.sh
++. scripts/portability.sh
+ 
+ # Shell functions called by the build
+ 
+@@ -42,9 +42,10 @@
+ # Is anything under directory $2 newer than generated/$1 (or does it not exist)?
+ isnewer()
+ {
+-  [ -e "$GENDIR/$1" ] && [ -z "$(find "${@:2}" -newer "$GENDIR/$1")" ] &&
++  _in_f="$1"; shift
++  [ -e "$GENDIR/$_in_f" ] && [ -z "$(find "$@" -newer "$GENDIR/$_in_f")" ] &&
+     return 1
+-  echo -n "${DIDNEWER:-$GENDIR/{}$1"
++  echo -n "${DIDNEWER:-$GENDIR/{}}$_in_f"
+   DIDNEWER=,
+ }
+ 
+@@ -90,12 +91,11 @@
+ 
+ # Make sure rm -rf isn't gonna go funny
+ B="$(readlink -f "$PWD")/" A="$(readlink -f "$GENDIR")" A="${A%/}"/
+-[ "$A" == "${B::${#A}}" ] &&
++[ "$A" = "${B:0:${#A}}" ] &&
+   { echo "\$GENDIR=$GENDIR cannot include \$PWD=$PWD"; exit 1; }
+ unset A B DOTPROG DIDNEWER
+ 
+ # Force full rebuild if our compiler/linker options changed
+-cmp -s <(compflags | grep '#d') <(grep '%d' "$GENDIR"/build.sh 2>/dev/null) ||
+   rm -rf "$GENDIR"/* # Keep symlink, delete contents
+ mkdir -p "$UNSTRIPPED"  "$(dirname $OUTNAME)" || exit 1
+ 
+@@ -103,7 +103,7 @@
+ # (First command names, then filenames with relevant {NEW,OLD}TOY() macro.)
+ 
+ [ -n "$V" ] && echo -e "\nWhich C files to build..."
+-TOYFILES="$($SED -n 's/^CONFIG_\([^=]*\)=.*/\1/p' "$KCONFIG_CONFIG" | xargs | tr ' ' '|')"
++TOYFILES="$($SED -n 's/^CONFIG_\([^=]*\)=.*/\1/p' "$KCONFIG_CONFIG" | xargs | sed 's/ /|/g')"
+ TOYFILES="main.c $(egrep -l "^USE_($TOYFILES)[(]...TOY[(]" toys/*/*.c | xargs)"
+ 
+ if [ "${TOYFILES/pending//}" != "$TOYFILES" ]
+@@ -112,7 +112,7 @@
+ fi
+ 
+ # Write build variables (and set them locally), then append build invocation.
+-compflags > "$GENDIR"/build.sh && source "$GENDIR/build.sh" &&
++compflags > "$GENDIR"/build.sh && . "$GENDIR/build.sh" &&
+   {
+     echo FILES=$'"\n'"$(fold -s <<<"$TOYFILES")"$'\n"' &&
+     echo &&
+@@ -127,7 +127,7 @@
+ 
+ # Does .config need dependency recalculation because toolchain changed?
+ A="$($SED -n '/^config .*$/h;s/default \(.\)/\1/;T;H;g;s/config \([^\n]*\)[^yn]*\(.\)/\1=\2/p' "$GENDIR"/Config.probed | sort)"
+-B="$(egrep "^CONFIG_($(echo "$A" | sed 's/=[yn]//' | xargs | tr ' ' '|'))=" "$KCONFIG_CONFIG" | $SED 's/^CONFIG_//' | sort)"
++B="$(egrep "^CONFIG_($(echo "$A" | sed 's/=[yn]//' | xargs | sed 's/ /|/g'))=" "$KCONFIG_CONFIG" | $SED 's/^CONFIG_//' | sort)"
+ A="$(echo "$A" | grep -v =n)"
+ [ "$A" != "$B" ] &&
+   { echo -e "\nWarning: Config.probed changed, run 'make oldconfig'" >&2; }
+@@ -168,7 +168,7 @@
+ 
+     echo "#define NEWTOY(aa,bb,cc) aa $I bb"
+     echo '#define OLDTOY(...)'
+-    if [ "$I" == A ]
++    if [ "$I" = A ]
+     then
+       cat "$GENDIR"/config.h
+     else
+@@ -257,7 +257,7 @@
+ PENDING= LNKFILES= CLICK= DONE=0 COUNT=0
+ for i in lib/*.c click $TOYFILES
+ do
+-  [ "$i" == click ] && CLICK=1 && continue
++  [ "$i" = click ] && CLICK=1 && continue
+ 
+   X=${i/lib\//lib_}
+   X=${X##*/}
