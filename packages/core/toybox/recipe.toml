@@ -27,6 +27,18 @@ sed -i "s@| tr ' ' '|'@| sed 's/ /|/g'@g" scripts/make.sh
 sed -i 's/^source /. /' scripts/portability.sh
 sed -i 's/^source /. /' scripts/genconfig.sh
 sed -i 's/ == / = /g' scripts/genconfig.sh
+# ${@:2} (bash array slice) -> shift + "$@"
+sed -i 's/probecc "${@:2}"/shift; probecc "$@"/' scripts/genconfig.sh
+# isnewer() uses ${@:2} in a subshell — rewrite to use _isnewer_f + shift
+sed -i '/^isnewer/,/^}/c\
+isnewer()\
+{\
+  _isnewer_f="$1"; shift\
+  [ -e "$GENDIR/$_isnewer_f" ] && [ -z "$(find "$@" -newer "$GENDIR/$_isnewer_f")" ] &&\
+    return 1\
+  echo -n "${DIDNEWER:-$GENDIR/{}$_isnewer_f"\
+  DIDNEWER=,\
+}' scripts/make.sh
 # Fix shebangs so sub-scripts invoked by make.sh use mksh too
 sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
 rm -rf generated/*
