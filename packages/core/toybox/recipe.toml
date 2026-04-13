@@ -12,38 +12,29 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 system = "custom"
 build = """set -e
 cp "$RECIPE_DIR/toybox.config" .config
-# Patch scripts/make.sh and scripts/portability.sh for mksh compatibility.
-# The builder container has no bash and tr is not in PATH; mksh uses '.' not 'source'.
-# Patches applied:
-#   1. ${B::${#A}} (bash offset-0 substring) -> ${B:0:${#A}} (ksh93/mksh form)
-#   2. <(cmd) process substitution -> deleted; rm -rf generated/* does the same
-#   3. 'source foo' -> '. foo' (mksh dot-source, both standalone and after &&)
-#   4. tr ' ' '|' -> sed 's/ /|/g' (tr not in PATH during build)
+
+# Patch toybox build scripts for mksh compatibility.
+# (Builder has no bash; mksh R59c is the build shell.)
+# mksh supports: set -o pipefail, CFLAGS+=, ${var/p/r}, ${@:2}, == in [],
+# echo -e, fold <<<, wait -n (graceful fallback).  Only these need patching:
+
+# 1. ${B::${#A}} is bash offset-0 substring syntax; ksh93/mksh use ${B:0:${#A}}
 sed -i 's|${B::${#A}}|${B:0:${#A}}|' scripts/make.sh
+
+# 2. <(cmd) process substitution: not in mksh; line is a cache check that
+#    rm -rf generated/* replaces (always do a clean build)
 sed -i '/^cmp -s <(compflags/d' scripts/make.sh
-sed -i 's/^source /. /' scripts/make.sh
+
+# 3. 'source X': mksh script mode has no 'source' builtin, use POSIX '. X'
+sed -i 's/^source /. /' scripts/make.sh scripts/portability.sh scripts/genconfig.sh
 sed -i 's/&& source /\&\& . /g' scripts/make.sh
-sed -i "s@| tr ' ' '|'@| sed 's/ /|/g'@g" scripts/make.sh
-sed -i 's/^source /. /' scripts/portability.sh
-sed -i 's/^source /. /' scripts/genconfig.sh
-sed -i 's/ == / = /g' scripts/genconfig.sh
-# tr ' ' '\n' -> sed 's/ /\n/g' (tr not in PATH during build)
-sed -i "s@| tr ' ' '\\\\n'@| sed 's/ /\\\\n/g'@g" scripts/genconfig.sh
-# ${@:2} (bash array slice) -> save $1 as _sym, shift, use $_sym in echo
-sed -i 's/  probecc "${@:2}" 2>\/dev\/null/  _sym=$1; shift; probecc "$@" 2>\/dev\/null/' scripts/genconfig.sh
-sed -i 's/echo -e "config \$1\\n/echo -e "config $_sym\\n/' scripts/genconfig.sh
-# isnewer() uses ${@:2} in a subshell — rewrite to use _isnewer_f + shift
-sed -i '/^isnewer/,/^}/c\
-isnewer()\
-{\
-  _isnewer_f="$1"; shift\
-  [ -e "$GENDIR/$_isnewer_f" ] && [ -z "$(find "$@" -newer "$GENDIR/$_isnewer_f")" ] &&\
-    return 1\
-  echo -n "${DIDNEWER:-$GENDIR/{}$_isnewer_f"\
-  DIDNEWER=,\
-}' scripts/make.sh
-# Fix shebangs so sub-scripts invoked by make.sh use mksh too
-sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
+
+# 4. Fix shebangs: sub-scripts called as executables (genconfig.sh) need mksh
+sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/make.sh scripts/portability.sh scripts/genconfig.sh configure
+
+# 5. tr may be missing in some builder images; replace with sed y// equivalent
+sed -i "s@| tr ' ' '|'@| sed 'y/ /|/'@g" scripts/make.sh
+
 rm -rf generated/*
 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
@@ -51,7 +42,7 @@ install = """set -e
 mkdir -p $DESTDIR/bin
 install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
 llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
-# Create applet symlinks
+# Create applet symlinks; skip bash to avoid overwriting any installed bash
 for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1 | tr ' ' '\n'); do
   [ "$applet" = "toybox" ] && continue
   [ "$applet" = "bash" ] && continue
