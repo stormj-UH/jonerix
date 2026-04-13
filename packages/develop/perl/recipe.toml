@@ -48,6 +48,7 @@ cd cpan/IPC-SysV && ../../miniperl -I../../lib -I../../lib regen.pl && cd ../..
 install = """jmake install MAKEDEPEND= DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib/perl5" \\( -name Config.pm -o -name Config_heavy.pl \\) -exec sed -i 's|/lib64|/lib|g' {} +
 find "$DESTDIR" -maxdepth 1 -type f -name '*.0' -delete
 if find "$DESTDIR" -maxdepth 1 -type f -name '*.0' | grep -q .; then
   echo "FATAL: perl install still produced root-level *.0 payload"
