@@ -12,49 +12,10 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 system = "custom"
 build = """set -e
 cp "$RECIPE_DIR/toybox.config" .config
-
-# Patch toybox build scripts for mksh compatibility.
-# (Builder has no bash; mksh R59c is the build shell.)
-# mksh supports: set -o pipefail, CFLAGS+=, ${var/p/r}, ${@:2}, == in [],
-# echo -e, fold <<<, wait -n (graceful fallback).  Only these need patching:
-
-# 1. ${B::${#A}} is bash offset-0 substring syntax; ksh93/mksh use ${B:0:${#A}}
-sed -i 's|${B::${#A}}|${B:0:${#A}}|' scripts/make.sh
-
-# 2. <(cmd) process substitution: not in mksh; line is a cache check that
-#    rm -rf generated/* replaces (always do a clean build)
-sed -i '/^cmp -s <(compflags/d' scripts/make.sh
-
-# 3. 'source X': mksh script mode has no 'source' builtin, use POSIX '. X'
-sed -i 's/^source /. /' scripts/make.sh scripts/portability.sh scripts/genconfig.sh
-sed -i 's/&& source /\&\& . /g' scripts/make.sh
-
-# 4. Fix shebangs: sub-scripts called as executables (genconfig.sh) need mksh
-sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/make.sh scripts/portability.sh scripts/genconfig.sh configure
-
-# 5. tr may be missing in some builder images; replace with sed y// equivalent
-sed -i "s@| tr ' ' '|'@| sed 'y/ /|/'@g" scripts/make.sh
-
-# 6. == in [ ] is bash-specific; mksh requires =
-sed -i 's/ == / = /g' scripts/make.sh scripts/genconfig.sh
-
-# 7. ${@:2} bash array slice is not supported in mksh; use shift + "$@"
-sed -i 's/probecc "${@:2}"/shift; probecc "$@"/' scripts/genconfig.sh
-
-# 8. isnewer() in make.sh uses ${@:2}; rewrite to use a named variable + shift
-sed -i '/^isnewer/,/^}/c\
-isnewer()\
-{\
-  _if="$1"; shift\
-  [ -e "$GENDIR/$_if" ] && [ -z "$(find "$@" -newer "$GENDIR/$_if")" ] &&\
-    return 1\
-  echo -n "${DIDNEWER:-$GENDIR/{}$_if"\
-  DIDNEWER=,\
-}' scripts/make.sh
-
-# 9. tr ' ' '\n' in genconfig.sh list targets: replace with sed equivalent
-sed -i "s@| tr ' ' '\\\\n'@| sed 's/ /\\n/g'@g" scripts/genconfig.sh
-
+# All bash->mksh and tr->sed fixes are in patches/0001-mksh-compat.patch
+# (applied by jpkg before this script runs).
+# Fix shebangs so sub-scripts invoked by make.sh use mksh too.
+sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
 rm -rf generated/*
 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
