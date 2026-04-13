@@ -10,12 +10,7 @@ sha256 = "a97d5549e9ad81fe17159ed02c68774ad5d266c72f8d9a0b5a9c371fe85d902b"
 
 [build]
 system = "custom"
-configure = """mkdir -p .jpkg-tools
-printf '#!/bin/sh\nexec /bin/toybox grep "$@"\n' > .jpkg-tools/grep
-printf '#!/bin/sh\nexec /bin/toybox grep -E "$@"\n' > .jpkg-tools/egrep
-printf '#!/bin/sh\nexec /bin/toybox grep -F "$@"\n' > .jpkg-tools/fgrep
-chmod 755 .jpkg-tools/grep .jpkg-tools/egrep .jpkg-tools/fgrep
-PATH="$PWD/.jpkg-tools:$PATH" CC=clang CXX=clang++ ./configure \
+configure = """CC=clang CXX=clang++ ./configure \
   --prefix=/ \
   --enable-shared \
   --enable-optimizations \
