@@ -1,0 +1,20 @@
+--- a/scripts/make.sh
++++ b/scripts/make.sh
+@@ -92,10 +92,14 @@ compflags() {
+ # Make sure rm -rf isn't gonna go funny
+ B="$(readlink -f "$PWD")/" A="$(readlink -f "$GENDIR")" A="${A%/}"/
+-[ "$A" == "${B::${#A}}" ] &&
++[ "$A" == "${B:0:${#A}}" ] &&
+   { echo "\$GENDIR=$GENDIR cannot include \$PWD=$PWD"; exit 1; }
+ unset A B DOTPROG DIDNEWER
+
+ # Force full rebuild if our compiler/linker options changed
+-cmp -s <(compflags | grep '#d') <(grep '%d' "$GENDIR"/build.sh 2>/dev/null) ||
+-  rm -rf "$GENDIR"/* # Keep symlink, delete contents
++_cflags1=$(mktemp) _cflags2=$(mktemp)
++compflags | grep '#d' > "$_cflags1" 2>/dev/null || true
++grep '%d' "$GENDIR"/build.sh > "$_cflags2" 2>/dev/null || true
++cmp -s "$_cflags1" "$_cflags2" || rm -rf "$GENDIR"/*
++rm -f "$_cflags1" "$_cflags2"
++unset _cflags1 _cflags2
+ mkdir -p "$UNSTRIPPED"  "$(dirname $OUTNAME)" || exit 1
