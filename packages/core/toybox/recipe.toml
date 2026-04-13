@@ -27,8 +27,11 @@ sed -i "s@| tr ' ' '|'@| sed 's/ /|/g'@g" scripts/make.sh
 sed -i 's/^source /. /' scripts/portability.sh
 sed -i 's/^source /. /' scripts/genconfig.sh
 sed -i 's/ == / = /g' scripts/genconfig.sh
-# ${@:2} (bash array slice) -> shift + "$@"
-sed -i 's/probecc "${@:2}"/shift; probecc "$@"/' scripts/genconfig.sh
+# tr ' ' '\n' -> sed 's/ /\n/g' (tr not in PATH during build)
+sed -i "s@| tr ' ' '\\\\n'@| sed 's/ /\\\\n/g'@g" scripts/genconfig.sh
+# ${@:2} (bash array slice) -> save $1 as _sym, shift, use $_sym in echo
+sed -i 's/  probecc "${@:2}" 2>\/dev\/null/  _sym=$1; shift; probecc "$@" 2>\/dev\/null/' scripts/genconfig.sh
+sed -i 's/echo -e "config \$1\\n/echo -e "config $_sym\\n/' scripts/genconfig.sh
 # isnewer() uses ${@:2} in a subshell — rewrite to use _isnewer_f + shift
 sed -i '/^isnewer/,/^}/c\
 isnewer()\
