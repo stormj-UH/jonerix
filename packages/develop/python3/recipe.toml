@@ -28,6 +28,7 @@ if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DE
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 LD_LIBRARY_PATH="$DESTDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   "$DESTDIR/bin/python3" -m ensurepip --upgrade --default-pip
+find "$DESTDIR" -type f -name '*.py' -exec grep -l '/lib64' {} + 2>/dev/null | while read f; do sed -i 's|/lib64|/lib|g' "$f"; done
 # Stale python packages bundled shared libs that already belong to other
 # runtime packages; drop any duplicates from the staged payload.
 rm -f "$DESTDIR"/lib/libbz2.so* \
