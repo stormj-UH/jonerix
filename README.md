@@ -195,5 +195,3 @@ Every package must carry a permissive license:
 ## License
 
 All original jonerix code is released under the **MIT License**.
-
-The Linux kernel (GPLv2) is the sole GPL exception, but it does not ship with jonerix, which is a BYOK (bring/build your own kernel) distro.
