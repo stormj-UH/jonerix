@@ -12,14 +12,13 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 system = "custom"
 build = """set -e
 cp "$RECIPE_DIR/toybox.config" .config
-# Patch bashisms so mksh can run scripts/make.sh (no bash/GPL in jonerix).
-sed -i 's/^set -o pipefail/: # pipefail/' scripts/make.sh
-sed -i 's/== "/= "/g' scripts/make.sh scripts/portability.sh configure scripts/genconfig.sh
+# Patch the two bash-only constructs in scripts/make.sh so mksh can run it.
+# mksh supports set -o pipefail, source, CFLAGS+=, ${var/p/r}, == in [ ],
+# wait -n fallback, and echo -e — only these two are mksh-incompatible:
+#   1. ${B::${#A}} (bash offset-0 substring) -> ${B:0:${#A}} (ksh93/mksh form)
+#   2. <(cmd) process substitution -> deleted; rm -rf generated/* does the same
 sed -i 's|${B::${#A}}|${B:0:${#A}}|' scripts/make.sh
-sed -i 's|"${CFLAGS/-funsigned-char//}"|"$(echo $CFLAGS | sed s/-funsigned-char//)"|' configure
-# Delete line with <() process substitution (cache check — forces full rebuild)
 sed -i '/^cmp -s <(compflags/d' scripts/make.sh
-# Force full rebuild instead (the line we deleted was a cache optimization)
 rm -rf generated/*
 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
