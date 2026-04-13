@@ -13,16 +13,17 @@ system = "custom"
 configure = """mkdir -p .jpkg-tools
 printf '#!/bin/sh\nexec cmp -s "$@"\n' > .jpkg-tools/diff
 chmod 755 .jpkg-tools/diff
-PATH="$PWD/.jpkg-tools:$PATH" CC=clang CXX=clang++ ./configure \
+sed -i 's/X509_VERIFY_PARAM_get_hostflags(ssl_verification_params)/0 \/* LibreSSL lacks get_hostflags *\//' Modules/_ssl.c
+PATH="$PWD/.jpkg-tools:$PATH" \
+  CFLAGS="$CFLAGS -I/include/ncursesw" \
+  CC=clang CXX=clang++ ./configure \
   --prefix=/ \
   --enable-shared \
-  --enable-optimizations \
-  --with-lto \
   --with-ensurepip=install \
   --with-openssl=/ \
   --disable-test-modules"""
-build = "jmake -j$(nproc)"
-install = """jmake install DESTDIR=$DESTDIR
+build = "make -j$(nproc)"
+install = """make install DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 LD_LIBRARY_PATH="$DESTDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
@@ -44,4 +45,4 @@ find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/n
 
 [depends]
 runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz"]
-build = ["clang", "jmake"]
+build = ["clang"]
