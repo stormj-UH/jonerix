@@ -435,6 +435,9 @@ jobs:
           # jpkg
           jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
 
+          # bsdtar (must link against LibreSSL, not OpenSSL 3)
+          bsdtar --version >/dev/null 2>&1 && pass "bsdtar" || fail "bsdtar"
+
           echo "---"
           if [ "$FAIL" -gt 0 ]; then
             echo "$FAIL test(s) failed"
@@ -515,6 +518,9 @@ jobs:
 
           # jpkg
           jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
+
+          # bsdtar (must link against LibreSSL, not OpenSSL 3)
+          bsdtar --version >/dev/null 2>&1 && pass "bsdtar" || fail "bsdtar"
 
           echo "---"
           if [ "$FAIL" -gt 0 ]; then
