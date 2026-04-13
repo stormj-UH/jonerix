@@ -11,13 +11,16 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 [build]
 system = "custom"
 build = """set -e
-# A patch removes the two bash-specific constructs from scripts/make.sh:
-#   ${B::${#A}} substring (-> ${B:0:${#A}}) and <() process substitution
-#   (-> mktemp temp files).  After patching, mksh handles every remaining
-# construct (set -o pipefail, source, CFLAGS+=, wait -n fallback), so
-# invoke make.sh explicitly via mksh to bypass the #!/bin/bash shebang.
-# CPUS is read by scripts/make.sh to set parallelism.
 cp "$RECIPE_DIR/toybox.config" .config
+# Patch bashisms so mksh can run scripts/make.sh (no bash/GPL in jonerix).
+sed -i 's/^set -o pipefail/: # pipefail/' scripts/make.sh
+sed -i 's/== "/= "/g' scripts/make.sh scripts/portability.sh configure scripts/genconfig.sh
+sed -i 's|${B::${#A}}|${B:0:${#A}}|' scripts/make.sh
+sed -i 's|"${CFLAGS/-funsigned-char//}"|"$(echo $CFLAGS | sed s/-funsigned-char//)"|' configure
+# Delete line with <() process substitution (cache check — forces full rebuild)
+sed -i '/^cmp -s <(compflags/d' scripts/make.sh
+# Force full rebuild instead (the line we deleted was a cache optimization)
+rm -rf generated/*
 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
 install = """set -e
