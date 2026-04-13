@@ -19,9 +19,6 @@ concurrency:
   group: license-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   license-audit:
     name: Audit package licenses
