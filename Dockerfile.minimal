@@ -85,9 +85,9 @@ RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/downloa
 # Use freshly built jpkg â€” the BUILDER image's jpkg may have bugs.
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
-# Install bsdtar from Alpine libarchive (arch-neutral, no prebuilt binary needed).
-COPY --from=jpkg-builder /build/bsdtar /jonerix/bin/bsdtar
-# Also install on builder PATH so jpkg can extract packages
+# Alpine bsdtar on builder PATH so jpkg can extract packages during build.
+# NOT installed into /jonerix/ — the core image installs the jpkg-built
+# libarchive (linked against LibreSSL) to provide /bin/bsdtar at runtime.
 COPY --from=jpkg-builder /build/bsdtar /bin/bsdtar
 
 # Install all packages via jpkg (jonerix building jonerix)
@@ -106,7 +106,7 @@ RUN if [ -d /jonerix/usr ]; then \
 # Essential symlinks
 # toybox now includes sh applet â€” symlink /bin/sh to toybox
 RUN ln -sf toybox /jonerix/bin/sh && \
-    ln -sf bsdtar /jonerix/bin/tar && \
+    ln -sf toybox /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
 # CA certificates (downloaded from curl.se â€” no Alpine needed)
