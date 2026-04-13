@@ -14,7 +14,7 @@
 
 ## Overview
 
-jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is not part of this distribution. This is a "Bring Your Own Kernel" (BYOK) distro.
+jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is not part of this distribution. This is a "Bring Your Own Kernel" (BYOK) distro. It is designed for use in containers, on WSL, or on Rasbperry Pi, but there are no limits.
 
 46 packages build from source on jonerix itself. The system compiles its own compiler (Clang/LLVM), its own languages (Go from C, Rust from a bootstrap binary), and its own container runtime. No GNU toolchain, no GCC, no GPL coreutils.
 
