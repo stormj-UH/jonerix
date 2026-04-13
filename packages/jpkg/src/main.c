@@ -14,7 +14,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define JPKG_VERSION "1.0.1"
+/* Version is defined in util.h so cmd_update can check for self-updates */
 
 /* Command handlers (defined in cmd_*.c) */
 extern int cmd_update(int argc, char **argv);
