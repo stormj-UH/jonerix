@@ -15,9 +15,6 @@ concurrency:
   group: wsl-rootfs
   cancel-in-progress: true
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # ── x86_64 rootfs ────────────────────────────────────────────────────────
   build-x86_64:
@@ -34,7 +31,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Restore apk cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /var/cache/apk
           key: apk-wsl-x86_64-${{ hashFiles('.github/workflows/wsl-rootfs.yml') }}
@@ -51,7 +48,7 @@ jobs:
             github-cli
 
       - name: Restore jpkg binary cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: jpkg-cache
         with:
           path: /tmp/jpkg-bin-x86_64
@@ -97,7 +94,7 @@ jobs:
           ls -lh /tmp/rootfs-out/
 
       - name: Upload rootfs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jonerix-rootfs-x86_64
           path: /tmp/rootfs-out/jonerix-rootfs-x86_64.tar.gz
@@ -127,14 +124,14 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Restore apk cache (aarch64)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/apk-cache-aarch64
           key: apk-wsl-aarch64-${{ hashFiles('.github/workflows/wsl-rootfs.yml') }}
           restore-keys: apk-wsl-aarch64-
 
       - name: Restore jpkg binary cache (aarch64)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: jpkg-cache-aarch64
         with:
           path: /tmp/jpkg-bin-aarch64
@@ -193,7 +190,7 @@ jobs:
             '
 
       - name: Upload rootfs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jonerix-rootfs-aarch64
           path: /tmp/rootfs-out-aarch64/jonerix-rootfs-aarch64.tar.gz
