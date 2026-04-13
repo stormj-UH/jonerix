@@ -1,12 +1,16 @@
 [package]
 name = "bsdtar"
-version = "3.8.6-r4"
+version = "3.8.6-r5"
 license = "Apache-2.0"
 description = "Compatibility package providing /bin/tar via libarchive bsdtar"
 
 [build]
 build = ""
-install = "mkdir -p $DESTDIR/bin && ln -sf bsdtar $DESTDIR/bin/tar"
+# Install a tiny wrapper script (not a symlink) so the archive has a real file
+# that toybox tar can extract. The script just execs bsdtar.
+install = """mkdir -p $DESTDIR/bin
+printf '#!/bin/sh\\nexec bsdtar "$@"\\n' > $DESTDIR/bin/tar
+chmod 755 $DESTDIR/bin/tar"""
 
 [hooks]
 post_remove = "[ ! -e /bin/tar ] && [ -x /bin/toybox ] && ln -sf toybox /bin/tar"
