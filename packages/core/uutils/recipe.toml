@@ -11,7 +11,7 @@ sha256 = "5f0c3f97b807e72edccc844c6a685ec9862199f16a665df07de5b1d20ec21233"
 [build]
 system = "custom"
 build = """cargo fetch --locked
-RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release"""
+RUSTFLAGS="-C strip=symbols" cargo build --release"""
 install = """jmake PROFILE=release DESTDIR=$DESTDIR PREFIX=/ install
 
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
