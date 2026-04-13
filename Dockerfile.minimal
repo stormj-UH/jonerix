@@ -93,8 +93,10 @@ RUN ln -sf toybox /jonerix/bin/sh && \
     ln -sf toybox /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
-# CA certificates (downloaded from curl.se — no Alpine needed)
-RUN curl -fsSL https://curl.se/ca/cacert.pem -o /jonerix/etc/ssl/certs/ca-certificates.crt
+# CA certificates (downloaded from curl.se)
+# wget is available via busybox in the Alpine-based rootfs stage.
+RUN wget -qO /jonerix/etc/ssl/certs/ca-certificates.crt \
+        https://curl.se/ca/cacert.pem
 
 # --- Default config files ---
 COPY config/defaults/etc/hostname     /jonerix/etc/hostname
