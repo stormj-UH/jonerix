@@ -15,6 +15,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <zstd.h>
 
 /* ========== Magic Validation ========== */
 
@@ -218,49 +219,90 @@ int pkg_extract(const char *jpkg_path, const char *dest_dir) {
         return -1;
     }
 
-    /* Write the zstd payload to a temporary file */
-    char tmp_zst[256];
-    snprintf(tmp_zst, sizeof(tmp_zst), "/tmp/jpkg-extract-%d.tar.zst", (int)getpid());
-
-    if (file_write(tmp_zst, data + payload_off, payload_len) != 0) {
-        log_error("failed to write temp file: %s", tmp_zst);
-        pkg_meta_free(meta);
-        free(data);
-        return -1;
-    }
-
     /* Create destination directory */
     if (mkdirs(dest_dir, 0755) != 0) {
         log_error("failed to create directory: %s", dest_dir);
-        unlink(tmp_zst);
         pkg_meta_free(meta);
         free(data);
         return -1;
     }
 
     /*
-     * Decompress and extract using zstd and bsdtar in two separate steps.
-     * Avoids a pipe between them: toybox sh keeps the read end of the
-     * inter-process pipe open in its own fd table while waiting for children,
-     * so once bsdtar exits the pipe buffer fills and zstd blocks forever.
-     * Two-step (decompress to tmp file, then extract) sidesteps this entirely.
+     * Decompress the zstd payload in-process using libzstd, then write
+     * the resulting .tar to a temp file for extraction.
+     * Two-step (decompress to tmp file, then extract) avoids the toybox sh
+     * pipe-buffer deadlock described in earlier versions.
      */
     char tmp_tar[256];
     snprintf(tmp_tar, sizeof(tmp_tar), "/tmp/jpkg-extract-%d.tar", (int)getpid());
 
-    char decomp_cmd[512];
-    snprintf(decomp_cmd, sizeof(decomp_cmd), "zstd -d -q '%s' -o '%s'",
-             tmp_zst, tmp_tar);
+    {
+        const uint8_t *cdata = data + payload_off;
+        size_t clen = payload_len;
+        uint8_t *tar_buf = NULL;
+        size_t tar_len = 0;
 
-    int rc = system(decomp_cmd);
-    unlink(tmp_zst);
-    if (rc != 0) {
-        log_error("decompression failed for %s (exit %d)", meta->name, rc);
-        unlink(tmp_tar);
-        pkg_meta_free(meta);
-        free(data);
-        return -1;
+        unsigned long long dsize = ZSTD_getFrameContentSize(cdata, clen);
+        if (dsize != ZSTD_CONTENTSIZE_ERROR && dsize != ZSTD_CONTENTSIZE_UNKNOWN) {
+            /* Known size — single-shot decompression */
+            tar_buf = xmalloc((size_t)dsize);
+            size_t r = ZSTD_decompress(tar_buf, (size_t)dsize, cdata, clen);
+            if (ZSTD_isError(r)) {
+                log_error("decompression failed for %s: %s", meta->name, ZSTD_getErrorName(r));
+                free(tar_buf);
+                pkg_meta_free(meta);
+                free(data);
+                return -1;
+            }
+            tar_len = r;
+        } else {
+            /* Unknown size — streaming decompression */
+            ZSTD_DStream *ds = ZSTD_createDStream();
+            if (!ds) {
+                log_error("decompression failed for %s: out of memory", meta->name);
+                pkg_meta_free(meta);
+                free(data);
+                return -1;
+            }
+            ZSTD_initDStream(ds);
+            size_t cap = clen * 4 + 65536;
+            tar_buf = xmalloc(cap);
+            ZSTD_inBuffer in = { cdata, clen, 0 };
+            int ok = 1;
+            while (in.pos < in.size) {
+                if (tar_len + 65536 > cap) {
+                    cap *= 2;
+                    tar_buf = xrealloc(tar_buf, cap);
+                }
+                ZSTD_outBuffer out = { tar_buf + tar_len, cap - tar_len, 0 };
+                size_t r = ZSTD_decompressStream(ds, &out, &in);
+                if (ZSTD_isError(r)) {
+                    log_error("decompression failed for %s: %s", meta->name, ZSTD_getErrorName(r));
+                    ok = 0;
+                    break;
+                }
+                tar_len += out.pos;
+            }
+            ZSTD_freeDStream(ds);
+            if (!ok) {
+                free(tar_buf);
+                pkg_meta_free(meta);
+                free(data);
+                return -1;
+            }
+        }
+
+        if (file_write(tmp_tar, tar_buf, tar_len) != 0) {
+            log_error("failed to write temp tar for %s", meta->name);
+            free(tar_buf);
+            pkg_meta_free(meta);
+            free(data);
+            return -1;
+        }
+        free(tar_buf);
     }
+
+    int rc;
 
     /*
      * Extract the .tar to dest_dir using bsdtar, falling back to toybox tar.
