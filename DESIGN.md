@@ -70,7 +70,7 @@ minimal -> core -> builder   (compilers + dev tools)
 |-------|------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, ncurses, networking |
-| `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, bmake, samurai, perl |
+| `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | hostapd, wpa_supplicant, btop, unbound DNS config, sysctl hardening |
 
 ### Build Pipeline
@@ -132,7 +132,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | Scripting / build tool | Python 3 | PSF-2.0 | — |
 | JavaScript runtime | Node.js | MIT | — |
 | Build tool (ninja) | samurai | Apache-2.0 | GNU make (GPL) |
-| Build tool (make) | bmake | MIT | GNU make (GPL) |
+| Build tool (make) | jmake | MIT | GNU make (GPL) |
 | Text editor | micro | MIT | vim |
 | Grep | ripgrep | MIT | GNU grep (GPL) |
 | Git | gitoxide | MIT/Apache-2.0 | git (GPL) |
@@ -142,7 +142,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 
 ### Notable Absences and Why
 
-**GNU make**: Replaced by `bmake` (MIT, BSD make) for most builds and `samurai` (Apache-2.0, ninja-compatible) for cmake projects. A few upstream projects (Ruby, hostapd, wpa_supplicant) still require GNU make — these are built in Alpine containers at build time only.
+**GNU make**: Replaced by `jmake` (MIT, clean-room Rust implementation) and `samurai` (Apache-2.0, ninja-compatible) for cmake projects. jmake is a drop-in replacement that handles all GNU make features.
 
 **bash**: mksh (MirOS) is the runtime shell. It is POSIX-compliant and handles all shell scripting needs. Bash is only used at build time inside Alpine containers for projects that require it (e.g., toybox's genconfig.sh).
 

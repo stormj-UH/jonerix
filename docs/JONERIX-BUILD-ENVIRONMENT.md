@@ -19,7 +19,7 @@ export RANLIB=llvm-ranlib
 # Already set in builder image:
 #   cc -> clang, c++ -> clang++, ld -> ld.lld
 #   ar -> llvm-ar, nm -> llvm-nm, ranlib -> llvm-ranlib
-#   make -> bmake, ninja -> samu
+#   make -> jmake, ninja -> samu
 ```
 
 The builder image ships clang wrapper scripts at `/bin/clang` and
@@ -99,7 +99,7 @@ everything is installed via jpkg.
 
 | Tool    | Package     | License       | Notes                          |
 |---------|-------------|---------------|--------------------------------|
-| make    | bmake       | MIT           | BSD make, symlinked as /bin/make |
+| make    | jmake       | MIT           | Drop-in GNU make replacement (Rust), symlinked as /bin/make |
 | ninja   | samurai     | Apache-2.0    | ninja-compatible, symlinked as /bin/ninja |
 | awk     | onetrueawk  | MIT           | One True Awk (Kernighan)       |
 | tar     | bsdtar      | BSD-2-Clause  | Replaces toybox tar (symlink handling) |
@@ -114,11 +114,9 @@ everything is installed via jpkg.
 detection test fails to recognize it. Pass `GREP=/bin/grep` explicitly
 to `./configure` to work around this.
 
-**Note on GNU make**: Some upstream projects (Ruby, hostapd,
-wpa_supplicant) use GNU make-specific features (ifdef, $(wildcard),
-$(shell)) that bmake cannot handle. These must be built in an Alpine
-container with GNU make at build time. bmake works for most other
-packages.
+**Note on GNU make**: jmake is a clean-room drop-in replacement for GNU Make
+(MIT, written in Rust). It handles GNU make-specific features used by projects
+like Ruby, hostapd, and wpa_supplicant.
 
 ## 7. Build System Specifics
 

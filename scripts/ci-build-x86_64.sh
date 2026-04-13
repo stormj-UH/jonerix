@@ -174,7 +174,7 @@ install_target_build_deps() {
                 dep_pkg=llvm
                 ;;
             make)
-                dep_pkg=bmake
+                dep_pkg=jmake
                 ;;
             python)
                 dep_pkg=python3

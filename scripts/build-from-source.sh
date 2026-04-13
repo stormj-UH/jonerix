@@ -5,7 +5,7 @@
 # every recipe in packages/{core,develop,extra}/ and output .jpkg files.
 #
 # The builder image has everything needed: clang, go, rust, python3,
-# cmake, bmake, samu — so it can rebuild itself and all other images.
+# cmake, jmake, samu — so it can rebuild itself and all other images.
 #
 # Usage (inside builder container):
 #   sh /workspace/scripts/build-from-source.sh
@@ -22,7 +22,7 @@
 # After building, the .jpkg files can be used to assemble any image:
 #   minimal:  musl zlib toybox dropbear openrc libressl curl zstd
 #   core:     minimal + mksh ncurses micro ripgrep gitoxide ...
-#   builder:  core + llvm rust go cmake bmake samurai perl python3 nodejs ...
+#   builder:  core + llvm rust go cmake jmake samurai perl python3 nodejs ...
 #   router:   core + hostapd wpa_supplicant btop
 #
 # SPDX-License-Identifier: MIT

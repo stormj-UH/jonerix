@@ -74,7 +74,7 @@ Dependencies are built first. Key tiers:
 | 2 | zstd, lz4, xz, zlib | Compression libraries |
 | 3 | OpenSSL, ncurses | TLS + terminal |
 | 4 | toybox, bsdtar | Core userland |
-| 5 | samurai, cmake, byacc, flex, bc, bmake | Build tools |
+| 5 | samurai, cmake, byacc, flex, bc | Build tools |
 | 6 | LLVM/Clang/LLD | Compiler toolchain (~45 min) |
 | 7 | Go (bootstrap chain: C → 1.4 → 1.17 → ... → 1.26) | Go language |
 | 8 | containerd, runc, nerdctl, CNI plugins | Container runtime |
