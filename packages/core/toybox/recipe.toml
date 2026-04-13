@@ -11,18 +11,19 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 [build]
 system = "custom"
 build = """set -e
-# scripts/make.sh carries a #!/bin/bash shebang but the jonerix builder has
-# no bash.  mksh supports every construct used (set -o pipefail, source,
-# CFLAGS+=, wait -n fallback), so invoke the script explicitly via mksh to
-# bypass the shebang.  CPUS is read by scripts/make.sh to set parallelism.
+# scripts/make.sh uses bash-specific constructs (<() process substitution,
+# ${var:off:len} substring, set -o pipefail, source) that toybox sh and mksh
+# do not fully support.  A bash build dep ensures /bin/bash is present so
+# invoking scripts/make.sh via bash bypasses the shebang requirement.
+# CPUS is read by scripts/make.sh to control parallelism.
 cp "$RECIPE_DIR/toybox.config" .config
-CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
+CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) bash scripts/make.sh
 """
 install = """set -e
 mkdir -p $DESTDIR/bin
 install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
 llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
-# Create applet symlinks
+# Create applet symlinks; skip bash to avoid overwriting the build-dep binary.
 for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1 | tr ' ' '\n'); do
   [ "$applet" = "toybox" ] && continue
   [ "$applet" = "bash" ] && continue
@@ -31,4 +32,4 @@ done"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = ["clang", "bash"]
