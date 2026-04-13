@@ -45,6 +45,16 @@ int cmd_update(int argc, char **argv) {
         log_info("index contains %zu packages", idx->entry_count);
         if (idx->timestamp)
             log_info("index timestamp: %s", idx->timestamp);
+
+        /* Check if a newer version of jpkg is available */
+        repo_entry_t *jpkg_entry = repo_find_package(idx, "jpkg");
+        if (jpkg_entry && jpkg_entry->version &&
+            version_compare(jpkg_entry->version, JPKG_VERSION) > 0) {
+            log_warn("a newer version of jpkg is available: %s -> %s",
+                     JPKG_VERSION, jpkg_entry->version);
+            log_warn("run 'jpkg upgrade jpkg' to update the package manager");
+        }
+
         repo_index_free(idx);
     }
 
