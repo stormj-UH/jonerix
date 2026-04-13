@@ -625,13 +625,14 @@ int db_verify_files(const jpkg_db_t *db, const char *name,
                 mismatches++;
             }
         } else {
-            /* Verify regular file by SHA256 */
-            if (!file_exists(full_path)) {
-                if (callback) callback(f->path, f->sha256, "(missing)", ctx);
-                mismatches++;
-                continue;
-            }
-
+            /* Verify regular file by SHA256.
+             * lstat() already confirmed the path exists above.  Do not call
+             * file_exists() here — it uses stat() (follows symlinks) and
+             * requires S_ISREG, which returns false for symlinks-to-directories
+             * and dangling symlinks, producing false "(missing)" failures on
+             * correctly installed packages.  sha256_file() opens with O_RDONLY
+             * which follows symlinks, so it works for both regular files and
+             * symlinks-to-files; it returns -1 for anything it cannot read. */
             char actual_hash[65];
             if (sha256_file(full_path, actual_hash) != 0) {
                 if (callback) callback(f->path, f->sha256, "(error)", ctx);
