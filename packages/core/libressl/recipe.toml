@@ -10,9 +10,22 @@ sha256 = "4d841955f0acc3dfc71d0e3dd35f283af461222350e26843fea9731c0246a1e4"
 
 [build]
 system = "cmake"
-configure = "cmake -B build -G \"Unix Makefiles\" -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_C_COMPILER=clang -DBUILD_SHARED_LIBS=ON -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF -DOPENSSLDIR=/etc/ssl -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \"-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld\" \"-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld\""
-build = "cmake --build build -j$(nproc)"
-install = """DESTDIR=$DESTDIR cmake --install build
+configure = """cmake -B build -G Ninja \
+  -DCMAKE_INSTALL_PREFIX=/ \
+  -DCMAKE_INSTALL_LIBDIR=lib \
+  -DCMAKE_C_COMPILER=clang \
+  -DBUILD_SHARED_LIBS=ON \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DLIBRESSL_APPS=OFF \
+  -DLIBRESSL_TESTS=OFF \
+  -DOPENSSLDIR=/etc/ssl \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+  "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
+  "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld"
+"""
+build = "samu -C build -j$(nproc)"
+install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
