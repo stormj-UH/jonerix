@@ -1,6 +1,6 @@
 [package]
 name = "libarchive"
-version = "3.8.6-r4"
+version = "3.8.6-r5"
 license = "Apache-2.0"
 description = "Multi-format archive and compression library with bsdtar"
 
@@ -44,7 +44,9 @@ build = "perl -0pi -e \"s{^#define HAVE_READPASSPHRASE 1$}{/* #undef HAVE_READPA
 install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-rm -f "$DESTDIR/bin/tar"
+# Remove unprefixed names that conflict with toybox (tar, cpio, cat).
+# The bsd-prefixed binaries (bsdtar, bsdcpio, bsdcat) are kept.
+rm -f "$DESTDIR/bin/tar" "$DESTDIR/bin/cpio" "$DESTDIR/bin/cat"
 find "$DESTDIR/bin" -type f | while read -r f; do llvm-strip --strip-all "$f" 2>/dev/null || true; done
 find "$DESTDIR/lib" -name "*.so*" -type f | while read -r f; do llvm-strip --strip-unneeded "$f" 2>/dev/null || true; done"""
 
