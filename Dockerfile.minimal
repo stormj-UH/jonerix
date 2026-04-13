@@ -1,36 +1,26 @@
-# jonerix â€” Minimal Permissive Linux Distribution
-# jonerix builds jonerix: uses existing jonerix:minimal to bootstrap the next.
+# jonerix — Minimal Permissive Linux Distribution
+# jonerix builds jonerix: uses existing jonerix:builder to compile jpkg,
+# then installs packages via jpkg into a scratch rootfs.
 # Zero Alpine. Zero GPL runtime.
 #
 # Components (all permissively licensed):
-#   jpkg           (MIT)          â€” pre-built static binary
-#   musl libc      (MIT)          â€” via jpkg
-#   toybox 0.8.11  (0BSD)         â€” via jpkg (includes /bin/sh)
-#   bsdtar         (Apache-2.0)   â€” via jpkg (replaces toybox tar)
-#   dropbear SSH   (MIT)          â€” via jpkg
-#   openrc         (BSD-2-Clause) â€” via jpkg
-#   libressl       (ISC)          â€” via jpkg
-#   curl           (MIT)          â€” via jpkg
-#   zstd           (BSD)          â€” via jpkg
+#   jpkg           (MIT)          — pre-built dynamic binary
+#   musl libc      (MIT)          — via jpkg
+#   toybox 0.8.11  (0BSD)         — via jpkg (includes /bin/sh)
+#   dropbear SSH   (MIT)          — via jpkg
+#   openrc         (BSD-2-Clause) — via jpkg
+#   libressl       (ISC)          — via jpkg
+#   curl           (MIT)          — via jpkg
+#   zstd           (BSD)          — via jpkg
 #
 # Build: docker build -f Dockerfile.minimal --tag jonerix-minimal:latest .
 
 ARG BUILDER=ghcr.io/stormj-uh/jonerix:minimal
 
 # ============================================================
-# Stage 0: Build jpkg from source in Alpine
+# Stage 0: Build jpkg from source in jonerix:builder
 # ============================================================
-FROM alpine:latest AS jpkg-builder
-RUN apk add --no-cache clang lld musl-dev samurai zstd-dev zstd-static cmake make
-
-# Build LibreSSL from source so jpkg has native TLS (no curl dependency).
-# Static-only build — the resulting jpkg is fully self-contained.
-RUN wget -q https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz && \
-    tar xf libressl-4.0.0.tar.gz && cd libressl-4.0.0 && \
-    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr \
-      -DBUILD_SHARED_LIBS=OFF -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF && \
-    cmake --build build -j$(nproc) && cmake --install build && \
-    cd / && rm -rf libressl-4.0.0*
+FROM ghcr.io/stormj-uh/jonerix:builder AS jpkg-builder
 
 COPY packages/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && \
@@ -39,21 +29,14 @@ RUN cd /build/jpkg && \
       -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
       -fstack-protector-strong \
       -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
-      -I/usr/include \
       -o jpkg src/*.c \
-      -L/usr/lib -ltls -lssl -lcrypto -lzstd -static && \
-    strip jpkg
-
-# Build a static bsdtar from Alpine libarchive (works on any arch)
-RUN apk add --no-cache libarchive-tools && cp /usr/bin/bsdtar /build/bsdtar && chmod 755 /build/bsdtar
+      -ltls -lssl -lcrypto -lzstd && \
+    llvm-strip jpkg
 
 # ============================================================
 # Stage 1: Download + install packages using existing jonerix
 # ============================================================
 FROM ${BUILDER} AS rootfs
-
-# When BUILDER is Alpine (bootstrap), install tools jpkg needs
-RUN if command -v apk >/dev/null 2>&1; then apk add --no-cache curl tar zstd libarchive-tools; fi
 
 # Create rootfs skeleton
 RUN mkdir -p \
@@ -82,16 +65,11 @@ COPY config/defaults/etc/jpkg/keys/ /jonerix/etc/jpkg/keys/
 RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/download/packages"\n' \
         > /jonerix/etc/jpkg/repos.conf
 
-# Use freshly built jpkg â€” the BUILDER image's jpkg may have bugs.
+# Use freshly built jpkg — the BUILDER image's jpkg may have bugs.
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
-# Alpine bsdtar on builder PATH so jpkg can extract packages during build.
-# NOT installed into /jonerix/ — the core image installs the jpkg-built
-# libarchive (linked against LibreSSL) to provide /bin/bsdtar at runtime.
-COPY --from=jpkg-builder /build/bsdtar /bin/bsdtar
-
 # Install all packages via jpkg (jonerix building jonerix)
-# No mksh â€” toybox provides /bin/sh (POSIX shell)
+# No mksh — toybox provides /bin/sh (POSIX shell)
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
@@ -104,12 +82,12 @@ RUN if [ -d /jonerix/usr ]; then \
     ln -s / /jonerix/usr
 
 # Essential symlinks
-# toybox now includes sh applet â€” symlink /bin/sh to toybox
+# toybox now includes sh applet — symlink /bin/sh to toybox
 RUN ln -sf toybox /jonerix/bin/sh && \
     ln -sf toybox /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
-# CA certificates (downloaded from curl.se â€” no Alpine needed)
+# CA certificates (downloaded from curl.se — no Alpine needed)
 RUN curl -fsSL https://curl.se/ca/cacert.pem -o /jonerix/etc/ssl/certs/ca-certificates.crt
 
 # --- Default config files ---
@@ -133,13 +111,13 @@ COPY scripts/license-audit.sh /jonerix/bin/license-audit
 RUN chmod 755 /jonerix/bin/license-audit
 
 # ============================================================
-# Stage 1: Final image â€” FROM scratch, zero dependencies
+# Stage 2: Final image — FROM scratch, zero dependencies
 # ============================================================
 FROM scratch
 
 COPY --from=rootfs /jonerix/ /
 
-# Freshly built static jpkg binary
+# Freshly built jpkg binary (dynamically linked against musl/libressl/zstd)
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
 ENV PATH=/bin
