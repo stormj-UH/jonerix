@@ -121,7 +121,7 @@
 +  [ -e "$GENDIR/$_in_f" ] && [ -z "$(find "$@" -newer "$GENDIR/$_in_f")" ] &&
      return 1
 -  echo -n "${DIDNEWER:-$GENDIR/{}$1"
-+  echo -n "${DIDNEWER:-$GENDIR/{}}$_in_f"
++  echo -n "${DIDNEWER:-$GENDIR/{}$_in_f"
    DIDNEWER=,
  }
  
