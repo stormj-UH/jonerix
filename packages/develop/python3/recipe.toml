@@ -21,8 +21,8 @@ PATH="$PWD/.jpkg-tools:$PATH" CC=clang CXX=clang++ ./configure \
   --with-ensurepip=install \
   --with-openssl=/ \
   --disable-test-modules"""
-build = "make -j$(nproc)"
-install = """make install DESTDIR=$DESTDIR
+build = "jmake -j$(nproc)"
+install = """jmake install DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 LD_LIBRARY_PATH="$DESTDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
