@@ -17,7 +17,15 @@ cp "$RECIPE_DIR/toybox.config" .config
 # Fix shebangs so sub-scripts invoked by make.sh use mksh too.
 sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
 rm -rf generated/*
-CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
+DEBUG=1 V=1 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh || {
+  echo "=== generated/config.h (first 20 lines) ===" >&2
+  head -20 generated/config.h >&2 || echo "config.h missing" >&2
+  echo "=== generated/newtoys.h (acpi) ===" >&2
+  grep -i acpi generated/newtoys.h >&2 || echo "acpi not in newtoys.h" >&2
+  echo "=== generated/flags.raw (first 10 lines) ===" >&2
+  head -10 generated/flags.raw >&2 || echo "flags.raw missing" >&2
+  exit 1
+}
 """
 install = """set -e
 mkdir -p $DESTDIR/bin
