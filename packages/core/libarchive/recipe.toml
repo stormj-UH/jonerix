@@ -10,16 +10,13 @@ sha256 = "8ac57c1f5e99550948d1fe755c806d26026e71827da228f36bef24527e372e6f"
 
 [build]
 system = "cmake"
-configure = """# Create libressl dev symlinks so CMake and samu can find them.
-# libressl 4.0.0 sonames: libcrypto.so.56, libssl.so.58
-ln -sf libcrypto.so.56 /lib/libcrypto.so
-ln -sf libssl.so.58 /lib/libssl.so
-cmake -B build -G Ninja \
+configure = """cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_INSTALL_PREFIX=/ \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DBUILD_SHARED_LIBS=ON \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
   -DENABLE_TEST=OFF \
   -DENABLE_ACL=OFF \
@@ -27,8 +24,9 @@ cmake -B build -G Ninja \
   -DENABLE_OPENSSL=ON \
   -DOPENSSL_ROOT_DIR=/ \
   -DOPENSSL_INCLUDE_DIR=/include \
-  -DOPENSSL_SSL_LIBRARY=/lib/libssl.so \
-  -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.so \
+  -DOPENSSL_SSL_LIBRARY=/lib/libssl.a \
+  -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.a \
+  -DOPENSSL_USE_STATIC_LIBS=ON \
   -DENABLE_EXPAT=OFF \
   -DENABLE_LIBXML2=OFF \
   -DENABLE_LIBB2=OFF \
@@ -38,7 +36,7 @@ cmake -B build -G Ninja \
   -DENABLE_ZLIB=ON \
   -DACL_INCLUDE_DIR=NOTFOUND \
   -DACL_LIBRARY=NOTFOUND \
-  "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
+  "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld -fPIC" \
   "-DCMAKE_EXE_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
   "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld"
 """
