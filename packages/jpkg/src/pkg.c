@@ -305,23 +305,24 @@ int pkg_extract(const char *jpkg_path, const char *dest_dir) {
     int rc;
 
     /*
-     * Extract the .tar to dest_dir using bsdtar, falling back to toybox tar.
+     * Extract the .tar to dest_dir.  Try implementations in preference order:
+     *   1. bsdtar   — best format support, handles symlinks correctly
+     *   2. toybox tar — available on jonerix (may exit 1 on attr warnings)
+     *   3. tar       — busybox/GNU/plain tar (available on Alpine-based stages)
      *
-     * bsdtar may be absent or non-functional (e.g., jonerix:minimal-new has a
-     * bsdtar linked against OpenSSL 3 which is not present when LibreSSL is
-     * used; the dynamic linker then exits with 1 without extracting anything).
-     *
-     * Strategy: run bsdtar; if it exits 0 we are done.  Any non-zero exit —
-     * whether command-not-found (127), missing shared lib (1), or any error —
-     * triggers a second attempt with 'toybox tar'.  toybox tar may itself exit
-     * 1 for minor warnings (unpreservable attributes, etc.) while still
-     * successfully extracting the archive; treat that as success.
+     * Any non-zero exit from bsdtar (including command-not-found 127 or
+     * missing shared-lib 1) falls through to toybox tar, then plain tar.
+     * toybox tar exits 1 on unpreservable-attribute warnings; treat exit 1
+     * as success (256 in raw waitpid units) since extraction did occur.
      */
-    char extract_cmd[600];
+    char extract_cmd[768];
     snprintf(extract_cmd, sizeof(extract_cmd),
              "bsdtar -xf '%s' -C '%s' 2>/dev/null && true || "
-             "toybox tar -xf '%s' -C '%s' 2>/dev/null",
-             tmp_tar, dest_dir, tmp_tar, dest_dir);
+             "toybox tar -xf '%s' -C '%s' 2>/dev/null || "
+             "tar -xf '%s' -C '%s' 2>/dev/null",
+             tmp_tar, dest_dir,
+             tmp_tar, dest_dir,
+             tmp_tar, dest_dir);
     rc = system(extract_cmd);
     unlink(tmp_tar);
 
