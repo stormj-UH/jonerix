@@ -76,7 +76,7 @@ RUN jpkg --root /jonerix update && \
       musl ncurses libressl zlib xz lz4 zstd ca-certificates \
       toybox bsdtar zsh \
       llvm \
-      cmake bmake samurai flex bc byacc \
+      cmake jmake samurai flex bc byacc \
       perl python3 nodejs \
       curl dropbear openrc doas \
       snooze dhcpcd ifupdown-ng unbound \
@@ -120,7 +120,7 @@ RUN \
     ln -sf llvm-objcopy /jonerix/bin/objcopy 2>/dev/null || true && \
     ln -sf llvm-objdump /jonerix/bin/objdump 2>/dev/null || true && \
     ln -sf llvm-readelf /jonerix/bin/readelf 2>/dev/null || true && \
-    ln -sf bmake /jonerix/bin/make 2>/dev/null || true && \
+    ln -sf jmake /jonerix/bin/make 2>/dev/null || true && \
     ln -sf samu /jonerix/bin/ninja 2>/dev/null || true && \
     ln -sf python3 /jonerix/bin/python 2>/dev/null || true && \
     ln -sf flex /jonerix/bin/lex 2>/dev/null || true && \

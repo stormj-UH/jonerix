@@ -9,7 +9,7 @@
 # Usage:
 #   sh scripts/build-all.sh [--output DIR] [--force PKG] [--dry-run]
 #
-# Intended to run inside a jonerix-develop container where bmake (as make),
+# Intended to run inside a jonerix-develop container where jmake (as make),
 # clang, cmake, meson, and jpkg are available.
 #
 # SPDX-License-Identifier: MIT

@@ -54,7 +54,7 @@ LDFLAGS="" \
   --with-static-linked-ext
 """
 # NOTE: Ruby's configure generates a GNU make-specific Makefile (makefile-gmake).
-# bmake CANNOT parse this Makefile — require jmake explicitly.
+# Use jmake explicitly for clarity (jmake is the project's make provider).
 build = "jmake -j$(nproc)"
 install = """jmake install DESTDIR=$DESTDIR
 # Flatten merged-usr: /usr -> / symlink means usr/ must not exist in archive.

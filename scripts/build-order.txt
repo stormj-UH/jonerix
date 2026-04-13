@@ -34,7 +34,6 @@ lz4
 mandoc
 bc
 dhcpcd
-bmake
 byacc
 ifupdown-ng
 # Tier 3: depends on musl only (medium)
