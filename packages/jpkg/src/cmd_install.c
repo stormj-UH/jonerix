@@ -397,7 +397,7 @@ int cmd_install(int argc, char **argv) {
 
     /* Resolve dependencies for all requested packages */
     dep_list_t *install_list = deps_resolve_multi(idx, db,
-        (const char **)(argv + pkg_start), (size_t)(argc - pkg_start), false);
+        (const char **)(argv + pkg_start), (size_t)(argc - pkg_start), force);
 
     if (!install_list) {
         log_error("dependency resolution failed");
@@ -406,6 +406,24 @@ int cmd_install(int argc, char **argv) {
         repo_config_free(cfg);
         fetch_cleanup();
         return 1;
+    }
+
+    /* Report status of explicitly requested packages (skip when --force) */
+    if (!force) for (int i = pkg_start; i < argc; i++) {
+        const char *name = argv[i];
+        db_pkg_t *installed = db_get_package(db, name);
+        if (!installed) continue;
+
+        repo_entry_t *entry = repo_find_package(idx, name);
+        if (!entry) continue;
+
+        if (strcmp(installed->version, entry->version) == 0) {
+            log_info("%s-%s is already installed", name, installed->version);
+        } else if (version_compare(entry->version, installed->version) > 0) {
+            log_info("%s-%s is installed; a newer version (%s) is available"
+                     " \xe2\x80\x94 run 'jpkg upgrade %s' to update",
+                     name, installed->version, entry->version, name);
+        }
     }
 
     if (install_list->count == 0) {

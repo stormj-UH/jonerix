@@ -104,11 +104,8 @@ static bool should_include_node(const dep_node_t *node, const jpkg_db_t *db, boo
     if (!installed)
         return true;
 
-    if (node->entry && node->entry->version &&
-        version_compare(node->entry->version, installed->version) > 0) {
-        return true;
-    }
-
+    /* Package is installed — don't include in install list.
+     * Use 'jpkg upgrade' to update to a newer version. */
     return false;
 }
 
