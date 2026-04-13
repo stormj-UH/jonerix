@@ -159,8 +159,8 @@ install_target_build_deps() {
 
     deps=$(printf '%s\n' "$deps_line" |
         sed -E 's/.*\[(.*)\].*/\1/' |
-        tr -d '"' |
-        tr ',' ' ')
+        sed 's/"//g' |
+        sed 's/,/ /g')
 
     for dep in $deps; do
         [ -n "$dep" ] || continue
