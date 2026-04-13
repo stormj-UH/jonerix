@@ -11,8 +11,12 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 [build]
 system = "custom"
 build = """set -e
+# scripts/make.sh carries a #!/bin/bash shebang but the jonerix builder has
+# no bash.  mksh supports every construct used (set -o pipefail, source,
+# CFLAGS+=, wait -n fallback), so invoke the script explicitly via mksh to
+# bypass the shebang.  CPUS is read by scripts/make.sh to set parallelism.
 cp "$RECIPE_DIR/toybox.config" .config
-CC=clang CFLAGS="-Os -fomit-frame-pointer" make -j$(nproc)
+CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
 install = """set -e
 mkdir -p $DESTDIR/bin
@@ -27,4 +31,4 @@ done"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "make"]
+build = ["clang"]
