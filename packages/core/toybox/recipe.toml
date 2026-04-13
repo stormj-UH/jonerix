@@ -25,6 +25,10 @@ sed -i 's/^source /. /' scripts/make.sh
 sed -i 's/&& source /\&\& . /g' scripts/make.sh
 sed -i "s@| tr ' ' '|'@| sed 's/ /|/g'@g" scripts/make.sh
 sed -i 's/^source /. /' scripts/portability.sh
+sed -i 's/^source /. /' scripts/genconfig.sh
+sed -i 's/ == / = /g' scripts/genconfig.sh
+# Fix shebangs so sub-scripts invoked by make.sh use mksh too
+sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
 rm -rf generated/*
 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
