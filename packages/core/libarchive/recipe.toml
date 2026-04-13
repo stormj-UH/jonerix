@@ -1,6 +1,6 @@
 [package]
 name = "libarchive"
-version = "3.8.6-r2"
+version = "3.8.6-r3"
 license = "Apache-2.0"
 description = "Multi-format archive and compression library with bsdtar"
 
@@ -23,9 +23,8 @@ configure = """cmake -B build -G Ninja \
   -DENABLE_OPENSSL=ON \
   -DOPENSSL_ROOT_DIR=/ \
   -DOPENSSL_INCLUDE_DIR=/include \
-  -DOPENSSL_SSL_LIBRARY=/lib/libssl.a \
-  -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.a \
-  -DOPENSSL_USE_STATIC_LIBS=ON \
+  -DOPENSSL_SSL_LIBRARY=/lib/libssl.so \
+  -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.so \
   -DENABLE_EXPAT=OFF \
   -DENABLE_LIBXML2=OFF \
   -DENABLE_LIBB2=OFF \
@@ -34,6 +33,7 @@ configure = """cmake -B build -G Ninja \
   -DENABLE_ZSTD=ON \
   -DENABLE_ZLIB=ON \
   "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
+  "-DCMAKE_EXE_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
   "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld"
 """
 build = "perl -0pi -e \"s{^#define HAVE_READPASSPHRASE 1$}{/* #undef HAVE_READPASSPHRASE */}m; s{^#define HAVE_CLOSEFROM 1$}{/* #undef HAVE_CLOSEFROM */}m; s{^#define HAVE_CLOSE_RANGE 1$}{/* #undef HAVE_CLOSE_RANGE */}m; s{^#define HAVE__FSEEKI64 1$}{/* #undef HAVE__FSEEKI64 */}m; s{^#define HAVE_ARC4RANDOM_BUF 1$}{/* #undef HAVE_ARC4RANDOM_BUF */}m; s{^#define HAVE_GETVFSBYNAME 1$}{/* #undef HAVE_GETVFSBYNAME */}m; s{^#define HAVE_CHFLAGS 1$}{/* #undef HAVE_CHFLAGS */}m; s{^#define HAVE_LCHFLAGS 1$}{/* #undef HAVE_LCHFLAGS */}m; s{^#define HAVE_LCHMOD 1$}{/* #undef HAVE_LCHMOD */}m\" build/config.h && samu -C build -j$(nproc)"
