@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <zstd.h>
 
 /* ========== Configuration ========== */
 
@@ -366,26 +367,91 @@ int repo_update(const repo_config_t *cfg) {
         return -1;
     }
 
-    /* Decompress: zstd -d INDEX.zst > INDEX */
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "zstd -d -f -o '%s' '%s' 2>/dev/null", out_path, index_path);
-    int rc = system(cmd);
-    if (rc != 0) {
-        /* Maybe it's not actually compressed — try copying as-is */
-        log_debug("zstd decompress failed, assuming plain text INDEX");
-        uint8_t *raw_data = NULL;
-        ssize_t raw_len = file_read(index_path, &raw_data);
-        if (raw_len <= 0 || !raw_data) {
-            log_error("failed to read downloaded INDEX");
-            free(raw_data);
+    /* Decompress INDEX.zst in-process using libzstd */
+    {
+        uint8_t *cdata = NULL;
+        ssize_t clen = file_read(index_path, &cdata);
+        if (clen <= 0 || !cdata) {
+            log_error("failed to read downloaded INDEX.zst");
+            free(cdata);
             return -1;
         }
-        if (file_write(out_path, raw_data, (size_t)raw_len) != 0) {
-            log_error("failed to write INDEX");
-            free(raw_data);
-            return -1;
+
+        /* Check for zstd magic; if absent, treat as plain-text INDEX */
+        if ((size_t)clen >= 4 &&
+            (uint8_t)cdata[0] == 0x28 && (uint8_t)cdata[1] == 0xB5 &&
+            (uint8_t)cdata[2] == 0x2F && (uint8_t)cdata[3] == 0xFD) {
+            /* Zstd-compressed — decompress in-process */
+            unsigned long long dsize = ZSTD_getFrameContentSize(cdata, (size_t)clen);
+            if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN) {
+                /* Unknown decompressed size — use streaming decompression */
+                ZSTD_DStream *dstream = ZSTD_createDStream();
+                if (!dstream) {
+                    log_error("failed to create zstd decompression stream");
+                    free(cdata);
+                    return -1;
+                }
+                ZSTD_initDStream(dstream);
+                size_t out_cap = (size_t)clen * 8 + 4096;
+                uint8_t *out_buf = xmalloc(out_cap);
+                size_t out_pos = 0;
+                ZSTD_inBuffer in = { cdata, (size_t)clen, 0 };
+                int stream_ok = 1;
+                while (in.pos < in.size) {
+                    if (out_pos + 4096 > out_cap) {
+                        out_cap *= 2;
+                        out_buf = xrealloc(out_buf, out_cap);
+                    }
+                    ZSTD_outBuffer out = { out_buf + out_pos, out_cap - out_pos, 0 };
+                    size_t r = ZSTD_decompressStream(dstream, &out, &in);
+                    if (ZSTD_isError(r)) {
+                        log_error("zstd streaming decompress error: %s", ZSTD_getErrorName(r));
+                        stream_ok = 0;
+                        break;
+                    }
+                    out_pos += out.pos;
+                }
+                ZSTD_freeDStream(dstream);
+                if (!stream_ok) {
+                    free(out_buf);
+                    free(cdata);
+                    return -1;
+                }
+                if (file_write(out_path, out_buf, out_pos) != 0) {
+                    log_error("failed to write decompressed INDEX");
+                    free(out_buf);
+                    free(cdata);
+                    return -1;
+                }
+                free(out_buf);
+            } else {
+                /* Known decompressed size — single-shot decompression */
+                uint8_t *out_buf = xmalloc((size_t)dsize + 1);
+                size_t r = ZSTD_decompress(out_buf, (size_t)dsize, cdata, (size_t)clen);
+                if (ZSTD_isError(r)) {
+                    log_error("zstd decompress error: %s", ZSTD_getErrorName(r));
+                    free(out_buf);
+                    free(cdata);
+                    return -1;
+                }
+                if (file_write(out_path, out_buf, r) != 0) {
+                    log_error("failed to write decompressed INDEX");
+                    free(out_buf);
+                    free(cdata);
+                    return -1;
+                }
+                free(out_buf);
+            }
+        } else {
+            /* Plain-text INDEX — write as-is */
+            log_debug("INDEX is not zstd-compressed, using as plain text");
+            if (file_write(out_path, cdata, (size_t)clen) != 0) {
+                log_error("failed to write INDEX");
+                free(cdata);
+                return -1;
+            }
         }
-        free(raw_data);
+        free(cdata);
     }
 
     /* Optionally verify signature (only if keys are configured) */
