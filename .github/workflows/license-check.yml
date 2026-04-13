@@ -36,7 +36,7 @@ jobs:
           echo "=== jonerix License Audit ==="
           echo ""
           echo "Policy: Every runtime component must be permissively licensed."
-          echo "Allowed: MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, Zlib, public domain"
+          echo "Allowed: MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, Zlib, public domain, Artistic-2.0, PSF-2.0, MPL-2.0, BSD-2-Clause AND Ruby, MIT OR Apache-2.0"
           echo "Forbidden: GPL, LGPL, AGPL (except Linux kernel)"
           echo ""
 
