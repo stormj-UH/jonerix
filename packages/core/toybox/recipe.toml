@@ -11,10 +11,8 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 [build]
 system = "custom"
 build = """set -e
-# Use jonerix custom config from the recipe directory.
-# Requires bash for scripts/make.sh (toybox build system).
 cp "$RECIPE_DIR/toybox.config" .config
-CC=clang CFLAGS="-Os -fomit-frame-pointer" bash scripts/make.sh
+CC=clang CFLAGS="-Os -fomit-frame-pointer" make -j$(nproc)
 """
 install = """set -e
 mkdir -p $DESTDIR/bin
@@ -23,9 +21,10 @@ llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
 # Create applet symlinks
 for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1 | tr ' ' '\n'); do
   [ "$applet" = "toybox" ] && continue
+  [ "$applet" = "bash" ] && continue
   ln -sf toybox "$DESTDIR/bin/$applet" 2>/dev/null || true
 done"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = ["clang", "make"]
