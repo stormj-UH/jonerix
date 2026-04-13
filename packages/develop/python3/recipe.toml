@@ -10,7 +10,12 @@ sha256 = "a97d5549e9ad81fe17159ed02c68774ad5d266c72f8d9a0b5a9c371fe85d902b"
 
 [build]
 system = "custom"
-configure = """CC=clang CXX=clang++ ./configure \
+configure = """mkdir -p .jpkg-tools
+printf '#!/bin/sh\nexec rg --text "$@"\n' > .jpkg-tools/grep
+printf '#!/bin/sh\nexec rg --text -P "$@"\n' > .jpkg-tools/egrep
+printf '#!/bin/sh\nexec rg --text -F "$@"\n' > .jpkg-tools/fgrep
+chmod 755 .jpkg-tools/grep .jpkg-tools/egrep .jpkg-tools/fgrep
+PATH="$PWD/.jpkg-tools:$PATH" CC=clang CXX=clang++ ./configure \
   --prefix=/ \
   --enable-shared \
   --enable-optimizations \
@@ -41,4 +46,4 @@ find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/n
 
 [depends]
 runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz"]
-build = ["clang", "jmake"]
+build = ["clang", "jmake", "ripgrep"]
