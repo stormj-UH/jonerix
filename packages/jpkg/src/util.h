@@ -94,7 +94,8 @@ typedef enum {
     TREE_AUDIT_OK = 0,
     TREE_AUDIT_ROOT_DOT_ZERO,
     TREE_AUDIT_LIB64_PATH,
-    TREE_AUDIT_LIB64_REFERENCE
+    TREE_AUDIT_LIB64_REFERENCE,
+    TREE_AUDIT_SBIN_PATH
 } tree_audit_result_t;
 
 tree_audit_result_t audit_layout_tree(const char *root, char *problem_path,

@@ -837,6 +837,16 @@ int cmd_build(int argc, char **argv) {
             system(flatten);
         }
 
+        /* Step 6.6: Flatten sbin/ → bin/ (jonerix uses flat /bin layout) */
+        {
+            char flatten[2048];
+            snprintf(flatten, sizeof(flatten),
+                "if [ -d '%s/sbin' ] && [ ! -L '%s/sbin' ]; then "
+                "mkdir -p '%s/bin' && cp -a '%s/sbin/.' '%s/bin/' && rm -rf '%s/sbin'; fi",
+                dest_dir, dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
+            system(flatten);
+        }
+
         /* Step 7: Create .jpkg package */
         rc = create_package(recipe, dest_dir, output_dir);
     } else {
