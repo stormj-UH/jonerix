@@ -10,14 +10,10 @@ sha256 = "8ac57c1f5e99550948d1fe755c806d26026e71827da228f36bef24527e372e6f"
 
 [build]
 system = "cmake"
-configure = """# Ensure libressl dev symlinks exist (jpkg packages may omit them).
-# Without these, CMake finds Alpine's libcrypto.so.3 instead.
-for lib in crypto ssl tls; do
-  if [ ! -e /lib/lib${lib}.so ]; then
-    target=$(ls /lib/lib${lib}.so.* 2>/dev/null | grep -v '\\.so\\.[0-9]*\\.' | head -1)
-    [ -n "$target" ] && ln -sf "$(basename "$target")" /lib/lib${lib}.so
-  fi
-done
+configure = """# Create libressl dev symlinks so CMake and samu can find them.
+# libressl 4.0.0 sonames: libcrypto.so.56, libssl.so.58
+ln -sf libcrypto.so.56 /lib/libcrypto.so
+ln -sf libssl.so.58 /lib/libssl.so
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=clang \
