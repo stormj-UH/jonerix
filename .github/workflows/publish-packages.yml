@@ -38,11 +38,10 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # The moving builder-* tags are currently stale and no longer contain a
-  # working clang payload. Pin package builds to the last known-good digests
-  # until a fresh builder image is published from rebuilt packages.
-  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix@sha256:05c44267411293aa7fbbab58186f5a446bef072cebd0a63450c7650498f76343
-  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix@sha256:82287ce05fbb545f2446689fb0957a0a891f5781d43f6c8db9eeaf4d9acd7b5f
+  # Fresh builder images were published 2026-04-13 with working LLVM,
+  # LibreSSL, Python 3.14, Perl, and all smoke tests passing.
+  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder-amd64
+  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder-arm64
 
 jobs:
   # ------ Create the packages release once ------------------------------------------------------------------------------------------------------------------
