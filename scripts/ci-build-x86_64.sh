@@ -17,8 +17,9 @@ else
       -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
       -fstack-protector-strong \
       --rtlib=compiler-rt --unwindlib=none \
-      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
-      -o jpkg src/*.c
+      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
+      -o jpkg src/*.c \
+      -ltls -lssl -lcrypto -lzstd
     install -m 755 jpkg /bin/jpkg
     cp jpkg /jpkg-bin/jpkg
     cd /workspace
