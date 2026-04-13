@@ -25,7 +25,7 @@ RUN jpkg update && \
     failed='' && \
     for pkg in \
       llvm libcxx rust go \
-      cmake bmake jmake samurai flex bc byacc \
+      cmake jmake samurai flex bc byacc \
       perl python3 nodejs; \
     do \
       echo "Installing: $pkg" && \
@@ -80,7 +80,7 @@ RUN TRIPLE=$(/bin/clang-21 -dumpmachine 2>/dev/null || echo "unknown") && \
         ln -sf "$LLVM_BIN/llvm-$tool" "/bin/llvm-$tool" 2>/dev/null || true; \
       done; \
     fi && \
-    ln -sf bmake /bin/make 2>/dev/null || true && \
+    ln -sf jmake /bin/make 2>/dev/null || true && \
     ln -sf samu /bin/ninja 2>/dev/null || true && \
     ln -sf python3 /bin/python 2>/dev/null || true && \
     ln -sf byacc /bin/yacc 2>/dev/null || true && \

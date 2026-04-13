@@ -46,4 +46,4 @@ find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/n
 
 [depends]
 runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz"]
-build = ["clang", "bmake"]
+build = ["clang", "jmake"]

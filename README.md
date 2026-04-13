@@ -66,7 +66,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 |-------|----------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
-| `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, bmake, samurai, perl |
+| `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 
 ### Core System
 
@@ -98,7 +98,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | Component | License | Role |
 |-----------|---------|------|
 | cmake | BSD-3-Clause | Build system generator |
-| bmake | MIT | BSD make |
+| jmake | MIT | Drop-in GNU make replacement (Rust) |
 | samurai | Apache-2.0 | Ninja-compatible build tool |
 | meson | Apache-2.0 | Build system (via pip) |
 | flex | BSD-2-Clause | Lexer generator |
