@@ -35,6 +35,26 @@ sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/make.sh scripts/portability.sh scrip
 # 5. tr may be missing in some builder images; replace with sed y// equivalent
 sed -i "s@| tr ' ' '|'@| sed 'y/ /|/'@g" scripts/make.sh
 
+# 6. == in [ ] is bash-specific; mksh requires =
+sed -i 's/ == / = /g' scripts/make.sh scripts/genconfig.sh
+
+# 7. ${@:2} bash array slice is not supported in mksh; use shift + "$@"
+sed -i 's/probecc "${@:2}"/shift; probecc "$@"/' scripts/genconfig.sh
+
+# 8. isnewer() in make.sh uses ${@:2}; rewrite to use a named variable + shift
+sed -i '/^isnewer/,/^}/c\
+isnewer()\
+{\
+  _if="$1"; shift\
+  [ -e "$GENDIR/$_if" ] && [ -z "$(find "$@" -newer "$GENDIR/$_if")" ] &&\
+    return 1\
+  echo -n "${DIDNEWER:-$GENDIR/{}$_if"\
+  DIDNEWER=,\
+}' scripts/make.sh
+
+# 9. tr ' ' '\n' in genconfig.sh list targets: replace with sed equivalent
+sed -i "s@| tr ' ' '\\\\n'@| sed 's/ /\\n/g'@g" scripts/genconfig.sh
+
 rm -rf generated/*
 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
@@ -43,7 +63,7 @@ mkdir -p $DESTDIR/bin
 install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
 llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
 # Create applet symlinks; skip bash to avoid overwriting any installed bash
-for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1 | tr ' ' '\n'); do
+for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1 | sed 's/ /\n/g'); do
   [ "$applet" = "toybox" ] && continue
   [ "$applet" = "bash" ] && continue
   ln -sf toybox "$DESTDIR/bin/$applet" 2>/dev/null || true
