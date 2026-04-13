@@ -61,6 +61,11 @@ OpenSSL
 SSLeay
 Unlicense
 WTFPL
+Artistic-2.0
+PSF-2.0
+MPL-2.0
+BSD-2-Clause AND Ruby
+MIT OR Apache-2.0
 "
 
 # Known exceptions (packages allowed to be non-permissive)
@@ -379,7 +384,7 @@ main() {
 
     info "jonerix license audit"
     info "Policy: all runtime packages must be permissively licensed"
-    info "Allowed: MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, Zlib, public domain"
+    info "Allowed: MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, Zlib, public domain, Artistic-2.0, PSF-2.0, MPL-2.0, BSD-2-Clause AND Ruby, MIT OR Apache-2.0"
     info "Forbidden: GPL, LGPL, AGPL"
     info "Exception: Linux kernel (GPLv2)"
 
