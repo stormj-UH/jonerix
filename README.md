@@ -30,7 +30,7 @@ jonerix can rebuild itself from source using only the tools it ships:
 - **Python 3 + Node.js**: Built from source with Clang/musl
 - **Container runtime**: containerd + runc + nerdctl + CNI plugins, all from source
 
-The `jonerix:builder` image installs every tool from jpkg packages with no Alpine overlay. It compiles C, Go, and Rust programs out of the box.
+The `jonerix:builder` image installs every tool from jpkg packages. It compiles C, Go, and Rust programs out of the box.
 
 ## Quick Start
 
@@ -178,8 +178,6 @@ Every package must carry a permissive license:
 | Apache-2.0, ISC, 0BSD | SSPL, EUPL |
 | Zlib, PSF-2.0, Artistic-2.0 | CC-BY-SA |
 | Public Domain, MirOS | Any copyleft |
-
-bash/GNU tools are used only at build time inside Alpine CI and never ship in the final image. mksh (MirOS) is the runtime shell (/bin/sh). zsh was removed because it deadlocks on musl libc with nested command substitutions.
 
 ## fastfetch
 
