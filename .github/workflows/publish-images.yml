@@ -86,7 +86,7 @@ jobs:
           tags: ${{ env.IMAGE }}:minimal-arm64
           platforms: linux/arm64
           build-args: |
-            BUILDER=alpine:latest
+            BUILDER=ghcr.io/stormj-uh/jonerix:minimal
           cache-from: type=gha,scope=minimal-arm64
           cache-to: type=gha,mode=max,scope=minimal-arm64
 
@@ -113,7 +113,7 @@ jobs:
           tags: ${{ env.IMAGE }}:minimal-amd64
           platforms: linux/amd64
           build-args: |
-            BUILDER=alpine:latest
+            BUILDER=ghcr.io/stormj-uh/jonerix:minimal
           cache-from: type=gha,scope=minimal-amd64
           cache-to: type=gha,mode=max,scope=minimal-amd64
 
