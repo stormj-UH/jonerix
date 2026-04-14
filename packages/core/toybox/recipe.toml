@@ -63,12 +63,16 @@ install = """set -e
 mkdir -p $DESTDIR/bin
 install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
 llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
-# Create applet symlinks; skip bash to avoid overwriting any installed bash
-for applet in $(./generated/unstripped/toybox 2>&1); do
-  [ "$applet" = "toybox" ] && continue
-  [ "$applet" = "bash" ] && continue
-  ln -sf toybox "$DESTDIR/bin/$applet" 2>/dev/null || true
-done"""
+# Write applet list to file (avoids shell $() issues with toybox sh)
+./generated/unstripped/toybox > /tmp/_applets.txt 2>&1
+while read -r line; do
+  for applet in $line; do
+    [ "$applet" = "toybox" ] && continue
+    [ "$applet" = "bash" ] && continue
+    ln -sf toybox "$DESTDIR/bin/$applet" 2>/dev/null || true
+  done
+done < /tmp/_applets.txt
+rm -f /tmp/_applets.txt"""
 
 [depends]
 runtime = ["musl"]
