@@ -40,6 +40,10 @@ fi
 
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
+# Ensure GCC compat symlinks exist (cargo/rustc need libgcc_s.so.1 for unwinding)
+[ -f /lib/libgcc_s.so.1 ] || ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true
+[ -f /lib/libstdc++.so.6 ] || ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
+
 # Ensure bsdtar/tar is functional. Some published libarchive artifacts were built
 # against OpenSSL 3 or older lz4 sonames, while jonerix ships LibreSSL and the
 # current lz4 package set. Repair the stale tool before jpkg or package recipes try
