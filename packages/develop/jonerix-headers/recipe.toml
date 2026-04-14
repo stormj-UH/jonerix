@@ -13,7 +13,11 @@ system = "custom"
 build = ""
 install = """set -e
 KHARCH=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x86_64/')
-make ARCH=$KHARCH prefix=/ DESTDIR=$DESTDIR install"""
+mkdir -p "$DESTDIR/include"
+# Copy generic headers (shared across all arches)
+cp -a generic/include/* "$DESTDIR/include/"
+# Copy arch-specific headers (overrides generic where needed)
+cp -a "$KHARCH/include/"* "$DESTDIR/include/" 2>/dev/null || true"""
 
 [depends]
 runtime = []
