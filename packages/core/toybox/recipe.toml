@@ -61,18 +61,17 @@ DEBUG=1 V=1 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh script
 """
 install = """set -e
 mkdir -p $DESTDIR/bin
-install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
+cp generated/unstripped/toybox $DESTDIR/bin/toybox
+chmod 755 $DESTDIR/bin/toybox
 llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
-# Write applet list to file (avoids shell $() issues with toybox sh)
-./generated/unstripped/toybox > /tmp/_applets.txt 2>&1
-while read -r line; do
-  for applet in $line; do
-    [ "$applet" = "toybox" ] && continue
-    [ "$applet" = "bash" ] && continue
-    ln -sf toybox "$DESTDIR/bin/$applet" 2>/dev/null || true
-  done
+# Compile instlist helper to get a clean applet list (one per line)
+clang -I . scripts/install.c -o /tmp/_instlist
+/tmp/_instlist > /tmp/_applets.txt
+while read applet; do
+  [ "$applet" = "bash" ] && continue
+  ln -sf toybox "$DESTDIR/bin/$applet"
 done < /tmp/_applets.txt
-rm -f /tmp/_applets.txt"""
+rm -f /tmp/_instlist /tmp/_applets.txt"""
 
 [depends]
 runtime = ["musl"]
