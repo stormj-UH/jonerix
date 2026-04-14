@@ -248,6 +248,20 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
         return -1;
     }
 
+    /* Flatten sbin/ → bin/ if present (jonerix uses flat /bin layout) */
+    {
+        char sbin_dir[512];
+        snprintf(sbin_dir, sizeof(sbin_dir), "%s/sbin", stage_dir);
+        if (dir_exists(sbin_dir)) {
+            char flatten[1024];
+            snprintf(flatten, sizeof(flatten),
+                "mkdir -p '%s/bin' && cp -a '%s/sbin/.' '%s/bin/' && rm -rf '%s/sbin'",
+                stage_dir, stage_dir, stage_dir, stage_dir);
+            system(flatten);
+            log_info("flattened /sbin → /bin for %s", meta->name);
+        }
+    }
+
     {
         char problem[1024];
         tree_audit_result_t audit = audit_layout_tree(stage_dir, problem, sizeof(problem));
