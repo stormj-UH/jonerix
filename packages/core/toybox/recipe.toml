@@ -16,10 +16,18 @@ cp "$RECIPE_DIR/toybox.config" .config
 # (applied by jpkg before this script runs).
 # Fix shebangs so sub-scripts invoked by make.sh use mksh too.
 sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
-# Provide stub kernel headers for toys that need them (tunctl, etc.)
-# These toys are disabled in .config but the preprocessor still parses them.
-mkdir -p linux
-printf '#ifndef _LINUX_IF_TUN_H\n#define _LINUX_IF_TUN_H\n#define IFF_TUN 0x0001\n#define IFF_TAP 0x0002\n#define IFF_NO_PI 0x1000\n#define TUNSETIFF 0x400454ca\n#define TUNSETPERSIST 0x400454cb\n#define TUNSETOWNER 0x400454cc\n#endif\n' > linux/if_tun.h
+# Install kernel headers — toybox needs linux/*.h for blockdev, ip, route, etc.
+# Check if they already exist at /include/linux, otherwise fetch a minimal set.
+if [ ! -d /include/linux ]; then
+  ARCH=$(uname -m | sed 's/aarch64/aarch64/;s/x86_64/x86_64/')
+  curl -sL "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/$ARCH/linux-headers-6.6-r1.apk" -o /tmp/kh.apk
+  mkdir -p /tmp/kh && cd /tmp/kh && tar xf /tmp/kh.apk 2>/dev/null
+  cp -a usr/include/linux /include/linux 2>/dev/null || true
+  cp -a usr/include/asm /include/asm 2>/dev/null || true
+  cp -a usr/include/asm-generic /include/asm-generic 2>/dev/null || true
+  cd -
+  rm -rf /tmp/kh /tmp/kh.apk
+fi
 rm -rf generated/*
 DEBUG=1 V=1 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh || {
   echo "=== generated/config.h (first 20 lines) ===" >&2
