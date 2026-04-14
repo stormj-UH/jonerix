@@ -102,7 +102,7 @@
  # Set default values if variable not already set
  : ${CC:=cc} ${HOSTCC:=cc} ${GENDIR:=generated} ${KCONFIG_CONFIG:=.config}
 --- a/scripts/make.sh	2026-04-13 16:08:43
-+++ b/scripts/make.sh	2026-04-13 16:08:43
++++ b/scripts/make.sh	2026-04-13 16:33:27
 @@ -2,7 +2,7 @@
  
  # Grab default values for $CFLAGS and such.
@@ -121,7 +121,7 @@
 +  [ -e "$GENDIR/$_in_f" ] && [ -z "$(find "$@" -newer "$GENDIR/$_in_f")" ] &&
      return 1
 -  echo -n "${DIDNEWER:-$GENDIR/{}$1"
-+  echo -n "${DIDNEWER:-$GENDIR/{}$_in_f"
++  echo -n "${DIDNEWER:-$GENDIR/{}}$_in_f"
    DIDNEWER=,
  }
  
@@ -166,7 +166,41 @@
  A="$(echo "$A" | grep -v =n)"
  [ "$A" != "$B" ] &&
    { echo -e "\nWarning: Config.probed changed, run 'make oldconfig'" >&2; }
-@@ -168,7 +168,7 @@
+@@ -146,10 +146,29 @@
+ fi
+ 
+ # Rebuild config.h from .config
+-$SED -En $KCONFIG_CONFIG > "$GENDIR"/config.h \
+-  -e 's/^# CONFIG_(.*) is not set.*/#define CFG_\1 0\n#define USE_\1(...)/p;t' \
+-  -e 's/^CONFIG_(.*)=y.*/#define CFG_\1 1\n#define USE_\1(...) __VA_ARGS__/p;t'\
+-  -e 's/^CONFIG_(.*)=/#define CFG_\1 /p' || exit 1
++# Use awk instead of sed to avoid relying on \n in sed replacement
++# (toybox sed does not expand \n in replacement strings).
++awk '
++  /^# CONFIG_/ && / is not set/ {
++    sub(/^# CONFIG_/, ""); sub(/ is not set.*/, "")
++    print "#define CFG_" $0 " 0"
++    print "#define USE_" $0 "(...)"
++    next
++  }
++  /^CONFIG_[A-Z0-9_]+=y/ {
++    name = $0; sub(/=.*/, "", name); sub(/^CONFIG_/, "", name)
++    print "#define CFG_" name " 1"
++    print "#define USE_" name "(...) __VA_ARGS__"
++    next
++  }
++  /^CONFIG_[A-Z0-9_]+=/ {
++    name = $0; val = $0
++    sub(/=.*/, "", name); sub(/^CONFIG_/, "", name)
++    sub(/.*=/, "", val)
++    print "#define CFG_" name " " val
++    next
++  }
++' "$KCONFIG_CONFIG" > "$GENDIR"/config.h || exit 1
+ 
+ # Process config.h and newtoys.h to generate FLAG_x macros. Note we must
+ # always #define the relevant macro, even when it's disabled, because we
+@@ -168,7 +187,7 @@
  
      echo "#define NEWTOY(aa,bb,cc) aa $I bb"
      echo '#define OLDTOY(...)'
@@ -175,7 +209,7 @@
      then
        cat "$GENDIR"/config.h
      else
-@@ -257,7 +257,7 @@
+@@ -257,7 +276,7 @@
  PENDING= LNKFILES= CLICK= DONE=0 COUNT=0
  for i in lib/*.c click $TOYFILES
  do

@@ -16,7 +16,17 @@ cp "$RECIPE_DIR/toybox.config" .config
 # (applied by jpkg before this script runs).
 # Fix shebangs so sub-scripts invoked by make.sh use mksh too.
 sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
-# Kernel headers provided by jonerix-headers build dep
+# Kernel UAPI headers: needed by blockdev, ip, brctl, fdisk, losetup, etc.
+# Install into ./linux/ etc so -I. finds them during compilation.
+if [ ! -f linux/fs.h ]; then
+  apk add --no-cache linux-headers 2>/dev/null || true
+  if [ -d /usr/include/linux ]; then
+    cp -a /usr/include/linux linux
+    cp -a /usr/include/asm-generic asm-generic
+    [ -d /usr/include/asm ] && cp -a /usr/include/asm asm || true
+    [ -d /usr/include/mtd ] && cp -a /usr/include/mtd mtd || true
+  fi
+fi
 rm -rf generated/*
 DEBUG=1 V=1 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh || {
   echo "=== generated/config.h (first 20 lines) ===" >&2
@@ -41,4 +51,4 @@ done"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "jonerix-headers"]
+build = ["clang"]
