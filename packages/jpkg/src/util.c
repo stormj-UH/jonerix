@@ -654,16 +654,6 @@ static tree_audit_result_t audit_layout_tree_recursive(const char *root,
             return TREE_AUDIT_LIB64_PATH;
         }
 
-        if (strncmp(child_rel, "sbin", 4) == 0 &&
-            (child_rel[4] == '\0' || child_rel[4] == '/')) {
-            snprintf(problem_path, problem_path_len, "/%s", child_rel);
-            free(child_rel);
-            free(child_full);
-            closedir(dir);
-            free(scan_dir);
-            return TREE_AUDIT_SBIN_PATH;
-        }
-
         if (!strchr(child_rel, '/') && str_ends_with(child_rel, ".0")) {
             snprintf(problem_path, problem_path_len, "/%s", child_rel);
             free(child_rel);
