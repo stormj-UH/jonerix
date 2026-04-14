@@ -79,7 +79,10 @@ COPY --from=jpkg-builder /lib/libzstd.so.1     /lib/libzstd.so.1
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl zlib toybox dropbear openrc libressl curl zstd
+        musl zlib toybox dropbear openrc libressl curl zstd && \
+    echo "=== toybox symlinks after install ===" && \
+    ls /jonerix/bin/ | wc -l && \
+    ls -la /jonerix/bin/rm /jonerix/bin/ln /jonerix/bin/sh 2>&1 || true
 
 # Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \
