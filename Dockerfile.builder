@@ -85,8 +85,10 @@ RUN TRIPLE=$(/bin/clang-21 -dumpmachine 2>/dev/null || echo "unknown") && \
     ln -sf python3 /bin/python 2>/dev/null || true && \
     ln -sf byacc /bin/yacc 2>/dev/null || true && \
     ln -sf flex /bin/lex 2>/dev/null || true && \
-    # Linker fixups (GCC runtime compat)
+    # Linker fixups (provide GCC-compatible names via LLVM libs)
+    ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true && \
     ln -sf libgcc_s.so.1 /lib/libgcc_s.so 2>/dev/null || true && \
+    ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true && \
     ln -sf libstdc++.so.6 /lib/libstdc++.so 2>/dev/null || true && \
     printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true
 
