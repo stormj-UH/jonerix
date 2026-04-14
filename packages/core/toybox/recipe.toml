@@ -64,7 +64,7 @@ mkdir -p $DESTDIR/bin
 install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
 llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
 # Create applet symlinks; skip bash to avoid overwriting any installed bash
-for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1); do
+for applet in $(./generated/unstripped/toybox 2>&1); do
   [ "$applet" = "toybox" ] && continue
   [ "$applet" = "bash" ] && continue
   ln -sf toybox "$DESTDIR/bin/$applet" 2>/dev/null || true
