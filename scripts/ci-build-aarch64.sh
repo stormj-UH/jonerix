@@ -177,6 +177,14 @@ install_target_build_deps() {
             python)
                 dep_pkg=python3
                 ;;
+            rust)
+                # rust package provides cargo/rustc, not a 'rust' binary
+                command -v cargo >/dev/null 2>&1 && continue
+                ;;
+            jonerix-headers)
+                # header-only package, no binary to check
+                dep_pkg=jonerix-headers
+                ;;
         esac
 
         echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
