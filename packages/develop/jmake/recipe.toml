@@ -6,7 +6,7 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 
 [source]
 url = "https://cache.invalid/jmake-1.0.0.tar"
-sha256 = "bb96e5217ee693fb43b74f7493e4d2f88363986a85d3b76961357785f340ff4c"
+sha256 = "beed6d44dbf2caf0dcce0761f94da4e0768ebc0367df038020953b8603c65566"
 
 [build]
 system = "custom"
