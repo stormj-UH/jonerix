@@ -12,57 +12,18 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 system = "custom"
 build = """set -e
 cp "$RECIPE_DIR/toybox.config" .config
-# All bash->mksh and tr->sed fixes are in patches/0001-mksh-compat.patch
+# All bash->mksh fixes are in patches/0001-mksh-compat.patch
 # (applied by jpkg before this script runs).
 # Fix shebangs so sub-scripts invoked by make.sh use mksh too.
 sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
-# Kernel UAPI headers: needed by blockdev, ip, brctl, fdisk, losetup, etc.
-# Install into ./linux/ etc so -I. resolves linux/fs.h during compilation.
-if [ ! -f linux/fs.h ]; then
-  # Try apk first (Alpine builder), then fall back to fetching the .apk directly.
-  apk add --no-cache linux-headers >/dev/null 2>&1 || true
-  if [ ! -d /usr/include/linux ]; then
-    # jonerix builder — fetch Alpine linux-headers .apk and unpack manually.
-    _ARCH=$(uname -m)
-    _KH_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/main/${_ARCH}/linux-headers-6.6-r1.apk"
-    _KH_TMP=/tmp/_toybox_kh
-    mkdir -p "$_KH_TMP"
-    wget -q -O "$_KH_TMP/kh.apk" "$_KH_URL" 2>/dev/null || \
-      curl -fsSL -o "$_KH_TMP/kh.apk" "$_KH_URL"
-    (cd "$_KH_TMP" && tar xzf kh.apk 2>/dev/null || tar xf kh.apk 2>/dev/null; true)
-    if [ -d "$_KH_TMP/usr/include/linux" ]; then
-      cp -a "$_KH_TMP/usr/include/linux" /usr/include/linux
-      cp -a "$_KH_TMP/usr/include/asm-generic" /usr/include/asm-generic 2>/dev/null || true
-      [ -d "$_KH_TMP/usr/include/asm" ] && cp -a "$_KH_TMP/usr/include/asm" /usr/include/asm || true
-    fi
-    rm -rf "$_KH_TMP"
-  fi
-  # Now copy from /usr/include into the toybox source tree (needed because -I. only)
-  if [ -d /usr/include/linux ]; then
-    cp -a /usr/include/linux linux
-    cp -a /usr/include/asm-generic asm-generic 2>/dev/null || true
-    [ -d /usr/include/asm ] && cp -a /usr/include/asm asm || true
-  else
-    echo "ERROR: could not obtain kernel headers" >&2
-    exit 1
-  fi
-fi
 rm -rf generated/*
-DEBUG=1 V=1 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh || {
-  echo "=== generated/config.h (first 20 lines) ===" >&2
-  head -20 generated/config.h >&2 || echo "config.h missing" >&2
-  echo "=== generated/newtoys.h (acpi) ===" >&2
-  grep -i acpi generated/newtoys.h >&2 || echo "acpi not in newtoys.h" >&2
-  echo "=== generated/flags.raw (first 10 lines) ===" >&2
-  head -10 generated/flags.raw >&2 || echo "flags.raw missing" >&2
-  exit 1
-}
+CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh
 """
 install = """set -e
 mkdir -p $DESTDIR/bin
 install -m755 generated/unstripped/toybox $DESTDIR/bin/toybox
 llvm-strip --strip-all $DESTDIR/bin/toybox 2>/dev/null || true
-# Create applet symlinks; skip bash to avoid overwriting any installed bash
+# Create applet symlinks; skip bash (toybox can't emulate bash)
 for applet in $(./generated/unstripped/toybox --long 2>/dev/null || ./generated/unstripped/toybox 2>&1 | sed 's/ /\n/g'); do
   [ "$applet" = "toybox" ] && continue
   [ "$applet" = "bash" ] && continue
@@ -71,4 +32,4 @@ done"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+build = ["clang", "jonerix-headers"]

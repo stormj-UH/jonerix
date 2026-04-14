@@ -19,4 +19,4 @@ find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "make"]
+build = ["clang", "make", "jonerix-headers"]

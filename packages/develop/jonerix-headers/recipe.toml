@@ -1,34 +1,19 @@
 [package]
 name = "jonerix-headers"
-version = "6.6.0"
+version = "4.19.88"
 license = "MIT"
-description = "Linux UAPI kernel headers for jonerix builds (from Alpine linux-headers-6.6)"
+description = "Linux UAPI kernel headers for jonerix package builds"
+
+[source]
+url = "https://github.com/sabotage-linux/kernel-headers/archive/refs/tags/v4.19.88-1.tar.gz"
+sha256 = "2806e2d689c6affb45ff8761a1011e6ab8a39369a617421fbff9c29f6dbefec6"
 
 [build]
 system = "custom"
-build = """set -e
-ARCH=$(uname -m)
-apk add --no-cache linux-headers 2>/dev/null || \
-  wget -q -O /tmp/kh.apk \
-    "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/${ARCH}/linux-headers-6.6-r1.apk" 2>/dev/null || \
-  curl -fsSL -o /tmp/kh.apk \
-    "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/${ARCH}/linux-headers-6.6-r1.apk"
-"""
+build = ""
 install = """set -e
-mkdir -p "$DESTDIR/usr/include"
-if [ -d /usr/include/linux ]; then
-  cp -a /usr/include/linux "$DESTDIR/usr/include/linux"
-  cp -a /usr/include/asm-generic "$DESTDIR/usr/include/asm-generic" 2>/dev/null || true
-  [ -d /usr/include/asm ] && cp -a /usr/include/asm "$DESTDIR/usr/include/asm" || true
-  [ -d /usr/include/mtd ] && cp -a /usr/include/mtd "$DESTDIR/usr/include/mtd" || true
-elif [ -f /tmp/kh.apk ]; then
-  mkdir -p /tmp/_kh
-  (cd /tmp/_kh && tar xf /tmp/kh.apk 2>/dev/null; true)
-  [ -d /tmp/_kh/usr/include/linux ] && cp -a /tmp/_kh/usr/include/linux "$DESTDIR/usr/include/linux" || true
-  [ -d /tmp/_kh/usr/include/asm-generic ] && cp -a /tmp/_kh/usr/include/asm-generic "$DESTDIR/usr/include/asm-generic" || true
-  [ -d /tmp/_kh/usr/include/asm ] && cp -a /tmp/_kh/usr/include/asm "$DESTDIR/usr/include/asm" || true
-  rm -rf /tmp/_kh /tmp/kh.apk
-fi"""
+KHARCH=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x86_64/')
+make ARCH=$KHARCH prefix=/ DESTDIR=$DESTDIR install"""
 
 [depends]
 runtime = []

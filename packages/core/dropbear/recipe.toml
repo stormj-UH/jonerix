@@ -20,4 +20,4 @@ find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 
 
 [depends]
 runtime = ["musl", "libressl"]
-build = ["clang", "make"]
+build = ["clang", "make", "jonerix-headers"]
