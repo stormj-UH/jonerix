@@ -191,6 +191,9 @@ jobs:
     if: ${{ always() && (inputs.index_only || ((needs.build-x86_64.result == 'success' || needs.build-x86_64.result == 'skipped') && (needs.build-aarch64.result == 'success' || needs.build-aarch64.result == 'skipped'))) }}
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+      options: --privileged
     permissions:
       contents: write
 
@@ -199,7 +202,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd
+        run: apk add --no-cache curl github-cli zstd
 
       - name: Download all packages from release
         env:
@@ -285,9 +288,9 @@ jobs:
 
       - name: Build jpkg from source for signing
         run: |
-          sudo apt-get install -y -qq clang lld libzstd-dev libssl-dev
+          apk add --no-cache clang lld musl-dev zstd-dev openssl-dev
           cd "$GITHUB_WORKSPACE/packages/jpkg"
-          clang -std=c11 -Os \
+          clang -std=c11 -Os -fuse-ld=lld \
             -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
             -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
             -fstack-protector-strong \
