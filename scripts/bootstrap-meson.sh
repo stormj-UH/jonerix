@@ -20,7 +20,8 @@ MESON_PREFIX="${MESON_PREFIX:-/opt/meson-$MESON_VERSION}"
 MESON_WRAPPER="${MESON_WRAPPER:-/bin/meson}"
 MESON_URL="https://github.com/mesonbuild/meson/archive/refs/tags/${MESON_VERSION}.tar.gz"
 
-tmpdir="$(mktemp -d)"
+tmpdir="$(mktemp -d 2>/dev/null || echo "/tmp/meson-bootstrap-$$")"
+mkdir -p "$tmpdir"
 trap 'rm -rf "$tmpdir"' EXIT INT TERM
 
 curl -fsSL "$MESON_URL" -o "$tmpdir/meson.tar.gz"
