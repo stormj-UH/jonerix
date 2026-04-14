@@ -42,4 +42,4 @@ llvm-strip --strip-all $DESTDIR/bin/hostapd $DESTDIR/bin/hostapd_cli 2>/dev/null
 
 [depends]
 runtime = ["musl", "libressl"]
-build = ["clang", "jmake"]
+build = ["clang", "jmake", "jonerix-headers"]

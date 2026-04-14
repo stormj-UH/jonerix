@@ -42,4 +42,4 @@ llvm-strip --strip-all $DESTDIR/bin/wpa_supplicant $DESTDIR/bin/wpa_cli $DESTDIR
 
 [depends]
 runtime = ["musl", "libressl"]
-build = ["clang", "jmake"]
+build = ["clang", "jmake", "jonerix-headers"]
