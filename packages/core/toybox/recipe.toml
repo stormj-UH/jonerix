@@ -17,14 +17,34 @@ cp "$RECIPE_DIR/toybox.config" .config
 # Fix shebangs so sub-scripts invoked by make.sh use mksh too.
 sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
 # Kernel UAPI headers: needed by blockdev, ip, brctl, fdisk, losetup, etc.
-# Install into ./linux/ etc so -I. finds them during compilation.
+# Install into ./linux/ etc so -I. resolves linux/fs.h during compilation.
 if [ ! -f linux/fs.h ]; then
-  apk add --no-cache linux-headers 2>/dev/null || true
+  # Try apk first (Alpine builder), then fall back to fetching the .apk directly.
+  apk add --no-cache linux-headers >/dev/null 2>&1 || true
+  if [ ! -d /usr/include/linux ]; then
+    # jonerix builder — fetch Alpine linux-headers .apk and unpack manually.
+    _ARCH=$(uname -m)
+    _KH_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/main/${_ARCH}/linux-headers-6.6-r1.apk"
+    _KH_TMP=/tmp/_toybox_kh
+    mkdir -p "$_KH_TMP"
+    wget -q -O "$_KH_TMP/kh.apk" "$_KH_URL" 2>/dev/null || \
+      curl -fsSL -o "$_KH_TMP/kh.apk" "$_KH_URL"
+    (cd "$_KH_TMP" && tar xzf kh.apk 2>/dev/null || tar xf kh.apk 2>/dev/null; true)
+    if [ -d "$_KH_TMP/usr/include/linux" ]; then
+      cp -a "$_KH_TMP/usr/include/linux" /usr/include/linux
+      cp -a "$_KH_TMP/usr/include/asm-generic" /usr/include/asm-generic 2>/dev/null || true
+      [ -d "$_KH_TMP/usr/include/asm" ] && cp -a "$_KH_TMP/usr/include/asm" /usr/include/asm || true
+    fi
+    rm -rf "$_KH_TMP"
+  fi
+  # Now copy from /usr/include into the toybox source tree (needed because -I. only)
   if [ -d /usr/include/linux ]; then
     cp -a /usr/include/linux linux
-    cp -a /usr/include/asm-generic asm-generic
+    cp -a /usr/include/asm-generic asm-generic 2>/dev/null || true
     [ -d /usr/include/asm ] && cp -a /usr/include/asm asm || true
-    [ -d /usr/include/mtd ] && cp -a /usr/include/mtd mtd || true
+  else
+    echo "ERROR: could not obtain kernel headers" >&2
+    exit 1
   fi
 fi
 rm -rf generated/*
