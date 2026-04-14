@@ -1,34 +1,34 @@
 [package]
 name = "jonerix-headers"
-version = "1.0.0"
+version = "6.6.0"
 license = "MIT"
-description = "Minimal kernel and system headers needed by jonerix package builds"
+description = "Linux UAPI kernel headers for jonerix builds (from Alpine linux-headers-6.6)"
 
 [build]
 system = "custom"
-configure = ""
-build = ""
+build = """set -e
+ARCH=$(uname -m)
+apk add --no-cache linux-headers 2>/dev/null || \
+  wget -q -O /tmp/kh.apk \
+    "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/${ARCH}/linux-headers-6.6-r1.apk" 2>/dev/null || \
+  curl -fsSL -o /tmp/kh.apk \
+    "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/${ARCH}/linux-headers-6.6-r1.apk"
+"""
 install = """set -e
-mkdir -p $DESTDIR/include/linux $DESTDIR/include/asm $DESTDIR/include/asm-generic
-
-# Download arch-appropriate kernel headers, extract only what we need
-ARCH=$(uname -m | sed 's/aarch64/aarch64/;s/x86_64/x86_64/')
-curl -sL "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/$ARCH/linux-headers-6.6-r1.apk" -o /tmp/kh.apk
-mkdir -p /tmp/_kh && cd /tmp/_kh && tar xf /tmp/kh.apk 2>/dev/null
-
-# Only keep headers our packages actually need:
-# toybox: fs.h loop.h hdreg.h rtc.h tty.h netlink.h rtnetlink.h
-#         if_bridge.h if_ether.h if_addr.h if_tun.h if_tunnel.h
-#         if_packet.h if_vlan.h ip.h sockios.h filter.h sched.h
-#         kd.h vt.h input.h rfkill.h cdrom.h nbd.h soundcard.h
-#         gpio.h i2c.h i2c-dev.h
-# (include all linux/ since transitive deps are hard to track)
-cp -a usr/include/linux/* $DESTDIR/include/linux/
-# asm/ and asm-generic/ — needed for types used by linux/ headers
-cp -a usr/include/asm/* $DESTDIR/include/asm/
-cp -a usr/include/asm-generic/* $DESTDIR/include/asm-generic/
-
-rm -rf /tmp/_kh /tmp/kh.apk"""
+mkdir -p "$DESTDIR/usr/include"
+if [ -d /usr/include/linux ]; then
+  cp -a /usr/include/linux "$DESTDIR/usr/include/linux"
+  cp -a /usr/include/asm-generic "$DESTDIR/usr/include/asm-generic" 2>/dev/null || true
+  [ -d /usr/include/asm ] && cp -a /usr/include/asm "$DESTDIR/usr/include/asm" || true
+  [ -d /usr/include/mtd ] && cp -a /usr/include/mtd "$DESTDIR/usr/include/mtd" || true
+elif [ -f /tmp/kh.apk ]; then
+  mkdir -p /tmp/_kh
+  (cd /tmp/_kh && tar xf /tmp/kh.apk 2>/dev/null; true)
+  [ -d /tmp/_kh/usr/include/linux ] && cp -a /tmp/_kh/usr/include/linux "$DESTDIR/usr/include/linux" || true
+  [ -d /tmp/_kh/usr/include/asm-generic ] && cp -a /tmp/_kh/usr/include/asm-generic "$DESTDIR/usr/include/asm-generic" || true
+  [ -d /tmp/_kh/usr/include/asm ] && cp -a /tmp/_kh/usr/include/asm "$DESTDIR/usr/include/asm" || true
+  rm -rf /tmp/_kh /tmp/kh.apk
+fi"""
 
 [depends]
 runtime = []
