@@ -1,0 +1,33 @@
+[package]
+name = "jonerix-headers"
+version = "6.6.0"
+license = "MIT"
+description = "Linux kernel headers and system headers for jonerix builds"
+
+[source]
+url = "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/aarch64/linux-headers-6.6-r1.apk"
+sha256 = "SKIP"
+
+[build]
+system = "custom"
+configure = """# Download arch-appropriate kernel headers apk
+ARCH=$(uname -m | sed 's/aarch64/aarch64/;s/x86_64/x86_64/')
+curl -sL "https://dl-cdn.alpinelinux.org/alpine/v3.21/main/$ARCH/linux-headers-6.6-r1.apk" -o /tmp/kh.apk
+"""
+build = ""
+install = """mkdir -p $DESTDIR/include
+cd /tmp && mkdir -p _kh && cd _kh && tar xf /tmp/kh.apk 2>/dev/null
+cp -a usr/include/linux $DESTDIR/include/linux 2>/dev/null || true
+cp -a usr/include/asm $DESTDIR/include/asm 2>/dev/null || true
+cp -a usr/include/asm-generic $DESTDIR/include/asm-generic 2>/dev/null || true
+cp -a usr/include/mtd $DESTDIR/include/mtd 2>/dev/null || true
+cp -a usr/include/rdma $DESTDIR/include/rdma 2>/dev/null || true
+cp -a usr/include/video $DESTDIR/include/video 2>/dev/null || true
+cp -a usr/include/sound $DESTDIR/include/sound 2>/dev/null || true
+cp -a usr/include/drm $DESTDIR/include/drm 2>/dev/null || true
+cp -a usr/include/misc $DESTDIR/include/misc 2>/dev/null || true
+rm -rf /tmp/_kh /tmp/kh.apk"""
+
+[depends]
+runtime = []
+build = []
