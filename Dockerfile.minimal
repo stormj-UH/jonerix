@@ -94,8 +94,7 @@ RUN ln -sf toybox /jonerix/bin/sh && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
 # CA certificates (downloaded from curl.se)
-# wget is available via busybox in the Alpine-based rootfs stage.
-RUN wget -qO /jonerix/etc/ssl/certs/ca-certificates.crt \
+RUN curl -fsSL -o /jonerix/etc/ssl/certs/ca-certificates.crt \
         https://curl.se/ca/cacert.pem
 
 # --- Default config files ---
