@@ -1,0 +1,50 @@
+[package]
+name = "openntpd"
+version = "6.8p1"
+license = "ISC"
+description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
+
+[source]
+url = "https://cdn.openbsd.org/pub/OpenBSD/OpenNTPD/openntpd-6.8p1.tar.gz"
+sha256 = "8582db838a399153d4a17f2a76518b638cc3020f58028575bf54127518f55a46"
+
+[build]
+system = "autoconf"
+configure = """CC=clang LD=ld.lld \
+CFLAGS="-Os -fstack-protector-strong -fPIE -D_DEFAULT_SOURCE" \
+LDFLAGS="-fuse-ld=lld -pie" \
+./configure --prefix=/ --sbindir=/bin --sysconfdir=/etc --with-privsep-user=_ntp"""
+build = "jmake -j$(nproc)"
+install = """set -e
+DESTDIR=$DESTDIR jmake install
+mkdir -p $DESTDIR/etc
+cat > $DESTDIR/etc/ntpd.conf <<EOF
+# /etc/ntpd.conf — jonerix default
+servers pool.ntp.org
+server time.cloudflare.com
+EOF
+mkdir -p $DESTDIR/etc/init.d
+cat > $DESTDIR/etc/init.d/ntpd <<'INITEOF'
+#!/bin/openrc-run
+name="ntpd"
+description="OpenNTPD time synchronization daemon"
+command="/bin/ntpd"
+command_args="${NTPD_OPTS:-}"
+pidfile="/run/ntpd.pid"
+
+depend() {
+    need networking
+    before sshd
+    use dns
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o _ntp:_ntp /var/db
+    checkpath -d -m 0755 -o _ntp:_ntp /var/empty
+}
+INITEOF
+chmod 755 $DESTDIR/etc/init.d/ntpd"""
+
+[depends]
+runtime = ["musl", "libressl"]
+build = ["clang", "jmake"]
