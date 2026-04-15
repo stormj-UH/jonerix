@@ -132,9 +132,16 @@ int cmd_upgrade(int argc, char **argv) {
         log_info("%zu package(s) to upgrade", upgrade_count);
     }
 
-    /* Use install command to upgrade each package (it handles upgrades) */
-    int rc = cmd_install((int)upgrade_count, upgrades);
+    /* Use install command to upgrade each package. Prepend --force so that
+     * cmd_install's "already installed / suggest upgrade" filter doesn't
+     * block us — we've already determined these are real upgrades. */
+    char **install_argv = xcalloc(upgrade_count + 1, sizeof(char *));
+    install_argv[0] = xstrdup("--force");
+    for (size_t i = 0; i < upgrade_count; i++) install_argv[i + 1] = upgrades[i];
+    int rc = cmd_install((int)(upgrade_count + 1), install_argv);
 
+    free(install_argv[0]);
+    free(install_argv);
     for (size_t i = 0; i < upgrade_count; i++) free(upgrades[i]);
     free(upgrades);
     db_close(db);
