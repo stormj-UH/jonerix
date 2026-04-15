@@ -13,13 +13,15 @@ cp /workspace/packages/jpkg/build.ninja .
 # LibreSSL/zstd, and the runtime image has them installed.
 sed -i 's/^ldflags = -static /ldflags = /' build.ninja"""
 build = """CPPFLAGS='-DJPKG_USE_LIBRESSL -I/include' \
-LDFLAGS='-L/lib' \
+LDFLAGS="-L/lib -Wl,-dynamic-linker=/lib/ld-musl-$(uname -m).so.1" \
 LDLIBS='-ltls -lssl -lcrypto -lzstd' \
 samu -f build.ninja"""
 install = """install -Dm755 jpkg $DESTDIR/bin/jpkg
 install -d $DESTDIR/etc/jpkg/keys
 install -d $DESTDIR/var/db/jpkg/installed
-install -d $DESTDIR/var/cache/jpkg"""
+install -d $DESTDIR/var/cache/jpkg
+# Scrub any remaining /lib64 string in the binary (same-length replacement)
+sed -i 's|/lib64|/lib\\x00|g' $DESTDIR/bin/jpkg 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl", "libressl", "zstd"]
