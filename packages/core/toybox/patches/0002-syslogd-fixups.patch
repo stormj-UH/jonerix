@@ -1,0 +1,12 @@
+--- a/toys/pending/syslogd.c	2026-04-15 00:00:00
++++ b/toys/pending/syslogd.c	2026-04-15 00:00:00
+@@ -32,6 +32,9 @@
+ */
+
+ #define FOR_syslogd
++/* Define SYSLOG_NAMES so that <syslog.h> provides facilitynames[] and
++ * prioritynames[] as actual arrays, not just declarations (musl/glibc). */
++#define SYSLOG_NAMES
+ #include "toys.h"
+
+ // UNIX Sockets for listening
