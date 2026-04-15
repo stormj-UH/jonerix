@@ -1,0 +1,23 @@
+#!/bin/sh
+# disable-eee — wrapper around eee-tool that turns EEE off on a PHY,
+# verifies the change took effect, and bounces the link if necessary.
+#
+# Exit 0 on success (state confirmed off, or already off).
+# Exit non-zero only if both attempts (with and without -b) fail.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
+IFACE="${1:-eth0}"
+
+# First attempt: turn off without bouncing the link
+out=$(/bin/eee-tool off "$IFACE" 2>&1)
+echo "$out"
+
+# Confirmation: "already off" (no-op) or an "after" line with eee_enabled=0
+if echo "$out" | grep -qE "already off|^[^:]*: after.*eee_enabled=0"; then
+    exit 0
+fi
+
+# State did not confirm — retry with -b to force a link bounce
+echo "${IFACE}: state did not confirm off; retrying with link bounce" >&2
+/bin/eee-tool off -b "$IFACE"
