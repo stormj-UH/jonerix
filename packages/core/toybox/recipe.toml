@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11"
+version = "0.8.11-r1"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 
