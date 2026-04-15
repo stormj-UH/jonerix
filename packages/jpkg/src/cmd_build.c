@@ -339,7 +339,9 @@ static int try_source_cache(const build_recipe_t *recipe, const char *dest) {
 }
 
 static int fetch_source(const build_recipe_t *recipe, const char *work_dir) {
-    if (!recipe->source_url) {
+    if (!recipe->source_url ||
+        recipe->source_url[0] == '\0' ||
+        strcmp(recipe->source_url, "local") == 0) {
         log_debug("no source URL, assuming local build");
         return 0;
     }

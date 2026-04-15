@@ -1,0 +1,19 @@
+#!/bin/openrc-run
+# Disable EEE on the eth0 PHY at boot.
+# Fixes BCM54213PE (Pi 5) link-flap caused by LPI transitions.
+# Runs after kernel modules load and before networking brings the link up.
+# Part of jonerix — MIT License
+
+description="Disable Energy-Efficient Ethernet on eth0 PHY (Pi 5 BCM54213PE fix)"
+
+depend() {
+    need modules
+    before networking
+    keyword -jail -prefix -vserver
+}
+
+start() {
+    ebegin "Disabling EEE on eth0 PHY"
+    /bin/disable-eee eth0
+    eend $?
+}
