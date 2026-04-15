@@ -11,7 +11,11 @@ sha256 = "8c4edd66f19e9c672040f8a4f76de5f3feafff5c443fc54554ae142a36bc10af"
 [build]
 system = "custom"
 build = """cargo fetch
-RUSTFLAGS="-C strip=symbols" cargo build --release --bin gix --bin ein"""
+# -C link-self-contained=yes uses rust's bundled crtbeginS.o/crtendS.o
+# -C link-arg=--rtlib=compiler-rt routes _Unwind_* via LLVM's libunwind
+# (jonerix has no libgcc; both flags resolve the missing GCC startup objects)
+RUSTFLAGS="-C strip=symbols -C link-self-contained=yes -C link-arg=--rtlib=compiler-rt" \
+  cargo build --release --bin gix --bin ein"""
 install = """install -Dm755 target/release/gix $DESTDIR/bin/gix
 install -Dm755 target/release/ein $DESTDIR/bin/ein
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
