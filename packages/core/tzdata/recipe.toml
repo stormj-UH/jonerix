@@ -31,20 +31,21 @@ rm -f /tmp/tzdata.tar.gz
 # Generate version.h and tzdir.h the way the Makefile would, but without
 # invoking make. Format matches what the upstream Makefile produces: version
 # identifiers as `static char const` arrays; TZDIR/TZDEFAULT as #define.
+# Heredocs (not printf) because the TOML->sh escape dance was eating \n.
 VERSION=$(cat version 2>/dev/null || echo 2026a)
-{
-    printf 'static char const PKGVERSION[]="(tz) ";\\n'
-    printf 'static char const TZVERSION[]="%s";\\n' "$VERSION"
-    printf 'static char const REPORT_BUGS_TO[]="tz@iana.org";\\n'
-} > version.h
-{
-    printf '#ifndef TZDEFAULT\\n'
-    printf '# define TZDEFAULT "/etc/localtime"\\n'
-    printf '#endif\\n'
-    printf '#ifndef TZDIR\\n'
-    printf '# define TZDIR "/share/zoneinfo"\\n'
-    printf '#endif\\n'
-} > tzdir.h
+cat > version.h <<VHEOF
+static char const PKGVERSION[]="(tz) ";
+static char const TZVERSION[]="$VERSION";
+static char const REPORT_BUGS_TO[]="tz@iana.org";
+VHEOF
+cat > tzdir.h <<'DHEOF'
+#ifndef TZDEFAULT
+# define TZDEFAULT "/etc/localtime"
+#endif
+#ifndef TZDIR
+# define TZDIR "/share/zoneinfo"
+#endif
+DHEOF
 
 # --rtlib=compiler-rt / --unwindlib=libunwind keep GCC runtime out of the
 # binaries; -DHAVE_GETTEXT=0 disables the gettext/libintl dependency.
