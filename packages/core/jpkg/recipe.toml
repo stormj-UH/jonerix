@@ -5,9 +5,19 @@ license = "MIT"
 description = "jonerix package manager"
 
 [build]
-build = ""
-install = ""
+system = "custom"
+# Source lives in the jonerix repo at packages/jpkg/ — copy it in.
+configure = """cp -a /workspace/packages/jpkg/src .
+cp /workspace/packages/jpkg/build.ninja ."""
+build = """CPPFLAGS='-DJPKG_USE_LIBRESSL -I/include' \
+LDFLAGS='-L/lib' \
+LDLIBS='-ltls -lssl -lcrypto -lzstd' \
+samu -f build.ninja"""
+install = """install -Dm755 jpkg $DESTDIR/bin/jpkg
+install -d $DESTDIR/etc/jpkg/keys
+install -d $DESTDIR/var/db/jpkg/installed
+install -d $DESTDIR/var/cache/jpkg"""
 
 [depends]
-runtime = ["musl", "curl", "zstd", "libarchive"]
-build = []
+runtime = ["musl", "libressl", "zstd"]
+build = ["clang", "llvm", "samurai", "libressl", "zstd"]
