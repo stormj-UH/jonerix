@@ -1,0 +1,79 @@
+From: jonerix
+Subject: [PATCH] shell: spell `for var in "$@"` explicitly
+
+toybox's /bin/sh does not accept the POSIX shorthand `for var; do ...`
+(which is equivalent to `for var in "$@"; do ...`).  When openrc's
+runtime shell libraries — especially sh/functions.sh.in, sourced by
+every init script via rc-service — are parsed by toybox sh, the
+shorthand produces a syntax error and rc-service fails for any
+service.
+
+Spell out `in "$@"` in every runtime shell fragment that uses the
+shorthand so the scripts parse under toybox sh (which is what
+jonerix ships as /bin/sh).
+
+---
+--- a/init.d/network.in	2024-04-01 12:22:37
++++ b/init.d/network.in	2026-04-15 09:17:56
+@@ -28,7 +28,7 @@
+ uniqify()
+ {
+ 	local result= i=
+-	for i; do
++	for i in "$@"; do
+ 		case " $result " in
+ 		*" $i "*);;
+ 		*) result="$result $i";;
+@@ -40,7 +40,7 @@
+ reverse()
+ {
+ 	local result= i=
+-	for i; do
++	for i in "$@"; do
+ 		result="$i $result"
+ 	done
+ 	echo "${result# *}"
+--- a/sh/rc-mount.sh	2024-04-01 12:22:37
++++ b/sh/rc-mount.sh	2026-04-15 09:17:56
+@@ -29,7 +29,7 @@
+ 	local IFS="$__IFS"
+ 	set -- $(mountinfo "$@")
+ 	unset IFS
+-	for mnt; do
++	for mnt in "$@"; do
+ 		# Unmounting a shared mount can unmount other mounts, so
+ 		# we need to check the mount is still valid
+ 		mountinfo --quiet "$mnt" || continue
+--- a/sh/openrc-run.sh.in	2024-04-01 12:22:37
++++ b/sh/openrc-run.sh.in	2026-04-15 09:17:56
+@@ -251,7 +251,7 @@
+ 	export EINFO_VERBOSE
+ fi
+ 
+-for _cmd; do
++for _cmd in "$@"; do
+ 	if [ "$_cmd" != status -a "$_cmd" != describe ]; then
+ 		# Apply any ulimit defined
+ 		if [ -n "${rc_ulimit:-$RC_ULIMIT}" ]; then
+--- a/sh/rc-functions.sh	2024-04-01 12:22:37
++++ b/sh/rc-functions.sh	2026-04-15 09:17:56
+@@ -87,7 +87,7 @@
+ 
+ need_if_exists()
+ {
+-	for x; do
++	for x in "$@"; do
+ 		rc-service --exists "${x}" && need "${x}"
+ 	done
+ }
+--- a/sh/functions.sh.in	2024-04-01 12:22:37
++++ b/sh/functions.sh.in	2026-04-15 09:17:56
+@@ -100,7 +100,7 @@
+ PATH="$_PATH${_path:+:}$_path" ; export PATH
+ unset _sanitize_path _PREFIX _PKG_PREFIX _LOCAL_PREFIX _PATH _path
+ 
+-for arg; do
++for arg in "$@"; do
+ 	case "$arg" in
+ 		--nocolor|--nocolour|-C)
+ 			EINFO_COLOR="NO" ; export EINFO_COLOR

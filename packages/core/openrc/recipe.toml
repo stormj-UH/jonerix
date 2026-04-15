@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54"
+version = "0.54-r1"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
