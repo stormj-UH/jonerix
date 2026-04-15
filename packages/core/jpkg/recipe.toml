@@ -8,7 +8,10 @@ description = "jonerix package manager"
 system = "custom"
 # Source lives in the jonerix repo at packages/jpkg/ — copy it in.
 configure = """cp -a /workspace/packages/jpkg/src .
-cp /workspace/packages/jpkg/build.ninja ."""
+cp /workspace/packages/jpkg/build.ninja .
+# Override -static hardcoded in build.ninja — jonerix ships only shared
+# LibreSSL/zstd, and the runtime image has them installed.
+sed -i 's/^ldflags = -static /ldflags = /' build.ninja"""
 build = """CPPFLAGS='-DJPKG_USE_LIBRESSL -I/include' \
 LDFLAGS='-L/lib' \
 LDLIBS='-ltls -lssl -lcrypto -lzstd' \
