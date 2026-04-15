@@ -19,5 +19,5 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "gnu-compat-symlinks"]
 build = ["rust"]

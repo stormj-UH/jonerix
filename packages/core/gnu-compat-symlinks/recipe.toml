@@ -1,0 +1,23 @@
+[package]
+name = "gnu-compat-symlinks"
+version = "1.0.0"
+license = "MIT"
+description = "Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++)"
+
+[build]
+system = "custom"
+build = ""
+install = """set -e
+mkdir -p "$DESTDIR/lib"
+# GCC unwinder compat: Rust binaries (cargo, rustc, gix, etc.) and other
+# GCC-linked tools expect libgcc_s.so.1 — provide it via LLVM's libunwind.
+ln -sf libunwind.so.1 "$DESTDIR/lib/libgcc_s.so.1"
+ln -sf libgcc_s.so.1 "$DESTDIR/lib/libgcc_s.so"
+# C++ stdlib compat: tools built against libstdc++ — provide via LLVM's libc++.
+ln -sf libc++.so.1 "$DESTDIR/lib/libstdc++.so.6"
+ln -sf libstdc++.so.6 "$DESTDIR/lib/libstdc++.so"
+"""
+
+[depends]
+runtime = ["llvm", "libcxx"]
+build = []

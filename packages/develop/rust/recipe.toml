@@ -26,5 +26,5 @@ tar xf rust.tar.gz --strip-components=1
 install = ""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "gnu-compat-symlinks"]
 build = []
