@@ -7,8 +7,12 @@ description = "IANA time zone database (zoneinfo data plus zic/zdump tools)"
 # Upstream ships two tarballs: tzcode (zic/zdump/Makefile) and tzdata (zone
 # source files). jpkg only supports a single [source] URL, so we let jpkg
 # fetch+verify the code tarball and fetch the data tarball inside the build
-# script with a pinned sha256. Both tarballs extract into the same directory
-# and the Makefile expects the merged tree.
+# script with a pinned sha256. Both tarballs extract into the same directory.
+#
+# We intentionally do NOT invoke the upstream Makefile — it uses a
+# multi-line variable assignment (SET_TIMESTAMP_N = sh -c '\) that jmake
+# (jonerix's Make) does not parse. The two programs we need (zic, zdump)
+# are tiny and self-contained, so we compile them directly with clang.
 [source]
 url = "https://data.iana.org/time-zones/releases/tzcode2026a.tar.gz"
 sha256 = "f80a17a2eddd2b54041f9c98d75b0aa8038b016d7c5de72892a146d9938740e1"
@@ -24,27 +28,34 @@ echo "$TZDATA_SHA  /tmp/tzdata.tar.gz" | sha256sum -c -
 tar xf /tmp/tzdata.tar.gz
 rm -f /tmp/tzdata.tar.gz
 
-# Build zic and zdump only. Skip libtz.a, date, tzselect (bash script), and
-# man pages -- none of them are wanted for the jonerix base install.
-# --rtlib=compiler-rt / --unwindlib=libunwind avoid pulling in libgcc_s.
-make CC=clang \\
-     CFLAGS="-Os -fomit-frame-pointer" \\
-     LDFLAGS="--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \\
-     zic zdump
+# Generate version.h the way the Makefile would, but without invoking make.
+VERSION=$(cat version 2>/dev/null || echo 2026a)
+printf '#define PKGVERSION "(tz) "\\n#define TZVERSION "%s"\\n' "$VERSION" > version.h
 
-# Compile the zoneinfo database into a local staging dir. Mirror the install
-# target's behavior but target a path we control so the install step can copy
-# from it into DESTDIR. Use the shrunk tzdata.zi (same content the upstream
-# install target uses by default since REDO=posix_right uses tzdata.zi too).
-make CC=clang \\
-     CFLAGS="-Os -fomit-frame-pointer" \\
-     LDFLAGS="--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \\
-     tzdata.zi
+# --rtlib=compiler-rt / --unwindlib=libunwind keep GCC runtime out of the
+# binaries; -DHAVE_GETTEXT=0 disables the gettext/libintl dependency; TZDIR
+# points zic/zdump at the runtime zoneinfo location.
+CC=clang
+CFLAGS="-Os -fomit-frame-pointer -DHAVE_GETTEXT=0 -DTZDIR=\\"/share/zoneinfo\\""
+LDFLAGS="--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+
+# zic: TZCOBJS = zic.o  (Makefile: zic: zic.o)
+$CC $CFLAGS $LDFLAGS -o zic zic.c
+
+# zdump: TZDOBJS = zdump.o localtime.o strftime.o
+$CC $CFLAGS $LDFLAGS -o zdump zdump.c localtime.c strftime.c
+
+# Compile the zoneinfo database directly from the zone source files.
+# This bypasses tzdata.zi / the awk-based shrinker (which the Makefile
+# normally runs via ziguard.awk + zishrink.awk). zic accepts the raw
+# sources and produces the same runtime output.
 rm -rf _zoneinfo
 mkdir -p _zoneinfo
-./zic -b slim -d _zoneinfo tzdata.zi
-# Ship the tz tab files so applications like tzselect-style tools can find
-# them (harmless if unused).
+./zic -b slim -d _zoneinfo \\
+    africa antarctica asia australasia europe \\
+    northamerica southamerica etcetera backward
+
+# Ship the tz tab files so tzselect-style tools can find them.
 cp -f iso3166.tab zone.tab zone1970.tab zonenow.tab _zoneinfo/
 """
 install = """set -e
@@ -62,6 +73,6 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 
 [depends]
 runtime = ["musl"]
-# onetrueawk is needed because zishrink.awk and ziguard.awk use UTF-8, which
-# toybox/busybox awk does not handle reliably (upstream Makefile warns of this).
-build = ["clang", "make", "onetrueawk"]
+# onetrueawk is no longer needed at build time — we bypass the awk shrinker
+# and feed zone source files directly to zic. Only clang is required.
+build = ["clang"]
