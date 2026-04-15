@@ -1,0 +1,33 @@
+[package]
+name = "openrsync"
+version = "0.5.0-git20250127"
+license = "ISC"
+description = "BSD-licensed clean-room implementation of rsync (drop-in replacement, protocol 27 compatible)"
+
+[source]
+# Tagged release VERSION_0_5_0 predates the oconfigure-based Linux/musl
+# portability layer, so we pin to the 2025-01-27 master commit which is
+# what upstream CI exercises against Linux glibc AND musl, x86_64/aarch64.
+url = "https://github.com/kristapsdz/openrsync/archive/a257c0f495af2b5ee6b41efc6724850a445f87ed.tar.gz"
+sha256 = "e2def3d03bcb61a584c1f878dd66da4dc7ca889652689096dc0cd0f5bd7371fa"
+
+[build]
+system = "custom"
+configure = """# oconfigure is a plain POSIX sh autoconf-style probe (no bash, no m4).
+# It consumes KEY=VAL as positional args (NOT env vars) and writes
+# Makefile.configure. We pin BINDIR explicitly so PREFIX=/ doesn't
+# double-slash into //bin. openrsync needs no TLS library; rsync protocol
+# is plaintext (tunneling over ssh is the caller's responsibility).
+./configure PREFIX=/ BINDIR=/bin MANDIR=/share/man"""
+build = "make -j$NPROC CC=clang"
+install = """make install DESTDIR=$DESTDIR
+# Drop-in rsync compatibility symlink so scripts expecting `rsync` work.
+ln -sf openrsync $DESTDIR/bin/rsync
+# Flatten any usr/ the Makefile may have created (defense-in-depth).
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "llvm"]
