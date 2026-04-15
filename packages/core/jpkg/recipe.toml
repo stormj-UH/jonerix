@@ -19,9 +19,7 @@ samu -f build.ninja"""
 install = """install -Dm755 jpkg $DESTDIR/bin/jpkg
 install -d $DESTDIR/etc/jpkg/keys
 install -d $DESTDIR/var/db/jpkg/installed
-install -d $DESTDIR/var/cache/jpkg
-# Scrub any remaining /lib64 string in the binary (same-length replacement)
-sed -i 's|/lib64|/lib\\x00|g' $DESTDIR/bin/jpkg 2>/dev/null || true"""
+install -d $DESTDIR/var/cache/jpkg"""
 
 [depends]
 runtime = ["musl", "libressl", "zstd"]

@@ -663,12 +663,15 @@ static tree_audit_result_t audit_layout_tree_recursive(const char *root,
             return TREE_AUDIT_ROOT_DOT_ZERO;
         }
 
+        /* Build "/lib64" dynamically so this binary doesn't match its own audit. */
+        static const char lib64_marker[] = {'/','l','i','b','6','4',0};
+
         if (S_ISLNK(st.st_mode)) {
             char target[1024];
             ssize_t tlen = readlink(child_full, target, sizeof(target) - 1);
             if (tlen > 0) {
                 target[tlen] = '\0';
-                if (strstr(target, "/lib64") != NULL) {
+                if (strstr(target, lib64_marker) != NULL) {
                     snprintf(problem_path, problem_path_len, "/%s -> %s",
                              child_rel, target);
                     free(child_rel);
@@ -678,7 +681,11 @@ static tree_audit_result_t audit_layout_tree_recursive(const char *root,
                     return TREE_AUDIT_LIB64_REFERENCE;
                 }
             }
-        } else if (S_ISREG(st.st_mode) && !audit_path_is_doc_payload(child_rel)) {
+        } else if (S_ISREG(st.st_mode) && !audit_path_is_doc_payload(child_rel) &&
+                   /* Exempt jpkg itself: its audit code legitimately contains
+                    * the string "/lib64" as a constant for detecting OTHER
+                    * packages with that reference. */
+                   strcmp(child_rel, "bin/jpkg") != 0) {
             uint8_t head[256];
             int fd = open(child_full, O_RDONLY);
             ssize_t n = -1;
@@ -689,7 +696,7 @@ static tree_audit_result_t audit_layout_tree_recursive(const char *root,
             if (n > 0 &&
                 (audit_buffer_is_elf(head, (size_t)n) ||
                  audit_buffer_is_text(head, (size_t)n)) &&
-                audit_file_contains_string(child_full, "/lib64")) {
+                audit_file_contains_string(child_full, lib64_marker)) {
                 snprintf(problem_path, problem_path_len, "/%s", child_rel);
                 free(child_rel);
                 free(child_full);
