@@ -4,9 +4,6 @@ version = "1.0.0"
 license = "MIT"
 description = "jpkg subcommand for local .jpkg install and recipe builds"
 
-[source]
-url = "local"
-
 [build]
 system = "custom"
 build = """
