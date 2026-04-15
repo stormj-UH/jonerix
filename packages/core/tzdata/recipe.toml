@@ -28,15 +28,28 @@ echo "$TZDATA_SHA  /tmp/tzdata.tar.gz" | sha256sum -c -
 tar xf /tmp/tzdata.tar.gz
 rm -f /tmp/tzdata.tar.gz
 
-# Generate version.h the way the Makefile would, but without invoking make.
+# Generate version.h and tzdir.h the way the Makefile would, but without
+# invoking make. Format matches what the upstream Makefile produces: version
+# identifiers as `static char const` arrays; TZDIR/TZDEFAULT as #define.
 VERSION=$(cat version 2>/dev/null || echo 2026a)
-printf '#define PKGVERSION "(tz) "\\n#define TZVERSION "%s"\\n' "$VERSION" > version.h
+{
+    printf 'static char const PKGVERSION[]="(tz) ";\\n'
+    printf 'static char const TZVERSION[]="%s";\\n' "$VERSION"
+    printf 'static char const REPORT_BUGS_TO[]="tz@iana.org";\\n'
+} > version.h
+{
+    printf '#ifndef TZDEFAULT\\n'
+    printf '# define TZDEFAULT "/etc/localtime"\\n'
+    printf '#endif\\n'
+    printf '#ifndef TZDIR\\n'
+    printf '# define TZDIR "/share/zoneinfo"\\n'
+    printf '#endif\\n'
+} > tzdir.h
 
 # --rtlib=compiler-rt / --unwindlib=libunwind keep GCC runtime out of the
-# binaries; -DHAVE_GETTEXT=0 disables the gettext/libintl dependency; TZDIR
-# points zic/zdump at the runtime zoneinfo location.
+# binaries; -DHAVE_GETTEXT=0 disables the gettext/libintl dependency.
 CC=clang
-CFLAGS="-Os -fomit-frame-pointer -DHAVE_GETTEXT=0 -DTZDIR=\\"/share/zoneinfo\\""
+CFLAGS="-Os -fomit-frame-pointer -DHAVE_GETTEXT=0"
 LDFLAGS="--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
 
 # zic: TZCOBJS = zic.o  (Makefile: zic: zic.o)
