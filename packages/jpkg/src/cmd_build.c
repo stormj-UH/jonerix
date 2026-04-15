@@ -625,12 +625,16 @@ static char *fetch_remote_recipe(const char *pkg_name) {
             "packages/core", "packages/develop", "packages/extra", NULL
         };
         log_info("fetching recipe for %s...", pkg_name);
-        for (const char **pd = pkg_dirs; *pd && !fetched; pd++) {
-            snprintf(url, sizeof(url),
-                     "https://raw.githubusercontent.com/stormj-UH/jonerix/master/"
-                     "%s/%s/recipe.toml", *pd, pkg_name);
-            if (fetch_to_file(url, recipe_path) == 0) {
-                fetched = true;
+        /* Try main first (current default branch), then master for compat. */
+        static const char *branches[] = { "main", "master", NULL };
+        for (const char **br = branches; *br && !fetched; br++) {
+            for (const char **pd = pkg_dirs; *pd && !fetched; pd++) {
+                snprintf(url, sizeof(url),
+                         "https://raw.githubusercontent.com/stormj-UH/jonerix/%s/"
+                         "%s/%s/recipe.toml", *br, *pd, pkg_name);
+                if (fetch_to_file(url, recipe_path) == 0) {
+                    fetched = true;
+                }
             }
         }
         if (!fetched) {
