@@ -10,8 +10,31 @@ sha256 = "5f0c3f97b807e72edccc844c6a685ec9862199f16a665df07de5b1d20ec21233"
 
 [build]
 system = "custom"
-build = """cargo fetch --locked
-RUSTFLAGS="-C strip=symbols" cargo build --release"""
+build = """# Drop GCC runtime via cc-wrapper (strips -lgcc_s, forces compiler-rt+libunwind).
+mkdir -p .cargo
+cat > cc-wrapper.sh <<'WEOF'
+#!/bin/sh
+args=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -lgcc_s) ;;
+    *) args="$args \\"$1\\"" ;;
+  esac
+  shift
+done
+eval exec clang --rtlib=compiler-rt --unwindlib=libunwind $args
+WEOF
+chmod +x cc-wrapper.sh
+WRAPPER="$(pwd)/cc-wrapper.sh"
+cat > .cargo/config.toml <<EOF
+[target.aarch64-unknown-linux-musl]
+linker = "$WRAPPER"
+[target.x86_64-unknown-linux-musl]
+linker = "$WRAPPER"
+EOF
+
+cargo fetch --locked
+RUSTFLAGS="-C strip=symbols -C link-self-contained=yes" cargo build --release"""
 install = """jmake PROFILE=release DESTDIR=$DESTDIR PREFIX=/ install
 
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

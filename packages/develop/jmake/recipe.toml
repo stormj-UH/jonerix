@@ -10,10 +10,33 @@ sha256 = "beed6d44dbf2caf0dcce0761f94da4e0768ebc0367df038020953b8603c65566"
 
 [build]
 system = "custom"
-build = "cargo build --release"
+build = """# Drop GCC runtime via cc-wrapper (strips -lgcc_s, forces compiler-rt+libunwind).
+mkdir -p .cargo
+cat > cc-wrapper.sh <<'WEOF'
+#!/bin/sh
+args=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -lgcc_s) ;;
+    *) args="$args \\"$1\\"" ;;
+  esac
+  shift
+done
+eval exec clang --rtlib=compiler-rt --unwindlib=libunwind $args
+WEOF
+chmod +x cc-wrapper.sh
+WRAPPER="$(pwd)/cc-wrapper.sh"
+cat > .cargo/config.toml <<EOF
+[target.aarch64-unknown-linux-musl]
+linker = "$WRAPPER"
+[target.x86_64-unknown-linux-musl]
+linker = "$WRAPPER"
+EOF
+
+RUSTFLAGS="-C link-self-contained=yes" cargo build --release"""
 install = """install -Dm755 target/release/jmake "$DESTDIR/bin/jmake"
 llvm-strip --strip-all "$DESTDIR/bin/jmake" 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "gnu-compat-symlinks"]
+runtime = ["musl"]
 build = ["rust"]
