@@ -48,6 +48,7 @@ flex
 fastfetch
 # Tier 4: depends on libressl or other tier-3 packages
 openntpd
+jonerix-raspi5-fixups
 libarchive
 bsdtar
 unbound

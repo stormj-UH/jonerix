@@ -1,0 +1,53 @@
+[package]
+name = "jonerix-raspi5-fixups"
+version = "1.0.0"
+license = "MIT"
+description = "Hardware-specific fixups for jonerix on Raspberry Pi 5"
+
+# No [source] section — jpkg treats a missing source.url as a local-only
+# build and hands control to the build script, which uses $RECIPE_DIR.
+
+[build]
+system = "custom"
+build = """
+set -e
+cd "$RECIPE_DIR"
+# eee-tool: single-file Rust program (no Cargo, no external deps).
+# Static-musl link so it runs on jonerix without libc lookup.
+rustc -O \
+    -C strip=symbols \
+    -C target-feature=+crt-static \
+    -o /tmp/eee-tool \
+    src/eee-tool.rs
+install -Dm755 /tmp/eee-tool $DESTDIR/bin/eee-tool
+install -Dm755 bin/disable-eee $DESTDIR/bin/disable-eee
+install -Dm755 init.d/disable-eee $DESTDIR/etc/init.d/disable-eee
+"""
+install = ""
+
+[hooks]
+# Wire the disable-eee OpenRC service into the boot runlevel, and
+# (on a live Raspberry Pi 5) run it now so the user doesn't need to reboot.
+# Guarded by /proc/device-tree/model so chroot/alt-root installs from a
+# build host (jpkg --root /mnt/rootfs …) no-op cleanly.
+post_install = '''
+ln -sf /etc/init.d/disable-eee /etc/runlevels/boot/disable-eee 2>/dev/null || true
+
+if [ -r /proc/device-tree/model ] && \
+   tr -d '\0' < /proc/device-tree/model 2>/dev/null | grep -q "Raspberry Pi 5" && \
+   [ -e /sys/class/net/eth0 ]; then
+    /bin/disable-eee eth0 || true
+fi
+exit 0
+'''
+
+# Tear down the runlevel symlink that post_install created.
+# (jpkg removes manifest-owned files automatically; this symlink is dynamic.)
+post_remove = '''
+rm -f /etc/runlevels/boot/disable-eee
+exit 0
+'''
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]
