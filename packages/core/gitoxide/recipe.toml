@@ -10,11 +10,32 @@ sha256 = "8c4edd66f19e9c672040f8a4f76de5f3feafff5c443fc54554ae142a36bc10af"
 
 [build]
 system = "custom"
-build = """cargo fetch
-# -C link-self-contained=yes uses rust's bundled crtbeginS.o/crtendS.o
-# -C link-arg=--rtlib=compiler-rt routes _Unwind_* via LLVM's libunwind
-# (jonerix has no libgcc; both flags resolve the missing GCC startup objects)
-RUSTFLAGS="-C strip=symbols -C link-self-contained=yes -C link-arg=--rtlib=compiler-rt" \
+build = """# Drop GCC runtime: cargo wrapper strips -lgcc_s and forces compiler-rt+libunwind.
+# rust's target spec hardcodes -lgcc_s and crtbeginS.o; can't remove without spec edit.
+mkdir -p .cargo
+cat > cc-wrapper.sh <<'WEOF'
+#!/bin/sh
+args=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -lgcc_s) ;;
+    *) args="$args \\"$1\\"" ;;
+  esac
+  shift
+done
+eval exec clang --rtlib=compiler-rt --unwindlib=libunwind $args
+WEOF
+chmod +x cc-wrapper.sh
+WRAPPER="$(pwd)/cc-wrapper.sh"
+cat > .cargo/config.toml <<EOF
+[target.aarch64-unknown-linux-musl]
+linker = "$WRAPPER"
+[target.x86_64-unknown-linux-musl]
+linker = "$WRAPPER"
+EOF
+
+cargo fetch
+RUSTFLAGS="-C strip=symbols -C link-self-contained=yes" \
   cargo build --release --bin gix --bin ein"""
 install = """install -Dm755 target/release/gix $DESTDIR/bin/gix
 install -Dm755 target/release/ein $DESTDIR/bin/ein
@@ -23,5 +44,5 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "gnu-compat-symlinks"]
+runtime = ["musl"]
 build = ["rust"]
