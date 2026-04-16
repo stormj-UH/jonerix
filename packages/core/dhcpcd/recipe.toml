@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0"
+version = "10.1.0-r1"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -16,9 +16,101 @@ install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+
+# OpenRC init script. Upstream dhcpcd ships one in hooks/ but it hard-codes
+# /usr/sbin paths and uses bash-isms; write a mksh-clean jonerix-flavored
+# version directly. Tracked by jpkg so `jpkg verify dhcpcd` catches drift.
+mkdir -p $DESTDIR/etc/init.d $DESTDIR/etc/conf.d
+cat > $DESTDIR/etc/init.d/dhcpcd <<'INIT'
+#!/sbin/openrc-run
+# dhcpcd -- RFC2131 DHCP client daemon.
+#
+# Shipped by the dhcpcd jpkg. Runs dhcpcd as a single foreground
+# daemon; children (privileged proxy, control proxy, BOOTP/ARP probes)
+# are spawned automatically. Only ONE /etc/init.d/dhcpcd should ever
+# be enabled per host -- do NOT also enable openrc's generic
+# `networking` service on the same interface or you'll get two
+# dhcpcd parents fighting over the same lease (we hit this on
+# jonerix-tormenta 2026-04-16).
+#
+# Override dhcpcd_args in /etc/conf.d/dhcpcd to pass extra flags
+# (e.g. dhcpcd_args="-w -q eth0" to restrict to one iface).
+
+name="dhcpcd"
+description="DHCP client daemon (RFC2131)"
+
+command="/bin/dhcpcd"
+command_args="${dhcpcd_args:-}"
+command_background="yes"
+pidfile="/run/dhcpcd.pid"
+
+depend() {
+    need localmount
+    provide net
+    use logger
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o dhcpcd:dhcpcd /var/lib/dhcpcd 2>/dev/null \\
+        || checkpath -d -m 0755 /var/lib/dhcpcd
+    checkpath -d -m 0755 /run
+}
+INIT
+chmod 755 $DESTDIR/etc/init.d/dhcpcd
+
+# Default /etc/conf.d/dhcpcd (empty overrides). jpkg doesn't treat
+# /etc/conf.d files as config-preserve specially, so this only gets
+# installed once on first install -- later upgrades won't clobber edits
+# as long as the content hash matches (jpkg verify is informational).
+cat > $DESTDIR/etc/conf.d/dhcpcd <<'CONFD'
+# /etc/conf.d/dhcpcd -- OpenRC config for the dhcpcd service.
+# Uncomment and edit to pass extra flags to dhcpcd(8):
+#   dhcpcd_args="-w -q eth0"
+CONFD
+chmod 644 $DESTDIR/etc/conf.d/dhcpcd"""
+
+[hooks]
+# Register dhcpcd with OpenRC's default runlevel on install (idempotent).
+# Using `ln -sf` instead of `rc-update add` because rc-update requires
+# openrc to be in $PATH during package install, which isn't guaranteed
+# inside a chroot/container build.
+#
+# Also proactively remove any stray /etc/init.d/networking (an orphan
+# from pre-jonerix bootstrap images that launched its own dhcpcd and
+# raced with this service). Only removes it if it's not owned by any
+# installed jpkg -- packaged scripts are left alone.
+post_install = """# Register in default runlevel
+if [ -d /etc/runlevels/default ]; then
+    ln -sf /etc/init.d/dhcpcd /etc/runlevels/default/dhcpcd
+fi
+
+# Detect + disable the stray `networking` init script that fought with
+# dhcpcd on jonerix-tormenta (see 2026-04-16 incident). Only remove if
+# no installed package claims it.
+if [ -e /etc/init.d/networking ] && [ ! -L /etc/init.d/networking ]; then
+    owned=0
+    for m in /var/db/jpkg/installed/*/files; do
+        [ -f "$m" ] || continue
+        if grep -q "/etc/init.d/networking\\(\\s\\|$\\)" "$m" 2>/dev/null; then
+            owned=1
+            break
+        fi
+    done
+    if [ "$owned" = 0 ]; then
+        rm -f /etc/runlevels/*/networking 2>/dev/null || true
+        rm -f /etc/init.d/networking
+        echo "dhcpcd: removed orphan /etc/init.d/networking (pre-jonerix bootstrap leftover)"
+    fi
+fi
+exit 0"""
+
+# Unregister from runlevel on uninstall. The init script + conf.d are
+# manifest-tracked so jpkg removes them automatically.
+post_remove = """rm -f /etc/runlevels/default/dhcpcd
+exit 0"""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "openrc"]
 build = ["clang", "make", "jonerix-headers"]
