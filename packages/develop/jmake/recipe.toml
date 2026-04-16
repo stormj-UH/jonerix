@@ -1,12 +1,12 @@
 [package]
 name = "jmake"
-version = "1.0.1"
+version = "1.0.2"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 
 [source]
-url = "https://cache.invalid/jmake-1.0.1.tar"
-sha256 = "fba428c823a3aaca7836ab956562874561dec3048ea34b2c3c9f517d9f86f1b1"
+url = "https://cache.invalid/jmake-1.0.2.tar"
+sha256 = "d50080a7295dcb8463b3b8ce4e19536d8d42c4b864207bc51d8dc93f2267f73b"
 
 [build]
 system = "custom"
