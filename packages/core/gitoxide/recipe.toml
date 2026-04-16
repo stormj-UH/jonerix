@@ -1,6 +1,6 @@
 [package]
 name = "gitoxide"
-version = "0.52.0-r1"
+version = "0.52.0-r2"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust implementation of git (gix + ein)"
 
@@ -14,6 +14,16 @@ system = "custom"
 # emits -lunwind instead of -lgcc_s for proc-macro .so output. No
 # cc-wrapper or gnu-compat-symlinks runtime dep needed any more.
 #
+# `-C link-self-contained=yes` produces a static-PIE binary using rust's
+# bundled CRTs. WITHOUT this flag, openssl-sys's NEEDED libssl/libcrypto
+# causes rust to emit a half-static binary with NEEDED dynamic libs but
+# no PT_INTERP program header (because crt-static-default=true for musl
+# target picks static CRTs). Such a binary has no dynamic loader and
+# segfaults instantly. Static PIE with -crt-static produces a clean
+# dynamic executable (/lib/ld-musl-*.so.1 as interpreter, libssl/libcrypto
+# NEEDED). We use the latter: a proper dynamic binary that links against
+# jonerix's LibreSSL at runtime.
+#
 # OPENSSL_* env vars: openssl-sys (transitive dep of gix's git2/curl
 # support) does pkg-config-free detection via these vars. On jonerix
 # LibreSSL headers live at /include, libs at /lib.
@@ -22,7 +32,8 @@ export OPENSSL_INCLUDE_DIR=/include
 export OPENSSL_LIB_DIR=/lib
 export PKG_CONFIG_ALLOW_CROSS=1
 cargo fetch
-RUSTFLAGS="-C strip=symbols" cargo build --release --bin gix --bin ein"""
+RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static" \\
+  cargo build --release --bin gix --bin ein"""
 install = """install -Dm755 target/release/gix $DESTDIR/bin/gix
 install -Dm755 target/release/ein $DESTDIR/bin/ein
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
