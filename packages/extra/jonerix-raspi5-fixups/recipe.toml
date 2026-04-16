@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.2.1"
+version = "1.2.2"
 license = "MIT"
-description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 + adduser safety + legacy bootstrap cleanup"
+description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 + adduser safety + legacy bootstrap cleanup + fstab rescue"
 
 # No [source] section — jpkg treats a missing source.url as a local-only
 # build and hands control to the build script, which uses $RECIPE_DIR.
@@ -44,6 +44,48 @@ if [ -L /bin/adduser ] && [ ! -e /etc/jpkg/raspi5-fixups/adduser.prev ]; then
     readlink /bin/adduser > /etc/jpkg/raspi5-fixups/adduser.prev 2>/dev/null || true
 fi
 ln -sf adduser-safe /bin/adduser
+
+# --- fstab rescue (Pi images shipped before 2026-04-16) ---
+# The initial jonerix Pi image baked a minimal /etc/fstab with only
+# root + /boot partitions. Missing: devpts, sysfs, tmpfs /run,
+# tmpfs /tmp. Consequences observed on jonerix-tormenta 2026-04-16:
+#   - Interactive SSH failed with "PTY allocation request failed"
+#     (no /dev/pts mount means sshd can't allocate slave PTYs)
+#   - /run and /tmp grew on ext4 instead of being scratch
+# Append each missing line idempotently. grep guards so repeat
+# installs are no-ops, and we never clobber user edits.
+if [ -f /etc/fstab ]; then
+    cp /etc/fstab /etc/fstab.pre-raspi5-fixups 2>/dev/null || true
+    _fstab_add() {
+        # $1 = grep pattern to detect existing entry, $2 = line to append
+        if ! grep -qE "$1" /etc/fstab 2>/dev/null; then
+            printf '%s\\n' "$2" >> /etc/fstab
+            echo "raspi5-fixups: added fstab line: $2"
+        fi
+    }
+    if ! grep -q "raspi5-fixups rescue" /etc/fstab 2>/dev/null; then
+        printf '\\n# --- added by jonerix-raspi5-fixups (base-image fstab rescue) ---\\n' >> /etc/fstab
+    fi
+    _fstab_add "^[[:space:]]*devpts[[:space:]]" \\
+        "devpts   /dev/pts   devpts   gid=5,mode=0620,ptmxmode=0666   0 0"
+    _fstab_add "^[[:space:]]*sysfs[[:space:]]" \\
+        "sysfs    /sys       sysfs    defaults                         0 0"
+    _fstab_add "[[:space:]]/run[[:space:]].*tmpfs" \\
+        "tmpfs    /run       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
+    _fstab_add "[[:space:]]/tmp[[:space:]].*tmpfs" \\
+        "tmpfs    /tmp       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
+
+    # Live-mount anything not currently mounted. Best-effort; failures
+    # are OK (e.g. /dev/pts needs mkdir in devtmpfs which only root can
+    # do — we are root during post_install so this works).
+    if ! mountpoint -q /dev/pts 2>/dev/null; then
+        [ -d /dev/pts ] || mkdir /dev/pts 2>/dev/null || true
+        mount /dev/pts 2>/dev/null || true
+    fi
+    mountpoint -q /sys 2>/dev/null || mount /sys 2>/dev/null || true
+    mountpoint -q /run 2>/dev/null || mount /run 2>/dev/null || true
+    mountpoint -q /tmp 2>/dev/null || mount /tmp 2>/dev/null || true
+fi
 
 # --- Legacy bootstrap cleanup (all hosts) ---
 # Some pre-jonerix Pi images shipped a bare /etc/init.d/networking

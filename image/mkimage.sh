@@ -248,6 +248,7 @@ PARTLABEL=${LABEL_ESP}      /boot/efi   vfat    defaults,noatime        0      2
 tmpfs                       /tmp        tmpfs   defaults,nosuid,nodev   0      0
 tmpfs                       /run        tmpfs   defaults,nosuid,nodev   0      0
 devtmpfs                    /dev        devtmpfs defaults               0      0
+devpts                      /dev/pts    devpts  gid=5,mode=0620,ptmxmode=0666  0  0
 proc                        /proc       proc    defaults                0      0
 sysfs                       /sys        sysfs   defaults                0      0
 EOF
