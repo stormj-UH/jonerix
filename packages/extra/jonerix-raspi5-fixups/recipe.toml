@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.0.0"
+version = "1.1.0"
 license = "MIT"
 description = "Hardware-specific fixups for jonerix on Raspberry Pi 5"
 
@@ -22,6 +22,7 @@ rustc -O \
 install -Dm755 /tmp/eee-tool $DESTDIR/bin/eee-tool
 install -Dm755 bin/disable-eee $DESTDIR/bin/disable-eee
 install -Dm755 init.d/disable-eee $DESTDIR/etc/init.d/disable-eee
+install -Dm755 init.d/fan-control $DESTDIR/etc/init.d/fan-control
 """
 install = ""
 
@@ -31,14 +32,20 @@ install = ""
 # Guarded by /proc/device-tree/model so chroot/alt-root installs from a
 # build host (jpkg --root /mnt/rootfs …) no-op cleanly.
 post_install = """ln -sf /etc/init.d/disable-eee /etc/runlevels/boot/disable-eee 2>/dev/null || true
-if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null && [ -e /sys/class/net/eth0 ]; then
-    /bin/disable-eee eth0 || true
+ln -sf /etc/init.d/fan-control /etc/runlevels/boot/fan-control 2>/dev/null || true
+if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
+    [ -e /sys/class/net/eth0 ] && /bin/disable-eee eth0 || true
+    KVER=$(uname -r)
+    MOD="/lib/modules/$KVER/kernel/drivers/hwmon/pwm-fan.ko.xz"
+    if [ -f "$MOD" ] && [ ! -d /sys/class/thermal/cooling_device0 ]; then
+        xzcat "$MOD" > /tmp/pwm-fan.ko && insmod /tmp/pwm-fan.ko && rm -f /tmp/pwm-fan.ko || true
+    fi
 fi
 exit 0"""
 
-# Tear down the runlevel symlink that post_install created.
-# (jpkg removes manifest-owned files automatically; this symlink is dynamic.)
-post_remove = """rm -f /etc/runlevels/boot/disable-eee
+# Tear down the runlevel symlinks that post_install created.
+# (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
+post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control
 exit 0"""
 
 [depends]
