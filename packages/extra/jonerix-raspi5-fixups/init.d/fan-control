@@ -1,0 +1,25 @@
+#!/bin/openrc-run
+# Load the pwm-fan kernel module so the thermal framework can manage
+# the Pi 5 cooling fan speed based on CPU temperature.
+# Part of jonerix — MIT License
+
+description="Load PWM fan driver for thermal-managed fan control (Pi 5)"
+
+depend() {
+    before networking disable-eee
+}
+
+start() {
+    ebegin "Loading pwm-fan module"
+    KVER=$(uname -r)
+    MOD="/lib/modules/$KVER/kernel/drivers/hwmon/pwm-fan.ko.xz"
+    if [ -f "$MOD" ]; then
+        xzcat "$MOD" > /tmp/pwm-fan.ko
+        insmod /tmp/pwm-fan.ko
+        rm -f /tmp/pwm-fan.ko
+    else
+        eend 1 "pwm-fan.ko.xz not found for kernel $KVER"
+        return 1
+    fi
+    eend $?
+}
