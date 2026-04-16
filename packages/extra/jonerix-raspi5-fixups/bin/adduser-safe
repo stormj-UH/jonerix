@@ -1,0 +1,73 @@
+#!/bin/mksh
+# adduser-safe — non-destructive replacement for toybox adduser.
+#
+# toybox 0.8.11 adduser has a bug where a partial failure (e.g. the
+# group it tries to create already exists, or a dependency op fails)
+# truncates /etc/passwd and /etc/shadow to empty files, wiping the
+# entire user database. This happened on the jonerix Pi 5 on 2026-04-15;
+# recovery required physical console access and hand-restoring both
+# files.
+#
+# This script is strictly append-only on /etc/passwd, /etc/shadow, and
+# /etc/group. It backs up each file before writing and refuses to act
+# on malformed input. It does not call into toybox adduser at any point.
+#
+# Usage: adduser-safe USERNAME [UID]
+# Afterwards: passwd USERNAME
+
+set -e
+
+case "$1" in
+  ""|-h|--help|-*)
+    echo "usage: adduser-safe USERNAME [UID]"
+    echo ""
+    echo "Creates a user with /bin/mksh shell and /home/USERNAME home dir."
+    echo "Run 'passwd USERNAME' afterward to set the password."
+    echo ""
+    echo "This is a safe replacement for toybox adduser, which has a bug"
+    echo "that can truncate /etc/passwd and /etc/shadow on failure."
+    exit 0
+    ;;
+esac
+
+USER=$1
+UID_NUM=${2:-$(awk -F: '{if($3>=u)u=$3+1}END{print u+0}' /etc/passwd)}
+[ "$UID_NUM" -lt 1000 ] && UID_NUM=1000
+
+# Validate username (POSIX portable: lowercase, digits, underscore, dash)
+case "$USER" in
+  *[!a-zA-Z0-9_-]*|*' '*|'')
+    echo "error: invalid username '$USER'" >&2
+    exit 1
+    ;;
+esac
+
+# Already exists?
+if grep -q "^${USER}:" /etc/passwd 2>/dev/null; then
+  echo "error: user $USER already exists in /etc/passwd" >&2
+  exit 1
+fi
+
+# Sanity check: files must be non-empty and contain at least root.
+if [ ! -s /etc/passwd ] || ! grep -q '^root:' /etc/passwd; then
+  echo "error: /etc/passwd missing or has no root entry - refusing to edit" >&2
+  exit 1
+fi
+
+# Back up.
+cp /etc/passwd /etc/passwd.bak
+cp /etc/shadow /etc/shadow.bak 2>/dev/null || true
+cp /etc/group  /etc/group.bak
+
+# Append only — never truncate.
+echo "${USER}:x:${UID_NUM}:${UID_NUM}:${USER}:/home/${USER}:/bin/mksh" >> /etc/passwd
+[ -f /etc/shadow ] && echo "${USER}:!:0:0:99999:7:::" >> /etc/shadow
+echo "${USER}:x:${UID_NUM}:" >> /etc/group
+
+# Home directory.
+mkdir -p "/home/${USER}"
+chown "${UID_NUM}:${UID_NUM}" "/home/${USER}"
+chmod 700 "/home/${USER}"
+
+echo "created user ${USER} (uid=${UID_NUM}, home=/home/${USER}, shell=/bin/mksh)"
+echo "run: passwd ${USER}"
