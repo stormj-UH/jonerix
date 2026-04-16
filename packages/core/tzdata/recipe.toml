@@ -62,12 +62,11 @@ $CC $CFLAGS $LDFLAGS -o zdump zdump.c localtime.c strftime.c
 # Compile the zoneinfo database directly from the zone source files.
 # This bypasses tzdata.zi / the awk-based shrinker (which the Makefile
 # normally runs via ziguard.awk + zishrink.awk). zic accepts the raw
-# sources and produces the same runtime output.
+# sources and produces the same runtime output. One-line form because the
+# TOML \\-newline continuation left a literal `\` arg in zic's argv.
 rm -rf _zoneinfo
 mkdir -p _zoneinfo
-./zic -b slim -d _zoneinfo \\
-    africa antarctica asia australasia europe \\
-    northamerica southamerica etcetera backward
+./zic -b slim -d _zoneinfo africa antarctica asia australasia europe northamerica southamerica etcetera backward
 
 # Ship the tz tab files so tzselect-style tools can find them.
 cp -f iso3166.tab zone.tab zone1970.tab zonenow.tab _zoneinfo/
