@@ -88,6 +88,12 @@ pkg_meta_t *pkg_meta_from_toml(const char *toml_str) {
     else if ((arr = toml_get_array(doc, "depends.replaces")))
         meta->replaces = copy_string_array(arr, &meta->replaces_count);
 
+    /* Conflicts: same dual-location parsing as replaces. */
+    if ((arr = toml_get_array(doc, "package.conflicts")))
+        meta->conflicts = copy_string_array(arr, &meta->conflicts_count);
+    else if ((arr = toml_get_array(doc, "depends.conflicts")))
+        meta->conflicts = copy_string_array(arr, &meta->conflicts_count);
+
     /* File info */
     if ((s = toml_get_string(doc, "files.sha256")))
         meta->content_sha256 = xstrdup(s);
@@ -384,6 +390,10 @@ void pkg_meta_free(pkg_meta_t *meta) {
         free(meta->replaces[i]);
     free(meta->replaces);
 
+    for (size_t i = 0; i < meta->conflicts_count; i++)
+        free(meta->conflicts[i]);
+    free(meta->conflicts);
+
     free(meta->content_sha256);
 
     free(meta->pre_install);
@@ -427,6 +437,10 @@ char *pkg_meta_to_toml(const pkg_meta_t *meta) {
     if (meta->replaces_count > 0) {
         toml_set_array(doc, "package.replaces",
                        (const char **)meta->replaces, meta->replaces_count);
+    }
+    if (meta->conflicts_count > 0) {
+        toml_set_array(doc, "package.conflicts",
+                       (const char **)meta->conflicts, meta->conflicts_count);
     }
 
     if (meta->content_sha256) toml_set_string(doc, "files.sha256", meta->content_sha256);

@@ -41,6 +41,8 @@ typedef struct build_recipe {
     size_t build_dep_count;
     char **replaces;           /* packages whose files this one overrides */
     size_t replaces_count;
+    char **conflicts;          /* packages this one refuses to coinstall with */
+    size_t conflicts_count;
     char *configure_cmd;
     char *build_cmd;
     char *install_cmd;
@@ -67,6 +69,8 @@ static void recipe_free(build_recipe_t *r) {
     free(r->build_deps);
     for (size_t i = 0; i < r->replaces_count; i++) free(r->replaces[i]);
     free(r->replaces);
+    for (size_t i = 0; i < r->conflicts_count; i++) free(r->conflicts[i]);
+    free(r->conflicts);
     free(r->configure_cmd);
     free(r->build_cmd);
     free(r->install_cmd);
@@ -153,6 +157,16 @@ static build_recipe_t *load_recipe(const char *recipe_dir) {
         r->replaces_count = rep->count;
         for (size_t i = 0; i < rep->count; i++)
             r->replaces[i] = xstrdup(rep->items[i]);
+    }
+
+    /* Conflicts: same dual-location parsing. */
+    const toml_array_t *conf = toml_get_array(doc, "package.conflicts");
+    if (!conf) conf = toml_get_array(doc, "depends.conflicts");
+    if (conf) {
+        r->conflicts = xcalloc(conf->count, sizeof(char *));
+        r->conflicts_count = conf->count;
+        for (size_t i = 0; i < conf->count; i++)
+            r->conflicts[i] = xstrdup(conf->items[i]);
     }
 
     if ((s = toml_get_string(doc, "build.configure")))
@@ -476,6 +490,9 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
     if (recipe->replaces_count > 0)
         toml_set_array(doc, "package.replaces",
                        (const char **)recipe->replaces, recipe->replaces_count);
+    if (recipe->conflicts_count > 0)
+        toml_set_array(doc, "package.conflicts",
+                       (const char **)recipe->conflicts, recipe->conflicts_count);
 
     /* Hooks */
     if (recipe->pre_install) toml_set_string(doc, "hooks.pre_install", recipe->pre_install);
