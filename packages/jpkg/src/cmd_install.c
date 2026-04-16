@@ -235,6 +235,34 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
 
     log_info("installing %s-%s...", meta->name, meta->version);
 
+    /* Check package-level `conflicts` before doing any extraction work.
+     * Unlike `replaces` (file-ownership transfer), conflicts is a hard
+     * mutex: refuse to coinstall with any listed package unless --force.
+     * Example: dhcpcd conflicts with udhcpc; can't install both. */
+    if (meta->conflicts_count > 0) {
+        int n_conflicts = 0;
+        for (size_t i = 0; i < meta->conflicts_count; i++) {
+            const char *c = meta->conflicts[i];
+            if (!c || !c[0]) continue;
+            if (db_is_installed(db, c)) {
+                log_error("  conflicts with installed package: %s", c);
+                n_conflicts++;
+            }
+        }
+        if (n_conflicts > 0) {
+            if (!force) {
+                log_error("%s conflicts with %d installed package(s) — "
+                          "remove them first or use --force",
+                          meta->name, n_conflicts);
+                pkg_meta_free(meta);
+                free(pkg_path);
+                return -1;
+            }
+            log_warn("proceeding despite %d package conflict(s) (--force)",
+                     n_conflicts);
+        }
+    }
+
     /* Extract to staging directory */
     char stage_dir[256];
     snprintf(stage_dir, sizeof(stage_dir), "/tmp/jpkg-stage-%s-%d",
