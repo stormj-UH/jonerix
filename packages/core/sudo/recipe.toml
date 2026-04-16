@@ -13,25 +13,54 @@ system = "custom"
 build = """set -e
 # autoconf's configure needs `expr` which jonerix doesn't ship (not in toybox).
 # Install a minimal POSIX expr shim before running configure.
-cat > /bin/expr <<'EXPREOF'
-#!/bin/mksh
-# Minimal expr for autoconf: arithmetic, string length, regex match.
-case "$1" in
-  length) printf '%s' "$2" | awk '{print length}'; exit ;;
-  match)  shift; set -- "$1" : "$2" ;;
-esac
-if [ "$2" = ":" ]; then
-  printf '%s' "$1" | awk -v pat="$3" '{if(match($0,pat)){print RLENGTH}else{print 0}}'
-  exit
-fi
-case "$2" in
-  +|-|"*"|/|%) awk "BEGIN{print int($1) $2 int($3)}" ;;
-  =|!=|"<"|">"|"<="|">=")
-    awk "BEGIN{if($1 $2 $3){print 1}else{print 0}}" ;;
-  *) printf '%s\n' "$1" ;;
-esac
-EXPREOF
-chmod +x /bin/expr
+# Autoconf's configure uses `expr STRING : BRE` with \(...\) group extraction.
+# jonerix has no expr binary (not in toybox). Compile a minimal C implementation
+# inline — handles regex groups, arithmetic, length, and comparisons (~40 LOC).
+cat > /tmp/expr.c <<'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <regex.h>
+static long tolong(const char *s, int *ok) {
+    char *e; long v = strtol(s, &e, 10); *ok = (*e == 0 && e != s); return v;
+}
+int main(int argc, char **argv) {
+    if (argc == 3 && !strcmp(argv[1], "length")) {
+        printf("%zu\n", strlen(argv[2])); return 0;
+    }
+    if (argc == 4 && !strcmp(argv[2], ":")) {
+        regex_t re; regmatch_t m[2]; int has_group = !!strstr(argv[3], "\\(");
+        if (regcomp(&re, argv[3], 0)) { fprintf(stderr, "expr: bad regex\n"); return 2; }
+        if (regexec(&re, argv[1], 2, m, 0) == 0) {
+            if (has_group && m[1].rm_so >= 0)
+                printf("%.*s\n", (int)(m[1].rm_eo - m[1].rm_so), argv[1] + m[1].rm_so);
+            else
+                printf("%d\n", (int)(m[0].rm_eo - m[0].rm_so));
+            regfree(&re); return 0;
+        }
+        regfree(&re); printf(has_group ? "\n" : "0\n"); return 1;
+    }
+    if (argc == 4) {
+        int ok1, ok2; long a = tolong(argv[1], &ok1), b = tolong(argv[3], &ok2);
+        if (ok1 && ok2) {
+            long r = 0; char *op = argv[2];
+            if (!strcmp(op,"+")) r=a+b; else if (!strcmp(op,"-")) r=a-b;
+            else if (!strcmp(op,"*")) r=a*b;
+            else if (!strcmp(op,"/")) { if(!b){fprintf(stderr,"expr: division by zero\n");return 2;} r=a/b; }
+            else if (!strcmp(op,"%")) { if(!b){fprintf(stderr,"expr: division by zero\n");return 2;} r=a%b; }
+            else if (!strcmp(op,"="))  r=(a==b); else if (!strcmp(op,"!=")) r=(a!=b);
+            else if (!strcmp(op,"<"))  r=(a<b);  else if (!strcmp(op,">"))  r=(a>b);
+            else if (!strcmp(op,"<=")) r=(a<=b); else if (!strcmp(op,">=")) r=(a>=b);
+            else { fprintf(stderr, "expr: unknown op: %s\n", op); return 2; }
+            printf("%ld\n", r); return r == 0 ? 1 : 0;
+        }
+    }
+    if (argc == 2) { printf("%s\n", argv[1]); return 0; }
+    fprintf(stderr, "expr: syntax error\n"); return 2;
+}
+CEOF
+clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
+rm -f /tmp/expr.c
 
 GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib --sysconfdir=/etc --with-rundir=/run/sudo --with-vardir=/var/db/sudo --with-logpath=/var/log/sudo.log --without-pam --without-skey --without-opie --disable-nls --enable-static-sudoers --with-env-editor CC=clang
 make -j$(nproc)
