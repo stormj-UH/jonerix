@@ -1,6 +1,3 @@
-** WARNING: connection is not using a post-quantum key exchange algorithm.
-** This session may be vulnerable to "store now, decrypt later" attacks.
-** The server may need to be upgraded. See https://openssh.com/pq.html
 // Query or toggle IEEE 802.3az (EEE) on a network interface via SIOCETHTOOL.
 // Build: rustc -O eee-tool.rs -o eee-tool
 // Run:   sudo ./eee-tool [on|off] [ifname]   (default: show status on eth0)
