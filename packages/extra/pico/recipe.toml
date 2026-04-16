@@ -127,6 +127,30 @@ llvm-strip --strip-all $DESTDIR/bin/pico $DESTDIR/bin/pilot 2>/dev/null || true
 rm -f /bin/expr
 """
 
+[hooks]
+# Take over /bin/editor and /bin/vi when pico is installed (user-intent
+# interpretation: explicit `jpkg install pico` means they want pico as
+# their primary editor). The old symlinks get overwritten by -sf; on
+# removal the post_remove hook restores to the best available fallback.
+post_install = """ln -sf pico /bin/editor 2>/dev/null || true
+ln -sf pico /bin/vi 2>/dev/null || true
+exit 0"""
+
+# On removal, restore /bin/editor + /bin/vi to the best available fallback.
+# Order: micro (if installed) → toybox's vi applet → remove symlink.
+# /bin/editor has no toybox applet, so only micro can provide it; if
+# neither is available the editor symlink is removed entirely.
+post_remove = """if [ -e /bin/micro ] && [ ! -L /bin/micro ]; then
+    ln -sf micro /bin/editor
+    ln -sf micro /bin/vi
+elif [ -x /bin/toybox ]; then
+    rm -f /bin/editor
+    ln -sf toybox /bin/vi
+else
+    rm -f /bin/editor /bin/vi
+fi
+exit 0"""
+
 [depends]
 runtime = ["ncurses", "musl"]
 build = ["clang", "make", "python3", "ncurses", "jonerix-headers"]
