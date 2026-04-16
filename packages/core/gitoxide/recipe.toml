@@ -1,6 +1,6 @@
 [package]
 name = "gitoxide"
-version = "0.52.0"
+version = "0.52.0-r1"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust implementation of git (gix + ein)"
 
@@ -10,33 +10,11 @@ sha256 = "8c4edd66f19e9c672040f8a4f76de5f3feafff5c443fc54554ae142a36bc10af"
 
 [build]
 system = "custom"
-build = """# Drop GCC runtime: cargo wrapper strips -lgcc_s and forces compiler-rt+libunwind.
-# rust's target spec hardcodes -lgcc_s and crtbeginS.o; can't remove without spec edit.
-mkdir -p .cargo
-cat > cc-wrapper.sh <<'WEOF'
-#!/bin/sh
-args=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -lgcc_s) ;;
-    *) args="$args \\"$1\\"" ;;
-  esac
-  shift
-done
-eval exec clang --rtlib=compiler-rt --unwindlib=libunwind $args
-WEOF
-chmod +x cc-wrapper.sh
-WRAPPER="$(pwd)/cc-wrapper.sh"
-cat > .cargo/config.toml <<EOF
-[target.aarch64-unknown-linux-musl]
-linker = "$WRAPPER"
-[target.x86_64-unknown-linux-musl]
-linker = "$WRAPPER"
-EOF
-
-cargo fetch
-RUSTFLAGS="-C strip=symbols -C link-self-contained=yes" \
-  cargo build --release --bin gix --bin ein"""
+# Rust 1.94.1-r1 builds with llvm-libunwind=system, so library/unwind
+# emits -lunwind instead of -lgcc_s for proc-macro .so output. No
+# cc-wrapper or gnu-compat-symlinks runtime dep needed any more.
+build = """cargo fetch
+RUSTFLAGS="-C strip=symbols" cargo build --release --bin gix --bin ein"""
 install = """install -Dm755 target/release/gix $DESTDIR/bin/gix
 install -Dm755 target/release/ein $DESTDIR/bin/ein
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
