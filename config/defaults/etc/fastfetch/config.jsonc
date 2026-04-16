@@ -41,7 +41,7 @@
         {
             "type": "command",
             "key": "Editor",
-            "text": "echo micro"
+            "text": "readlink /bin/editor 2>/dev/null || echo toybox"
         },
         "cpu",
         "memory",
