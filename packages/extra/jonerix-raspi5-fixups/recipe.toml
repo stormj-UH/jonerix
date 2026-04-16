@@ -30,23 +30,16 @@ install = ""
 # (on a live Raspberry Pi 5) run it now so the user doesn't need to reboot.
 # Guarded by /proc/device-tree/model so chroot/alt-root installs from a
 # build host (jpkg --root /mnt/rootfs …) no-op cleanly.
-post_install = '''
-ln -sf /etc/init.d/disable-eee /etc/runlevels/boot/disable-eee 2>/dev/null || true
-
-if [ -r /proc/device-tree/model ] && \
-   tr -d '\0' < /proc/device-tree/model 2>/dev/null | grep -q "Raspberry Pi 5" && \
-   [ -e /sys/class/net/eth0 ]; then
+post_install = """ln -sf /etc/init.d/disable-eee /etc/runlevels/boot/disable-eee 2>/dev/null || true
+if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null && [ -e /sys/class/net/eth0 ]; then
     /bin/disable-eee eth0 || true
 fi
-exit 0
-'''
+exit 0"""
 
 # Tear down the runlevel symlink that post_install created.
 # (jpkg removes manifest-owned files automatically; this symlink is dynamic.)
-post_remove = '''
-rm -f /etc/runlevels/boot/disable-eee
-exit 0
-'''
+post_remove = """rm -f /etc/runlevels/boot/disable-eee
+exit 0"""
 
 [depends]
 runtime = ["musl"]
