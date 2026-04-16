@@ -1,6 +1,6 @@
 [package]
 name = "gitoxide"
-version = "0.52.0-r2"
+version = "0.52.0-r3"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust implementation of git (gix + ein)"
 
@@ -31,9 +31,9 @@ build = """export OPENSSL_DIR=/
 export OPENSSL_INCLUDE_DIR=/include
 export OPENSSL_LIB_DIR=/lib
 export PKG_CONFIG_ALLOW_CROSS=1
+export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
 cargo fetch
-RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static" \\
-  cargo build --release --bin gix --bin ein"""
+cargo build --release --bin gix --bin ein"""
 install = """install -Dm755 target/release/gix $DESTDIR/bin/gix
 install -Dm755 target/release/ein $DESTDIR/bin/ein
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
