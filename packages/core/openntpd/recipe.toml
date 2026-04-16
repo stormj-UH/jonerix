@@ -9,12 +9,43 @@ url = "https://cdn.openbsd.org/pub/OpenBSD/OpenNTPD/openntpd-6.8p1.tar.gz"
 sha256 = "8582db838a399153d4a17f2a76518b638cc3020f58028575bf54127518f55a46"
 
 [build]
-system = "autoconf"
-configure = """CC=clang LD=ld.lld \
-CFLAGS="-Os -fstack-protector-strong -fPIE -D_DEFAULT_SOURCE" \
-LDFLAGS="-fuse-ld=lld -pie" \
-./configure --prefix=/ --sbindir=/bin --sysconfdir=/etc --with-privsep-user=_ntp"""
-build = "jmake -j$(nproc)"
+system = "custom"
+# Install a minimal C expr shim before autoconf runs (jonerix doesn't
+# ship /bin/expr; the shim is identical to the one used in sudo, jq,
+# pico, tzdata, libevent recipes). Then configure + build as usual.
+build = """set -e
+cat > /tmp/expr.c <<'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <regex.h>
+static long tl(const char*s,int*o){char*e;long v=strtol(s,&e,10);*o=(*e==0&&e!=s);return v;}
+int main(int c,char**v){
+ if(c==3&&!strcmp(v[1],"length")){printf("%zu\\n",strlen(v[2]));return 0;}
+ if(c==4&&!strcmp(v[2],":")){regex_t r;regmatch_t m[2];int h=!!strstr(v[3],"\\\\(");
+  if(regcomp(&r,v[3],0))return 2;
+  if(regexec(&r,v[1],2,m,0)==0){if(h&&m[1].rm_so>=0)printf("%.*s\\n",(int)(m[1].rm_eo-m[1].rm_so),v[1]+m[1].rm_so);else printf("%d\\n",(int)(m[0].rm_eo-m[0].rm_so));regfree(&r);return 0;}
+  regfree(&r);printf(h?"\\n":"0\\n");return 1;}
+ if(c==4){int o1,o2;long a=tl(v[1],&o1),b=tl(v[3],&o2);
+  if(o1&&o2){long r=0;char*o=v[2];
+   if(!strcmp(o,"+"))r=a+b;else if(!strcmp(o,"-"))r=a-b;else if(!strcmp(o,"*"))r=a*b;
+   else if(!strcmp(o,"/"))r=a/b;else if(!strcmp(o,"%"))r=a%b;
+   else if(!strcmp(o,"="))r=(a==b);else if(!strcmp(o,"!="))r=(a!=b);
+   else if(!strcmp(o,"<"))r=(a<b);else if(!strcmp(o,">"))r=(a>b);
+   else if(!strcmp(o,"<="))r=(a<=b);else if(!strcmp(o,">="))r=(a>=b);
+   else return 2;printf("%ld\\n",r);return r==0?1:0;}}
+ if(c==2){printf("%s\\n",v[1]);return 0;}
+ return 2;}
+CEOF
+clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
+rm -f /tmp/expr.c
+
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
+  CC=clang LD=ld.lld \
+  CFLAGS="-Os -fstack-protector-strong -fPIE -D_DEFAULT_SOURCE" \
+  LDFLAGS="-fuse-ld=lld -pie" \
+  ./configure --prefix=/ --sbindir=/bin --sysconfdir=/etc --with-privsep-user=_ntp
+jmake -j$(nproc)"""
 install = """set -e
 DESTDIR=$DESTDIR jmake install
 mkdir -p $DESTDIR/etc
