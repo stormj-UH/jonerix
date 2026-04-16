@@ -68,7 +68,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     failed='' && \
     for pkg in \
       musl zlib zstd lz4 xz ncurses libressl curl \
-      toybox openrc doas snooze tzdata \
+      toybox openrc sudo doas snooze tzdata \
       dropbear dhcpcd ifupdown-ng unbound \
       libarchive bsdtar \
       pigz mandoc onetrueawk \
@@ -93,7 +93,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
 
 # Set SUID bits on login utilities (required for multi-user auth)
-RUN chmod 4755 /bin/su /bin/passwd /bin/login 2>/dev/null || true
+RUN chmod 4755 /bin/su /bin/passwd /bin/login /bin/sudo 2>/dev/null || true
 
 # Default config
 COPY config/defaults/etc/hostname     /etc/hostname

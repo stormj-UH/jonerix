@@ -47,6 +47,7 @@ openrc
 flex
 fastfetch
 # Tier 4: depends on libressl or other tier-3 packages
+sudo
 openntpd
 jonerix-raspi5-fixups
 libarchive
