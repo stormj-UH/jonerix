@@ -52,6 +52,16 @@ typedef struct pkg_meta {
     char **replaces;
     size_t replaces_count;
 
+    /* `conflicts` — packages this one refuses to coinstall with.
+     * Unlike `replaces` (silent file-ownership transfer), conflicts is
+     * a hard gate: if any listed package is already installed, the
+     * install is refused unless --force is given. Use for genuine
+     * mutual-exclusion cases: e.g. two DHCP clients (dhcpcd vs udhcpc),
+     * two init systems, two cron daemons. Parsed from
+     * package.conflicts. */
+    char **conflicts;
+    size_t conflicts_count;
+
     /* file info */
     char *content_sha256;   /* hash of zstd tar payload */
     uint64_t content_size;
