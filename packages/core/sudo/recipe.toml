@@ -62,7 +62,7 @@ CEOF
 clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
 rm -f /tmp/expr.c
 
-GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer" LDFLAGS="-Wl,--disable-new-dtags" ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib --sysconfdir=/etc --with-rundir=/run/sudo --with-vardir=/var/db/sudo --with-logpath=/var/log/sudo.log --without-pam --without-skey --without-opie --disable-nls --disable-rpath --enable-static-sudoers --with-env-editor CC=clang
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer" LDFLAGS="-Wl,--disable-new-dtags" ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib --sysconfdir=/etc --with-rundir=/run/sudo --with-vardir=/var/db/sudo --with-logpath=/var/log/sudo.log --without-pam --without-skey --without-opie --disable-nls --disable-rpath --disable-intercept --disable-noexec --enable-static-sudoers --with-env-editor CC=clang
 make -j$(nproc)
 """
 install = """set -e
