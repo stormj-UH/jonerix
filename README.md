@@ -16,7 +16,7 @@
 
 jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is not part of this distribution. This is a "Bring Your Own Kernel" (BYOK) distro. It is designed for use in containers, on WSL, or on Rasbperry Pi, but there are no limits.
 
-46 packages build from source on jonerix itself. The system compiles its own compiler (Clang/LLVM), its own languages (Go from C, Rust from a bootstrap binary), and its own container runtime. No GNU toolchain, no GCC, no GPL coreutils.
+100+ packages build from source on jonerix itself. The system compiles its own compiler (Clang/LLVM), its own languages (Go from C, Rust from a bootstrap binary), and its own container runtime. No GNU toolchain, no GCC, no GPL coreutils.
 
 The point of jonerix is not moral instruction. It is not a sermon against copyleft, and it does not require anyone to agree with its premises. It is a distribution for people and organizations who want the lowest possible licensing friction in userland. If that use case does not matter to you, then jonerix is probably not for you.
 
@@ -26,7 +26,7 @@ jonerix can rebuild itself from source using only the tools it ships:
 
 - **C/C++**: Clang/LLVM/LLD built from source on jonerix
 - **Go**: Full bootstrap chain from C source (C &rarr; Go 1.4 &rarr; 1.17 &rarr; 1.20 &rarr; 1.22 &rarr; 1.24 &rarr; 1.26)
-- **Rust**: Built from source using system LLVM and a bootstrap rustc
+- **Rust**: Built from source using system LLVM and a bootstrap rustc; targets the custom `aarch64-jonerix-linux-musl` / `x86_64-jonerix-linux-musl` triple with no GCC runtime (uses `llvm-libunwind = "system"` so `-lunwind` replaces `-lgcc_s` in proc-macro link lines)
 - **Python 3 + Node.js**: Built from source with Clang/musl
 - **Container runtime**: containerd + runc + nerdctl + CNI plugins, all from source
 
@@ -81,6 +81,8 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | dropbear | MIT | SSH server/client |
 | bsdsed | BSD-2-Clause | sed (BSD implementation) |
 | onetrueawk | MIT | awk (one true awk) |
+| sudo | ISC | Privilege escalation (sudoers-based) |
+| tzdata | Public-Domain+BSD-3-Clause | Time zone data |
 
 ### Compilers and Languages
 
@@ -98,7 +100,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | Component | License | Role |
 |-----------|---------|------|
 | cmake | BSD-3-Clause | Build system generator |
-| jmake | MIT | Drop-in GNU make replacement (Rust) |
+| jmake 1.0.1 | MIT | Drop-in GNU make replacement (Rust) |
 | samurai | Apache-2.0 | Ninja-compatible build tool |
 | meson | Apache-2.0 | Build system (via pip) |
 | flex | BSD-2-Clause | Lexer generator |
@@ -139,6 +141,8 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | bsdtar | BSD-2-Clause | Archive tool (libarchive) |
 | doas | ISC | Privilege escalation |
 | fastfetch | MIT | System information |
+| openrsync | ISC | rsync-protocol-27-compatible drop-in (replaces GPL rsync) |
+| jonerix-raspi5-fixups | MIT | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control) |
 
 ## Package Manager (jpkg)
 
@@ -164,13 +168,13 @@ jonerix uses a merged `/usr` layout where `/usr` is a symlink to `/`. All binari
 1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
 2. **All packages** are installed from the jpkg repository into a clean rootfs via `Dockerfile.minimal`
 3. **Final image** is assembled `FROM scratch` with zero GPL runtime components
-4. **Self-hosting**: `jonerix:builder` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:builder → jonerix:minimal` is proven at v1.0.
+4. **Self-hosting**: `jonerix:builder` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:builder → jonerix:minimal` is proven at v1.1.1.
 
 Package recipes live in `packages/*/recipe.toml`. Build dependencies are declared explicitly; the package manager resolves and installs them in order.
 
 ### Licensing Rule
 
-Every package must carry a permissive license:
+Every package must carry a permissive license. GPL-3 tools like rsync are replaced by permissive equivalents (e.g. openrsync).
 
 | Allowed | Not Allowed |
 |---------|-------------|
@@ -182,14 +186,19 @@ Every package must carry a permissive license:
 ## fastfetch
 
 ```
-   _                       _        root@jonerix
-  (_) ___  _ __   ___ _ __(_)_  __  -----------------
-  | |/ _ \| '_ \ / _ \ '__| \ \/ /  OS -> jonerix 1.0 aarch64
-  | | (_) | | | |  __/ |  | |>  <   Kernel -> Linux 6.18.5
- _/ |\___/|_| |_|\___|_|  |_/_/\_\  Shell -> mksh (core/builder) / toybox sh (minimal)
-|__/                                CPU -> Virtualized Apple Silicon (4)
-======= permissive + linux =======  Memory -> 102 MiB / 1.01 GiB (10%)
-                                    Disk (/) -> 726 MiB / 504 GiB - ext4
+                                    root@jonerix-tormenta
+   _                       _        ---------------------
+  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.1.1 aarch64
+  | |/ _ \| '_ \ / _ \ '__| \ \/ /  Kernel -> Linux 6.18.22-v8-16k+
+  | | (_) | | | |  __/ |  | |>  <   Uptime -> 16 hours, 28 mins
+ _/ |\___/|_| |_|\___|_|  |_/_/\_\  Packages -> 44 (jpkg)
+|__/                                 Shell -> mksh
+======= permissive + linux =======   Terminal -> dropbear
+                                     Editor -> micro
+                                     CPU -> BCM2712 (4) @ 2.40 GHz
+                                     Memory -> 150.14 MiB / 3.95 GiB (4%)
+                                     Disk (/) -> 8.87 GiB / 29.03 GiB (31%) - ext4
+                                     Local IP (eth0) -> 10.0.0.8/16
 ```
 
 ## License
