@@ -1,8 +1,13 @@
 [package]
 name = "mksh"
-version = "R59c"
+version = "R59c-r1"
 license = "MirOS"
 description = "MirBSD Korn Shell — POSIX shell for /bin/sh"
+# mksh is the system /bin/sh provider. Toybox's sh applet is a
+# minimal fallback; claim /bin/sh away from it so jpkg verify stays
+# clean after install. Requires jpkg >= 1.0.4 (the first version that
+# parses package.replaces).
+replaces = ["toybox"]
 
 [source]
 url = "https://www.mirbsd.org/MirOS/dist/mir/mksh/mksh-R59c.tgz"
