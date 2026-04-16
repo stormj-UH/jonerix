@@ -15,7 +15,10 @@ system = "custom"
 # Source /etc/profile.d/cargo.sh so CARGO_HTTP_CAINFO is set (cargo's
 # bundled libcurl needs the jonerix CA bundle path; jpkg build runs in a
 # non-login shell so profile.d isn't auto-sourced).
-build = """. /etc/profile.d/cargo.sh 2>/dev/null || true
+build = """export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
+export OPENSSL_DIR=/
+export OPENSSL_INCLUDE_DIR=/include
+export OPENSSL_LIB_DIR=/lib
 cargo build --release"""
 install = """install -Dm755 target/release/jmake "$DESTDIR/bin/jmake"
 llvm-strip --strip-all "$DESTDIR/bin/jmake" 2>/dev/null || true"""
