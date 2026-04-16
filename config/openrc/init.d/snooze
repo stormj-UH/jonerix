@@ -1,0 +1,63 @@
+#!/bin/openrc-run
+# OpenRC service: snooze-based cron dispatcher.
+#
+# Reads /etc/cron.d/* job files (shell-sourceable, SNOOZE_ARGS + COMMAND vars)
+# and launches one "snooze <args> && <command>" pair per file, looped forever.
+# The actual loop logic lives in /bin/snooze-crond to keep this file mksh-clean.
+#
+# SNOOZE TIMESPEC NOTE: snooze uses /N for "every Nth unit", NOT */N.
+# Example: -H /3 = every 3rd hour (00, 03, 06, ...).  -H */3 is cron syntax
+# and snooze will silently misinterpret it (matches every hour, not every 3rd).
+# Always use /N in SNOOZE_ARGS inside /etc/cron.d/* files.
+#
+# Job file format (/etc/cron.d/<name>):
+#   SNOOZE_ARGS="-H /3 -M 0 -S 0"   # snooze(1) flags
+#   COMMAND="/bin/my-script"          # command to run when timer fires
+#
+# mksh-safe: no heredoc-in-if, no nested quote escapes.
+
+name="snooze"
+description="snooze cron dispatcher"
+
+command="/bin/snooze-crond"
+command_background="yes"
+pidfile="/run/snooze-crond.pid"
+output_log="/var/log/cron/snooze-crond.log"
+error_log="/var/log/cron/snooze-crond.log"
+
+depend() {
+    need localmount
+    use logger
+    after clock
+}
+
+start_pre() {
+    checkpath -d -m 0750 /var/log/cron
+
+    # Seed a default daily job if /etc/cron.d is empty.
+    # Uses printf, not a heredoc, so mksh parses this cleanly.
+    checkpath -d -m 0755 /etc/cron.d
+    if [ ! -f /etc/cron.d/daily ]; then
+        printf '%s\n' \
+            '# Daily maintenance tasks (run-parts /etc/periodic/daily at midnight).' \
+            '# SNOOZE TIMESPEC: use /N not */N  (snooze syntax, not cron syntax).' \
+            'SNOOZE_ARGS="-H /0 -M 0 -S 0"' \
+            'COMMAND="run-parts /etc/periodic/daily"' \
+            > /etc/cron.d/daily
+    fi
+}
+
+start() {
+    ebegin "Starting ${name}"
+    start-stop-daemon --start \
+        --background --make-pidfile --pidfile "$pidfile" \
+        --stdout "$output_log" --stderr "$error_log" \
+        --exec "$command"
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping ${name}"
+    start-stop-daemon --stop --pidfile "$pidfile" --retry TERM/10/KILL/5
+    eend $?
+}
