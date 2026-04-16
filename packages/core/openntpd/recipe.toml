@@ -13,7 +13,12 @@ system = "custom"
 # Install a minimal C expr shim before autoconf runs (jonerix doesn't
 # ship /bin/expr; the shim is identical to the one used in sudo, jq,
 # pico, tzdata, libevent recipes). Then configure + build as usual.
+#
+# openntpd's configure leaks FDs and hits the default 1024 fd limit
+# around configure.lineno[506] ("too many open files in shell"). Bump
+# the limit for this build shell so it can finish.
 build = """set -e
+ulimit -n 65536 || true
 cat > /tmp/expr.c <<'CEOF'
 #include <stdio.h>
 #include <stdlib.h>
