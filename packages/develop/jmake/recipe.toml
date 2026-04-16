@@ -10,30 +10,9 @@ sha256 = "fba428c823a3aaca7836ab956562874561dec3048ea34b2c3c9f517d9f86f1b1"
 
 [build]
 system = "custom"
-build = """# Drop GCC runtime via cc-wrapper (strips -lgcc_s, forces compiler-rt+libunwind).
-mkdir -p .cargo
-cat > cc-wrapper.sh <<'WEOF'
-#!/bin/sh
-args=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -lgcc_s) ;;
-    *) args="$args \\"$1\\"" ;;
-  esac
-  shift
-done
-eval exec clang --rtlib=compiler-rt --unwindlib=libunwind $args
-WEOF
-chmod +x cc-wrapper.sh
-WRAPPER="$(pwd)/cc-wrapper.sh"
-cat > .cargo/config.toml <<EOF
-[target.aarch64-unknown-linux-musl]
-linker = "$WRAPPER"
-[target.x86_64-unknown-linux-musl]
-linker = "$WRAPPER"
-EOF
-
-RUSTFLAGS="-C link-self-contained=yes" cargo build --release"""
+# Rust 1.94.1-r1 uses llvm-libunwind=system, so library/unwind emits
+# -lunwind instead of -lgcc_s. No cc-wrapper or gnu-compat dep needed.
+build = "cargo build --release"
 install = """install -Dm755 target/release/jmake "$DESTDIR/bin/jmake"
 llvm-strip --strip-all "$DESTDIR/bin/jmake" 2>/dev/null || true"""
 
