@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.1.0"
+version = "1.2.0"
 license = "MIT"
-description = "Hardware-specific fixups for jonerix on Raspberry Pi 5"
+description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 + adduser safety"
 
 # No [source] section — jpkg treats a missing source.url as a local-only
 # build and hands control to the build script, which uses $RECIPE_DIR.
@@ -23,15 +23,30 @@ install -Dm755 /tmp/eee-tool $DESTDIR/bin/eee-tool
 install -Dm755 bin/disable-eee $DESTDIR/bin/disable-eee
 install -Dm755 init.d/disable-eee $DESTDIR/etc/init.d/disable-eee
 install -Dm755 init.d/fan-control $DESTDIR/etc/init.d/fan-control
+# adduser-safe: safe replacement for toybox adduser, which truncates
+# /etc/passwd and /etc/shadow on failure (see bin/adduser-safe header).
+install -Dm755 bin/adduser-safe $DESTDIR/bin/adduser-safe
 """
 install = ""
 
 [hooks]
 # Wire the disable-eee OpenRC service into the boot runlevel, and
 # (on a live Raspberry Pi 5) run it now so the user doesn't need to reboot.
-# Guarded by /proc/device-tree/model so chroot/alt-root installs from a
-# build host (jpkg --root /mnt/rootfs …) no-op cleanly.
-post_install = """ln -sf /etc/init.d/disable-eee /etc/runlevels/boot/disable-eee 2>/dev/null || true
+# Also repoint /bin/adduser at /bin/adduser-safe on every host, to block
+# the toybox adduser passwd-file-truncation bug. The Pi-specific parts
+# are guarded by /proc/device-tree/model; the adduser swap runs
+# unconditionally because the toybox bug affects every host.
+post_install = """# --- adduser safety (all hosts) ---
+# Back up the current /bin/adduser symlink target (typically: toybox)
+# so post_remove can restore it. Write it once; leave alone on re-install.
+if [ -L /bin/adduser ] && [ ! -e /etc/jpkg/raspi5-fixups/adduser.prev ]; then
+    mkdir -p /etc/jpkg/raspi5-fixups
+    readlink /bin/adduser > /etc/jpkg/raspi5-fixups/adduser.prev 2>/dev/null || true
+fi
+ln -sf adduser-safe /bin/adduser
+
+# --- Pi 5 hardware fixups (only on a live Pi 5) ---
+ln -sf /etc/init.d/disable-eee /etc/runlevels/boot/disable-eee 2>/dev/null || true
 ln -sf /etc/init.d/fan-control /etc/runlevels/boot/fan-control 2>/dev/null || true
 if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
     [ -e /sys/class/net/eth0 ] && /bin/disable-eee eth0 || true
@@ -45,7 +60,15 @@ exit 0"""
 
 # Tear down the runlevel symlinks that post_install created.
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
+# Also restore the original /bin/adduser symlink if we have a record of it.
 post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control
+if [ -f /etc/jpkg/raspi5-fixups/adduser.prev ]; then
+    prev=$(cat /etc/jpkg/raspi5-fixups/adduser.prev)
+    [ -n "$prev" ] && ln -sf "$prev" /bin/adduser
+    rm -f /etc/jpkg/raspi5-fixups/adduser.prev
+    rmdir /etc/jpkg/raspi5-fixups 2>/dev/null || true
+    rmdir /etc/jpkg 2>/dev/null || true
+fi
 exit 0"""
 
 [depends]
