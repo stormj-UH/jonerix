@@ -9,27 +9,36 @@ url = "https://www.sudo.ws/dist/sudo-1.9.17p2.tar.gz"
 sha256 = "4a38a1ab3adb1199257edc2a7c4a2bd714665eb605b04368843b06dada2cfcfb"
 
 [build]
-system = "autoconf"
-configure = """GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
-CFLAGS="-O2 -fomit-frame-pointer" \
-./configure \
-  --prefix=/ \
-  --bindir=/bin \
-  --sbindir=/bin \
-  --libexecdir=/lib \
-  --sysconfdir=/etc \
-  --with-rundir=/run/sudo \
-  --with-vardir=/var/db/sudo \
-  --with-logpath=/var/log/sudo.log \
-  --without-pam \
-  --without-skey \
-  --without-opie \
-  --disable-nls \
-  --enable-static-sudoers \
-  --with-env-editor \
-  CC=clang"""
-build = "make -j$(nproc)"
-install = """make DESTDIR=$DESTDIR install
+system = "custom"
+build = """set -e
+# autoconf's configure needs `expr` which jonerix doesn't ship (not in toybox).
+# Install a minimal POSIX expr shim before running configure.
+cat > /bin/expr <<'EXPREOF'
+#!/bin/mksh
+# Minimal expr for autoconf: arithmetic, string length, regex match.
+case "$1" in
+  length) printf '%s' "$2" | awk '{print length}'; exit ;;
+  match)  shift; set -- "$1" : "$2" ;;
+esac
+if [ "$2" = ":" ]; then
+  printf '%s' "$1" | awk -v pat="$3" '{if(match($0,pat)){print RLENGTH}else{print 0}}'
+  exit
+fi
+case "$2" in
+  +|-|"*"|/|%) awk "BEGIN{print int($1) $2 int($3)}" ;;
+  =|!=|"<"|">"|"<="|">=")
+    awk "BEGIN{if($1 $2 $3){print 1}else{print 0}}" ;;
+  *) printf '%s\n' "$1" ;;
+esac
+EXPREOF
+chmod +x /bin/expr
+
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib --sysconfdir=/etc --with-rundir=/run/sudo --with-vardir=/var/db/sudo --with-logpath=/var/log/sudo.log --without-pam --without-skey --without-opie --disable-nls --enable-static-sudoers --with-env-editor CC=clang
+make -j$(nproc)
+"""
+install = """set -e
+make DESTDIR=$DESTDIR install
+rm -f /bin/expr
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 rm -rf "$DESTDIR/share/doc" "$DESTDIR/include"
 rm -f "$DESTDIR/lib/sudo/libsudo_util.a" "$DESTDIR/lib/sudo/libsudo_util.la"
