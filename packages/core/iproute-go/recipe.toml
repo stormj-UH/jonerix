@@ -1,0 +1,36 @@
+[package]
+name = "iproute-go"
+version = "0.16.0"
+license = "BSD-3-Clause"
+description = "u-root's ip command — Go reimplementation of iproute2's ip(8)"
+# Ships /bin/ip; takes the path over from toybox (whose ip applet doesn't
+# understand TUN devices like tailscale0 — reproduced 2026-04-15:
+# `ip link` prints "Invalid link." and omits tailscale0 entirely even
+# though /sys/class/net/tailscale0 exists and is in use).
+replaces = ["toybox"]
+
+[source]
+url = "https://github.com/u-root/u-root/archive/refs/tags/v0.16.0.tar.gz"
+sha256 = "161da1394da9acd96f69957620db630ce086f71bef62785bad4a82884eee9b77"
+
+[build]
+system = "custom"
+# The u-root tarball is ~130MB and contains ~200 commands. We only want
+# cmds/core/ip. `go build` will pull in exactly what that package
+# requires via go.mod (vishvananda/netlink et al.) and nothing else.
+# CGO_ENABLED=0 + -trimpath -ldflags "-s -w" gives a static musl binary
+# (~5-8MB) with no runtime deps.
+build = """export GOPROXY=https://proxy.golang.org,direct
+export GOSUMDB=sum.golang.org
+go mod download
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ip ./cmds/core/ip"""
+install = """install -Dm755 ip $DESTDIR/bin/ip
+# Keep the binary itself; u-root's ip is a single-binary command.
+# No stripping pass — go -ldflags -s -w already drops the debug symbols.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi"""
+
+[depends]
+# Static binary — no runtime shared libs needed.
+runtime = []
+build = ["go"]
