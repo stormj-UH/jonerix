@@ -72,7 +72,8 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       dropbear dhcpcd ifupdown-ng unbound \
       libarchive bsdtar \
       pigz mandoc onetrueawk \
-      micro libcxx fastfetch ripgrep gitoxide; \
+      micro libcxx fastfetch ripgrep gitoxide \
+      iproute-go; \
     do \
       echo "Installing: $pkg" && \
       if ! jpkg install --force "$pkg"; then \
