@@ -10,9 +10,13 @@ sha256 = "d50080a7295dcb8463b3b8ce4e19536d8d42c4b864207bc51d8dc93f2267f73b"
 
 [build]
 system = "custom"
-# Rust 1.94.1-r1 uses llvm-libunwind=system, so library/unwind emits
+# Rust 1.94.1-r2 uses llvm-libunwind=system, so library/unwind emits
 # -lunwind instead of -lgcc_s. No cc-wrapper or gnu-compat dep needed.
-build = "cargo build --release"
+# Source /etc/profile.d/cargo.sh so CARGO_HTTP_CAINFO is set (cargo's
+# bundled libcurl needs the jonerix CA bundle path; jpkg build runs in a
+# non-login shell so profile.d isn't auto-sourced).
+build = """. /etc/profile.d/cargo.sh 2>/dev/null || true
+cargo build --release"""
 install = """install -Dm755 target/release/jmake "$DESTDIR/bin/jmake"
 llvm-strip --strip-all "$DESTDIR/bin/jmake" 2>/dev/null || true"""
 
