@@ -1,25 +1,43 @@
 [package]
 name = "uutils"
-version = "0.4.0-r1"
+version = "0.7.0"
 license = "MIT"
 description = "Rust rewrite of GNU coreutils (tr, expr, sort, wc, cut, and 70+ more)"
 
 [source]
-url = "https://github.com/uutils/coreutils/archive/refs/tags/0.4.0.tar.gz"
-sha256 = "5f0c3f97b807e72edccc844c6a685ec9862199f16a665df07de5b1d20ec21233"
+url = "https://github.com/uutils/coreutils/archive/refs/tags/0.7.0.tar.gz"
+sha256 = "dc56a3c4632742357d170d60a7dcecb9693de710daeaafa3ad925750b1905522"
 
 [build]
 system = "custom"
-# Rust 1.94.1-r1 uses llvm-libunwind=system: no cc-wrapper, no gnu-compat
-# symlinks, no `-C link-self-contained=yes` needed. Downstream rlibs link
-# against -lunwind directly. The post-install readelf check below still
-# guards against accidental GCC-runtime regressions.
-build = """cargo fetch --locked
-RUSTFLAGS="-C strip=symbols" cargo build --release"""
-install = """jmake PROFILE=release DESTDIR=$DESTDIR PREFIX=/ install
+# Build the multicall binary directly. Hand-rolled install below avoids
+# the upstream GNUmakefile entirely — its install-manpages depends on
+# building uudoc (which drags in clap_mangen + zip), and its tab-indented
+# PROFILE_CMD ifeq trips a jmake parser bug in 0.4.0's GNUmakefile
+# (see uutils drill-down 2026-04-15).
+build = """export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
+export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
+cargo fetch --locked
+cargo build --release --features "$(cat GNUmakefile | grep -oP '(?<=PROGS := ).*' | head -1 || true)" --no-default-features 2>/dev/null || cargo build --release"""
+install = """set -e
+install -Dm755 target/release/coreutils "$DESTDIR/bin/uutils"
 
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# Create per-command symlinks (mirrors upstream GNUmakefile MULTICALL=y layout).
+CMDS="arch base32 base64 basename basenc cat chgrp chmod chown chroot cksum
+ comm cp csplit cut date dd df dir dircolors dirname du echo env expand
+ expr factor false fmt fold groups hashsum head hostname id install join
+ kill link ln logname ls md5sum mkdir mkfifo mknod mktemp more mv nice
+ nl nohup nproc numfmt od paste pr printenv printf ptx pwd readlink
+ realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum
+ shred shuf sleep sort split stat stdbuf stty sum sync tac tail tee
+ test timeout touch tr true truncate tsort tty uname unexpand uniq
+ unlink uptime users vdir wc who whoami yes"
+for cmd in $CMDS; do
+  ln -sf uutils "$DESTDIR/bin/$cmd"
+done
+# [ is a symlink to test
+ln -sf uutils "$DESTDIR/bin/["
+
 if command -v readelf >/dev/null 2>&1 && \
    readelf -d "$DESTDIR/bin/uutils" 2>/dev/null | grep -Eq 'libgcc_s|libstdc\\+\\+'; then
   echo "FATAL: uutils still links against GCC runtime"
