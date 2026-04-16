@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r2"
+version = "0.54-r3"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -43,6 +43,24 @@ for d in "$DESTDIR/lib/rc/sh" "$DESTDIR/lib/rc/bin" "$DESTDIR/bin" "$DESTDIR/etc
         esac
     done
 done
+# u-root ip compatibility: OpenRC's /etc/init.d/network uses
+#   `ip route flush scope global`
+# to wipe default/global routes on stop(). u-root's ip (which we ship
+# as /bin/ip via iproute-go since toybox's ip can't see TUN ifaces)
+# does not implement the `scope <name>` filter on flush and dies with:
+#   strconv.ParseInt: parsing "global": invalid syntax
+# Rewrite that ONE line to a show+del loop that works with both
+# iproute2 ip and u-root ip. Using shell read+case avoids awk-field-$1
+# quoting issues inside sed replacement text. Reproduced 2026-04-16
+# on jonerix-tormenta: `rc-service ntp-set start` cascaded through
+# `need net`, started `network`, which tried the flush and returned
+# non-zero — partial flush state caused the dhcpcd lease to be dropped
+# and took the box offline until power cycle.
+if [ -f "$DESTDIR/etc/init.d/network" ]; then
+    sed -i \\
+        's~ip route flush scope global~ip -o -4 route show 2>/dev/null | while read -r _pfx _rest; do case " $_rest " in *" scope global "*) ip route del "$_pfx" 2>/dev/null || true;; esac; done~' \\
+        "$DESTDIR/etc/init.d/network"
+fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
