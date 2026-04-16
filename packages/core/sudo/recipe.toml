@@ -74,24 +74,23 @@ rm -rf "$DESTDIR/share/doc" "$DESTDIR/include"
 rm -f "$DESTDIR/lib/sudo/libsudo_util.a" "$DESTDIR/lib/sudo/libsudo_util.la"
 find $DESTDIR/lib -name "*.la" -delete
 
-# llvm-objcopy can rewrite RPATH/RUNPATH. Strip any that reference /lib64.
-for so in $(find $DESTDIR/lib -name "*.so*" -type f); do
-    # Dump dynamic tags; if any contain /lib64 report and try to fix
-    if readelf -d "$so" 2>/dev/null | grep -qE 'RPATH|RUNPATH' ; then
-        readelf -d "$so" 2>/dev/null | grep -E 'RPATH|RUNPATH'
-        # llvm-strip doesn't touch RPATH but llvm-objcopy has --remove-section
-        # Simplest: use `llvm-strip --remove-section=.dynstr` nope, too aggressive
-        # Use sed on the raw binary to change /lib64 -> /lib\0\0 (zero-pad)
+# Strip /lib64 references from ALL files (RPATH, DT_NEEDED, embedded
+# strings — anywhere it appears). Null-pad /lib64 -> /lib\0\0 (same length,
+# terminates string early). Safe: jonerix has no /lib64, so the padded
+# path dereferences to /lib. Run on everything because /lib64 can appear
+# in strings, symbol names, debug info, etc — not just RPATH.
+for f in $(find $DESTDIR -type f); do
+    if grep -l "/lib64" "$f" >/dev/null 2>&1; then
+        matches=$(strings "$f" 2>/dev/null | grep "/lib64" | head -2 | tr '\\n' '|')
         python3 -c "
 import sys
 p = sys.argv[1]
 with open(p,'rb') as f: d = f.read()
-orig = d.count(b'/lib64')
-# Replace /lib64 with /lib\\0\\0 (same length, null-terminate early)
+n = d.count(b'/lib64')
 d = d.replace(b'/lib64', b'/lib\\x00\\x00')
 with open(p,'wb') as f: f.write(d)
-print(f'{p}: replaced {orig} /lib64 references')
-" "$so" || true
+print(f'sudo lib64-fix: {p} replaced {n} refs (saw: $matches)')
+" "$f" 2>&1 || true
     fi
 done
 
