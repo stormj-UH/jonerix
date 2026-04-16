@@ -663,8 +663,19 @@ const char *db_find_file_owner(const jpkg_db_t *db, const char *path) {
     return NULL;
 }
 
+/* True if `pkg` is in `list[]` (size count). */
+static bool name_in_list(const char *pkg,
+                         const char *const *list, size_t count) {
+    if (!pkg || !list) return false;
+    for (size_t i = 0; i < count; i++) {
+        if (list[i] && strcmp(pkg, list[i]) == 0) return true;
+    }
+    return false;
+}
+
 int db_check_conflicts(const jpkg_db_t *db, const pkg_file_t *files,
                        const char *skip_pkg,
+                       const char *const *replaces, size_t replaces_count,
                        void (*callback)(const char *path, const char *owner,
                                         void *ctx),
                        void *ctx) {
@@ -675,6 +686,12 @@ int db_check_conflicts(const jpkg_db_t *db, const pkg_file_t *files,
     for (const pkg_file_t *f = files; f; f = f->next) {
         for (db_pkg_t *p = db->packages; p; p = p->next) {
             if (skip_pkg && strcmp(p->name, skip_pkg) == 0)
+                continue;
+            /* Silently allow conflicts with packages we're replacing.
+             * Caller should follow up with db_transfer_ownership() so
+             * the replaced packages' manifests lose the transferred
+             * entries and `jpkg verify` stays clean. */
+            if (name_in_list(p->name, replaces, replaces_count))
                 continue;
 
             for (pkg_file_t *pf = p->files; pf; pf = pf->next) {
@@ -690,4 +707,69 @@ int db_check_conflicts(const jpkg_db_t *db, const pkg_file_t *files,
     }
 
     return conflicts;
+}
+
+/* Drop a pkg_file_t entry (by path) from a package's linked list.
+ * Returns true if something was removed. */
+static bool pkg_files_drop(db_pkg_t *p, const char *path) {
+    pkg_file_t **slot = &p->files;
+    while (*slot) {
+        if (strcmp((*slot)->path, path) == 0) {
+            pkg_file_t *dead = *slot;
+            *slot = dead->next;
+            free(dead->path);
+            free(dead->link_target);
+            free(dead);
+            if (p->file_count > 0) p->file_count--;
+            return true;
+        }
+        slot = &(*slot)->next;
+    }
+    return false;
+}
+
+/* Rewrite /var/db/jpkg/installed/<pkg>/files from the in-memory list. */
+static int rewrite_files_manifest(const db_pkg_t *p) {
+    if (!p || !p->name) return -1;
+    char path[1024];
+    snprintf(path, sizeof(path), "%s%s/installed/%s/files",
+             g_rootfs, JPKG_DB_DIR, p->name);
+
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        log_error("db: cannot rewrite %s: %s", path, strerror(errno));
+        return -1;
+    }
+    for (pkg_file_t *pf = p->files; pf; pf = pf->next) {
+        if (pf->link_target) {
+            fprintf(f, "%s %06o %s -> %s\n",
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                    pf->mode, pf->path, pf->link_target);
+        } else {
+            fprintf(f, "%s %06o %s\n", pf->sha256, pf->mode, pf->path);
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
+int db_transfer_ownership(jpkg_db_t *db, const pkg_file_t *files,
+                          const char *const *replaces, size_t replaces_count) {
+    if (!db || !files || !replaces || replaces_count == 0) return 0;
+
+    int transferred = 0;
+    for (db_pkg_t *p = db->packages; p; p = p->next) {
+        if (!name_in_list(p->name, replaces, replaces_count)) continue;
+        bool touched = false;
+        for (const pkg_file_t *f = files; f; f = f->next) {
+            if (pkg_files_drop(p, f->path)) {
+                transferred++;
+                touched = true;
+                log_info("transferred %s from %s (replaced)",
+                         f->path, p->name);
+            }
+        }
+        if (touched) rewrite_files_manifest(p);
+    }
+    return transferred;
 }

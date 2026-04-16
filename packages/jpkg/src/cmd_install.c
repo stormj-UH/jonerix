@@ -290,9 +290,13 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
         return -1;
     }
 
-    /* Check for file conflicts with other installed packages */
+    /* Check for file conflicts with other installed packages.
+     * Packages listed in meta->replaces are silently allowed — we'll
+     * transfer file ownership from them after the install succeeds. */
     int conflicts = db_check_conflicts(db, files,
                                        installed ? name : NULL,
+                                       (const char *const *)meta->replaces,
+                                       meta->replaces_count,
                                        conflict_cb, NULL);
     if (conflicts > 0) {
         if (!force) {
@@ -345,6 +349,16 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
         db_unregister(db, name);
     }
     db_register(db, meta, files);
+
+    /* Transfer ownership of any files this package's `replaces` list
+     * claims from previously-installed packages. Rewrites the replaced
+     * packages' manifests so `jpkg verify` stays clean. */
+    if (meta->replaces_count > 0) {
+        int n = db_transfer_ownership(db, files,
+                                      (const char *const *)meta->replaces,
+                                      meta->replaces_count);
+        if (n > 0) log_info("transferred %d file(s) from replaced package(s)", n);
+    }
 
     /* Run post-install hook */
     run_hook("post_install", meta->post_install, meta->name);

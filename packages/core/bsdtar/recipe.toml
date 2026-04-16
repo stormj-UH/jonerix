@@ -1,8 +1,12 @@
 [package]
 name = "bsdtar"
-version = "3.8.6-r5"
+version = "3.8.6-r6"
 license = "Apache-2.0"
 description = "Compatibility package providing /bin/tar via libarchive bsdtar"
+# bsdtar is the system /bin/tar provider (via libarchive). Toybox's tar
+# applet is a minimal fallback. Claim /bin/tar away from it so jpkg
+# verify stays clean. Requires jpkg >= 1.0.4.
+replaces = ["toybox"]
 
 [build]
 build = ""
