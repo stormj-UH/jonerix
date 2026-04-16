@@ -1,6 +1,6 @@
 [package]
 name = "rust"
-version = "1.94.1"
+version = "1.94.1-r2"
 license = "MIT"
 description = "Systems programming language with memory safety guarantees"
 
@@ -22,9 +22,82 @@ curl -fsSL "$URL" -o rust.tar.gz
 printf '%s  rust.tar.gz\n' "$SHA" | sha256sum -c
 tar xf rust.tar.gz --strip-components=1
 ./install.sh --prefix=/ --destdir="$DESTDIR" --disable-ldconfig --components=rustc,cargo,rust-std-${ARCH}-unknown-linux-musl
+
+# --- cargo CA + openssl-sys env (system-wide) ---
+# Without this, cargo's bundled libcurl can't find CAs on jonerix and
+# every 'cargo fetch' errors with:
+#   error: download of config.json failed
+#   [60] SSL peer certificate or SSH remote key was not OK
+#     (SSL certificate problem: unable to get local issuer certificate)
+# Ship a /etc/profile.d fragment that points cargo at the system CA
+# bundle + exposes LibreSSL paths for openssl-sys detection.
+install -d "$DESTDIR/etc/profile.d"
+cat > "$DESTDIR/etc/profile.d/cargo.sh" <<'PROF'
+# cargo + openssl-sys defaults for jonerix.
+# /etc/profile.d/cargo.sh — shipped by the rust jpkg.
+export CARGO_HTTP_CAINFO="/etc/ssl/certs/ca-certificates.crt"
+export OPENSSL_DIR="/"
+export OPENSSL_INCLUDE_DIR="/include"
+export OPENSSL_LIB_DIR="/lib"
+PROF
+chmod 0644 "$DESTDIR/etc/profile.d/cargo.sh"
+
+# --- cargo config for root (non-login shells, direct runs) ---
+# /etc/profile is only sourced by login shells, so also drop a
+# /root/.cargo/config.toml. Users get their own via the post_install
+# hook (see [hooks] below).
+install -d "$DESTDIR/root/.cargo"
+cat > "$DESTDIR/root/.cargo/config.toml" <<'CFG'
+# Shipped by the rust jpkg. Safe to edit; pristine version at
+# /usr/share/rust/skel/.cargo/config.toml.
+[http]
+cainfo = "/etc/ssl/certs/ca-certificates.crt"
+
+[net]
+git-fetch-with-cli = true
+CFG
+
+# --- skeleton copy for new users ---
+install -d "$DESTDIR/usr/share/rust/skel/.cargo"
+install -m 0644 "$DESTDIR/root/.cargo/config.toml" "$DESTDIR/usr/share/rust/skel/.cargo/config.toml"
 """
 install = ""
 
+[hooks]
+# Make sure /etc/profile actually sources /etc/profile.d/*.sh (the
+# jonerix base /etc/profile didn't always), and seed any existing
+# non-system user homes with the cargo skeleton so non-root cargo
+# runs pick up the CA bundle too.
+post_install = """# ensure /etc/profile sources /etc/profile.d
+if [ -f /etc/profile ] && ! grep -q "/etc/profile.d" /etc/profile 2>/dev/null; then
+    cat >> /etc/profile <<'PROF'
+
+# --- /etc/profile.d (added by rust jpkg) ---
+if [ -d /etc/profile.d ]; then
+    for f in /etc/profile.d/*.sh; do
+        [ -r "$f" ] && . "$f"
+    done
+fi
+PROF
+fi
+
+# seed existing user homes (/home/*) with the cargo skel, skipping
+# homes that already have a cargo config.
+if [ -d /home ]; then
+    for home in /home/*; do
+        [ -d "$home" ] || continue
+        user=$(basename "$home")
+        id -u "$user" >/dev/null 2>&1 || continue
+        [ -f "$home/.cargo/config.toml" ] && continue
+        install -d "$home/.cargo"
+        cp /usr/share/rust/skel/.cargo/config.toml "$home/.cargo/config.toml"
+        chown -R "$user:$user" "$home/.cargo" 2>/dev/null || true
+    done
+fi
+exit 0"""
+
 [depends]
-runtime = ["musl", "gnu-compat-symlinks"]
+# gnu-compat-symlinks no longer required: rust-r1+ (llvm-libunwind=
+# system) emits -lunwind, not -lgcc_s, so runtime needs only musl.
+runtime = ["musl"]
 build = []
