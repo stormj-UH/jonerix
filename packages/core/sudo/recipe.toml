@@ -1,0 +1,43 @@
+[package]
+name = "sudo"
+version = "1.9.17p2"
+license = "ISC"
+description = "Privilege escalation utility"
+
+[source]
+url = "https://www.sudo.ws/dist/sudo-1.9.17p2.tar.gz"
+sha256 = "4a38a1ab3adb1199257edc2a7c4a2bd714665eb605b04368843b06dada2cfcfb"
+
+[build]
+system = "autoconf"
+configure = """GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
+CFLAGS="-O2 -fomit-frame-pointer" \
+./configure \
+  --prefix=/ \
+  --bindir=/bin \
+  --sbindir=/bin \
+  --libexecdir=/lib \
+  --sysconfdir=/etc \
+  --with-rundir=/run/sudo \
+  --with-vardir=/var/db/sudo \
+  --with-logpath=/var/log/sudo.log \
+  --without-pam \
+  --without-skey \
+  --without-opie \
+  --disable-nls \
+  --enable-static-sudoers \
+  --with-env-editor \
+  CC=clang"""
+build = "make -j$(nproc)"
+install = """make DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+rm -rf "$DESTDIR/share/doc" "$DESTDIR/include"
+rm -f "$DESTDIR/lib/sudo/libsudo_util.a" "$DESTDIR/lib/sudo/libsudo_util.la"
+find $DESTDIR/lib -name "*.la" -delete
+chmod 4755 $DESTDIR/bin/sudo
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl", "libressl"]
+build = ["clang", "make", "jonerix-headers"]
