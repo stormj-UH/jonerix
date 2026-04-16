@@ -39,6 +39,8 @@ typedef struct build_recipe {
     size_t runtime_dep_count;
     char **build_deps;
     size_t build_dep_count;
+    char **replaces;           /* packages whose files this one overrides */
+    size_t replaces_count;
     char *configure_cmd;
     char *build_cmd;
     char *install_cmd;
@@ -63,6 +65,8 @@ static void recipe_free(build_recipe_t *r) {
     free(r->runtime_deps);
     for (size_t i = 0; i < r->build_dep_count; i++) free(r->build_deps[i]);
     free(r->build_deps);
+    for (size_t i = 0; i < r->replaces_count; i++) free(r->replaces[i]);
+    free(r->replaces);
     free(r->configure_cmd);
     free(r->build_cmd);
     free(r->install_cmd);
@@ -139,6 +143,16 @@ static build_recipe_t *load_recipe(const char *recipe_dir) {
         r->build_dep_count = arr->count;
         for (size_t i = 0; i < arr->count; i++)
             r->build_deps[i] = xstrdup(arr->items[i]);
+    }
+    /* Replaces: prefer package.replaces (canonical), fall back to
+     * depends.replaces for consistency with runtime/build grouping. */
+    const toml_array_t *rep = toml_get_array(doc, "package.replaces");
+    if (!rep) rep = toml_get_array(doc, "depends.replaces");
+    if (rep) {
+        r->replaces = xcalloc(rep->count, sizeof(char *));
+        r->replaces_count = rep->count;
+        for (size_t i = 0; i < rep->count; i++)
+            r->replaces[i] = xstrdup(rep->items[i]);
     }
 
     if ((s = toml_get_string(doc, "build.configure")))
@@ -459,6 +473,9 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
     if (recipe->build_dep_count > 0)
         toml_set_array(doc, "depends.build",
                        (const char **)recipe->build_deps, recipe->build_dep_count);
+    if (recipe->replaces_count > 0)
+        toml_set_array(doc, "package.replaces",
+                       (const char **)recipe->replaces, recipe->replaces_count);
 
     /* Hooks */
     if (recipe->pre_install) toml_set_string(doc, "hooks.pre_install", recipe->pre_install);

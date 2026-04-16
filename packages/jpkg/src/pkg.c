@@ -81,6 +81,13 @@ pkg_meta_t *pkg_meta_from_toml(const char *toml_str) {
     if ((arr = toml_get_array(doc, "depends.build")))
         meta->build_deps = copy_string_array(arr, &meta->build_dep_count);
 
+    /* Replaces: accept either package.replaces (canonical) or
+     * depends.replaces (tolerated for consistency with deps grouping). */
+    if ((arr = toml_get_array(doc, "package.replaces")))
+        meta->replaces = copy_string_array(arr, &meta->replaces_count);
+    else if ((arr = toml_get_array(doc, "depends.replaces")))
+        meta->replaces = copy_string_array(arr, &meta->replaces_count);
+
     /* File info */
     if ((s = toml_get_string(doc, "files.sha256")))
         meta->content_sha256 = xstrdup(s);
@@ -373,6 +380,10 @@ void pkg_meta_free(pkg_meta_t *meta) {
         free(meta->build_deps[i]);
     free(meta->build_deps);
 
+    for (size_t i = 0; i < meta->replaces_count; i++)
+        free(meta->replaces[i]);
+    free(meta->replaces);
+
     free(meta->content_sha256);
 
     free(meta->pre_install);
@@ -412,6 +423,10 @@ char *pkg_meta_to_toml(const pkg_meta_t *meta) {
     if (meta->build_dep_count > 0) {
         toml_set_array(doc, "depends.build",
                        (const char **)meta->build_deps, meta->build_dep_count);
+    }
+    if (meta->replaces_count > 0) {
+        toml_set_array(doc, "package.replaces",
+                       (const char **)meta->replaces, meta->replaces_count);
     }
 
     if (meta->content_sha256) toml_set_string(doc, "files.sha256", meta->content_sha256);
