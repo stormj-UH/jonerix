@@ -45,6 +45,48 @@ start_pre() {
 INITEOF
 chmod 755 $DESTDIR/etc/init.d/ntpd"""
 
+[hooks]
+# Register ntpd with OpenRC at install time: create the _ntp privsep user,
+# prepare the state dirs, link the service into the default runlevel, and
+# start it on live systems. Guard all file-touching so chroot/alt-root
+# installs (jpkg --root /mnt/rootfs ...) stay idempotent.
+post_install = """set -e
+# 1) _ntp privsep user (openntpd drops privileges to this uid).
+if ! getent passwd _ntp >/dev/null 2>&1; then
+    addgroup -S _ntp 2>/dev/null || groupadd -r _ntp 2>/dev/null || true
+    adduser -S -D -H -h /var/empty -s /bin/false -G _ntp _ntp 2>/dev/null \\
+        || useradd -r -d /var/empty -s /bin/false -g _ntp _ntp 2>/dev/null \\
+        || true
+fi
+
+# 2) State dirs referenced by start_pre and by openntpd's chroot.
+mkdir -p /var/db /var/empty
+chown _ntp:_ntp /var/db /var/empty 2>/dev/null || true
+chmod 0755 /var/db /var/empty
+
+# 3) Register with OpenRC default runlevel.
+ln -sf /etc/init.d/ntpd /etc/runlevels/default/ntpd 2>/dev/null || true
+
+# 4) Start now if OpenRC is driving PID 1 on this host (live install).
+# On chroot / container-image builds, /run typically isn't a writable
+# tmpfs and rc-service won't succeed — the || true keeps us idempotent.
+if [ -d /run ] && [ -x /bin/rc-service ] && readlink /proc/1/exe 2>/dev/null | grep -q openrc; then
+    rc-service ntpd start 2>/dev/null || true
+fi
+exit 0"""
+
+post_remove = """set -e
+# Stop the service first if it's running.
+if [ -x /bin/rc-service ]; then
+    rc-service ntpd stop 2>/dev/null || true
+fi
+# Unlink from the runlevel (the init.d script itself is removed by jpkg's
+# normal file manifest, but the runlevel symlink is dynamic).
+rm -f /etc/runlevels/default/ntpd
+# Leave the _ntp user in place — removing it could orphan files.
+# User can purge with: deluser _ntp; delgroup _ntp
+exit 0"""
+
 [depends]
 runtime = ["musl", "libressl"]
 build = ["clang", "jmake"]
