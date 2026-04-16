@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r1"
+version = "0.54-r2"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -23,9 +23,33 @@ install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+# Pin OpenRC's shell scripts at /bin/mksh instead of /bin/sh.
+# Background: jonerix's /bin/sh is often symlinked to toybox. Toybox sh
+# can't parse the heredocs, nested conditionals, and function-override
+# patterns that OpenRC uses — reproduced 2026-04-15: `rc-service unbound
+# status` errors with "unexpected end of file", and user-supplied start()
+# functions in init.d scripts are silently skipped. mksh handles all of
+# it correctly. Rewrite `#!/bin/sh` -> `#!/bin/mksh` in every OpenRC-
+# shipped script so OpenRC stays functional regardless of what /bin/sh
+# points at.
+for d in "$DESTDIR/lib/rc/sh" "$DESTDIR/lib/rc/bin" "$DESTDIR/bin" "$DESTDIR/etc/init.d"; do
+    [ -d "$d" ] || continue
+    find "$d" -type f | while read -r f; do
+        head1=$(head -n 1 "$f" 2>/dev/null || true)
+        case "$head1" in
+            "#!/bin/sh"*|"#! /bin/sh"*)
+                sed -i "1s|^#![[:space:]]*/bin/sh|#!/bin/mksh|" "$f"
+                ;;
+        esac
+    done
+done
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl"]
+# mksh: OpenRC's shell scripts are rewritten at install time to use
+# #!/bin/mksh explicitly (see install step). Declaring mksh a runtime
+# dep makes that contract visible — OpenRC cannot function without a
+# proper POSIX shell, and toybox sh is insufficient.
+runtime = ["musl", "mksh"]
 build = ["clang", "meson", "samurai", "jonerix-headers"]
