@@ -62,16 +62,39 @@ CEOF
 clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
 rm -f /tmp/expr.c
 
-GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib --sysconfdir=/etc --with-rundir=/run/sudo --with-vardir=/var/db/sudo --with-logpath=/var/log/sudo.log --without-pam --without-skey --without-opie --disable-nls --enable-static-sudoers --with-env-editor CC=clang
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer" LDFLAGS="-Wl,--disable-new-dtags" ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib --sysconfdir=/etc --with-rundir=/run/sudo --with-vardir=/var/db/sudo --with-logpath=/var/log/sudo.log --without-pam --without-skey --without-opie --disable-nls --disable-rpath --enable-static-sudoers --with-env-editor CC=clang
 make -j$(nproc)
 """
 install = """set -e
 make DESTDIR=$DESTDIR install
 rm -f /bin/expr
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 rm -rf "$DESTDIR/share/doc" "$DESTDIR/include"
 rm -f "$DESTDIR/lib/sudo/libsudo_util.a" "$DESTDIR/lib/sudo/libsudo_util.la"
 find $DESTDIR/lib -name "*.la" -delete
+
+# llvm-objcopy can rewrite RPATH/RUNPATH. Strip any that reference /lib64.
+for so in $(find $DESTDIR/lib -name "*.so*" -type f); do
+    # Dump dynamic tags; if any contain /lib64 report and try to fix
+    if readelf -d "$so" 2>/dev/null | grep -qE 'RPATH|RUNPATH' ; then
+        readelf -d "$so" 2>/dev/null | grep -E 'RPATH|RUNPATH'
+        # llvm-strip doesn't touch RPATH but llvm-objcopy has --remove-section
+        # Simplest: use `llvm-strip --remove-section=.dynstr` nope, too aggressive
+        # Use sed on the raw binary to change /lib64 -> /lib\0\0 (zero-pad)
+        python3 -c "
+import sys
+p = sys.argv[1]
+with open(p,'rb') as f: d = f.read()
+orig = d.count(b'/lib64')
+# Replace /lib64 with /lib\\0\\0 (same length, null-terminate early)
+d = d.replace(b'/lib64', b'/lib\\x00\\x00')
+with open(p,'wb') as f: f.write(d)
+print(f'{p}: replaced {orig} /lib64 references')
+" "$so" || true
+    fi
+done
+
 chmod 4755 $DESTDIR/bin/sudo
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
