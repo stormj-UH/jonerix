@@ -1,6 +1,6 @@
 [package]
 name = "snooze"
-version = "0.5"
+version = "0.5-r1"
 license = "CC0"
 description = "Lightweight cron alternative for running a command at a specific time"
 
@@ -15,7 +15,48 @@ install = """install -Dm755 snooze $DESTDIR/bin/snooze
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+mkdir -p $DESTDIR/bin
+cat > $DESTDIR/bin/snooze-crond << 'CROND_EOF'
+#!/bin/mksh
+# snooze-crond -- cron dispatcher launched by /etc/init.d/snooze.
+#
+# Scans /etc/cron.d/* for job files, then for each file runs:
+#   while :; do snooze <SNOOZE_ARGS> && eval <COMMAND>; done
+# in the background.  Re-scans the directory each time all children exit.
+#
+# Job file format (shell-sourceable):
+#   SNOOZE_ARGS="-H /3 -M 0 -S 0"   # snooze(1) flags
+#   COMMAND="/bin/my-script"          # command to run when timer fires
+#
+# SNOOZE TIMESPEC: use /N (every Nth unit) NOT */N (cron syntax).
+#   -H /3  = every 3rd hour (00, 03, 06, ...)
+#   -H */3 = cron syntax; snooze misinterprets this as every hour.
+
+CRONDIR=${SNOOZE_CRONDIR:-/etc/cron.d}
+LOGDIR=${SNOOZE_LOGDIR:-/var/log/cron}
+mkdir -p "$LOGDIR"
+
+while :; do
+    for job in "$CRONDIR"/*; do
+        [ -f "$job" ] || continue
+        SNOOZE_ARGS=
+        COMMAND=
+        . "$job"
+        [ -n "$COMMAND" ] || continue
+        (
+            while :; do
+                /usr/bin/snooze $SNOOZE_ARGS && {
+                    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$COMMAND"
+                    eval "$COMMAND"
+                } >> "$LOGDIR/$(basename "$job").log" 2>&1
+            done
+        ) &
+    done
+    wait
+done
+CROND_EOF
+chmod 755 $DESTDIR/bin/snooze-crond"""
 
 [depends]
 runtime = ["musl"]
