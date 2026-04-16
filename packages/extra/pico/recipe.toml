@@ -1,0 +1,132 @@
+[package]
+name = "pico"
+version = "2.26"
+license = "Apache-2.0"
+description = "Stand-alone pico text editor (from alpine-2.26)"
+
+[source]
+url = "https://alpine.x10host.com/alpine/release/src/alpine-2.26.tar.xz"
+sha256 = "c0779c2be6c47d30554854a3e14ef5e36539502b331068851329275898a9baba"
+
+[build]
+system = "custom"
+build = """set -e
+# autoconf configure needs expr; jonerix doesn't ship one
+cat > /tmp/expr.c <<'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <regex.h>
+static long tolong(const char *s, int *ok) {
+    char *e; long v = strtol(s, &e, 10); *ok = (*e == 0 && e != s); return v;
+}
+int main(int argc, char **argv) {
+    if (argc == 3 && !strcmp(argv[1], "length")) {
+        printf("%zu\n", strlen(argv[2])); return 0;
+    }
+    if (argc == 4 && !strcmp(argv[2], ":")) {
+        regex_t re; regmatch_t m[2]; int has_group = !!strstr(argv[3], "\\(");
+        if (regcomp(&re, argv[3], 0)) { fprintf(stderr, "expr: bad regex\n"); return 2; }
+        if (regexec(&re, argv[1], 2, m, 0) == 0) {
+            if (has_group && m[1].rm_so >= 0)
+                printf("%.*s\n", (int)(m[1].rm_eo - m[1].rm_so), argv[1] + m[1].rm_so);
+            else
+                printf("%d\n", (int)(m[0].rm_eo - m[0].rm_so));
+            regfree(&re); return 0;
+        }
+        regfree(&re); printf(has_group ? "\n" : "0\n"); return 1;
+    }
+    if (argc == 4) {
+        int ok1, ok2; long a = tolong(argv[1], &ok1), b = tolong(argv[3], &ok2);
+        if (ok1 && ok2) {
+            long r = 0; char *op = argv[2];
+            if (!strcmp(op,"+")) r=a+b; else if (!strcmp(op,"-")) r=a-b;
+            else if (!strcmp(op,"*")) r=a*b;
+            else if (!strcmp(op,"/")) { if(!b){fprintf(stderr,"expr: div/0\n");return 2;} r=a/b; }
+            else if (!strcmp(op,"%")) { if(!b){fprintf(stderr,"expr: div/0\n");return 2;} r=a%b; }
+            else if (!strcmp(op,"="))  r=(a==b); else if (!strcmp(op,"!=")) r=(a!=b);
+            else if (!strcmp(op,"<"))  r=(a<b);  else if (!strcmp(op,">"))  r=(a>b);
+            else if (!strcmp(op,"<=")) r=(a<=b); else if (!strcmp(op,">=")) r=(a>=b);
+            else { fprintf(stderr, "expr: unknown op: %s\n", op); return 2; }
+            printf("%ld\n", r); return r == 0 ? 1 : 0;
+        }
+    }
+    if (argc == 2) { printf("%s\n", argv[1]); return 0; }
+    fprintf(stderr, "expr: syntax error\n"); return 2;
+}
+CEOF
+clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
+rm -f /tmp/expr.c
+
+# jonerix ships libncursesw only; alpine configure looks for libncurses
+ln -sf libncursesw.so.6 /lib/libncurses.so
+ln -sf libncursesw.so.6 /lib/libncurses.so.6
+
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
+  ./configure --prefix=/ --bindir=/bin \
+    --without-ldap --without-krb5 --without-tcl --without-ssl \
+    CC=clang \
+    CFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind -I/include/ncursesw -Wno-incompatible-pointer-types -Wno-incompatible-function-pointer-types" \
+    LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind"
+
+# The top-level build tries to build the full imap c-client library, which
+# fails in this environment (imap/Makefile uses prompts that confuse make,
+# and mkauths is a /bin/sh script that toybox sh can't parse).
+#
+# Workaround: pre-build a c-client stub directory from the imap source
+# headers + charset data, compile utf8.o there, then patch the Makefile
+# to skip the imap recursive make. The pico and pith subdirs don't need
+# the c-client mail library — only the headers and utf8 object.
+mkdir -p imap/c-client
+cp imap/src/c-client/*.h imap/c-client/
+cp imap/src/osdep/unix/*.h imap/c-client/ 2>/dev/null || true
+cp imap/src/osdep/unix/os_lnx.h imap/c-client/osdep.h
+# linkage.h lists auth modules; pico needs none
+echo "/* no auth linkage needed for pico */" > imap/c-client/linkage.h
+# utf8.c #includes all charset *.c files directly
+cp imap/src/charset/*.c imap/c-client/
+cp imap/src/c-client/utf8.c imap/c-client/
+cp imap/src/c-client/utf8aux.c imap/c-client/
+
+# Compile utf8.o inside imap/c-client/ so relative #includes resolve
+cd imap/c-client
+clang -Os --rtlib=compiler-rt --unwindlib=libunwind \
+  -Wno-incompatible-pointer-types -Wno-incompatible-function-pointer-types \
+  -I. -I../../include \
+  -c utf8.c -o utf8.o
+cd ../..
+
+# Symlink top-level c-client -> imap/c-client.
+# Makefile's c-client.d target is: if test ! -L c-client; then ln -s imap/c-client c-client; fi
+# Since c-client IS already a symlink the condition is false and it's a no-op.
+ln -sf imap/c-client c-client
+
+# Patch Makefile: replace the imap recursive build with a no-op.
+# The c-client phony target normally does: cd imap && $(MAKE) slx ...
+# We already have everything pico needs in imap/c-client/.
+python3 - <<'PYEOF'
+with open('Makefile', 'r') as f:
+    content = f.read()
+old = ('\\tcd imap && $(MAKE) $(C_CLIENT_TARGET) $(C_CLIENT_CFLAGS) $(C_CLIENT_LDFLAGS)'
+       ' $(C_CLIENT_GCCOPTLEVEL) EXTRAAUTHENTICATORS="$(C_CLIENT_AUTHS)"'
+       ' EXTRASPECIALS="$(C_CLIENT_SPECIALS)" BUNDLED="$(C_CLIENT_BUNDLED)"')
+new = '\\t@: # imap build skipped - pre-built stub in imap/c-client/'
+content = content.replace(old, new)
+with open('Makefile', 'w') as f:
+    f.write(content)
+PYEOF
+
+# Build only the pith and pico subdirs (alpine email client is not our target)
+make -C pith -j$(nproc)
+make -C pico -j$(nproc)
+"""
+install = """set -e
+install -Dm755 pico/pico $DESTDIR/bin/pico
+install -Dm755 pico/pilot $DESTDIR/bin/pilot
+llvm-strip --strip-all $DESTDIR/bin/pico $DESTDIR/bin/pilot 2>/dev/null || true
+rm -f /bin/expr
+"""
+
+[depends]
+runtime = ["ncurses", "musl"]
+build = ["clang", "make", "python3", "ncurses", "jonerix-headers"]
