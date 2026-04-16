@@ -95,11 +95,22 @@ const char *db_find_file_owner(const jpkg_db_t *db, const char *path);
 
 /* Check for file conflicts between a file list and installed packages.
  * skip_pkg is excluded from checks (for upgrades, may be NULL).
+ * replaces/replaces_count: packages we're entitled to overwrite — their
+ * conflicts are silently ignored. Pass NULL/0 for strict behavior.
  * Calls callback for each conflict found. Returns total conflict count. */
 int db_check_conflicts(const jpkg_db_t *db, const pkg_file_t *files,
                        const char *skip_pkg,
+                       const char *const *replaces, size_t replaces_count,
                        void (*callback)(const char *path, const char *owner,
                                         void *ctx),
                        void *ctx);
+
+/* After installing a package that declares `replaces = [...]`, transfer
+ * ownership of any paths the new package installs that were previously
+ * owned by a replaced package: drop the entry from the replaced pkg's
+ * manifest and rewrite its /var/db/jpkg/installed/<pkg>/files file.
+ * Returns the number of file ownerships transferred. */
+int db_transfer_ownership(jpkg_db_t *db, const pkg_file_t *files,
+                          const char *const *replaces, size_t replaces_count);
 
 #endif /* JPKG_DB_H */

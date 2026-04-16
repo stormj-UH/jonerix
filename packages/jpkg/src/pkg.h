@@ -43,6 +43,15 @@ typedef struct pkg_meta {
     char **build_deps;
     size_t build_dep_count;
 
+    /* `replaces` — packages whose files this one may silently overwrite.
+     * When installing pkg X, files that would conflict with a package in
+     * replaces[] are transferred: the replaced package's manifest loses
+     * the entry, X's manifest gains it. Models the intentional "full
+     * impl shadows toybox" overrides (mksh replaces toybox's /bin/sh,
+     * bsdtar replaces /bin/tar, etc). Parsed from package.replaces. */
+    char **replaces;
+    size_t replaces_count;
+
     /* file info */
     char *content_sha256;   /* hash of zstd tar payload */
     uint64_t content_size;

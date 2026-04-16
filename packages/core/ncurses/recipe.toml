@@ -1,8 +1,12 @@
 [package]
 name = "ncurses"
-version = "6.5"
+version = "6.5-r1"
 license = "MIT"
 description = "Terminal handling library"
+# ncurses ships full-featured /bin/reset, /bin/clear, /bin/tput, /bin/tic,
+# /bin/infocmp. Toybox has stub reset/clear applets; claim those paths
+# so jpkg verify stays clean. Requires jpkg >= 1.0.4.
+replaces = ["toybox"]
 
 [source]
 url = "https://invisible-island.net/archives/ncurses/ncurses-6.5.tar.gz"
