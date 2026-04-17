@@ -186,6 +186,13 @@ install_target_build_deps() {
 
     for dep in $deps; do
         [ -n "$dep" ] || continue
+        # Clear the known-broken byacc symlink loop baked into the builder
+        # image (byacc -> yacc -> byacc, neither resolves to a real file)
+        # before dep-check so we actually reinstall byacc from the package.
+        if [ "$dep" = "byacc" ] && [ -L /bin/yacc ] && [ ! -e /bin/yacc ]; then
+            echo "byacc: clearing stale symlink loop from builder image"
+            rm -f /bin/yacc /bin/byacc
+        fi
         if command -v "$dep" >/dev/null 2>&1; then
             continue
         fi
