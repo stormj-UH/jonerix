@@ -1,17 +1,12 @@
 [package]
-name = "llvm"
-version = "21.1.2-r1"
+name = "llvm-all"
+version = "21.1.2"
 license = "Apache-2.0"
-# Slim LLVM: only the toolchain binaries actually needed to build C/C++/
-# Rust/Go from source. ~400 MB smaller than llvm-all (drops clang-repl,
-# bugpoint, llvm-reduce, clang-check, llvm-dwp, scan-build, and ~70 other
-# tools no build step calls). The Dockerfile.builder image installs this.
-#
-# If you need one of the excluded tools (interactive REPL, IR fuzzer,
-# specialized clang refactor/static-analysis utilities), install
-# `llvm-all` instead — it's the same compiled LLVM with the full
-# install set.
-description = "LLVM toolchain — clang, lld, compiler-rt, essential llvm-* utilities (slim; see llvm-all for the full set)"
+# Full LLVM — all 80+ tools including clang-repl, bugpoint, llvm-reduce,
+# llvm-dwp, etc. Use this if you need the complete LLVM development
+# toolkit. Most users want the slim `llvm` package instead (just the
+# toolchain bits actually needed to build things).
+description = "Full LLVM toolchain with all clang/llvm tools — pairs with the slim `llvm` for the complete dev experience"
 
 [source]
 url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
@@ -212,35 +207,6 @@ find "$DESTDIR/lib" -maxdepth 1 -name 'libLLVM*.a' -delete 2>/dev/null || true
 find "$DESTDIR/lib" -maxdepth 1 -name 'libclang*.a' -delete 2>/dev/null || true
 find "$DESTDIR/lib" -maxdepth 1 -name 'liblld*.a'   -delete 2>/dev/null || true
 rm -rf "$DESTDIR/include"
-
-# --- Step 8a: SLIM TRIM (distinguishes `llvm` from `llvm-all`) ---
-# Keep only the binaries the jonerix build ecosystem actually invokes.
-# The full set is preserved in the sibling `llvm-all` recipe (identical
-# build, unfiltered install). Saves ~400 MB from the builder image.
-#
-# Anything not matched by this whitelist is removed from $DESTDIR/bin/.
-# When adding a dependency that needs one of these tools, add it here.
-keep_bins="clang clang++ clang-21 clang-cpp
-           lld ld.lld ld64.lld lld-link wasm-ld
-           llvm-ar llvm-nm llvm-ranlib llvm-strip
-           llvm-objcopy llvm-objdump llvm-readelf llvm-readobj
-           llvm-config llvm-cov llvm-profdata llvm-symbolizer
-           llvm-addr2line llvm-size llvm-strings
-           opt llc
-           cc c++ ar nm ranlib strip objcopy objdump"
-# Build a sed-friendly alternation of exact names and delete non-matches.
-# `find ... -not \( -name ... \)` with many names is verbose but portable.
-for f in "$DESTDIR/bin/"*; do
-    [ -f "$f" ] || [ -L "$f" ] || continue
-    base=$(basename "$f")
-    matched=0
-    for k in $keep_bins; do
-        if [ "$base" = "$k" ]; then matched=1; break; fi
-    done
-    if [ "$matched" -eq 0 ]; then
-        rm -f "$f"
-    fi
-done
 
 # Strip debug info to reduce package size
 find "$DESTDIR/bin" -type f -executable \
