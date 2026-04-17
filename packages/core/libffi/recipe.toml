@@ -11,42 +11,12 @@ sha256 = "b0dea9df23c863a7a50e825440f3ebffabd65df1497108e5d437747843895a4e"
 [build]
 system = "custom"
 # libffi's configure uses `expr` extensively (autoconf 2.69 vintage).
-# jonerix builder has no /bin/expr (permissive-license-only, toybox
-# doesn't ship expr). Without it, configure loops forever trying to
-# test integer features. Install a minimal C-based expr shim before
-# configure runs — same pattern as sudo, jq, pico, tzdata, libevent,
-# openntpd recipes.
+# jonerix builder has no /bin/expr — install a minimal C shim first.
+# expr.c lives alongside this recipe to avoid shell heredocs (toybox
+# sh hangs on heredocs in some configurations).
 build = """set -e
-cat > /tmp/expr.c <<'CEOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <regex.h>
-static long tl(const char*s,int*o){char*e;long v=strtol(s,&e,10);*o=(*e==0&&e!=s);return v;}
-int main(int c,char**v){
- if(c==3&&!strcmp(v[1],"length")){printf("%zu\\n",strlen(v[2]));return 0;}
- if(c==4&&!strcmp(v[2],":")){regex_t r;regmatch_t m[2];int h=!!strstr(v[3],"\\\\(");
-  if(regcomp(&r,v[3],0))return 2;
-  if(regexec(&r,v[1],2,m,0)==0){if(h&&m[1].rm_so>=0)printf("%.*s\\n",(int)(m[1].rm_eo-m[1].rm_so),v[1]+m[1].rm_so);else printf("%d\\n",(int)(m[0].rm_eo-m[0].rm_so));regfree(&r);return 0;}
-  regfree(&r);printf(h?"\\n":"0\\n");return 1;}
- if(c==4){int o1,o2;long a=tl(v[1],&o1),b=tl(v[3],&o2);
-  if(o1&&o2){long r=0;char*o=v[2];
-   if(!strcmp(o,"+"))r=a+b;else if(!strcmp(o,"-"))r=a-b;else if(!strcmp(o,"*"))r=a*b;
-   else if(!strcmp(o,"/"))r=a/b;else if(!strcmp(o,"%"))r=a%b;
-   else if(!strcmp(o,"="))r=(a==b);else if(!strcmp(o,"!="))r=(a!=b);
-   else if(!strcmp(o,"<"))r=(a<b);else if(!strcmp(o,">"))r=(a>b);
-   else if(!strcmp(o,"<="))r=(a<=b);else if(!strcmp(o,">="))r=(a>=b);
-   else return 2;printf("%ld\\n",r);return r==0?1:0;}}
- if(c==2){printf("%s\\n",v[1]);return 0;}
- return 2;}
-CEOF
-clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
-rm -f /tmp/expr.c
-
-GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
-  CFLAGS="-O2 -fomit-frame-pointer -fPIC" \
-  CC=clang \
-  ./configure --prefix=/ --libdir=/lib --includedir=/include --disable-static --disable-docs --disable-multi-os-directory
+clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr "$RECIPE_DIR/expr.c"
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer -fPIC" CC=clang ./configure --prefix=/ --libdir=/lib --includedir=/include --disable-static --disable-docs --disable-multi-os-directory
 make -j$(nproc)"""
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
