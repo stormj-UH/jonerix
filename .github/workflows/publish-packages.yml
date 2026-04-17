@@ -4,7 +4,7 @@ on:
   # Push trigger disabled --- building locally and uploading manually.
   # Re-enable when ready to use CI for package builds.
   # push:
-  #   branches: [master]
+  #   branches: [main]
   #   paths:
   #     - 'packages/core/**'
   #     - 'packages/jpkg/**'
