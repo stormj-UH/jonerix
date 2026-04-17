@@ -210,9 +210,12 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
         return -1;
     }
 
-    /* Check if already installed with same version */
+    /* Check if already installed with same version. --force bypasses this
+     * so CI can repair a previously-installed package whose files are
+     * corrupt or broken (e.g., the byacc symlink loop baked into old
+     * builder images). */
     db_pkg_t *installed = db_get_package(db, name);
-    if (installed && strcmp(installed->version, entry->version) == 0) {
+    if (installed && strcmp(installed->version, entry->version) == 0 && !force) {
         log_info("%s-%s is already installed", name, entry->version);
         return 0;
     }
