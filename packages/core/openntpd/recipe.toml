@@ -1,6 +1,6 @@
 [package]
 name = "openntpd"
-version = "6.8p1-r1"
+version = "6.8p1-r2"
 license = "ISC"
 description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 
@@ -75,8 +75,12 @@ depend() {
 }
 
 start_pre() {
+    # /var/db is the drift-file location — writable by _ntp.
     checkpath -d -m 0755 -o _ntp:_ntp /var/db
-    checkpath -d -m 0755 -o _ntp:_ntp /var/empty
+    # /var/empty is the privsep chroot — openntpd rejects anything
+    # not owned by root (uid 0) with "bad privsep dir permissions".
+    # Must be mode 0711 (exec-only access for others) and root-owned.
+    checkpath -d -m 0711 /var/empty
 }
 INITEOF
 chmod 755 $DESTDIR/etc/init.d/ntpd"""
@@ -86,28 +90,45 @@ chmod 755 $DESTDIR/etc/init.d/ntpd"""
 # prepare the state dirs, link the service into the default runlevel, and
 # start it on live systems. Guard all file-touching so chroot/alt-root
 # installs (jpkg --root /mnt/rootfs ...) stay idempotent.
-post_install = """set -e
-# 1) _ntp privsep user (openntpd drops privileges to this uid).
-if ! getent passwd _ntp >/dev/null 2>&1; then
-    addgroup -S _ntp 2>/dev/null || groupadd -r _ntp 2>/dev/null || true
-    adduser -S -D -H -h /var/empty -s /bin/false -G _ntp _ntp 2>/dev/null \\
-        || useradd -r -d /var/empty -s /bin/false -g _ntp _ntp 2>/dev/null \\
-        || true
+post_install = """# 1) _ntp privsep user + group. openntpd drops privileges to this uid
+# before doing anything unprivileged. Shell structure is kept flat
+# (no line-continued || chains) because toybox sh parses those
+# unreliably — reproduced on jonerix-tormenta 2026-04-16 where the
+# previous post_install errored "syntax error: unexpected '||'".
+if ! grep -q "^_ntp:" /etc/group 2>/dev/null; then
+    addgroup -S _ntp 2>/dev/null
+fi
+if ! grep -q "^_ntp:" /etc/passwd 2>/dev/null; then
+    if [ -x /bin/adduser-safe ]; then
+        /bin/adduser-safe -S -D -H -h /var/empty -s /bin/false -G _ntp _ntp 2>/dev/null
+    else
+        adduser -S -D -H -h /var/empty -s /bin/false -G _ntp _ntp 2>/dev/null
+    fi
 fi
 
-# 2) State dirs referenced by start_pre and by openntpd's chroot.
-mkdir -p /var/db /var/empty
-chown _ntp:_ntp /var/db /var/empty 2>/dev/null || true
-chmod 0755 /var/db /var/empty
+# 2) /var/db (drift file) — _ntp-owned, 0755.
+mkdir -p /var/db
+chown _ntp:_ntp /var/db 2>/dev/null
+chmod 0755 /var/db
 
-# 3) Register with OpenRC default runlevel.
-ln -sf /etc/init.d/ntpd /etc/runlevels/default/ntpd 2>/dev/null || true
+# 3) /var/empty (privsep chroot) — MUST be root-owned with mode 0711.
+# openntpd's privsep check refuses to start if the dir is not owned
+# by uid 0 (errors "bad privsep dir permissions: 40XXX"). Reproduced
+# 2026-04-16 when we set it _ntp-owned.
+mkdir -p /var/empty
+chown root:root /var/empty
+chmod 0711 /var/empty
 
-# 4) Start now if OpenRC is driving PID 1 on this host (live install).
-# On chroot / container-image builds, /run typically isn't a writable
-# tmpfs and rc-service won't succeed — the || true keeps us idempotent.
-if [ -d /run ] && [ -x /bin/rc-service ] && readlink /proc/1/exe 2>/dev/null | grep -q openrc; then
-    rc-service ntpd start 2>/dev/null || true
+# 4) Register with OpenRC default runlevel.
+if [ -d /etc/runlevels/default ]; then
+    ln -sf /etc/init.d/ntpd /etc/runlevels/default/ntpd
+fi
+
+# 5) Start now if OpenRC is driving PID 1 on this host.
+if [ -d /run ] && [ -x /bin/rc-service ]; then
+    if readlink /proc/1/exe 2>/dev/null | grep -q openrc; then
+        rc-service ntpd start 2>/dev/null
+    fi
 fi
 exit 0"""
 
