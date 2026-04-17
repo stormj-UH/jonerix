@@ -13,7 +13,32 @@ system = "autoconf"
 configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin CC=clang"
 build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
-ln -sf yacc $DESTDIR/bin/byacc 2>/dev/null || true
+# byacc upstream ships the binary as /bin/yacc. Some prior recipe versions
+# then added /bin/byacc -> yacc, but also did ln -sf yacc byacc which in
+# combination with upstream's own byacc -> yacc symlink produced a loop
+# (byacc -> yacc -> byacc). Normalize here: yacc is always the real file,
+# byacc is a symlink to it. Follow any existing symlink chain to the real
+# binary, reset both, and recreate the one-way link.
+if [ -L "$DESTDIR/bin/yacc" ] || [ -L "$DESTDIR/bin/byacc" ]; then
+    # Find the actual binary (via readlink -f, which follows chains). If
+    # the chain is broken (self-loop), fall back to a copy from wherever
+    # make put the real file.
+    REAL=$(readlink -f "$DESTDIR/bin/yacc" 2>/dev/null || true)
+    if [ ! -f "$REAL" ]; then REAL=$(readlink -f "$DESTDIR/bin/byacc" 2>/dev/null || true); fi
+    # If neither resolves, look for the raw binary byacc's make installs.
+    if [ ! -f "$REAL" ]; then
+        for candidate in "$DESTDIR/bin/yacc.real" "$DESTDIR/usr/bin/yacc" "$(find "$DESTDIR" -name 'yacc' -type f | head -1)"; do
+            [ -f "$candidate" ] && REAL="$candidate" && break
+        done
+    fi
+    rm -f "$DESTDIR/bin/yacc" "$DESTDIR/bin/byacc"
+    if [ -f "$REAL" ]; then
+        cp "$REAL" "$DESTDIR/bin/yacc"
+        chmod 0755 "$DESTDIR/bin/yacc"
+    fi
+fi
+# At this point /bin/yacc should be the real binary. Create byacc -> yacc.
+ln -sf yacc "$DESTDIR/bin/byacc"
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
