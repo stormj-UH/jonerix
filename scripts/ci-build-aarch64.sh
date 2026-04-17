@@ -87,6 +87,15 @@ if [ ! -x /bin/expr ]; then
         -o /bin/expr /workspace/scripts/expr-shim.c
 fi
 
+# /bin/install GNU-compat shim: toybox install lacks -c (GNU's "copy"
+# flag, which is the default on toybox anyway — just needs to be
+# stripped before toybox parses argv). autoconf-generated Makefiles
+# emit `install -c -m 644 src dst`, and toybox parses `-c` as the
+# destination. Reproduced on Python 3.14.3 build 2026-04-17.
+echo "== installing /bin/install GNU-compat shim =="
+clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld \
+    -o /bin/install /workspace/scripts/install-shim.c
+
 # Update package index
 jpkg update
 
