@@ -3,7 +3,7 @@ name: Build WSL rootfs
 on:
   # Push trigger disabled — building locally.
   # push:
-  #   branches: [master]
+  #   branches: [main]
   #   paths:
   #     - 'packages/core/**'
   #     - 'install/wsl/**'
