@@ -1,19 +1,20 @@
 [package]
 name = "jmake"
-version = "1.0.12"
+version = "1.0.13"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
-# 1.0.12 removes the diagnostic traces from 1.0.10/1.0.11. The REAL
-# bug turned out to be in ci-build-*.sh — `jpkg install --force jmake`
-# does not upgrade an existing installation, so CI has been running
-# jmake 1.0.2 this whole time (!!). Fixed in scripts/ci-build-*.sh to
-# use `jpkg upgrade jmake`. With that fix, 1.0.12's actual logic fixes
-# (VPATH expansion, GNUmakefile preference, ifeq-colon dispatch) finally
-# get exercised in CI.
+# 1.0.13: populate $<, $^, $+, $? in expand_include_recipe_lines so
+# recipes fired via `-include X.mk` (pending_includes rebuild path)
+# get the same automatic variables GNU make sets. Previously only $@
+# and $* were set, which made rules like:
+#     uncommon.mk: $(srcdir)/common.mk
+#             sed '...' $< > $@
+# silently produce 0-byte files (sed reads stdin, redirects to $@).
+# Ruby 3.4's build hit this exactly.
 
 [source]
-url = "https://cache.invalid/jmake-1.0.12.tar"
-sha256 = "50272eac40be7fb27da2ca615186f471091b2df8a321b246d0de1388319a225b"
+url = "https://cache.invalid/jmake-1.0.13.tar"
+sha256 = "56e993a5cc8a565f0eed513d93a9fb111ae42d169b6875824a26e2b51a984121"
 
 [build]
 system = "custom"
