@@ -1,18 +1,17 @@
 [package]
 name = "jmake"
-version = "1.0.9"
+version = "1.0.10"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
-# 1.0.5..1.0.7: VPATH, GNUmakefile preference, ifeq-with-colons dispatch.
-# 1.0.8 was a short-lived debug build. 1.0.9 removes the debug eprintlns
-# and is logic-identical to 1.0.7 — the version bump is to force a
-# clean cargo rebuild in case cargo's cache was serving stale codegen
-# for the x86_64 target (which was exhibiting a parser miss that the
-# aarch64 build did not).
+# 1.0.10 (diagnostic): UNCONDITIONAL trace eprintln for ifeq lines.
+# Used to pin down why 1.0.9's `is_conditional_directive_line` check
+# isn't preventing "target pattern contains no '%'" on x86_64 amd64
+# despite the same source working on aarch64. Will be reverted once
+# the real cause is found.
 
 [source]
-url = "https://cache.invalid/jmake-1.0.9.tar"
-sha256 = "fd5854c3d608d6db6e83bd344912c3bcc488cb8b9bdadc00d5979c7e7034ac88"
+url = "https://cache.invalid/jmake-1.0.10.tar"
+sha256 = "f2128dd9177836927c91ad04d49ebfa3b9ff62c449b4e0738ddaf08630901b3a"
 
 [build]
 system = "custom"
