@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-boot-helpers"
-version = "1.1.0"
+version = "1.2.0"
 license = "MIT"
-description = "Boot + shutdown helpers for jonerix: reboot-clean, tty1-console"
+description = "Boot + shutdown helpers for jonerix: reboot-clean, tty1-console, ntp-bootstrap"
 
 # No [source] — local-only build using $RECIPE_DIR contents.
 
@@ -13,12 +13,18 @@ set -e
 cd "$RECIPE_DIR"
 # /bin/reboot-clean — graceful shutdown sequence. See file header.
 install -Dm755 bin/reboot-clean $DESTDIR/bin/reboot-clean
-# /etc/init.d/tty1-console — HDMI console auto-login root shell. See
-# file header for why this is needed (no permissive getty on jonerix).
+# /bin/ntp-set-http — HTTP Date header clock bootstrap (for RTC-less
+# hosts). See file header.
+install -Dm755 bin/ntp-set-http $DESTDIR/bin/ntp-set-http
+# /etc/init.d/tty1-console — HDMI console login prompt.
 install -Dm755 init.d/tty1-console $DESTDIR/etc/init.d/tty1-console
-# Verify mksh-clean before we ship anything. Both are mksh-targeted.
+# /etc/init.d/ntp-bootstrap — runs ntp-set-http before ntpd/tailscaled.
+install -Dm755 init.d/ntp-bootstrap $DESTDIR/etc/init.d/ntp-bootstrap
+# Verify mksh/sh-clean before we ship anything.
 mksh -n $DESTDIR/bin/reboot-clean
 mksh -n $DESTDIR/etc/init.d/tty1-console
+mksh -n $DESTDIR/etc/init.d/ntp-bootstrap
+sh -n $DESTDIR/bin/ntp-set-http
 """
 install = ""
 
@@ -29,13 +35,18 @@ install = ""
 post_install = """if [ -d /etc/runlevels/default ]; then
     ln -sf /etc/init.d/tty1-console /etc/runlevels/default/tty1-console
 fi
+if [ -d /etc/runlevels/boot ]; then
+    ln -sf /etc/init.d/ntp-bootstrap /etc/runlevels/boot/ntp-bootstrap
+fi
 exit 0"""
 
-# Tear down runlevel symlink on uninstall. The init script + binary
+# Tear down runlevel symlinks on uninstall. The init scripts + binaries
 # are manifest-tracked so jpkg removes them automatically.
 post_remove = """rm -f /etc/runlevels/default/tty1-console
+rm -f /etc/runlevels/boot/ntp-bootstrap
 exit 0"""
 
 [depends]
-runtime = ["mksh", "openrc"]
+# curl: ntp-set-http uses it for HTTP Date header fetch.
+runtime = ["mksh", "openrc", "curl"]
 build = []
