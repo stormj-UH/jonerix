@@ -76,6 +76,17 @@ if [ -z "${JPKG_SOURCE_CACHE:-}" ] && [ -d /workspace/sources ]; then
     export JPKG_SOURCE_CACHE=/workspace/sources
 fi
 
+# /bin/expr shim: jonerix is permissive-only and toybox lacks expr;
+# many autoconf-vintage configures (libffi, python3, openntpd, sudo,
+# jq, pico, tzdata, libevent, byacc) loop forever without it. Install
+# once here so every recipe can rely on it. Source lives in scripts/
+# to avoid per-recipe duplication / heredoc hell.
+if [ ! -x /bin/expr ]; then
+    echo "== installing /bin/expr shim =="
+    clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld \
+        -o /bin/expr /workspace/scripts/expr-shim.c
+fi
+
 # Update package index
 jpkg update
 
