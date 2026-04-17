@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.2.2"
+version = "1.2.3"
 license = "MIT"
-description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 + adduser safety + legacy bootstrap cleanup + fstab rescue"
+description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
 
 # No [source] section — jpkg treats a missing source.url as a local-only
 # build and hands control to the build script, which uses $RECIPE_DIR.
@@ -74,6 +74,23 @@ if [ -f /etc/fstab ]; then
         "tmpfs    /run       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
     _fstab_add "[[:space:]]/tmp[[:space:]].*tmpfs" \\
         "tmpfs    /tmp       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
+
+    # Add errors=remount-ro to existing root ext4 line if not present.
+    # mkimage.sh bakes this in for fresh images (PR #107), but existing
+    # Pi images predating that change don't have it. Without this, ext4
+    # corruption events (SD-card wear) allow damage to spread instead
+    # of triggering a fail-safe read-only remount. Reproduced on
+    # jonerix-tormenta 2026-04-16: inode 287372 had a bad extent header
+    # and rm returned EUCLEAN when trying to truncate.
+    if grep -E '^[^#].*[[:space:]]/[[:space:]]+ext4[[:space:]]' /etc/fstab \\
+            | grep -vq 'errors='; then
+        sed -i -E '/^[^#].*[[:space:]]\\/[[:space:]]+ext4[[:space:]]/{
+            /errors=/!s|(ext4[[:space:]]+)([^[:space:]]+)|\\1\\2,errors=remount-ro|
+        }' /etc/fstab
+        echo "raspi5-fixups: added errors=remount-ro to root fstab entry"
+        # Live-apply immediately (kernel accepts remount with new errors=).
+        mount -o remount,errors=remount-ro / 2>/dev/null || true
+    fi
 
     # Live-mount anything not currently mounted. Best-effort; failures
     # are OK (e.g. /dev/pts needs mkdir in devtmpfs which only root can
