@@ -1,0 +1,41 @@
+[package]
+name = "jonerix-boot-helpers"
+version = "1.0.0"
+license = "MIT"
+description = "Boot + shutdown helpers for jonerix: reboot-clean, tty1-console"
+
+# No [source] — local-only build using $RECIPE_DIR contents.
+
+[build]
+system = "custom"
+build = """
+set -e
+cd "$RECIPE_DIR"
+# /bin/reboot-clean — graceful shutdown sequence. See file header.
+install -Dm755 bin/reboot-clean $DESTDIR/bin/reboot-clean
+# /etc/init.d/tty1-console — HDMI console auto-login root shell. See
+# file header for why this is needed (no permissive getty on jonerix).
+install -Dm755 init.d/tty1-console $DESTDIR/etc/init.d/tty1-console
+# Verify mksh-clean before we ship anything. Both are mksh-targeted.
+mksh -n $DESTDIR/bin/reboot-clean
+mksh -n $DESTDIR/etc/init.d/tty1-console
+"""
+install = ""
+
+[hooks]
+# Register tty1-console in default runlevel on install. Don't touch
+# the symlink if it already exists (idempotent across upgrades).
+# reboot-clean is a plain /bin tool, no runlevel registration needed.
+post_install = """if [ -d /etc/runlevels/default ]; then
+    ln -sf /etc/init.d/tty1-console /etc/runlevels/default/tty1-console
+fi
+exit 0"""
+
+# Tear down runlevel symlink on uninstall. The init script + binary
+# are manifest-tracked so jpkg removes them automatically.
+post_remove = """rm -f /etc/runlevels/default/tty1-console
+exit 0"""
+
+[depends]
+runtime = ["mksh", "openrc"]
+build = []

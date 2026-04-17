@@ -243,7 +243,7 @@ info "Generating /etc/fstab..."
 cat > "$WORK_DIR/rootfs/etc/fstab" <<EOF
 # /etc/fstab — jonerix filesystem table
 # <device>                  <mount>     <type>  <options>               <dump> <pass>
-PARTLABEL=${LABEL_ROOT}     /           ext4    defaults,noatime        0      1
+PARTLABEL=${LABEL_ROOT}     /           ext4    defaults,noatime,errors=remount-ro  0  1
 PARTLABEL=${LABEL_ESP}      /boot/efi   vfat    defaults,noatime        0      2
 tmpfs                       /tmp        tmpfs   defaults,nosuid,nodev   0      0
 tmpfs                       /run        tmpfs   defaults,nosuid,nodev   0      0
