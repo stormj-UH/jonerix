@@ -92,6 +92,12 @@ RUN TRIPLE=$(/bin/clang-21 -dumpmachine 2>/dev/null || echo "unknown") && \
     ln -sf libstdc++.so.6 /lib/libstdc++.so 2>/dev/null || true && \
     printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true
 
+# Final-layer cleanup: strip binaries/.so files, remove docs/man/info/locales,
+# purge jpkg download cache, trim Rust/Go/Python artifacts. Trims ~400–600 MB
+# off the image so `docker pull` is faster. See scripts/image-slim.sh.
+COPY scripts/image-slim.sh /usr/local/sbin/image-slim
+RUN sh /usr/local/sbin/image-slim && rm /usr/local/sbin/image-slim
+
 WORKDIR /root
 ENTRYPOINT ["/bin/mksh"]
 CMD ["-l"]
