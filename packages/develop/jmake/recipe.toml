@@ -1,20 +1,20 @@
 [package]
 name = "jmake"
-version = "1.0.6"
+version = "1.0.7"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # 1.0.5 fixed VPATH variable expansion when resolving prerequisites.
-# 1.0.6 stops also including makefile/Makefile when GNUmakefile was found
-# (was breaking Ruby's "is make GNU make" configure test — Ruby creates
-# both GNUmakefile and Makefile with conflicting `all:` rules and checks
-# which one wins; GNU make reads only GNUmakefile, but jmake was reading
-# both, emitting an "overriding recipe" warning, and running Makefile's
-# output — making Ruby skip makefile-gmake and the static-linked-ext
-# build path.)
+# 1.0.6 preferred GNUmakefile over Makefile when both exist.
+# 1.0.7 fixes conditional-directive dispatch: lines like
+#   ifeq ($(A):$(B),yes:yes)
+# were being mis-classified as rule lines by the raw-line "rule colon"
+# heuristic, then erroring "target pattern contains no '%'". jmake
+# now recognises ifeq/ifneq/ifdef/ifndef (with optional `else`
+# prefix) and skips the heuristic so parse_conditional runs first.
 
 [source]
-url = "https://cache.invalid/jmake-1.0.6.tar"
-sha256 = "d1736921f7c6e62f5b6080d99252c4f5f8c2f7aeb4b2adc854160c02f8e87eb2"
+url = "https://cache.invalid/jmake-1.0.7.tar"
+sha256 = "ed697a16c4c3ab7611aa477e63a6dc11e332d8c7a8548a256fcfe3aab6391098"
 
 [build]
 system = "custom"
