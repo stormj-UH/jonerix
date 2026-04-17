@@ -106,7 +106,7 @@ jpkg update
 # without it Python 3.14's make install hangs indefinitely on
 # ./Include/**/*.h lookups). The builder image may ship an older jmake;
 # force-install from the INDEX so we always have the perf fix.
-jpkg install --force jmake 2>&1 | tail -3
+jpkg upgrade jmake 2>&1 | tail -5
 
 # Meson is bootstrapped from its upstream source tarball to avoid depending
 # on pip/SSL support in older builder images.
