@@ -1,6 +1,6 @@
 [package]
 name = "python3"
-version = "3.14.3-r6"
+version = "3.14.3-r7"
 license = "PSF-2.0"
 description = "Python programming language interpreter"
 
@@ -38,13 +38,12 @@ PATH="$PWD/.jpkg-tools:$PATH" \
 # (the jonerix builder's default /bin/sh) can't parse — "syntax
 # error: unexpected 'then'". mksh handles it cleanly.
 #
-# -j1 (serial): jmake 1.0.2's parallel scheduler deadlocks on
-# Python 3.14's build graph — all worker threads end up blocked in
-# futex_wait_queue after ~60 seconds of compilation with no forward
-# progress. Reproduced locally in ghcr.io/stormj-uh/jonerix:
-# builder-arm64 on 2026-04-17. -j1 completes cleanly. This is ~4x
-# slower but reliable; revisit once jmake scheduler bug is fixed.
-build = "make -j1 SHELL=/bin/mksh"
+# Full parallelism restored after jmake 1.0.4 fixed a pattern-rule
+# lookup blowup (find_pattern_rule was called 1038× on the same header
+# with no memoization, making `make install` hang on Python 3.14's
+# thousands of header prereqs). ci-build-*.sh force-installs jmake
+# from the INDEX to guarantee the builder has 1.0.4+.
+build = "make -j$(nproc) SHELL=/bin/mksh"
 install = """make install DESTDIR=$DESTDIR SHELL=/bin/mksh
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
