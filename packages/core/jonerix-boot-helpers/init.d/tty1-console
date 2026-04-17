@@ -1,28 +1,66 @@
 #!/bin/openrc-run
-# tty1-console — respawn a root shell on /dev/tty1 (HDMI console).
+# tty1-console — login prompt on /dev/tty1 (HDMI console).
 #
 # Replaces agetty/getty for jonerix: neither util-linux's agetty nor
 # toybox's getty applet set ships on jonerix (permissive-license-only;
-# util-linux is GPL). This service loops an interactive root shell on
-# tty1 so HDMI-attached consoles get a usable prompt without a proper
-# getty. Auto-login (no password); suitable for local-only boxes like
-# kiosks, dev Pis, embedded hosts.
+# util-linux is GPL). This service respawns toybox's `login` applet on
+# /dev/tty1 so HDMI-attached consoles get a usable login prompt
+# without a proper getty.
+#
+# Behavior:
+#   - Shows "<hostname> login:" on tty1
+#   - User types username + password (checked against /etc/shadow)
+#   - On success: execs user's shell from /etc/passwd
+#   - On logout OR toybox's 60-second username-input timeout: loops
+#     instantly back to a fresh prompt
+#
+# History: 1.0.0 auto-logged in as root (kiosk style). 1.1.0 switched
+# to proper login after it caused a security surprise during setup.
 
 name="tty1-console"
-description="Auto-login root shell on /dev/tty1 (HDMI console)"
-
-command="/bin/mksh"
-command_args='-c "while :; do /bin/sh -l </dev/tty1 >/dev/tty1 2>&1; sleep 1; done"'
-command_background="yes"
-pidfile="/run/tty1-console.pid"
+description="Login prompt on /dev/tty1 (HDMI console)"
 
 depend() {
     need localmount
-    after devfs sysfs
+    after devfs
+}
+
+start() {
+    ebegin "Spawning login on tty1"
+    # setsid detaches from our controlling tty; mksh runs the respawn
+    # loop. stty sane first in case earlier sessions left tty1 in a
+    # weird state (no echo, nonblocking, etc.).
+    setsid /bin/mksh -c '
+        stty -F /dev/tty1 sane 2>/dev/null
+        while :; do
+            /bin/login </dev/tty1 >/dev/tty1 2>&1
+        done
+    ' </dev/null >/dev/null 2>&1 &
+    echo $! > /run/tty1-console.pid
+    eend 0
+}
+
+stop() {
+    ebegin "Stopping tty1 login"
+    if [ -f /run/tty1-console.pid ]; then
+        kill $(cat /run/tty1-console.pid) 2>/dev/null
+        rm -f /run/tty1-console.pid
+    fi
+    pkill -f "login </dev/tty1" 2>/dev/null
+    eend 0
+}
+
+status() {
+    if [ -f /run/tty1-console.pid ] && kill -0 $(cat /run/tty1-console.pid) 2>/dev/null; then
+        einfo "tty1-console running (pid $(cat /run/tty1-console.pid))"
+        return 0
+    fi
+    einfo "tty1-console not running"
+    return 3
 }
 
 start_pre() {
-    # Make sure tty1 exists. On devtmpfs kernels it will; stub creation
-    # is a no-op safeguard for minimal environments.
+    # Ensure /dev/tty1 exists. On devtmpfs kernels it will; this is a
+    # no-op safety check for minimal environments.
     [ -c /dev/tty1 ] || mknod /dev/tty1 c 4 1 2>/dev/null || true
 }
