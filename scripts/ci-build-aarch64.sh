@@ -99,11 +99,13 @@ clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld \
 # Update package index
 jpkg update
 
-# Ensure jmake is at least 1.0.4 (adds find_pattern_rule memoization;
-# without it Python 3.14's make install hangs indefinitely on
-# ./Include/**/*.h lookups). The builder image may ship an older jmake;
-# force-install from the INDEX so we always have the perf fix.
-jpkg install --force jmake 2>&1 | tail -3
+# Ensure jmake is the latest version. `jpkg install --force` only
+# reinstalls the currently-installed version — it does NOT upgrade.
+# Use `jpkg upgrade jmake` to pull the newest from INDEX (needed for
+# every jmake fix since 1.0.4: VPATH expansion (1.0.5), GNUmakefile
+# preference (1.0.6), ifeq-colon dispatch (1.0.7)). Critical for
+# Python 3.14 build perf AND Ruby 3.4 configure's GNU-make detection.
+jpkg upgrade jmake 2>&1 | tail -5
 
 # Meson is bootstrapped from its upstream source tarball to avoid depending
 # on pip/SSL support in older builder images.
