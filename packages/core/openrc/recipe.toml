@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r3"
+version = "0.54-r5"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -61,6 +61,75 @@ if [ -f "$DESTDIR/etc/init.d/network" ]; then
         's~ip route flush scope global~ip -o -4 route show 2>/dev/null | while read -r _pfx _rest; do case " $_rest " in *" scope global "*) ip route del "$_pfx" 2>/dev/null || true;; esac; done~' \\
         "$DESTDIR/etc/init.d/network"
 fi
+# toybox sysctl compatibility: OpenRC's /etc/init.d/sysctl calls
+#   sysctl --system
+# on Linux. Toybox sysctl only supports -p [FILE] — --system errors
+# with "Unknown option 'system'". BSD_sysctl's `sysctl -w "$var"` path
+# also fails since toybox -w requires strict key=value with no spaces.
+# Replace start() with a simple per-file `sysctl -p` loop that works
+# with both toybox and procps-ng sysctl. Reproduced 2026-04-16 on
+# jonerix-tormenta: sysctl service errored during boot runlevel,
+# non-critical but pollutes the log and blocks dependents.
+if [ -f "$DESTDIR/etc/init.d/sysctl" ]; then
+    cat > "$DESTDIR/etc/init.d/sysctl" <<'SYSCTL_INIT'
+#!/bin/mksh
+# Rewritten by jonerix openrc jpkg — toybox sysctl only supports
+# `-p [FILE]`; --system and strict -w fail. See recipe.toml for context.
+
+depend() {
+    after clock
+    before bootmisc logger
+    keyword -prefix -systemd-nspawn -vserver
+}
+
+start() {
+    local rc=0 conf
+    ebegin "Configuring kernel parameters"
+    for conf in /etc/sysctl.conf /etc/sysctl.d/*.conf; do
+        [ -r "$conf" ] || continue
+        sysctl -p "$conf" >/dev/null 2>&1 || rc=1
+    done
+    eend $rc "Unable to configure some kernel parameters"
+}
+SYSCTL_INIT
+    chmod 755 "$DESTDIR/etc/init.d/sysctl"
+fi
+# gendepends.sh relative-path fix: upstream hard-codes `etc/init.d` (no
+# leading slash) as the first init-script dir, then does `cd "$_dir"`
+# followed by `. "$_dir/$RC_SVCNAME"`. After the cd, the relative path
+# resolves wrong and every init script sourcing fails with:
+#   /lib/rc/sh/gendepends.sh[129]: .: etc/init.d/<svc>: No such file
+# ~40 of those errors per invocation pollute the boot log. Trivially
+# fixed by absolutizing the path. Reported upstream TBD.
+if [ -f "$DESTDIR/lib/rc/sh/gendepends.sh" ]; then
+    sed -i 's|^etc/init.d \\\\$|/etc/init.d \\\\|' \\
+        "$DESTDIR/lib/rc/sh/gendepends.sh"
+fi
+# Ensure basic runlevel symlinks exist. OpenRC's upstream install
+# creates /etc/runlevels/{sysinit,boot,default,shutdown} directories
+# but leaves them empty — the distro is expected to populate them.
+# Without at least sysfs/procfs/devfs in sysinit, /dev/pts never gets
+# mounted and interactive SSH fails with "PTY allocation request
+# failed" (reproduced 2026-04-16 on jonerix-tormenta). Seed the bare
+# minimum so fresh installs boot usable.
+for rl_dir in sysinit boot default shutdown; do
+    mkdir -p "$DESTDIR/etc/runlevels/$rl_dir"
+done
+for svc in sysfs procfs devfs dmesg modules; do
+    if [ -f "$DESTDIR/etc/init.d/$svc" ]; then
+        ln -sf "/etc/init.d/$svc" "$DESTDIR/etc/runlevels/sysinit/$svc"
+    fi
+done
+for svc in localmount loopback hostname sysctl root; do
+    if [ -f "$DESTDIR/etc/init.d/$svc" ]; then
+        ln -sf "/etc/init.d/$svc" "$DESTDIR/etc/runlevels/boot/$svc"
+    fi
+done
+for svc in killprocs mount-ro savecache; do
+    if [ -f "$DESTDIR/etc/init.d/$svc" ]; then
+        ln -sf "/etc/init.d/$svc" "$DESTDIR/etc/runlevels/shutdown/$svc"
+    fi
+done
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
