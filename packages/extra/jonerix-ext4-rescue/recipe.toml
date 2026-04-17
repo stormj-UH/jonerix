@@ -26,11 +26,9 @@ case "$(uname -m)" in
     *) echo "unsupported arch: $(uname -m)"; exit 1 ;;
 esac
 
-cargo build --release --target "$rustc_target" \\
-    --config 'target.'"$rustc_target"'.rustflags = ["-C", "target-feature=+crt-static"]'
+cargo build --release --target "$rustc_target" --config 'target.'"$rustc_target"'.rustflags = ["-C", "target-feature=+crt-static"]'
 
-install -Dm755 "$CARGO_TARGET_DIR/$rustc_target/release/ext4-rescue" \\
-    "$DESTDIR/bin/ext4-rescue"
+install -Dm755 "$CARGO_TARGET_DIR/$rustc_target/release/ext4-rescue" "$DESTDIR/bin/ext4-rescue"
 
 # Clean cargo scratch to keep the builder image small between runs.
 rm -rf "$CARGO_HOME" "$CARGO_TARGET_DIR"
