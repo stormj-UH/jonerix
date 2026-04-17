@@ -30,6 +30,17 @@ static long tl(const char *s, int *ok) {
 }
 
 int main(int c, char **v) {
+    /* POSIX expr supports `(expression)` grouping. Ruby's tool/ifchange
+     * (and other autoconf-vintage scripts) use it for argument extraction:
+     *   expr "(" "$1" : '[^=]*=\(.*\)' ")"
+     * Strip one level of surrounding parens so the remaining args fall
+     * into the normal 3/4-arg dispatch below. Nested parens aren't
+     * supported — none of our build recipes need them. */
+    if (c >= 4 && !strcmp(v[1], "(") && !strcmp(v[c-1], ")")) {
+        for (int i = 1; i < c - 2; i++) v[i] = v[i+1];
+        c -= 2;
+    }
+
     if (c == 3 && !strcmp(v[1], "length")) {
         printf("%zu\n", strlen(v[2]));
         return 0;
