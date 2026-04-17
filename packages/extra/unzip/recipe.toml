@@ -1,13 +1,57 @@
 [package]
 name = "unzip"
-version = "3.8.6-r1"
-license = "Apache-2.0"
-description = "Compatibility package providing /bin/unzip via libarchive bsdunzip"
+version = "6.0"
+license = "Info-ZIP"
+description = "Info-ZIP utility for extracting .zip archives"
+
+[source]
+url = "https://downloads.sourceforge.net/infozip/unzip60.tar.gz"
+sha256 = "036d96991646d0449ed0aa952e4fbe21b476ce994abc276e49d30e686708bd37"
 
 [build]
-build = ""
-install = "mkdir -p $DESTDIR/bin && ln -sf bsdunzip $DESTDIR/bin/unzip"
+system = "custom"
+# Info-ZIP's `generic` target runs unix/configure first to autodetect
+# libc features, then builds unzip/funzip/unzipsfx. The C sources are
+# from 2009 and trip a lot of modern clang warnings, so we add a handful
+# of -Wno-* flags — none of them hide real bugs, just chatty style lints
+# from 16-year-old K&R-flavored C.
+#
+# LOC= additions:
+#   -DNO_LCHMOD          → musl/Linux has no lchmod(2); stub it out
+#   -DLARGE_FILE_SUPPORT → 64-bit file sizes
+#   -DUNICODE_SUPPORT -DUNICODE_WCHAR -DUTF8_MAYBE_NATIVE
+#                        → handle UTF-8 filenames in zip archives
+#
+# IZ_BZIP2= (empty) deliberately disables bzip2 support so we don't need
+# libbz2 as a runtime dep. Zip archives that use bzip2 compression are
+# rare (zip standard predates bzip2). If you hit one, use libarchive's
+# bsdunzip instead — it pulls in libbz2 via libarchive.
+build = """make -f unix/Makefile generic \
+  CC=clang \
+  LOC='-DNO_LCHMOD -DLARGE_FILE_SUPPORT -DUNICODE_SUPPORT -DUNICODE_WCHAR -DUTF8_MAYBE_NATIVE -Wno-implicit-function-declaration -Wno-pointer-sign -Wno-parentheses-equality -Wno-dangling-else -Wno-format-security' \
+  LF2='' \
+  IZ_BZIP2="""
+
+install = """make -f unix/Makefile prefix="$DESTDIR/usr" install
+# Flatten merged-usr: everything under /usr/* moves to /*.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+# Info-ZIP installs man pages to /man/man (manext is empty by default);
+# relocate to the conventional /share/man/man1 so `man unzip` works.
+if [ -d "$DESTDIR/man/man" ]; then
+    mkdir -p "$DESTDIR/share/man/man1"
+    for f in "$DESTDIR/man/man/"*.; do
+        [ -f "$f" ] || continue
+        b=$(basename "$f" .)
+        mv "$f" "$DESTDIR/share/man/man1/$b.1"
+    done
+    rm -rf "$DESTDIR/man"
+fi
+llvm-strip --strip-all "$DESTDIR/bin/unzip"    2>/dev/null || true
+llvm-strip --strip-all "$DESTDIR/bin/funzip"   2>/dev/null || true
+llvm-strip --strip-all "$DESTDIR/bin/unzipsfx" 2>/dev/null || true
+# zipinfo is a symlink to unzip (created by Makefile); don't re-strip
+# zipgrep is a shell script; don't strip"""
 
 [depends]
-runtime = ["libarchive"]
-build = []
+runtime = ["musl"]
+build = ["clang", "make"]
