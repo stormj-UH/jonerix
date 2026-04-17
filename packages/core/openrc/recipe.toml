@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r4"
+version = "0.54-r5"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -94,6 +94,42 @@ start() {
 SYSCTL_INIT
     chmod 755 "$DESTDIR/etc/init.d/sysctl"
 fi
+# gendepends.sh relative-path fix: upstream hard-codes `etc/init.d` (no
+# leading slash) as the first init-script dir, then does `cd "$_dir"`
+# followed by `. "$_dir/$RC_SVCNAME"`. After the cd, the relative path
+# resolves wrong and every init script sourcing fails with:
+#   /lib/rc/sh/gendepends.sh[129]: .: etc/init.d/<svc>: No such file
+# ~40 of those errors per invocation pollute the boot log. Trivially
+# fixed by absolutizing the path. Reported upstream TBD.
+if [ -f "$DESTDIR/lib/rc/sh/gendepends.sh" ]; then
+    sed -i 's|^etc/init.d \\\\$|/etc/init.d \\\\|' \\
+        "$DESTDIR/lib/rc/sh/gendepends.sh"
+fi
+# Ensure basic runlevel symlinks exist. OpenRC's upstream install
+# creates /etc/runlevels/{sysinit,boot,default,shutdown} directories
+# but leaves them empty — the distro is expected to populate them.
+# Without at least sysfs/procfs/devfs in sysinit, /dev/pts never gets
+# mounted and interactive SSH fails with "PTY allocation request
+# failed" (reproduced 2026-04-16 on jonerix-tormenta). Seed the bare
+# minimum so fresh installs boot usable.
+for rl_dir in sysinit boot default shutdown; do
+    mkdir -p "$DESTDIR/etc/runlevels/$rl_dir"
+done
+for svc in sysfs procfs devfs dmesg modules; do
+    if [ -f "$DESTDIR/etc/init.d/$svc" ]; then
+        ln -sf "/etc/init.d/$svc" "$DESTDIR/etc/runlevels/sysinit/$svc"
+    fi
+done
+for svc in localmount loopback hostname sysctl root; do
+    if [ -f "$DESTDIR/etc/init.d/$svc" ]; then
+        ln -sf "/etc/init.d/$svc" "$DESTDIR/etc/runlevels/boot/$svc"
+    fi
+done
+for svc in killprocs mount-ro savecache; do
+    if [ -f "$DESTDIR/etc/init.d/$svc" ]; then
+        ln -sf "/etc/init.d/$svc" "$DESTDIR/etc/runlevels/shutdown/$svc"
+    fi
+done
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
