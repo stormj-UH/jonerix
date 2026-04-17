@@ -31,4 +31,8 @@ find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\;
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "make"]
+# libffi's src/tramp.c needs <linux/limits.h> for PATH_MAX (static
+# trampoline support uses kernel UAPI). Ship the sabotage-linux
+# kernel headers via jonerix-headers so /include/linux/limits.h
+# exists before configure runs.
+build = ["clang", "make", "jonerix-headers"]
