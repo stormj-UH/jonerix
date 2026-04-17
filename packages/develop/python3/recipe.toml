@@ -1,6 +1,6 @@
 [package]
 name = "python3"
-version = "3.14.3-r3"
+version = "3.14.3-r4"
 license = "PSF-2.0"
 description = "Python programming language interpreter"
 
@@ -17,11 +17,21 @@ sed -i 's/X509_VERIFY_PARAM_get_hostflags(ssl_verification_params)/0 \/* LibreSS
 PATH="$PWD/.jpkg-tools:$PATH" \
   CFLAGS="$CFLAGS -I/include/ncursesw" \
   CC=clang CXX=clang++ ./configure \
-  --prefix=/ \
+  --prefix=/usr \
   --enable-shared \
   --with-ensurepip=install \
   --with-openssl=/ \
   --disable-test-modules"""
+# --prefix=/usr (not /) because Python 3.14's bootstrap chokes on
+# sys.prefix='' during _bootstrap_python → site.py import:
+#   AttributeError: module 'sys' has no attribute 'prefix'
+# On jonerix, /usr is a symlink to / (merged-usr), so paths like
+# /usr/lib/python3.14/ resolve to /lib/python3.14/ at runtime. The
+# install step below flattens the $DESTDIR/usr/ tree into $DESTDIR/
+# so the jpkg contains paths rooted at /bin, /lib, /include, etc.
+# This also fixes a class of `pip install` errors caused by sys.prefix
+# being `/` (pip's file-path prefix check gets confused by double-
+# slashes and reports "trying to install outside target directory").
 # Force mksh for make's $(SHELL): Python 3.14's Makefile rules
 # (check-app-store-compliance at line 974, check-clean-src at 956,
 # python-gdb.py at 1193) use shell if/then syntax that toybox sh
