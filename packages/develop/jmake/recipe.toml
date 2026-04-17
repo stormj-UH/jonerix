@@ -1,12 +1,16 @@
 [package]
 name = "jmake"
-version = "1.0.4"
+version = "1.0.5"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.0.5 fixes VPATH variable expansion when resolving prerequisites:
+# previously `VPATH = $(arch_hdrdir)/ruby:$(hdrdir)/ruby` was compared
+# literally (jmake looking for a directory named "$(arch_hdrdir)/ruby"),
+# so Ruby's generated Makefile couldn't find its own internal assert.h.
 
 [source]
-url = "https://cache.invalid/jmake-1.0.4.tar"
-sha256 = "3eade636b863745714144288835f4e70fbf8dfcc088fe0fdf99425600b2789b4"
+url = "https://cache.invalid/jmake-1.0.5.tar"
+sha256 = "ca2fac9975c50d514f96c13d12a895abb964e284fd234786ce79cdc296342c44"
 
 [build]
 system = "custom"
