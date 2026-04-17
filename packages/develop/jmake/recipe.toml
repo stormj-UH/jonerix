@@ -1,16 +1,19 @@
 [package]
 name = "jmake"
-version = "1.0.11"
+version = "1.0.12"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
-# 1.0.11 (diagnostic): add default-makefile-selection trace on top of
-# 1.0.10's ifeq trace. Chasing an amd64-specific miss where the correct
-# GNUmakefile-only selection (fixed in 1.0.6) isn't holding on x86_64 —
-# aarch64 (Pi and local mac) works. Will be reverted.
+# 1.0.12 removes the diagnostic traces from 1.0.10/1.0.11. The REAL
+# bug turned out to be in ci-build-*.sh — `jpkg install --force jmake`
+# does not upgrade an existing installation, so CI has been running
+# jmake 1.0.2 this whole time (!!). Fixed in scripts/ci-build-*.sh to
+# use `jpkg upgrade jmake`. With that fix, 1.0.12's actual logic fixes
+# (VPATH expansion, GNUmakefile preference, ifeq-colon dispatch) finally
+# get exercised in CI.
 
 [source]
-url = "https://cache.invalid/jmake-1.0.11.tar"
-sha256 = "eb449483cf306cd3c19445810836c792e501c5d04c08407f625ec7e94a63c19c"
+url = "https://cache.invalid/jmake-1.0.12.tar"
+sha256 = "50272eac40be7fb27da2ca615186f471091b2df8a321b246d0de1388319a225b"
 
 [build]
 system = "custom"
