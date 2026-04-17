@@ -1,0 +1,17 @@
+[package]
+name = "jonerix-ext4-rescue"
+version = "0.1.0"
+edition = "2021"
+description = "Reset a corrupted ext4 inode's extent header so the file can be rm'd"
+license = "MIT"
+
+[[bin]]
+name = "ext4-rescue"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
