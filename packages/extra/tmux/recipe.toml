@@ -87,4 +87,4 @@ find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || tr
 
 [depends]
 runtime = ["musl", "ncurses", "libevent"]
-build = ["clang", "make", "libevent", "ncurses", "jonerix-headers"]
+build = ["clang", "make", "libevent", "ncurses", "jonerix-headers", "byacc"]
