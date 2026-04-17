@@ -1,6 +1,6 @@
 [package]
 name = "openntpd"
-version = "6.8p1-r2"
+version = "6.8p1-r3"
 license = "ISC"
 description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 
@@ -65,7 +65,14 @@ cat > $DESTDIR/etc/init.d/ntpd <<'INITEOF'
 name="ntpd"
 description="OpenNTPD time synchronization daemon"
 command="/bin/ntpd"
-command_args="${NTPD_OPTS:-}"
+# `-d` keeps ntpd in the foreground; start-stop-daemon then backgrounds
+# it with --make-pidfile so /run/ntpd.pid matches the live process.
+# Without this pair, ntpd self-daemonizes, the init never learns the
+# final child pid, and `rc-service ntpd status` perpetually reports
+# "crashed" even when the daemon is healthy (reproduced 2026-04-16 on
+# jonerix-tormenta).
+command_args="-d ${NTPD_OPTS:-}"
+command_background="yes"
 pidfile="/run/ntpd.pid"
 
 depend() {
