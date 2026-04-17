@@ -1,20 +1,17 @@
 [package]
 name = "jmake"
-version = "1.0.7"
+version = "1.0.8"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
-# 1.0.5 fixed VPATH variable expansion when resolving prerequisites.
-# 1.0.6 preferred GNUmakefile over Makefile when both exist.
-# 1.0.7 fixes conditional-directive dispatch: lines like
-#   ifeq ($(A):$(B),yes:yes)
-# were being mis-classified as rule lines by the raw-line "rule colon"
-# heuristic, then erroring "target pattern contains no '%'". jmake
-# now recognises ifeq/ifneq/ifdef/ifndef (with optional `else`
-# prefix) and skips the heuristic so parse_conditional runs first.
+# 1.0.5..1.0.7: VPATH, GNUmakefile preference, ifeq-with-colons dispatch.
+# 1.0.8 adds JMAKE_DEBUG_IFEQ env var for diagnosing a remaining amd64-
+# only miss where multi-line ifeq followed by a single-line ifeq-with-
+# colons still fails on x86_64 builder (aarch64 works). Trace logs on
+# stderr when env var is set.
 
 [source]
-url = "https://cache.invalid/jmake-1.0.7.tar"
-sha256 = "ed697a16c4c3ab7611aa477e63a6dc11e332d8c7a8548a256fcfe3aab6391098"
+url = "https://cache.invalid/jmake-1.0.8.tar"
+sha256 = "b6f45198738dd035d04b19303b56e7970cd598d3f476b987beee2ab069147822"
 
 [build]
 system = "custom"
