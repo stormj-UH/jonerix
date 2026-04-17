@@ -1,6 +1,6 @@
 [package]
 name = "openntpd"
-version = "6.8p1"
+version = "6.8p1-r1"
 license = "ISC"
 description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 
@@ -69,8 +69,8 @@ command_args="${NTPD_OPTS:-}"
 pidfile="/run/ntpd.pid"
 
 depend() {
-    need networking
-    before sshd
+    need net
+    before sshd tailscaled
     use dns
 }
 
