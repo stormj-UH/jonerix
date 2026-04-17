@@ -1,6 +1,6 @@
 [package]
 name = "python3"
-version = "3.14.3-r4"
+version = "3.14.3-r5"
 license = "PSF-2.0"
 description = "Python programming language interpreter"
 
@@ -19,7 +19,7 @@ PATH="$PWD/.jpkg-tools:$PATH" \
   CC=clang CXX=clang++ ./configure \
   --prefix=/usr \
   --enable-shared \
-  --with-ensurepip=install \
+  --with-ensurepip=no \
   --with-openssl=/ \
   --disable-test-modules"""
 # --prefix=/usr (not /) because Python 3.14's bootstrap chokes on
@@ -42,27 +42,14 @@ build = "make -j$(nproc) SHELL=/bin/mksh"
 install = """make install DESTDIR=$DESTDIR SHELL=/bin/mksh
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-LD_LIBRARY_PATH="$DESTDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$DESTDIR/bin/python3" -m ensurepip --upgrade --default-pip
-# ensurepip writes pip's shebang from sys.executable of whatever
-# python it runs under, which at this point is $DESTDIR/bin/python3.
-# The resulting scripts ship with #!/tmp/jpkg-build-python3-XX/dest/
-# bin/python3 shebangs that point at the build-time staging path —
-# when installed, pip errors with "No such file or directory"
-# because the interpreter path no longer exists. Reproduced on
-# jonerix-tormenta 2026-04-16. Rewrite all /tmp/jpkg-build-* shebangs
-# under $DESTDIR to #!/bin/<basename>. Covers pip, pip3, pip3.14,
-# and any other ensurepip-installed console scripts.
-find "$DESTDIR" -type f | while read -r f; do
-    head1=$(head -1 "$f" 2>/dev/null) || continue
-    case "$head1" in
-        "#!/tmp/jpkg-build-"*)
-            interp=$(printf '%s\n' "$head1" | sed -E 's|^#!/tmp/jpkg-build[^/]*/dest/bin/||' | awk '{print $1}')
-            [ -n "$interp" ] || continue
-            sed -i "1s|^#!.*|#!/bin/$interp|" "$f"
-            ;;
-    esac
-done
+# NOTE: ensurepip is deliberately disabled at configure (--with-
+# ensurepip=no) and moved to [hooks].post_install. Running it during
+# build hangs on Python 3.14 when $DESTDIR/bin/python3's landmark-
+# based sys.prefix detection walks into the staging tree (repro:
+# 2026-04-17, run 24545778801 froze for 2+ min with no output after
+# `make install` emitted libpython install commands, had to be
+# cancelled). Running on the target system post-install sidesteps
+# the issue entirely since sys.prefix is cleanly /usr.
 find "$DESTDIR" -type f -name '*.py' -exec grep -l '/lib64' {} + 2>/dev/null | while read f; do sed -i 's|/lib64|/lib|g' "$f"; done
 # Stale python packages bundled shared libs that already belong to other
 # runtime packages; drop any duplicates from the staged payload.
@@ -75,9 +62,28 @@ rm -f "$DESTDIR"/lib/libbz2.so* \
       "$DESTDIR"/lib/libreadline.so* \
       "$DESTDIR"/lib/libstdc++.so*
 ln -sf python3 $DESTDIR/bin/python 2>/dev/null || true
-ln -sf pip3 $DESTDIR/bin/pip 2>/dev/null || true
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+
+[hooks]
+# ensurepip runs on the target at install time (not during build)
+# to avoid the $DESTDIR/bin/python3 sys.prefix landmark-walk hang
+# we hit on 3.14 with --prefix=/usr. On the target, sys.prefix is
+# cleanly /usr (via /usr/lib/python3.14/ landmark) and the bundled
+# pip wheel installs correctly.
+#
+# Pip's console scripts (pip, pip3, pip3.14) get shebanged with the
+# real /bin/python3 path by default — no post-install sed needed.
+post_install = """if [ -x /bin/python3 ]; then
+    /bin/python3 -m ensurepip --upgrade --default-pip 2>&1 || true
+    # Ensure /bin/pip -> pip3 symlink.
+    [ -e /bin/pip ] || ln -sf pip3 /bin/pip
+fi
+exit 0"""
+
+post_remove = """# Leave pip scripts in place — user may have installed things via pip.
+# They can be cleaned up manually: rm /bin/pip{,3,3.14}
+exit 0"""
 
 [depends]
 runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi"]
