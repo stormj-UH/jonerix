@@ -24,14 +24,20 @@ FROM ${CORE_IMAGE}
 #
 # Note: directories are created inline so this layer does not depend on any
 # optional coreutils replacement in the base image.
+COPY scripts/image-slim.sh /usr/local/sbin/image-slim
 ARG CACHEBUST=0
+# install + slim must share a RUN — see Dockerfile.builder for the reason
+# (Docker overlay can't shrink a prior layer; separate-RUN slim only
+# duplicates stripped files on top of originals).
 RUN jpkg update && \
     for pkg in \
       hostapd wpa_supplicant btop; \
     do \
       echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
     done && \
-    toybox mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network
+    toybox mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network && \
+    sh /usr/local/sbin/image-slim && \
+    rm /usr/local/sbin/image-slim
 
 # Unbound: recursive DNS resolver with DNSSEC
 COPY config/router/etc/unbound/unbound.conf /etc/unbound/unbound.conf
@@ -47,11 +53,6 @@ COPY config/router/etc/sysctl.conf /etc/sysctl.conf
 
 # Router-specific hostname (use shell builtin echo, not /bin/echo)
 RUN echo "jonerix-router" > /etc/hostname
-
-# Final-layer cleanup: strip binaries/libraries, remove docs/man/info/locales,
-# purge jpkg download cache. Shared with Dockerfile.builder.
-COPY scripts/image-slim.sh /usr/local/sbin/image-slim
-RUN sh /usr/local/sbin/image-slim && rm /usr/local/sbin/image-slim
 
 ENV PATH=/bin
 ENV HOME=/root
