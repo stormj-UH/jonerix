@@ -14,12 +14,20 @@ ARG CORE_IMAGE=jonerix:core
 FROM ${CORE_IMAGE}
 
 COPY scripts/bootstrap-meson.sh /usr/local/bin/bootstrap-meson
+COPY scripts/image-slim.sh /usr/local/sbin/image-slim
 
 # Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
 ARG CACHEBUST=0
 
-# Install compilers, build tools, and languages via jpkg
-# Order: compilers -> build tools -> languages -> extras
+# Install compilers, build tools, and languages via jpkg.
+#
+# IMPORTANT: the slim step (scripts/image-slim.sh) runs IN THE SAME RUN
+# as the install. Docker's overlay filesystem can't shrink a prior
+# layer — if the slim ran in its own RUN, it would just ADD a layer
+# containing stripped copies of every binary, leaving the originals
+# in the install layer. Net effect: image GROWS by ~2 GB. Folding
+# install + slim into one RUN collapses both into a single layer so
+# strip-in-place actually reduces layer size.
 RUN jpkg update && \
     failures=0 && \
     failed='' && \
@@ -38,7 +46,9 @@ RUN jpkg update && \
       echo "builder package install failures:$failed"; \
       exit 1; \
     fi && \
-    /usr/local/bin/bootstrap-meson
+    /usr/local/bin/bootstrap-meson && \
+    sh /usr/local/sbin/image-slim && \
+    rm /usr/local/sbin/image-slim
 
 # Compiler wrappers and tool symlinks
 #
@@ -91,12 +101,6 @@ RUN TRIPLE=$(/bin/clang-21 -dumpmachine 2>/dev/null || echo "unknown") && \
     ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true && \
     ln -sf libstdc++.so.6 /lib/libstdc++.so 2>/dev/null || true && \
     printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true
-
-# Final-layer cleanup: strip binaries/.so files, remove docs/man/info/locales,
-# purge jpkg download cache, trim Rust/Go/Python artifacts. Trims ~400–600 MB
-# off the image so `docker pull` is faster. See scripts/image-slim.sh.
-COPY scripts/image-slim.sh /usr/local/sbin/image-slim
-RUN sh /usr/local/sbin/image-slim && rm /usr/local/sbin/image-slim
 
 WORKDIR /root
 ENTRYPOINT ["/bin/mksh"]
