@@ -1,16 +1,20 @@
 [package]
 name = "jmake"
-version = "1.0.5"
+version = "1.0.6"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
-# 1.0.5 fixes VPATH variable expansion when resolving prerequisites:
-# previously `VPATH = $(arch_hdrdir)/ruby:$(hdrdir)/ruby` was compared
-# literally (jmake looking for a directory named "$(arch_hdrdir)/ruby"),
-# so Ruby's generated Makefile couldn't find its own internal assert.h.
+# 1.0.5 fixed VPATH variable expansion when resolving prerequisites.
+# 1.0.6 stops also including makefile/Makefile when GNUmakefile was found
+# (was breaking Ruby's "is make GNU make" configure test — Ruby creates
+# both GNUmakefile and Makefile with conflicting `all:` rules and checks
+# which one wins; GNU make reads only GNUmakefile, but jmake was reading
+# both, emitting an "overriding recipe" warning, and running Makefile's
+# output — making Ruby skip makefile-gmake and the static-linked-ext
+# build path.)
 
 [source]
-url = "https://cache.invalid/jmake-1.0.5.tar"
-sha256 = "ca2fac9975c50d514f96c13d12a895abb964e284fd234786ce79cdc296342c44"
+url = "https://cache.invalid/jmake-1.0.6.tar"
+sha256 = "d1736921f7c6e62f5b6080d99252c4f5f8c2f7aeb4b2adc854160c02f8e87eb2"
 
 [build]
 system = "custom"
