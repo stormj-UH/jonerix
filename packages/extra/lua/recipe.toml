@@ -1,0 +1,77 @@
+[package]
+name = "lua"
+version = "5.4.7"
+license = "MIT"
+description = "Lua programming language interpreter, compiler, and library"
+
+[source]
+url = "https://www.lua.org/ftp/lua-5.4.7.tar.gz"
+sha256 = "9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30"
+
+[build]
+system = "custom"
+# Lua's build is a plain hand-written Makefile — no autoconf, no configure.
+# Platforms are top-level targets (`linux-noreadline`, `posix`, etc.) that
+# re-invoke make with appropriate SYSCFLAGS/SYSLIBS.
+#
+# Why `linux-noreadline`:
+#   -DLUA_USE_LINUX : enable dlopen(), getenv, etc.
+#   -Wl,-E          : exports Lua symbols so loadable C modules can
+#                     resolve them (the `lua_*` API)
+#   -ldl            : needed by LUA_USE_LINUX for dlopen
+#   NO -lreadline   : readline is GPL-3; jonerix uses toybox's line
+#                     editor instead (Lua works fine without readline,
+#                     just the REPL gets a basic editor).
+#
+# Toolchain overrides:
+#   CC=clang        : no gcc on jonerix
+#   AR="llvm-ar rcu": Lua's default is `ar rcu`; llvm-ar accepts the
+#                     same flags. Note: must be quoted as a whole since
+#                     the default CFLAGS reference ${AR} as a command
+#                     (not a bare program name).
+#   RANLIB=llvm-ranlib
+#
+# -fPIC is set on CFLAGS so liblua.a can be linked into shared objects
+# later (e.g. Lua-embedding programs that produce .so).
+build = """make linux-noreadline \
+  CC=clang \
+  AR='llvm-ar rcu' \
+  RANLIB=llvm-ranlib \
+  MYCFLAGS='-fPIC'"""
+
+# Lua's install target takes INSTALL_TOP as the install prefix. Set it
+# to $DESTDIR (not $DESTDIR/usr) so the output matches jonerix's merged-
+# usr layout directly — binaries in /bin, headers in /include, library
+# in /lib, man in /share/man/man1 (need to rename).
+install = """make install \
+  INSTALL_TOP="$DESTDIR" \
+  INSTALL_MAN="$DESTDIR/share/man/man1" \
+  INSTALL='install -p' \
+  INSTALL_EXEC='install -p -m 0755' \
+  INSTALL_DATA='install -p -m 0644'
+# Provide a lua.pc pkg-config file so downstream packages can locate Lua.
+# Lua ships a `pc` file template at src/Makefile but doesn't install it
+# by default. We hand-roll one keyed off our install paths.
+mkdir -p "$DESTDIR/lib/pkgconfig"
+cat > "$DESTDIR/lib/pkgconfig/lua.pc" <<EOF
+prefix=/
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+
+Name: Lua
+Description: An Extensible Extension Language
+Version: 5.4.7
+Requires:
+Libs: -L\${libdir} -llua -lm -ldl
+Cflags: -I\${includedir}
+EOF
+# Compat aliases: /bin/lua5.4 and /bin/luac5.4
+ln -sf lua  "$DESTDIR/bin/lua5.4"  2>/dev/null || true
+ln -sf luac "$DESTDIR/bin/luac5.4" 2>/dev/null || true
+llvm-strip --strip-all "$DESTDIR/bin/lua"  2>/dev/null || true
+llvm-strip --strip-all "$DESTDIR/bin/luac" 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]
