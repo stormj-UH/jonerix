@@ -33,14 +33,22 @@ system = "custom"
 #
 # -fPIC is set on CFLAGS so liblua.a can be linked into shared objects
 # later (e.g. Lua-embedding programs that produce .so).
-# `linux-noreadline` is defined in src/Makefile but NOT exported by the
-# top-level Makefile's PLATS list (which only lists `linux-readline`).
-# Invoke src/Makefile directly. The install step below still uses the
-# top-level Makefile since that's where the install target lives.
-build = """cd src && make linux-noreadline \
+# Lua's `linux-noreadline` target works by re-invoking make with
+# SYSCFLAGS/SYSLIBS set — the inner make then inherits AR/CC via
+# MAKEFLAGS. That inheritance STRIPS the multi-word AR value
+# (`llvm-ar rcu` → `llvm-ar`), so the actual archive command drops
+# the `rcu` modifier and llvm-ar errors out:
+#     llvm-ar: error: unknown option .
+#
+# Workaround: skip `linux-noreadline` indirection and pass everything
+# directly on a single make invocation. Equivalent to what
+# linux-noreadline does, minus the re-invocation.
+build = """cd src && make all \
   CC=clang \
   AR='llvm-ar rcu' \
   RANLIB=llvm-ranlib \
+  SYSCFLAGS='-DLUA_USE_LINUX' \
+  SYSLIBS='-Wl,-E -ldl' \
   MYCFLAGS='-fPIC'"""
 
 # Lua's install target takes INSTALL_TOP as the install prefix. Set it
