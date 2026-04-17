@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r1"
+version = "10.1.0-r2"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -42,7 +42,13 @@ name="dhcpcd"
 description="DHCP client daemon (RFC2131)"
 
 command="/bin/dhcpcd"
-command_args="${dhcpcd_args:-}"
+# `-B` / --nobackground keeps dhcpcd in the foreground; start-stop-
+# daemon then backgrounds it with --make-pidfile so /run/dhcpcd.pid
+# matches the live manager pid. Without this, dhcpcd self-daemonizes
+# and the init never learns the final pid, so `rc-service dhcpcd
+# status` reports "crashed" even when the daemon is healthy
+# (reproduced 2026-04-16 on jonerix-tormenta).
+command_args="-B ${dhcpcd_args:-}"
 command_background="yes"
 pidfile="/run/dhcpcd.pid"
 
