@@ -8,30 +8,19 @@ description = "Reset a corrupted ext4 inode's extent header so the file can be r
 
 [build]
 system = "custom"
+# Single-file Rust tool (stdlib only, no external crates) — skip
+# cargo and use rustc directly. Same pattern as raspi5-fixups
+# eee-tool. The jonerix builder's rust only has the self-built
+# `*-jonerix-linux-musl` target installed, so asking cargo for
+# --target=aarch64-unknown-linux-musl fails E0463 "can't find crate
+# for std". rustc without --target uses the host triple and gets
+# static-crt from `-C target-feature=+crt-static`.
 build = """
 set -e
 cd "$RECIPE_DIR"
-
-# Single-binary Rust tool. No external crates; stdlib only. Build
-# with static-crt-musl so the binary runs on any jonerix regardless
-# of libc state (this is a rescue tool — assume the system is hurt).
-# Note: -C target-feature=+crt-static is the default for musl targets
-# in 1.94+ but we also set it explicitly for safety.
-export CARGO_HOME=/tmp/jonerix-ext4-rescue-cargo
-export CARGO_TARGET_DIR=/tmp/jonerix-ext4-rescue-target
-rustc_target=""
-case "$(uname -m)" in
-    aarch64) rustc_target="aarch64-unknown-linux-musl" ;;
-    x86_64)  rustc_target="x86_64-unknown-linux-musl" ;;
-    *) echo "unsupported arch: $(uname -m)"; exit 1 ;;
-esac
-
-cargo build --release --target "$rustc_target" --config 'target.'"$rustc_target"'.rustflags = ["-C", "target-feature=+crt-static"]'
-
-install -Dm755 "$CARGO_TARGET_DIR/$rustc_target/release/ext4-rescue" "$DESTDIR/bin/ext4-rescue"
-
-# Clean cargo scratch to keep the builder image small between runs.
-rm -rf "$CARGO_HOME" "$CARGO_TARGET_DIR"
+rustc -O -C strip=symbols -C target-feature=+crt-static -o /tmp/ext4-rescue src/main.rs
+install -Dm755 /tmp/ext4-rescue $DESTDIR/bin/ext4-rescue
+rm -f /tmp/ext4-rescue
 """
 install = ""
 
