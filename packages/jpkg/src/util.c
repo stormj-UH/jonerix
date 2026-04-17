@@ -505,7 +505,7 @@ static const char *permissive_licenses[] = {
     "MirOS", "OpenSSL", "SSLeay", "zlib", "Zlib",
     "public domain", "Public-Domain",
     "BSD-2-Clause-Patent", "PSF-2.0", "BSL-1.0", "Artistic-2.0",
-    "Ruby", "MPL-2.0",
+    "Ruby", "MPL-2.0", "Info-ZIP",
     NULL
 };
 
