@@ -1,0 +1,65 @@
+#!/bin/sh
+# /bin/ntp-set-http — set system clock from HTTP Date header.
+#
+# Why: jonerix is permissive-only (no GPL coreutils' `date -u -d`,
+# no GNU `date` with extended parsing). On hosts without a battery-
+# backed RTC (Raspberry Pi 5 is the usual culprit), cold boot starts
+# with the system clock at 1970-01-01. Everything that uses TLS —
+# dropbear SSH with host-key generation, tailscale to controlplane,
+# openntpd's constraint checks, package fetches — fails because
+# certs are "not yet valid".
+#
+# openntpd (our usual time sync) can't rescue this: its default
+# max-adjustment threshold refuses to jump the clock by decades
+# even when NTP servers clearly say to. The old `ntpd -s` set-then-
+# exit mode was removed upstream.
+#
+# Solution: fetch any HTTP (not HTTPS — bypasses cert checks) URL,
+# read the Date header, and call `date -u -s` with a toybox-style
+# MMDDhhmmYYYY.ss stamp. HTTP Date precision is 1 second which is
+# more than enough for TLS validity — ntpd then takes over for
+# proper time sync.
+#
+# Usage:
+#   /bin/ntp-set-http
+#
+# Exits 0 if the clock was set, 1 if no host was reachable.
+# Part of jonerix-boot-helpers; called by /etc/init.d/ntp-bootstrap
+# before ntpd and tailscaled start at boot.
+
+m2n() {
+    case $1 in
+        Jan) echo 01;; Feb) echo 02;; Mar) echo 03;; Apr) echo 04;;
+        May) echo 05;; Jun) echo 06;; Jul) echo 07;; Aug) echo 08;;
+        Sep) echo 09;; Oct) echo 10;; Nov) echo 11;; Dec) echo 12;;
+    esac
+}
+
+for host in google.com cloudflare.com www.yahoo.com; do
+    # -s silent, -k skip cert verify (we don't care — HTTP only),
+    # -I HEAD request, -m 5 5-sec timeout
+    HDR=$(curl -skI -m 5 "http://$host" 2>/dev/null | grep -i '^date:' | cut -d' ' -f2-)
+    [ -z "$HDR" ] && continue
+
+    # Header format: "Tue, 14 Apr 2026 23:40:12 GMT"
+    set -- $HDR
+    DD=$2
+    MON=$(m2n "$3")
+    YYYY=$4
+    HMS=$5
+    HH=$(echo "$HMS" | cut -d: -f1)
+    MM=$(echo "$HMS" | cut -d: -f2)
+    SS=$(echo "$HMS" | cut -d: -f3)
+
+    [ -z "$MON" ] || [ -z "$YYYY" ] && continue
+
+    # toybox date -u -s wants MMDDhhmm[CCYY][.ss]
+    STAMP="${MON}${DD}${HH}${MM}${YYYY}.${SS}"
+    if date -u -s "$STAMP" >/dev/null 2>&1; then
+        echo "ntp-set-http: clock set from $host: $(date)"
+        exit 0
+    fi
+done
+
+echo "ntp-set-http: no host reachable, clock unchanged" >&2
+exit 1
