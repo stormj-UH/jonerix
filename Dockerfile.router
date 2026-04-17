@@ -48,6 +48,11 @@ COPY config/router/etc/sysctl.conf /etc/sysctl.conf
 # Router-specific hostname (use shell builtin echo, not /bin/echo)
 RUN echo "jonerix-router" > /etc/hostname
 
+# Final-layer cleanup: strip binaries/libraries, remove docs/man/info/locales,
+# purge jpkg download cache. Shared with Dockerfile.builder.
+COPY scripts/image-slim.sh /usr/local/sbin/image-slim
+RUN sh /usr/local/sbin/image-slim && rm /usr/local/sbin/image-slim
+
 ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/sh
