@@ -1,17 +1,18 @@
 [package]
 name = "jmake"
-version = "1.0.8"
+version = "1.0.9"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # 1.0.5..1.0.7: VPATH, GNUmakefile preference, ifeq-with-colons dispatch.
-# 1.0.8 adds JMAKE_DEBUG_IFEQ env var for diagnosing a remaining amd64-
-# only miss where multi-line ifeq followed by a single-line ifeq-with-
-# colons still fails on x86_64 builder (aarch64 works). Trace logs on
-# stderr when env var is set.
+# 1.0.8 was a short-lived debug build. 1.0.9 removes the debug eprintlns
+# and is logic-identical to 1.0.7 — the version bump is to force a
+# clean cargo rebuild in case cargo's cache was serving stale codegen
+# for the x86_64 target (which was exhibiting a parser miss that the
+# aarch64 build did not).
 
 [source]
-url = "https://cache.invalid/jmake-1.0.8.tar"
-sha256 = "b6f45198738dd035d04b19303b56e7970cd598d3f476b987beee2ab069147822"
+url = "https://cache.invalid/jmake-1.0.9.tar"
+sha256 = "fd5854c3d608d6db6e83bd344912c3bcc488cb8b9bdadc00d5979c7e7034ac88"
 
 [build]
 system = "custom"
