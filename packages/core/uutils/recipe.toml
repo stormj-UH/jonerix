@@ -1,8 +1,12 @@
 [package]
 name = "uutils"
-version = "0.7.0"
+version = "0.7.0-r1"
 license = "MIT"
 description = "Rust rewrite of GNU coreutils (tr, expr, sort, wc, cut, and 70+ more)"
+# Claim toybox's multicall /bin/* symlinks for every command uutils
+# provides. Without this, `jpkg install uutils` errors out on every
+# /bin/<cmd> file already owned by toybox. Requires jpkg >= 1.0.4.
+replaces = ["toybox"]
 
 [source]
 url = "https://github.com/uutils/coreutils/archive/refs/tags/0.7.0.tar.gz"
@@ -46,17 +50,44 @@ fi
 llvm-strip --strip-all "$DESTDIR/bin/uutils" 2>/dev/null || true"""
 
 [hooks]
-post_remove = """# Restore toybox symlinks for commands uutils replaced
-CMDS="base64 basename cat chgrp chmod chown chroot cksum comm cp cut
- date dd df dirname du echo env expand factor false fold groups head
- id install kill link ln logname ls md5sum mkdir mkfifo mknod mktemp
- mv nice nl nohup nproc od paste printf pwd readlink realpath rm rmdir
- seq sha1sum sha256sum sha512sum shred sleep sort split stat sync tail
- tee test timeout touch tr true truncate tty uname unexpand uniq unlink
- uptime wc who whoami yes"
+# post_install runs on the live system AFTER the staged files extract.
+# Belt-and-suspenders: the install step above already writes the per-
+# command symlinks into $DESTDIR/bin/, so tar-extraction usually handles
+# it. But if a /bin/<cmd> was something non-symlink before (e.g. a user
+# wrapper script), tar may leave it in place. Re-ln here to guarantee
+# the takeover. Uses the same CMDS list as post_remove so the two stay
+# in sync.
+post_install = """CMDS="arch base32 base64 basename basenc cat chgrp chmod chown
+ chroot cksum comm cp csplit cut date dd df dir dircolors dirname du
+ echo env expand expr factor false fmt fold groups hashsum head hostname
+ id install join kill link ln logname ls md5sum mkdir mkfifo mknod
+ mktemp more mv nice nl nohup nproc numfmt od paste pr printenv printf
+ ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum
+ sha384sum sha512sum shred shuf sleep sort split stat stdbuf stty sum
+ sync tac tail tee test timeout touch tr true truncate tsort tty uname
+ unexpand uniq unlink uptime users vdir wc who whoami yes"
+for cmd in $CMDS; do
+  ln -sf uutils "/bin/$cmd" 2>/dev/null || true
+done
+ln -sf uutils "/bin/[" 2>/dev/null || true
+exit 0"""
+
+post_remove = """# Restore toybox symlinks for commands uutils took over.
+# Only restore ones that no longer exist AND toybox is still present.
+CMDS="arch base32 base64 basename basenc cat chgrp chmod chown chroot
+ cksum comm cp csplit cut date dd df dir dircolors dirname du echo env
+ expand expr factor false fmt fold groups hashsum head hostname id
+ install join kill link ln logname ls md5sum mkdir mkfifo mknod mktemp
+ more mv nice nl nohup nproc numfmt od paste pr printenv printf ptx
+ pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum
+ sha384sum sha512sum shred shuf sleep sort split stat stdbuf stty sum
+ sync tac tail tee test timeout touch tr true truncate tsort tty uname
+ unexpand uniq unlink uptime users vdir wc who whoami yes"
 for cmd in $CMDS; do
   [ ! -e "/bin/$cmd" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/$cmd"
-done"""
+done
+[ ! -e "/bin/[" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/["
+exit 0"""
 
 [depends]
 runtime = ["musl"]
