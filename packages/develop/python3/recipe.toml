@@ -1,6 +1,6 @@
 [package]
 name = "python3"
-version = "3.14.3-r2"
+version = "3.14.3-r3"
 license = "PSF-2.0"
 description = "Python programming language interpreter"
 
@@ -22,8 +22,14 @@ PATH="$PWD/.jpkg-tools:$PATH" \
   --with-ensurepip=install \
   --with-openssl=/ \
   --disable-test-modules"""
-build = "make -j$(nproc)"
-install = """make install DESTDIR=$DESTDIR
+# Force mksh for make's $(SHELL): Python 3.14's Makefile rules
+# (check-app-store-compliance at line 974, check-clean-src at 956,
+# python-gdb.py at 1193) use shell if/then syntax that toybox sh
+# (the jonerix builder's default /bin/sh) can't parse — "syntax
+# error: unexpected 'then'". mksh handles it cleanly. Reproduced
+# 2026-04-17 (Python 3.14.3 x86_64 aarch64).
+build = "make -j$(nproc) SHELL=/bin/mksh"
+install = """make install DESTDIR=$DESTDIR SHELL=/bin/mksh
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 LD_LIBRARY_PATH="$DESTDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
