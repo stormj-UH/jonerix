@@ -18,7 +18,7 @@ system = "custom"
 build = """
 set -e
 cd "$RECIPE_DIR"
-rustc -O -C strip=symbols -C target-feature=+crt-static -o /tmp/ext4-rescue src/main.rs
+rustc --edition 2021 -O -C strip=symbols -C target-feature=+crt-static -o /tmp/ext4-rescue src/main.rs
 install -Dm755 /tmp/ext4-rescue $DESTDIR/bin/ext4-rescue
 rm -f /tmp/ext4-rescue
 """
