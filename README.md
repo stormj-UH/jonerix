@@ -168,7 +168,7 @@ jonerix uses a merged `/usr` layout where `/usr` is a symlink to `/`. All binari
 1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
 2. **All packages** are installed from the jpkg repository into a clean rootfs via `Dockerfile.minimal`
 3. **Final image** is assembled `FROM scratch` with zero GPL runtime components
-4. **Self-hosting**: `jonerix:builder` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:builder → jonerix:minimal` is proven at v1.1.1.
+4. **Self-hosting**: `jonerix:builder` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:builder → jonerix:minimal` is proven at v1.1.2.
 
 Package recipes live in `packages/*/recipe.toml`. Build dependencies are declared explicitly; the package manager resolves and installs them in order.
 
@@ -188,7 +188,7 @@ Every package must carry a permissive license. GPL-3 tools like rsync are replac
 ```
                                     root@jonerix-tormenta
    _                       _        ---------------------
-  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.1.1 aarch64
+  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.1.2 aarch64
   | |/ _ \| '_ \ / _ \ '__| \ \/ /  Kernel -> Linux 6.18.22-v8-16k+
   | | (_) | | | |  __/ |  | |>  <   Uptime -> 16 hours, 28 mins
  _/ |\___/|_| |_|\___|_|  |_/_/\_\  Packages -> 44 (jpkg)
