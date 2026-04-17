@@ -33,7 +33,11 @@ system = "custom"
 #
 # -fPIC is set on CFLAGS so liblua.a can be linked into shared objects
 # later (e.g. Lua-embedding programs that produce .so).
-build = """make linux-noreadline \
+# `linux-noreadline` is defined in src/Makefile but NOT exported by the
+# top-level Makefile's PLATS list (which only lists `linux-readline`).
+# Invoke src/Makefile directly. The install step below still uses the
+# top-level Makefile since that's where the install target lives.
+build = """cd src && make linux-noreadline \
   CC=clang \
   AR='llvm-ar rcu' \
   RANLIB=llvm-ranlib \
