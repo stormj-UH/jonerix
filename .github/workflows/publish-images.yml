@@ -249,6 +249,10 @@ jobs:
             CACHEBUST=${{ github.run_id }}
           cache-from: type=gha,scope=builder-arm64
           cache-to: type=gha,mode=max,scope=builder-arm64
+          # zstd-compressed layers; level 3 ≈ 5% bigger than gzip savings at
+          # level 19 but 5–10× faster to compress (saves CI time) and 3–5×
+          # faster to decompress on pull.
+          outputs: type=image,compression=zstd,compression-level=3,force-compression=true,oci-mediatypes=true
 
   builder-amd64:
     name: Build builder (amd64)
@@ -278,6 +282,7 @@ jobs:
             CACHEBUST=${{ github.run_id }}
           cache-from: type=gha,scope=builder-amd64
           cache-to: type=gha,mode=max,scope=builder-amd64
+          outputs: type=image,compression=zstd,compression-level=3,force-compression=true,oci-mediatypes=true
 
   builder-manifest:
     name: Merge builder manifest
@@ -330,6 +335,7 @@ jobs:
             CACHEBUST=${{ github.run_id }}
           cache-from: type=gha,scope=router-arm64
           cache-to: type=gha,mode=max,scope=router-arm64
+          outputs: type=image,compression=zstd,compression-level=3,force-compression=true,oci-mediatypes=true
 
   router-amd64:
     name: Build router (amd64)
@@ -359,6 +365,7 @@ jobs:
             CACHEBUST=${{ github.run_id }}
           cache-from: type=gha,scope=router-amd64
           cache-to: type=gha,mode=max,scope=router-amd64
+          outputs: type=image,compression=zstd,compression-level=3,force-compression=true,oci-mediatypes=true
 
   router-manifest:
     name: Merge router manifest
