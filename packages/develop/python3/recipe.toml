@@ -1,6 +1,6 @@
 [package]
 name = "python3"
-version = "3.14.3-r7"
+version = "3.14.3-r8"
 license = "PSF-2.0"
 description = "Python programming language interpreter"
 
@@ -16,12 +16,19 @@ chmod 755 .jpkg-tools/diff
 sed -i 's/X509_VERIFY_PARAM_get_hostflags(ssl_verification_params)/0 \/* LibreSSL lacks get_hostflags *\//' Modules/_ssl.c
 PATH="$PWD/.jpkg-tools:$PATH" \
   CFLAGS="$CFLAGS -I/include/ncursesw" \
+  LIBSQLITE3_CFLAGS="-I/include" \
+  LIBSQLITE3_LIBS="-lsqlite3" \
   CC=clang CXX=clang++ ./configure \
   --prefix=/usr \
   --enable-shared \
   --with-ensurepip=no \
   --with-openssl=/ \
   --disable-test-modules"""
+# LIBSQLITE3_* short-circuits Python's pkg-config-based sqlite detection
+# (configure.ac's PKG_CHECK_MODULES): our sqlite package installs headers
+# + libsqlite3.so but no sqlite3.pc, so the pkg-config probe would fail
+# and Python would mark _sqlite3 as unavailable. Setting the vars
+# directly makes configure skip pkg-config and compile the module.
 # --prefix=/usr (not /) because Python 3.14's bootstrap chokes on
 # sys.prefix='' during _bootstrap_python → site.py import:
 #   AttributeError: module 'sys' has no attribute 'prefix'
@@ -91,5 +98,9 @@ post_remove = """# Leave pip scripts in place — user may have installed things
 exit 0"""
 
 [depends]
-runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi"]
-build = ["clang", "libffi"]
+# sqlite added in 3.14.3-r8 so the `_sqlite3` stdlib module gets built.
+# Needed by AWS CLI v2 and anything else that imports sqlite3. The sqlite
+# package installs libsqlite3.so + headers to /lib and /include, where
+# Python's setup.py auto-detects them.
+runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi", "sqlite"]
+build = ["clang", "libffi", "sqlite"]
