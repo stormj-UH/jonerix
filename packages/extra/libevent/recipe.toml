@@ -69,7 +69,7 @@ GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
     --disable-debug-mode \
     --enable-shared \
     --disable-static \
-    --enable-openssl \
+    --disable-openssl \
     CC=clang \
     CFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
     LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind -Wl,--disable-new-dtags"
