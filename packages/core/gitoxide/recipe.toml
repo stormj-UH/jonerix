@@ -1,6 +1,6 @@
 [package]
 name = "gitoxide"
-version = "0.52.0-r4"
+version = "0.52.0-r5"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust implementation of git (gix + ein)"
 
@@ -14,6 +14,21 @@ system = "custom"
 # emits -lunwind instead of -lgcc_s for proc-macro .so output. No
 # cc-wrapper or gnu-compat-symlinks runtime dep needed any more.
 #
+# TLS backend: --features max-pure switches from the default
+# http-client-curl (bundled static libcurl) to http-client-reqwest-rust-tls
+# (rustls + webpki-roots Mozilla CA bundle baked into the binary). This
+# avoids the "SSL certificate OpenSSL verify result: unable to get local
+# issuer certificate (20)" failure we hit on 2026-04-17: the statically-
+# linked libcurl had no compiled-in default CA path and didn't honor
+# CURL_CA_BUNDLE / SSL_CERT_FILE / SSL_CERT_DIR at runtime. rustls with
+# webpki-roots needs no system CA bundle at all, so HTTPS just works.
+#
+# Trade-offs vs default "max-control": we lose `cache-efficiency-debug`
+# (internal tuning) and `fast-unsafe-disabled` speed tweaks that ship in
+# max-control. Both are irrelevant for a git CLI. `max-pure` still ships
+# the full user-facing command set (clone, fetch, pack, corpus, query,
+# archive, clean, tui + line progress renderers).
+#
 # `-C link-self-contained=yes` produces a static-PIE binary using rust's
 # bundled CRTs. WITHOUT this flag, openssl-sys's NEEDED libssl/libcrypto
 # causes rust to emit a half-static binary with NEEDED dynamic libs but
@@ -24,9 +39,10 @@ system = "custom"
 # NEEDED). We use the latter: a proper dynamic binary that links against
 # jonerix's LibreSSL at runtime.
 #
-# OPENSSL_* env vars: openssl-sys (transitive dep of gix's git2/curl
-# support) does pkg-config-free detection via these vars. On jonerix
-# LibreSSL headers live at /include, libs at /lib.
+# OPENSSL_* env vars: openssl-sys (transitive dep via some crates) does
+# pkg-config-free detection via these vars. On jonerix LibreSSL headers
+# live at /include, libs at /lib. Even with max-pure, some deps still
+# link OpenSSL (e.g., git2 for low-level ops) so these remain needed.
 build = """export OPENSSL_DIR=/
 export OPENSSL_INCLUDE_DIR=/include
 export OPENSSL_LIB_DIR=/lib
@@ -34,7 +50,7 @@ export PKG_CONFIG_ALLOW_CROSS=1
 export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
 export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
 cargo fetch
-cargo build --release --bin gix --bin ein"""
+cargo build --release --no-default-features --features max-pure --bin gix --bin ein"""
 install = """install -Dm755 target/release/gix $DESTDIR/bin/gix
 install -Dm755 target/release/ein $DESTDIR/bin/ein
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
