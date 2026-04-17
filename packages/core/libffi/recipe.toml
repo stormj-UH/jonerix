@@ -1,0 +1,28 @@
+[package]
+name = "libffi"
+version = "3.4.6"
+license = "MIT"
+description = "Foreign Function Interface library — dispatches to C ABI from dynamic callers"
+
+[source]
+url = "https://github.com/libffi/libffi/releases/download/v3.4.6/libffi-3.4.6.tar.gz"
+sha256 = "b0dea9df23c863a7a50e825440f3ebffabd65df1497108e5d437747843895a4e"
+
+[build]
+system = "autoconf"
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer -fPIC\" ./configure --prefix=/ --libdir=/lib --includedir=/include --disable-static --disable-docs --disable-multi-os-directory CC=clang"
+build = "make -j$(nproc)"
+install = """make DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# libffi installs headers to /include/ffi-*/ by default; flatten to /include/
+for d in "$DESTDIR"/include/libffi-* "$DESTDIR"/lib/libffi-*/include; do
+    [ -d "$d" ] || continue
+    cp -a "$d"/. "$DESTDIR"/include/ 2>/dev/null || true
+    rm -rf "$d"
+done
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]
