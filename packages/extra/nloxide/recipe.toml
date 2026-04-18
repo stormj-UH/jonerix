@@ -1,6 +1,6 @@
 [package]
 name = "nloxide"
-version = "0.1.0"
+version = "0.1.0-r1"
 license = "BSD-2-Clause"
 description = "Clean-room netlink library (libnl-3 / libnl-genl-3 drop-in) written in Rust"
 
