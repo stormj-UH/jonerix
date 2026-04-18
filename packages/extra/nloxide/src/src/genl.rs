@@ -68,9 +68,13 @@ pub unsafe extern "C" fn genlmsg_attrdata(
 
 #[no_mangle]
 pub unsafe extern "C" fn genlmsg_attrlen(ghdr: *const GenlMsgHdr, hdrlen: c_int) -> c_int {
-    let _ = ghdr;
-    let _ = hdrlen;
-    0
+    if ghdr.is_null() { return 0; }
+    // The genlmsghdr sits immediately after the nlmsghdr in the payload.
+    // Recover the wrapping nlmsghdr and read its total length.
+    let hdr = (ghdr as *const u8).sub(NLMSG_HDRLEN) as *const NlMsgHdr;
+    let total = (*hdr).nlmsg_len as i32;
+    let fixed = (NLMSG_HDRLEN + GENL_HDRLEN) as i32 + nlmsg_align(hdrlen as usize) as i32;
+    (total - fixed).max(0)
 }
 
 #[no_mangle]
@@ -111,14 +115,21 @@ pub unsafe extern "C" fn genlmsg_put(
     version: u8,
 ) -> *mut c_void {
     if msg.is_null() { return ptr::null_mut(); }
+    // libnl semantics: `flags` passed here is ADDITIONAL flags OR'd onto the
+    // existing nlmsghdr.nlmsg_flags (which may have been set by
+    // nlmsg_alloc_simple). Without this, NLM_F_DUMP / NLM_F_ACK / etc. set
+    // at alloc time get silently clobbered when genlmsg_put writes the
+    // header — which caused genl_ctrl_alloc_cache to send a non-dump
+    // GETFAMILY and get EINVAL from the kernel.
+    let existing = (*nlmsg_hdr(msg)).nlmsg_flags;
+    let combined = existing | flags as u16;
     let payload = GENL_HDRLEN + nlmsg_align(hdrlen as usize);
-    let hdr = crate::message::nlmsg_put(msg, pid, seq, family, payload as c_int, flags as u16);
+    let hdr = crate::message::nlmsg_put(msg, pid, seq, family, payload as c_int, combined);
     if hdr.is_null() { return ptr::null_mut(); }
     let ghdr = nlmsg_data(hdr) as *mut GenlMsgHdr;
     (*ghdr).cmd = cmd;
     (*ghdr).version = version;
     (*ghdr).reserved = 0;
-    // return pointer past genlmsghdr + user hdrlen
     genlmsg_user_data(ghdr, hdrlen)
 }
 
@@ -159,6 +170,7 @@ pub unsafe extern "C" fn genl_send_simple(
 struct ResolveCtx {
     family_id: i32,
     done: bool,
+    acked: bool,
 }
 
 unsafe extern "C" fn resolve_valid_cb(msg: *mut NlMsg, arg: *mut c_void) -> c_int {
@@ -178,6 +190,12 @@ unsafe extern "C" fn resolve_valid_cb(msg: *mut NlMsg, arg: *mut c_void) -> c_in
     crate::types::NL_OK
 }
 
+unsafe extern "C" fn resolve_ack_cb(_msg: *mut NlMsg, arg: *mut c_void) -> c_int {
+    let ctx = &mut *(arg as *mut ResolveCtx);
+    ctx.acked = true;
+    crate::types::NL_STOP
+}
+
 fn genl_ctrl_do_resolve(sk: *mut NlSock, name: *const u8) -> c_int {
     unsafe {
         let msg = nlmsg_alloc_simple(GENL_ID_CTRL as c_int, NLM_F_REQUEST as c_int);
@@ -194,14 +212,27 @@ fn genl_ctrl_do_resolve(sk: *mut NlSock, name: *const u8) -> c_int {
         nlmsg_free(msg);
         if r < 0 { return r; }
 
-        let mut ctx = ResolveCtx { family_id: -(NLE_OBJ_NOTFOUND), done: false };
+        // Set up per-call callbacks for BOTH the NEWFAMILY response (VALID)
+        // AND the trailing ACK. Without an ACK handler, the kernel's ACK
+        // sits in the recv queue and gets consumed by the next caller as
+        // if it were the ACK for that caller's request — which causes the
+        // next send_and_recv to think its request succeeded before its
+        // real response has even been processed. This manifested as
+        // nl_get_multicast_id always returning -ENOENT.
+        let mut ctx = ResolveCtx {
+            family_id: -(NLE_OBJ_NOTFOUND),
+            done: false,
+            acked: false,
+        };
         let cb = nl_cb_clone((*sk).s_cb);
-        nl_cb_set(cb, NL_CB_VALID as c_int, 0,
-                  Some(resolve_valid_cb), &mut ctx as *mut ResolveCtx as *mut c_void);
+        let arg_ptr = &mut ctx as *mut ResolveCtx as *mut c_void;
+        nl_cb_set(cb, NL_CB_VALID as c_int, 0, Some(resolve_valid_cb), arg_ptr);
+        nl_cb_set(cb, NL_CB_ACK as c_int,   0, Some(resolve_ack_cb),   arg_ptr);
 
         loop {
             let r2 = nl_recvmsgs(sk, cb);
-            if r2 < 0 || ctx.done { break; }
+            if r2 < 0 { break; }
+            if ctx.done && ctx.acked { break; }
         }
         nl_cb_put(cb);
         ctx.family_id
@@ -443,8 +474,13 @@ pub unsafe extern "C" fn genl_family_alloc() -> *mut GenlFamily {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn genl_family_put(f: *mut GenlFamily) {
-    if !f.is_null() { drop(Box::from_raw(f)); }
+pub unsafe extern "C" fn genl_family_put(_f: *mut GenlFamily) {
+    // GenlFamily lives inside GenlCache's Vec; nl_cache_free owns the whole
+    // cache and will drop the Vec (and all families) together. The pointer
+    // returned by genl_ctrl_search is a borrow into that Vec, not a Box.
+    // Freeing it separately (Box::from_raw) corrupts the allocator.
+    // genl_family_alloc callers (below) use a Box, but existing-family
+    // lookup paths via the cache should NOT free here.
 }
 
 #[no_mangle]
