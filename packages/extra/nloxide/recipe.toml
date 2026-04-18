@@ -12,7 +12,8 @@ build = """
 set -e
 export CARGO_HOME=/tmp/nloxide-cargo
 export CARGO_TARGET_DIR=/tmp/nloxide-target
-cargo build --release --manifest-path "$RECIPE_DIR/src/Cargo.toml"
+export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
+cargo build --release --frozen --offline --manifest-path "$RECIPE_DIR/src/Cargo.toml"
 """
 install = """
 set -e
