@@ -1,0 +1,74 @@
+#!/sbin/openrc-run
+# pi5-wifi — bring up the Pi 5 onboard BCM4345 WiFi at boot.
+#
+# jonerix's permissive-license runtime excludes kmod and any udev that
+# would auto-load the brcmfmac driver when the SDIO device appears.
+# This service fills that gap on Pi 5s:
+#
+#   1. Register /usr/local/bin/modprobe-shim as the kernel's
+#      request_module(2) handler. Without this, the brcmfmac driver
+#      fails mid-attach because it can't pull in its vendor submodule
+#      brcmfmac-cyw (the Cypress flavour used by the 4345 chip).
+#
+#   2. Insert the brcmfmac stack (rfkill → cfg80211 → brcmutil →
+#      brcmfmac-cyw → brcmfmac) in the right order. Loading cyw
+#      *before* brcmfmac avoids a fwvid race where the initial attach
+#      fires before the vendor module has registered, leaving the SDIO
+#      device stuck in a non-removable half-attached state until
+#      reboot.
+#
+# Only runs on Pi 5. Other boards skip (harmless no-op).
+
+description="Load onboard Broadcom WiFi driver stack (Pi 5 only)"
+
+depend() {
+    before net
+    need localmount
+}
+
+is_pi5() {
+    [ -r /proc/device-tree/model ] && \
+        grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null
+}
+
+start() {
+    is_pi5 || { einfo "not a Pi 5; skipping"; return 0; }
+
+    ebegin "Registering modprobe shim"
+    echo -n /usr/local/bin/modprobe-shim > /proc/sys/kernel/modprobe
+    eend $? || return 1
+
+    # Already up? Check by presence of a wireless PHY.
+    if [ -d /sys/class/ieee80211/phy0 ]; then
+        einfo "phy0 already present; skipping module load"
+        return 0
+    fi
+
+    ebegin "Loading brcmfmac stack"
+    # Preload cyw BEFORE brcmfmac so the kernel doesn't race on fwvid
+    # attach. brcmfmac-cyw itself depends on brcmfmac symbols, so we
+    # expect "Unknown symbol" warnings during this first insmod; they
+    # resolve once brcmfmac is loaded immediately after.
+    /usr/local/bin/modprobe-shim brcmfmac-cyw 2>/dev/null || true
+    /usr/local/bin/modprobe-shim brcmfmac
+    eend $? || return 1
+
+    # Give brcmfmac a moment to attach the SDIO device and publish phy0.
+    for i in 1 2 3 4 5 6 7 8; do
+        [ -d /sys/class/ieee80211/phy0 ] && break
+        sleep 1
+    done
+
+    if [ -d /sys/class/ieee80211/phy0 ]; then
+        einfo "wlan0 brought up via brcmfmac"
+    else
+        ewarn "brcmfmac loaded but no phy0 appeared (check dmesg)"
+    fi
+}
+
+stop() {
+    is_pi5 || return 0
+    # Leave the driver loaded; unloading SDIO wifi cleanly is fragile
+    # and nothing practical gains by doing it at shutdown.
+    return 0
+}
