@@ -31,17 +31,18 @@ CONFIG_PKCS12=y
 CONFIG_WPS=y
 CONFIG_ACS=y
 CONF"""
-# hostapd's Makefile uses GNU make features — build uses jmake.
+# hostapd's Makefile uses $(abspath ../src) which bmake (jmake) does not
+# implement — it expands to literally nothing, so the -I paths vanish. Supply
+# ABSOLUTE paths via EXTRA_CFLAGS (honored at hostapd/Makefile's EXTRA_CFLAGS).
 # CONFIG_LIBNL32=y + LIBNL_INC=/include bypasses the pkg-config probe in
 # src/drivers/drivers.mak so jmake does not need a pkg-config binary.
-# EXTRA_CFLAGS supplies the -I paths that $(abspath ../src) normally provides;
-# jmake's abspath evaluation differs from GNU make when -C is used.
-build = """jmake -C hostapd \
+build = """ROOT=$(pwd)
+jmake -C hostapd \
   CC=clang \
   LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" \
   CONFIG_LIBNL32=y \
   LIBNL_INC=/include \
-  EXTRA_CFLAGS="-I../src -I../src/utils -I/include" \
+  EXTRA_CFLAGS="-I$ROOT/src -I$ROOT/src/utils -I/include" \
   -j$(nproc)"""
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/hostapd
 install -m 755 hostapd/hostapd $DESTDIR/bin/hostapd
