@@ -1,0 +1,44 @@
+User-space decompression of .ko.xz / .ko.gz / .ko.zst modules.
+
+jonerix ships kernel modules compressed (e.g. brcmfmac.ko.xz). Toybox
+modprobe passes the fd to finit_module(2) directly, which works only
+if the kernel was built with CONFIG_MODULE_DECOMPRESS=y. The Pi 5
+jonerix kernel (6.18-v8-16k) is not, so finit_module returns ENOEXEC
+(raw xz where ELF is expected) and loading silently fails.
+
+Work around by piping the compressed module through xz / gzip / zstd
+into a temp file and loading the uncompressed result. xz(1) is the
+only hard dependency at runtime; gzip and zstd are probed lazily by
+name only if those extensions appear.
+
+--- a/toys/pending/modprobe.c
++++ b/toys/pending/modprobe.c
+@@ -350,7 +350,27 @@
+ // of flags, and don't need to support loading from stdin.
+ static int ins_mod(char *modules, char *flags)
+ {
+-  int fd = xopenro(modules), rc = syscall(__NR_finit_module, fd, flags, 0);
++  // If the module is compressed (.xz / .gz / .zst), decompress into a
++  // tmpfile and load that; finit_module only handles compressed modules
++  // when the kernel has CONFIG_MODULE_DECOMPRESS=y, which the jonerix
++  // Pi kernel does not.
++  char *ext = strrchr(modules, '.');
++  char *tmppath = NULL;
++  int fd;
++  if (ext && (!strcmp(ext, ".xz") || !strcmp(ext, ".gz") ||
++              !strcmp(ext, ".zst"))) {
++    const char *dec = !strcmp(ext, ".gz") ? "gunzip" :
++                      !strcmp(ext, ".zst") ? "zstd -dc" : "xz -dc";
++    tmppath = xmprintf("/tmp/.modprobe_load_%d", getpid());
++    char *cmd = xmprintf("%s < %s > %s", dec, modules, tmppath);
++    if (system(cmd)) { free(cmd); free(tmppath); errno = EIO; return -1; }
++    free(cmd);
++    fd = xopenro(tmppath);
++  } else {
++    fd = xopenro(modules);
++  }
++  int rc = syscall(__NR_finit_module, fd, flags, 0);
++  if (tmppath) { unlink(tmppath); free(tmppath); }
+
+   xclose(fd);
+   return rc;
