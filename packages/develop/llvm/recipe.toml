@@ -1,8 +1,8 @@
 [package]
 name = "llvm"
-version = "21.1.2"
+version = "21.1.2-r1"
 license = "Apache-2.0"
-description = "LLVM toolchain with clang, lld, and compiler-rt — zero GCC dependencies"
+description = "Slim LLVM toolchain (toolchain-only: clang, lld, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc). See llvm-all for the full 80+ tool set."
 
 [source]
 url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
