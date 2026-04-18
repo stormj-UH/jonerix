@@ -49,6 +49,13 @@ fastfetch
 # Tier 4: depends on libressl or other tier-3 packages
 sudo
 openntpd
+# jonerix-raspi5-fixups is the sole mandatory package in image/pi5/build-image.py.
+# The default Pi 5 image also uses musl, toybox, openrc, dhcpcd, dropbear,
+# ifupdown-ng, bsdtar, ca-certificates -- all already produced by earlier
+# tiers, so no dedicated "pi5-base" tier is warranted yet. When a
+# linux-rpi / rpi-firmware / brcmfmac-firmware recipe lands (see
+# docs/plans/raspberry-pi.md section 9 Tier 1), those four belong together
+# at a new tier above this one.
 jonerix-raspi5-fixups
 libarchive
 bsdtar
