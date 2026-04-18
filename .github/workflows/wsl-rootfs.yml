@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /var/cache/apk
-          key: apk-wsl-x86_64-${{ hashFiles('.github/workflows/wsl-rootfs.yml') }}
+          key: apk-wsl-x86_64-${{ hashFiles('.github/workflows/wsl-rootfs.yml', 'install/wsl/build-rootfs.sh') }}
           restore-keys: apk-wsl-x86_64-
 
       - name: Install build dependencies
@@ -43,7 +43,7 @@ jobs:
           apk update -q
           apk add -q \
             clang lld musl-dev make \
-            curl tar zstd \
+            curl tar zstd libarchive-tools ca-certificates \
             zstd-dev zstd-static \
             github-cli
 
@@ -127,7 +127,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /tmp/apk-cache-aarch64
-          key: apk-wsl-aarch64-${{ hashFiles('.github/workflows/wsl-rootfs.yml') }}
+          key: apk-wsl-aarch64-${{ hashFiles('.github/workflows/wsl-rootfs.yml', 'install/wsl/build-rootfs.sh') }}
           restore-keys: apk-wsl-aarch64-
 
       - name: Restore jpkg binary cache (aarch64)
@@ -172,7 +172,7 @@ jobs:
               apk update -q
               apk add -q \
                 clang lld musl-dev make \
-                curl tar zstd \
+                curl tar zstd libarchive-tools ca-certificates \
                 zstd-dev zstd-static
 
               if [ "$JPKG_CACHE_HIT" = "true" ] && [ -f /jpkg-bin/jpkg ]; then

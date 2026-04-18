@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Install jonerix as a WSL2 distribution on Windows.
@@ -6,6 +6,10 @@
 .DESCRIPTION
     Downloads the jonerix rootfs tarball from the GitHub releases page and
     imports it as a WSL2 distribution using `wsl --import`.
+
+    Tested on Windows 10 22H2 and Windows 11 23H2+ with the Microsoft Store
+    release of WSL (0.70+) — older bundled WSL still works but misses a few
+    niceties like automatic --version 2 defaulting.
 
 .PARAMETER InstallDir
     Directory where jonerix's virtual disk will be stored.
@@ -21,18 +25,29 @@
 .PARAMETER RootfsUrl
     Override the URL to the rootfs tarball.
 
+.PARAMETER Release
+    Release tag on GitHub to pull the rootfs from (default: packages).
+
+.PARAMETER Repo
+    GitHub repository slug (default: stormj-UH/jonerix).
+
 .EXAMPLE
     .\install.ps1
 
 .EXAMPLE
     .\install.ps1 -InstallDir "D:\WSL\jonerix" -DistroName "jonerix"
+
+.EXAMPLE
+    .\install.ps1 -RootfsUrl "C:\path\to\jonerix-rootfs-x86_64.tar.gz"
 #>
 [CmdletBinding()]
 param(
     [string]$InstallDir   = "$env:LOCALAPPDATA\jonerix",
     [string]$Arch         = "",
     [string]$DistroName   = "jonerix",
-    [string]$RootfsUrl    = ""
+    [string]$RootfsUrl    = "",
+    [string]$Release      = "packages",
+    [string]$Repo         = "stormj-UH/jonerix"
 )
 
 Set-StrictMode -Version Latest
@@ -41,9 +56,7 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-$GithubRepo   = "stormj-UH/jonerix"
-$ReleaseTag   = "packages"
-$BaseUrl      = "https://github.com/$GithubRepo/releases/download/$ReleaseTag"
+$BaseUrl = "https://github.com/$Repo/releases/download/$Release"
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -76,28 +89,37 @@ function Fail {
     exit 1
 }
 
+# wsl.exe emits UTF-16LE on some builds, which breaks simple string compares.
+# Read its output raw and decode explicitly.
+function Invoke-Wsl {
+    param([string[]]$Args)
+    $out = & wsl.exe @Args 2>&1
+    return ($out | Out-String)
+}
+
 # ---------------------------------------------------------------------------
 # 1. Pre-flight checks
 # ---------------------------------------------------------------------------
 Write-Header "jonerix WSL2 Installer"
 
-# Require Windows 10 2004 / Windows 11 (WSL2 support)
+# Require Windows 10 build 19041 (2004) or later for WSL2.
 $osVersion = [System.Environment]::OSVersion.Version
-if ($osVersion.Major -lt 10) {
-    Fail "Windows 10 (build 19041) or later is required for WSL2."
+if ($osVersion.Major -lt 10 -or ($osVersion.Major -eq 10 -and $osVersion.Build -lt 19041)) {
+    Fail "Windows 10 build 19041 (version 2004) or later is required for WSL2. You have build $($osVersion.Build)."
 }
 
-# Check wsl.exe is available
+# Check wsl.exe is available.
 if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-    Fail "wsl.exe not found. Enable WSL via: wsl --install"
+    Fail "wsl.exe not found. Enable WSL via an elevated PowerShell:  wsl --install --no-distribution"
 }
 
-# Check if WSL2 kernel is present (wsl --status exits 0 only with WSL2)
-Write-Step "Checking WSL version support..."
-$wslStatus = & wsl.exe --status 2>&1
-# --status not available on older wsl; just warn and continue
+# Ensure WSL2 is the default version — `wsl --import ... --version 2` sets
+# it per-distro but older wsl.exe ignores that flag when the kernel isn't
+# installed. `wsl --set-default-version 2` is a no-op if already set.
+Write-Step "Ensuring default WSL version is 2..."
+$null = Invoke-Wsl @('--set-default-version','2')
 if ($LASTEXITCODE -ne 0) {
-    Write-Warn "Could not verify WSL2 status. Ensure WSL2 is enabled."
+    Write-Warn "Could not set default WSL version to 2. If import fails, run: wsl --install --no-distribution"
 }
 
 # ---------------------------------------------------------------------------
@@ -119,34 +141,42 @@ if ([string]::IsNullOrEmpty($Arch)) {
 Write-Step "Architecture: $Arch"
 
 # ---------------------------------------------------------------------------
-# 3. Resolve rootfs URL
+# 3. Resolve rootfs URL / path
 # ---------------------------------------------------------------------------
+$RootfsIsLocal = $false
 if ([string]::IsNullOrEmpty($RootfsUrl)) {
     $RootfsFilename = "jonerix-rootfs-$Arch.tar.gz"
     $RootfsUrl      = "$BaseUrl/$RootfsFilename"
 } else {
     $RootfsFilename = Split-Path $RootfsUrl -Leaf
+    if (Test-Path -LiteralPath $RootfsUrl -PathType Leaf) {
+        $RootfsIsLocal = $true
+    }
 }
-Write-Step "Rootfs URL: $RootfsUrl"
+Write-Step "Rootfs source: $RootfsUrl"
 
 # ---------------------------------------------------------------------------
-# 4. Download rootfs
+# 4. Download rootfs (or use local file)
 # ---------------------------------------------------------------------------
-Write-Header "Downloading rootfs"
+$TempDir = Join-Path $env:TEMP "jonerix-install-$(Get-Random)"
+$null    = New-Item -ItemType Directory -Path $TempDir -Force
 
-$TempDir    = Join-Path $env:TEMP "jonerix-install-$(Get-Random)"
-$null       = New-Item -ItemType Directory -Path $TempDir -Force
-$TarballPath = Join-Path $TempDir $RootfsFilename
-
-Write-Step "Destination: $TarballPath"
-
-try {
-    $ProgressPreference = "SilentlyContinue"   # speeds up Invoke-WebRequest
-    Invoke-WebRequest -Uri $RootfsUrl -OutFile $TarballPath -UseBasicParsing
-    $ProgressPreference = "Continue"
-    Write-Success "Downloaded $RootfsFilename ($('{0:N1}' -f ((Get-Item $TarballPath).Length / 1MB)) MB)"
-} catch {
-    Fail "Failed to download rootfs from $RootfsUrl`n$_"
+if ($RootfsIsLocal) {
+    $TarballPath = (Resolve-Path -LiteralPath $RootfsUrl).Path
+    Write-Success "Using local rootfs: $TarballPath"
+} else {
+    Write-Header "Downloading rootfs"
+    $TarballPath = Join-Path $TempDir $RootfsFilename
+    Write-Step "Destination: $TarballPath"
+    try {
+        $ProgressPreference = "SilentlyContinue"   # speeds up Invoke-WebRequest
+        Invoke-WebRequest -Uri $RootfsUrl -OutFile $TarballPath -UseBasicParsing
+        $ProgressPreference = "Continue"
+        $sizeMB = '{0:N1}' -f ((Get-Item $TarballPath).Length / 1MB)
+        Write-Success "Downloaded $RootfsFilename ($sizeMB MB)"
+    } catch {
+        Fail "Failed to download rootfs from $RootfsUrl`n$_"
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -154,13 +184,15 @@ try {
 # ---------------------------------------------------------------------------
 Write-Header "Installing WSL distribution"
 
-$existingDistros = & wsl.exe --list --quiet 2>$null
+# `wsl --list --quiet` output is UTF-16LE; normalize to plain lines.
+$listOut = Invoke-Wsl @('--list','--quiet')
+$existingDistros = $listOut -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 if ($existingDistros -contains $DistroName) {
     Write-Warn "A WSL distribution named '$DistroName' already exists."
     $confirm = Read-Host "Unregister the existing '$DistroName' and reinstall? [y/N]"
     if ($confirm -imatch '^y') {
         Write-Step "Unregistering existing $DistroName ..."
-        & wsl.exe --unregister $DistroName | Out-Null
+        $null = Invoke-Wsl @('--unregister', $DistroName)
         Write-Success "Unregistered."
     } else {
         Write-Host "Aborted by user." -ForegroundColor Yellow
@@ -177,15 +209,16 @@ $null = New-Item -ItemType Directory -Path $InstallDir -Force
 Write-Step "Running: wsl --import $DistroName $InstallDir $TarballPath --version 2"
 & wsl.exe --import $DistroName $InstallDir $TarballPath --version 2
 if ($LASTEXITCODE -ne 0) {
-    Fail "wsl --import failed (exit code $LASTEXITCODE)."
+    Fail "wsl --import failed (exit code $LASTEXITCODE). If this is a fresh system, run 'wsl --install --no-distribution' from an elevated PowerShell and reboot."
 }
 Write-Success "Imported '$DistroName'."
 
 # ---------------------------------------------------------------------------
 # 7. Set default user to root
-#    WSL reads /etc/wsl.conf inside the distribution; the [user] default=root
-#    entry baked into the rootfs handles this automatically.
-#    As an extra measure, set the default user via the registry if accessible.
+#    WSL reads /etc/wsl.conf inside the distribution; [user] default=root
+#    baked into the rootfs handles this automatically on modern wsl.exe.
+#    The registry override is kept as a belt-and-braces fallback for older
+#    WSL builds that ignore wsl.conf on first boot.
 # ---------------------------------------------------------------------------
 Write-Header "Configuring distribution"
 
@@ -207,21 +240,31 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 8. Smoke test — verify the distro starts
+# 8. Smoke test — verify the distro starts and the new /bin/sh works
 # ---------------------------------------------------------------------------
 Write-Step "Running smoke test (wsl -d $DistroName -- uname -a)..."
 $uname = & wsl.exe -d $DistroName -- uname -a 2>&1
 if ($LASTEXITCODE -eq 0) {
-    Write-Success "Distribution started: $uname"
+    Write-Success ("Distribution started: {0}" -f ($uname | Out-String).Trim())
 } else {
     Write-Warn "Smoke test failed — the distro may need a WSL restart."
     Write-Warn "Try: wsl --shutdown; wsl -d $DistroName"
 }
 
+# Second smoke test: confirm jpkg is on PATH.
+$jpkgVer = & wsl.exe -d $DistroName -- /bin/jpkg --version 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Success ("jpkg present: {0}" -f ($jpkgVer | Out-String).Trim())
+} else {
+    Write-Warn "jpkg not runnable yet — check /bin/jpkg inside the distro."
+}
+
 # ---------------------------------------------------------------------------
-# 9. Clean up temp files
+# 9. Clean up temp files (only if we downloaded)
 # ---------------------------------------------------------------------------
-Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
+if (-not $RootfsIsLocal) {
+    Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
+}
 
 # ---------------------------------------------------------------------------
 # 10. Getting-started instructions
@@ -239,16 +282,20 @@ Getting started:
   Update the package index:
     jpkg update
 
-  Install packages:
-    jpkg install [package]
+  Install a package:
+    jpkg install <package>
+
+  Install common dev tools:
+    jpkg install llvm cmake samurai python3 nodejs go rust
 
   Search for packages:
-    jpkg search [query]
+    jpkg search <query>
 
   Set as default WSL distribution (optional):
     wsl --set-default $DistroName
 
 Installation directory: $InstallDir
+Rootfs release tag    : $Release ($Repo)
 
 "@
 Write-Host $msg -ForegroundColor White
