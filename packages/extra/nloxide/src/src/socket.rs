@@ -75,11 +75,7 @@ impl NlSock {
 pub unsafe extern "C" fn nl_socket_alloc() -> *mut NlSock {
     let cb = crate::callback::nl_cb_alloc(NL_CB_DEFAULT);
     if cb.is_null() { return ptr::null_mut(); }
-    let sk = NlSock::new(cb);
-    crate::callback::nl_cb_put(cb); // sk now holds the ref from alloc
-    // re-get so sk exclusively owns one ref
-    crate::callback::nl_cb_get((*sk).s_cb);
-    sk
+    NlSock::new(cb) // sk inherits the +1 refcount from nl_cb_alloc
 }
 
 #[no_mangle]
