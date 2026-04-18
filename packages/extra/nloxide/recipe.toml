@@ -1,0 +1,228 @@
+[package]
+name = "nloxide"
+version = "0.1.0"
+license = "BSD-2-Clause"
+description = "Clean-room netlink library (libnl-3 / libnl-genl-3 drop-in) written in Rust"
+
+# No [source] — local-only build using $RECIPE_DIR/src.
+
+[build]
+system = "custom"
+build = """
+set -e
+export CARGO_HOME=/tmp/nloxide-cargo
+export CARGO_TARGET_DIR=/tmp/nloxide-target
+cargo build --release --manifest-path "$RECIPE_DIR/src/Cargo.toml"
+"""
+install = """
+set -e
+LIB=/tmp/nloxide-target/release
+
+mkdir -p "$DESTDIR/lib"
+mkdir -p "$DESTDIR/include/netlink"
+mkdir -p "$DESTDIR/include/netlink/genl"
+
+# One library, two names — hostapd links -lnl-3 -lnl-genl-3
+install -m 755 "$LIB/libnloxide.so" "$DESTDIR/lib/libnl-3.so.200"
+ln -sf libnl-3.so.200 "$DESTDIR/lib/libnl-3.so"
+cp "$DESTDIR/lib/libnl-3.so.200" "$DESTDIR/lib/libnl-genl-3.so.200"
+ln -sf libnl-genl-3.so.200 "$DESTDIR/lib/libnl-genl-3.so"
+
+install -m 644 "$LIB/libnloxide.a" "$DESTDIR/lib/libnl-3.a"
+cp "$DESTDIR/lib/libnl-3.a" "$DESTDIR/lib/libnl-genl-3.a"
+
+# Stub headers — generated inline so no extra source files are needed
+cat > "$DESTDIR/include/netlink/netlink.h" << 'HDR'
+#pragma once
+#include <stdint.h>
+#include <stddef.h>
+struct nl_sock;
+struct nl_cb;
+struct nl_msg;
+struct nl_cache;
+struct nlmsghdr { uint32_t nlmsg_len; uint16_t nlmsg_type; uint16_t nlmsg_flags; uint32_t nlmsg_seq; uint32_t nlmsg_pid; };
+struct nlattr    { uint16_t nla_len; uint16_t nla_type; };
+struct sockaddr_nl { uint16_t nl_family; uint16_t nl_pad; uint32_t nl_pid; uint32_t nl_groups; };
+struct nlmsgerr  { int error; struct nlmsghdr msg; };
+#define NL_OK   0
+#define NL_SKIP 1
+#define NL_STOP 2
+#define NLM_F_REQUEST  1
+#define NLM_F_MULTI    2
+#define NLM_F_ACK      4
+#define NLM_F_ECHO     8
+#define NLM_F_DUMP_INTR 16
+#define NLM_F_ROOT    0x100
+#define NLM_F_MATCH   0x200
+#define NLM_F_DUMP    (NLM_F_ROOT|NLM_F_MATCH)
+#define NLM_F_REPLACE 0x100
+#define NLM_F_EXCL    0x200
+#define NLM_F_CREATE  0x400
+#define NLM_F_APPEND  0x800
+#define NLMSG_NOOP    1
+#define NLMSG_ERROR   2
+#define NLMSG_DONE    3
+#define NLMSG_OVERRUN 4
+#define NLMSG_HDRLEN  16
+#define NLMSG_ALIGN(n)  (((n)+3)&~3)
+#define NLMSG_LENGTH(n) (NLMSG_HDRLEN+(n))
+#define NLMSG_SPACE(n)  NLMSG_ALIGN(NLMSG_LENGTH(n))
+#define NLA_HDRLEN  4
+#define NLA_ALIGN(n) (((n)+3)&~3)
+#define NLA_F_NESTED 0x8000
+#define NLA_F_NET_BYTEORDER 0x4000
+#define NLA_TYPE_MASK (~(NLA_F_NESTED|NLA_F_NET_BYTEORDER))
+typedef int (*nl_recvmsg_msg_cb_t)(struct nl_msg *, void *);
+typedef int (*nl_recvmsg_err_cb_t)(struct sockaddr_nl *, struct nlmsgerr *, void *);
+enum nl_cb_kind  { NL_CB_DEFAULT=0, NL_CB_VERBOSE=1, NL_CB_DEBUG=2, NL_CB_CUSTOM=3 };
+enum nl_cb_type  { NL_CB_VALID=0, NL_CB_FINISH=1, NL_CB_OVERRUN=2, NL_CB_SKIPPED=3,
+                   NL_CB_ACK=4, NL_CB_MSG_IN=5, NL_CB_MSG_OUT=6, NL_CB_INVALID=7,
+                   NL_CB_SEQ_CHECK=8, NL_CB_SEND_ACK=9, NL_CB_DUMP_INTR=10 };
+struct nl_sock *nl_socket_alloc(void);
+struct nl_sock *nl_socket_alloc_cb(struct nl_cb *);
+void nl_socket_free(struct nl_sock *);
+int  nl_socket_get_fd(const struct nl_sock *);
+uint32_t nl_socket_get_local_port(const struct nl_sock *);
+void nl_socket_disable_seq_check(struct nl_sock *);
+void nl_socket_disable_auto_ack(struct nl_sock *);
+void nl_socket_enable_auto_ack(struct nl_sock *);
+int  nl_socket_add_membership(struct nl_sock *, int group);
+int  nl_socket_drop_membership(struct nl_sock *, int group);
+int  nl_socket_set_buffer_size(struct nl_sock *, int rx, int tx);
+int  nl_socket_set_nonblocking(struct nl_sock *);
+int  nl_socket_modify_cb(struct nl_sock *, int type, int kind, nl_recvmsg_msg_cb_t, void *);
+int  nl_socket_modify_err_cb(struct nl_sock *, int kind, nl_recvmsg_err_cb_t, void *);
+int  nl_connect(struct nl_sock *, int proto);
+void nl_close(struct nl_sock *);
+int  nl_send_auto(struct nl_sock *, struct nl_msg *);
+int  nl_send_sync(struct nl_sock *, struct nl_msg *);
+int  nl_recvmsgs(struct nl_sock *, struct nl_cb *);
+int  nl_recvmsgs_default(struct nl_sock *);
+int  nl_wait_for_ack(struct nl_sock *);
+struct nl_cb *nl_cb_alloc(int kind);
+struct nl_cb *nl_cb_clone(struct nl_cb *);
+struct nl_cb *nl_cb_get(struct nl_cb *);
+void nl_cb_put(struct nl_cb *);
+int  nl_cb_set(struct nl_cb *, int type, int kind, nl_recvmsg_msg_cb_t, void *);
+int  nl_cb_err(struct nl_cb *, int kind, nl_recvmsg_err_cb_t, void *);
+struct nl_msg *nlmsg_alloc(void);
+struct nl_msg *nlmsg_alloc_simple(int type, int flags);
+void nlmsg_free(struct nl_msg *);
+struct nlmsghdr *nlmsg_hdr(struct nl_msg *);
+void *nlmsg_data(const struct nlmsghdr *);
+int   nlmsg_datalen(const struct nlmsghdr *);
+int   nlmsg_attrlen(const struct nlmsghdr *, int hdrlen);
+struct nlattr *nlmsg_attrdata(const struct nlmsghdr *, int hdrlen);
+int   nlmsg_parse(const struct nlmsghdr *, int hdrlen, struct nlattr **tb, int maxtype, const void *policy);
+struct nlattr *nlmsg_find_attr(const struct nlmsghdr *, int hdrlen, int type);
+struct nlmsghdr *nlmsg_put(struct nl_msg *, uint32_t pid, uint32_t seq, int type, int payload, int flags);
+void *nlmsg_reserve(struct nl_msg *, size_t len, size_t pad);
+int   nlmsg_append(struct nl_msg *, const void *data, size_t len, size_t pad);
+int   nla_put(struct nl_msg *, int type, int len, const void *data);
+int   nla_put_u8(struct nl_msg *, int type, uint8_t v);
+int   nla_put_u16(struct nl_msg *, int type, uint16_t v);
+int   nla_put_u32(struct nl_msg *, int type, uint32_t v);
+int   nla_put_u64(struct nl_msg *, int type, uint64_t v);
+int   nla_put_string(struct nl_msg *, int type, const char *str);
+int   nla_put_flag(struct nl_msg *, int type);
+struct nlattr *nla_nest_start(struct nl_msg *, int type);
+int   nla_nest_end(struct nl_msg *, struct nlattr *start);
+void  nla_nest_cancel(struct nl_msg *, struct nlattr *start);
+uint8_t  nla_get_u8(const struct nlattr *);
+uint16_t nla_get_u16(const struct nlattr *);
+uint32_t nla_get_u32(const struct nlattr *);
+uint64_t nla_get_u64(const struct nlattr *);
+const char *nla_get_string(const struct nlattr *);
+int   nla_type(const struct nlattr *);
+void *nla_data(const struct nlattr *);
+int   nla_len(const struct nlattr *);
+int   nla_ok(const struct nlattr *, int rem);
+struct nlattr *nla_next(const struct nlattr *, int *rem);
+int   nla_parse(struct nlattr **tb, int maxtype, const struct nlattr *head, int len, const void *policy);
+int   nla_parse_nested(struct nlattr **tb, int maxtype, const struct nlattr *attr, const void *policy);
+struct nlattr *nla_find(const struct nlattr *head, int len, int type);
+int   nla_total_size(int payload);
+int   nla_attr_size(int payload);
+const char *nl_geterror(int err);
+HDR
+
+cat > "$DESTDIR/include/netlink/genl/genl.h" << 'HDR'
+#pragma once
+#include <netlink/netlink.h>
+struct genlmsghdr { uint8_t cmd; uint8_t version; uint16_t reserved; };
+#define GENL_HDRLEN 4
+int   genl_connect(struct nl_sock *);
+void *genlmsg_put(struct nl_msg *, uint32_t pid, uint32_t seq, int family, int hdrlen, int flags, uint8_t cmd, uint8_t version);
+struct genlmsghdr *genlmsg_hdr(const struct nlmsghdr *);
+void *genlmsg_data(const struct genlmsghdr *);
+struct nlattr *genlmsg_attrdata(const struct genlmsghdr *, int hdrlen);
+int   genlmsg_attrlen(const struct genlmsghdr *, int hdrlen);
+int   genlmsg_valid_hdr(const struct nlmsghdr *, int hdrlen);
+int   genlmsg_parse(const struct nlmsghdr *, int hdrlen, struct nlattr **tb, int maxtype, const void *policy);
+int   genl_send_simple(struct nl_sock *, int family, uint8_t cmd, uint8_t version, int flags);
+HDR
+
+cat > "$DESTDIR/include/netlink/genl/ctrl.h" << 'HDR'
+#pragma once
+#include <netlink/genl/genl.h>
+struct genl_family;
+int genl_ctrl_alloc_cache(struct nl_sock *, struct nl_cache **result);
+int genl_ctrl_resolve(struct nl_sock *, const char *name);
+int genl_ctrl_resolve_grp(struct nl_sock *, const char *family, const char *grp);
+struct genl_family *genl_ctrl_search(struct nl_cache *, int id);
+struct genl_family *genl_ctrl_search_by_name(struct nl_cache *, const char *name);
+uint16_t genl_family_get_id(const struct genl_family *);
+const char *genl_family_get_name(const struct genl_family *);
+void genl_family_put(struct genl_family *);
+HDR
+
+cat > "$DESTDIR/include/netlink/genl/family.h" << 'HDR'
+#pragma once
+#include <netlink/genl/genl.h>
+struct genl_family;
+struct genl_family *genl_family_alloc(void);
+void genl_family_put(struct genl_family *);
+uint16_t genl_family_get_id(const struct genl_family *);
+void genl_family_set_id(struct genl_family *, uint16_t);
+const char *genl_family_get_name(const struct genl_family *);
+void genl_family_set_name(struct genl_family *, const char *);
+uint32_t genl_family_get_version(const struct genl_family *);
+void genl_family_set_version(struct genl_family *, uint32_t);
+uint32_t genl_family_get_hdrsize(const struct genl_family *);
+void genl_family_set_hdrsize(struct genl_family *, uint32_t);
+uint32_t genl_family_get_maxattr(const struct genl_family *);
+void genl_family_set_maxattr(struct genl_family *, uint32_t);
+HDR
+
+# pkg-config files so the hostapd/wpa_supplicant build can find -lnl-3
+mkdir -p "$DESTDIR/lib/pkgconfig"
+cat > "$DESTDIR/lib/pkgconfig/libnl-3.0.pc" << 'PC'
+prefix=/
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include/netlink
+Name: libnl-3.0
+Description: nloxide netlink library (libnl-3 compatible)
+Version: 3.11.0
+Libs: -L${libdir} -lnl-3
+Cflags: -I${includedir}/..
+PC
+cat > "$DESTDIR/lib/pkgconfig/libnl-genl-3.0.pc" << 'PC'
+prefix=/
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include/netlink
+Name: libnl-genl-3.0
+Description: nloxide generic netlink (libnl-genl-3 compatible)
+Version: 3.11.0
+Libs: -L${libdir} -lnl-genl-3
+Requires: libnl-3.0
+Cflags: -I${includedir}/..
+PC
+
+llvm-strip --strip-debug "$DESTDIR/lib/libnl-3.so.200" 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "rust", "jonerix-headers"]
