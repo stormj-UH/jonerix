@@ -467,6 +467,225 @@ start() {{
     enable_openrc_service(root, "tailscale-firstboot", "default")
 
 
+# ----------------------------------------------------------------------------
+# Restricted-firmware opt-in installer
+# ----------------------------------------------------------------------------
+#
+# jonerix's runtime is permissive-only by policy (see CLAUDE.md). Two
+# Pi-specific components that most users want live on the wrong side of
+# that line and are NOT shipped in this image:
+#
+#   1. Linux kernel modules (GPL-2.0) -- needed for WiFi, Bluetooth, USB
+#      serial, and basically every non-built-in peripheral driver.
+#   2. Broadcom/Cypress WiFi firmware blobs (proprietary, Broadcom
+#      redistributable) -- needed for the CYW43455 on the Pi 5 to come up
+#      as wlan0.
+#
+# Rather than bake them in, we install a post-install helper at
+# /usr/local/sbin/jonerix-pi5-restricted that shows the user the license
+# URLs, asks for explicit consent, and only then downloads and installs
+# the bits from their upstream sources (raspberrypi/firmware for kernel
+# modules, RPi-Distro/firmware-nonfree for WiFi blobs).
+#
+# A /etc/motd banner + /etc/profile.d snippet point users at the script
+# on first login so they're not left wondering why wlan0 is absent.
+
+
+RESTRICTED_FIRMWARE_TAG = "1.20240306"  # same pin as FIRMWARE_REPO_TAG
+RESTRICTED_NONFREE_TAG = "bookworm"     # RPi-Distro/firmware-nonfree branch
+
+
+def write_restricted_installer(root: Path) -> None:
+    """Drop /usr/local/sbin/jonerix-pi5-restricted. POSIX sh, stdlib-only
+    busybox/toybox utilities + curl. Asks for license consent, then fetches
+    kernel modules + WiFi firmware from upstream on success.
+    """
+    # /bin/sh on jonerix is mksh; we stick to POSIX features only.
+    script = f"""#!/bin/sh
+# jonerix-pi5-restricted -- install non-permissive Pi 5 components that
+# jonerix deliberately does not ship with the base image. Prompts for
+# explicit license consent and only proceeds on an unambiguous "yes".
+#
+# Installed by image/pi5/build-image.py. Safe to re-run: already-present
+# files are skipped, and the done-marker suppresses the motd nag.
+
+set -eu
+
+DONE_MARKER=/var/lib/jonerix/pi5-restricted.done
+FIRMWARE_TAG={RESTRICTED_FIRMWARE_TAG!r}
+NONFREE_TAG={RESTRICTED_NONFREE_TAG!r}
+FIRMWARE_URL="https://github.com/raspberrypi/firmware/archive/refs/tags/$FIRMWARE_TAG.tar.gz"
+NONFREE_URL="https://github.com/RPi-Distro/firmware-nonfree/archive/refs/heads/$NONFREE_TAG.tar.gz"
+
+log() {{ printf '[pi5-restricted] %s\\n' "$*"; }}
+die() {{ printf '[pi5-restricted] ERROR: %s\\n' "$*" >&2; exit 1; }}
+
+[ "$(id -u)" -eq 0 ] || die "must run as root (try: doas $0)"
+
+command -v curl >/dev/null 2>&1 || die "curl is required (jpkg install curl)"
+command -v bsdtar >/dev/null 2>&1 || die "bsdtar is required (jpkg install bsdtar)"
+
+cat <<EOF
+
+========================================================================
+  jonerix Pi 5 -- optional restricted components
+========================================================================
+
+jonerix's userland is permissive-only (MIT / BSD / Apache-2.0 / ISC /
+etc) by policy. The following components are typically wanted on a Pi 5
+but sit outside that policy, so the base image does NOT ship them:
+
+  1. Linux kernel modules                            (GPL-2.0)
+     From: https://github.com/raspberrypi/firmware
+           (boot/modules/\\$KVER, tag $FIRMWARE_TAG)
+     Needed for: WiFi (brcmfmac / cyw43), Bluetooth, USB serial,
+                 sound, almost any non-built-in driver.
+     Install size: ~150 MB into /lib/modules/\\$KVER/
+
+  2. Broadcom / Cypress WiFi firmware blobs          (proprietary)
+     From: https://github.com/RPi-Distro/firmware-nonfree
+           (brcm/*, cypress/*, branch $NONFREE_TAG)
+     License: Broadcom Redistributable Firmware Licence --
+              https://github.com/RPi-Distro/firmware-nonfree/blob/$NONFREE_TAG/LICENCE.broadcom_bcm43xx
+     Needed for: wlan0 on the CYW43455 radio shipped with Pi 5.
+     Install size: ~35 MB into /lib/firmware/
+
+Download size: ~180 MB total (cached under /var/cache/jonerix/)
+Install size:  ~185 MB on /
+
+Do you accept the Linux kernel modules GPL-2.0 license AND the Broadcom
+Redistributable Firmware Licence, and want jonerix to download and
+install the above components now?
+
+  [y]  yes, install both
+  [k]  kernel modules only (GPL-2.0 only)
+  [w]  WiFi firmware only (Broadcom licence only)
+  [n]  no, skip (default)
+
+EOF
+
+printf "Choice [y/k/w/N]: "
+read -r ANSWER || ANSWER=n
+case "$ANSWER" in
+    y|Y) INSTALL_MODULES=1; INSTALL_WIFI=1 ;;
+    k|K) INSTALL_MODULES=1; INSTALL_WIFI=0 ;;
+    w|W) INSTALL_MODULES=0; INSTALL_WIFI=1 ;;
+    *)   log "declined -- nothing installed"; exit 0 ;;
+esac
+
+mkdir -p /var/cache/jonerix /var/lib/jonerix
+CACHE=/var/cache/jonerix
+
+# --- Kernel modules -----------------------------------------------------
+if [ "$INSTALL_MODULES" = 1 ]; then
+    log "downloading raspberrypi/firmware $FIRMWARE_TAG for kernel modules..."
+    TARBALL="$CACHE/firmware-$FIRMWARE_TAG.tar.gz"
+    [ -s "$TARBALL" ] || curl -fL --retry 3 -o "$TARBALL" "$FIRMWARE_URL"
+
+    STAGING=$(mktemp -d -p "$CACHE" modules.XXXXXX)
+    bsdtar -xf "$TARBALL" -C "$STAGING" \\
+        "firmware-$FIRMWARE_TAG/modules/" 2>/dev/null || \\
+        bsdtar -xf "$TARBALL" -C "$STAGING" --include='*/modules/*' || \\
+        die "tarball has no modules/ directory"
+
+    MODSRC="$STAGING/firmware-$FIRMWARE_TAG/modules"
+    [ -d "$MODSRC" ] || die "extract left no modules dir at $MODSRC"
+    for kdir in "$MODSRC"/*; do
+        kver=$(basename "$kdir")
+        log "installing /lib/modules/$kver (~$(du -sh "$kdir" | cut -f1))"
+        mkdir -p /lib/modules
+        # Preserve existing; copy new.
+        cp -a "$kdir" /lib/modules/
+    done
+    rm -rf "$STAGING"
+    # Regenerate module dependency maps if depmod exists.
+    if command -v depmod >/dev/null 2>&1; then
+        for kdir in /lib/modules/*/; do
+            kver=$(basename "$kdir")
+            log "depmod -a $kver"
+            depmod -a "$kver" || log "depmod failed for $kver (non-fatal)"
+        done
+    else
+        log "depmod not present; modules.dep shipped in tarball will be used"
+    fi
+fi
+
+# --- WiFi firmware ------------------------------------------------------
+if [ "$INSTALL_WIFI" = 1 ]; then
+    log "downloading RPi-Distro/firmware-nonfree $NONFREE_TAG for WiFi blobs..."
+    NONTARBALL="$CACHE/firmware-nonfree-$NONFREE_TAG.tar.gz"
+    [ -s "$NONTARBALL" ] || curl -fL --retry 3 -o "$NONTARBALL" "$NONFREE_URL"
+
+    STAGING=$(mktemp -d -p "$CACHE" wifi.XXXXXX)
+    bsdtar -xf "$NONTARBALL" -C "$STAGING"
+    # firmware-nonfree-$branch/ layout: brcm/, cypress/, and some others.
+    NONSRC=$(find "$STAGING" -maxdepth 1 -mindepth 1 -type d | head -n1)
+    [ -d "$NONSRC" ] || die "firmware-nonfree tarball empty"
+
+    mkdir -p /lib/firmware/brcm /lib/firmware/cypress
+    if [ -d "$NONSRC/brcm" ]; then
+        cp -a "$NONSRC/brcm"/. /lib/firmware/brcm/
+    fi
+    if [ -d "$NONSRC/cypress" ]; then
+        cp -a "$NONSRC/cypress"/. /lib/firmware/cypress/
+    fi
+    # Preserve the license file alongside the blobs so it's present on-disk.
+    for lic in LICENCE.broadcom_bcm43xx LICENSE LICENSE.broadcom; do
+        if [ -f "$NONSRC/$lic" ]; then
+            install -Dm 644 "$NONSRC/$lic" "/lib/firmware/brcm/$lic"
+        fi
+    done
+    rm -rf "$STAGING"
+
+    # raspi5-fixups ships the brcmfmac->cyfmac symlinks; re-run its service
+    # if it's present to wire them up for the newly installed blobs.
+    if [ -x /etc/init.d/pi5-wifi ]; then
+        log "running pi5-wifi to apply cyfmac -> brcmfmac symlinks"
+        /etc/init.d/pi5-wifi start || log "pi5-wifi start failed (non-fatal)"
+    fi
+fi
+
+: > "$DONE_MARKER"
+log "done. Reboot or modprobe brcmfmac to bring up wlan0."
+"""
+    script_path = root / "usr" / "local" / "sbin" / "jonerix-pi5-restricted"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    write_file(script_path, script, mode=0o755)
+
+
+def write_restricted_motd(root: Path) -> None:
+    """First-boot banner pointing users at jonerix-pi5-restricted.
+
+    Lives at /etc/motd so it shows on SSH login and on any getty. The
+    helper script drops a /var/lib/jonerix/pi5-restricted.done sentinel
+    when it finishes; we key the /etc/profile.d banner off that so the
+    message goes away once restricted components are installed.
+    """
+    motd = (
+        "\n"
+        "  jonerix Pi 5 -- base image (permissive-only)\n"
+        "\n"
+        "  WiFi, Bluetooth, and loadable kernel modules are NOT preinstalled.\n"
+        "  Run 'sudo jonerix-pi5-restricted' to review the licences and opt\n"
+        "  into downloading them from raspberrypi.org / RPi-Distro.\n"
+        "\n"
+    )
+    write_file(root / "etc" / "motd", motd)
+
+    # Also emit a reminder on interactive shells until the marker exists.
+    profile_d = root / "etc" / "profile.d"
+    profile_d.mkdir(parents=True, exist_ok=True)
+    profile_script = (
+        '# Added by image/pi5/build-image.py -- nudge on login until the\n'
+        '# user has run jonerix-pi5-restricted at least once.\n'
+        'if [ ! -e /var/lib/jonerix/pi5-restricted.done ] && [ -t 1 ]; then\n'
+        '    printf "\\n  WiFi/BT/kernel modules not installed.\\n"\n'
+        '    printf "  Run: sudo jonerix-pi5-restricted\\n\\n"\n'
+        'fi\n'
+    )
+    write_file(profile_d / "pi5-restricted-nag.sh", profile_script, mode=0o644)
+
+
 def _shell_quote(s: str) -> str:
     """POSIX-safe single-quote-wrapped literal for embedding in shell."""
     return "'" + s.replace("'", "'\\''") + "'"
@@ -638,6 +857,14 @@ def build(args: argparse.Namespace) -> int:
 
                 if args.tailscale_authkey:
                     write_tailscale_oneshot(mnt_root, args.tailscale_authkey)
+
+                # Restricted-firmware opt-in path: drop the helper + the
+                # motd/login nag. Nothing is fetched at build time; the
+                # user runs jonerix-pi5-restricted after first boot and
+                # explicitly accepts each license before any GPL kernel
+                # module or Broadcom blob touches the filesystem.
+                write_restricted_installer(mnt_root)
+                write_restricted_motd(mnt_root)
 
                 enable_default_services(mnt_root)
 
