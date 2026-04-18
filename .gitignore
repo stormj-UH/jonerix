@@ -14,6 +14,7 @@ output/
 *.dSYM/
 # Exceptions: directories named *.d that should be tracked
 !config/openrc/init.d/
+!packages/*/*/init.d/
 # Test binaries (keep .c sources)
 packages/jpkg/tests/test_toml
 packages/jpkg/tests/test_pkg
