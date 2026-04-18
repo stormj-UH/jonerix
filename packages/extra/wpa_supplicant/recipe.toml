@@ -29,17 +29,18 @@ CONFIG_PKCS12=y
 CONFIG_WPS=y
 CONFIG_CTRL_IFACE=y
 CONF"""
-# wpa_supplicant's Makefile uses GNU make features — build uses jmake.
+# wpa_supplicant's Makefile uses $(abspath ../src) which bmake (jmake) does not
+# implement — it expands to literally nothing, so the -I paths vanish. Supply
+# ABSOLUTE paths via EXTRA_CFLAGS (honored at wpa_supplicant/Makefile:49).
 # CONFIG_LIBNL32=y + LIBNL_INC=/include bypasses the pkg-config probe in
 # src/drivers/drivers.mak so jmake does not need a pkg-config binary.
-# EXTRA_CFLAGS supplies the -I paths that $(abspath ../src) normally provides;
-# jmake's abspath evaluation differs from GNU make when -C is used.
-build = """jmake -C wpa_supplicant \
+build = """ROOT=$(pwd)
+jmake -C wpa_supplicant \
   CC=clang \
   LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" \
   CONFIG_LIBNL32=y \
   LIBNL_INC=/include \
-  EXTRA_CFLAGS="-I../src -I../src/utils -I/include" \
+  EXTRA_CFLAGS="-I$ROOT/src -I$ROOT/src/utils -I/include" \
   -j$(nproc)"""
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/wpa_supplicant
 install -m 755 wpa_supplicant/wpa_supplicant $DESTDIR/bin/wpa_supplicant
