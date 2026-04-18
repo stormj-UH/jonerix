@@ -31,10 +31,18 @@ CONFIG_PKCS12=y
 CONFIG_WPS=y
 CONFIG_ACS=y
 CONF"""
-# NOTE: hostapd's Makefile uses GNU make features (ifdef/ifndef/ifeq, $(wildcard),
-# $(shell)). Build requires jmake at build time.
-# Also needs nl80211 kernel headers which are not yet packaged for jonerix.
-build = "jmake -C hostapd CC=clang LDFLAGS=\"--rtlib=compiler-rt -fuse-ld=lld\" -j$(nproc)"
+# hostapd's Makefile uses GNU make features — build uses jmake.
+# CONFIG_LIBNL32=y + LIBNL_INC=/include bypasses the pkg-config probe in
+# src/drivers/drivers.mak so jmake does not need a pkg-config binary.
+# EXTRA_CFLAGS supplies the -I paths that $(abspath ../src) normally provides;
+# jmake's abspath evaluation differs from GNU make when -C is used.
+build = """jmake -C hostapd \
+  CC=clang \
+  LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" \
+  CONFIG_LIBNL32=y \
+  LIBNL_INC=/include \
+  EXTRA_CFLAGS="-I../src -I../src/utils -I/include" \
+  -j$(nproc)"""
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/hostapd
 install -m 755 hostapd/hostapd $DESTDIR/bin/hostapd
 install -m 755 hostapd/hostapd_cli $DESTDIR/bin/hostapd_cli
@@ -42,4 +50,4 @@ llvm-strip --strip-all $DESTDIR/bin/hostapd $DESTDIR/bin/hostapd_cli 2>/dev/null
 
 [depends]
 runtime = ["musl", "libressl", "nloxide"]
-build = ["clang", "jmake", "jonerix-headers", "nloxide"]
+build = ["clang", "jmake", "jonerix-headers", "libressl", "nloxide"]
