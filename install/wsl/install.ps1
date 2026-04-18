@@ -113,14 +113,11 @@ if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
     Fail "wsl.exe not found. Enable WSL via an elevated PowerShell:  wsl --install --no-distribution"
 }
 
-# Ensure WSL2 is the default version — `wsl --import ... --version 2` sets
-# it per-distro but older wsl.exe ignores that flag when the kernel isn't
-# installed. `wsl --set-default-version 2` is a no-op if already set.
-Write-Step "Ensuring default WSL version is 2..."
-$null = Invoke-Wsl @('--set-default-version','2')
-if ($LASTEXITCODE -ne 0) {
-    Write-Warn "Could not set default WSL version to 2. If import fails, run: wsl --install --no-distribution"
-}
+# Skip `wsl --set-default-version 2`: on Win11 23H2+ WSL2 is default, and
+# on some configurations that command blocks indefinitely on an invisible
+# platform-component prompt that our Invoke-Wsl wrapper can't surface.
+# We pass `--version 2` to `wsl --import` below, which is the only setting
+# that actually matters for jonerix.
 
 # ---------------------------------------------------------------------------
 # 2. Detect architecture
@@ -184,15 +181,19 @@ if ($RootfsIsLocal) {
 # ---------------------------------------------------------------------------
 Write-Header "Installing WSL distribution"
 
-# `wsl --list --quiet` output is UTF-16LE; normalize to plain lines.
-$listOut = Invoke-Wsl @('--list','--quiet')
+# Pre-check whether a distro of this name is already registered. We call
+# wsl.exe directly (not through Invoke-Wsl) because the wrapper's stderr
+# merge + Out-String buffer can deadlock with wsl.exe's UTF-16LE writes
+# on some Windows builds — observed as "hangs after the `Installing WSL
+# distribution` header with no output".
+$listOut = & wsl.exe --list --quiet 2>$null | Out-String
 $existingDistros = $listOut -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 if ($existingDistros -contains $DistroName) {
     Write-Warn "A WSL distribution named '$DistroName' already exists."
     $confirm = Read-Host "Unregister the existing '$DistroName' and reinstall? [y/N]"
     if ($confirm -imatch '^y') {
         Write-Step "Unregistering existing $DistroName ..."
-        $null = Invoke-Wsl @('--unregister', $DistroName)
+        & wsl.exe --unregister $DistroName 2>&1 | Out-Null
         Write-Success "Unregistered."
     } else {
         Write-Host "Aborted by user." -ForegroundColor Yellow
