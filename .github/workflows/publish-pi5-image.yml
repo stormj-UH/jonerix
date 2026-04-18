@@ -1,0 +1,166 @@
+name: Publish Pi 5 image
+
+on:
+  push:
+    tags:
+      - 'pi5-image-v*'
+  workflow_dispatch:
+    inputs:
+      size:
+        description: 'Image size (e.g. 4G, 8G)'
+        required: false
+        default: '4G'
+      hostname:
+        description: 'Hostname baked into the image'
+        required: false
+        default: 'jonerix-pi'
+      packages:
+        description: 'Comma-separated extra packages (additive to defaults)'
+        required: false
+        default: ''
+
+# Only one publish run at a time -- they all touch the same GH release.
+concurrency:
+  group: publish-pi5-image
+  cancel-in-progress: false
+
+env:
+  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder-arm64
+
+jobs:
+  build:
+    name: Build Pi 5 image (aarch64)
+    # Native arm64 runner so jpkg resolves aarch64 packages without emulation.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Cache firmware tarball
+        id: fw-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/pi5-firmware.tar.gz
+          # Pin cache key to the tag the Python script expects. Bump when
+          # FIRMWARE_REPO_TAG in build-image.py changes.
+          key: pi5-firmware-1.20240306
+
+      - name: Prepare output directory
+        run: |
+          mkdir -p /tmp/pi5-out
+          chmod 0777 /tmp/pi5-out
+
+      - name: Build image in jonerix:builder container
+        env:
+          IMG_SIZE: ${{ inputs.size || '4G' }}
+          IMG_HOSTNAME: ${{ inputs.hostname || 'jonerix-pi' }}
+          IMG_PACKAGES: ${{ inputs.packages || '' }}
+        run: |
+          # --privileged gives us losetup + loop partscan. Hosted runners do
+          # not allow losetup from a non-privileged container.
+          docker run --rm --privileged --entrypoint "" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "/tmp/pi5-out:/out" \
+            -v "/tmp/pi5-firmware.tar.gz:/cache/firmware.tar.gz" \
+            -w /workspace \
+            -e IMG_SIZE \
+            -e IMG_HOSTNAME \
+            -e IMG_PACKAGES \
+            "$BUILDER_IMAGE_AARCH64" /bin/sh -euc '
+              set -e
+              # jpkg must be on PATH inside the builder image; the builder
+              # image ships one, but rebuild if missing so this still works
+              # against an older cached image.
+              if ! command -v jpkg >/dev/null 2>&1; then
+                cd /workspace/packages/jpkg
+                clang -std=c11 -Os -fuse-ld=lld \
+                  --rtlib=compiler-rt --unwindlib=none \
+                  -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
+                  -o /bin/jpkg src/*.c -ltls -lssl -lcrypto -lzstd
+                cd /workspace
+              fi
+
+              # Tools the Python script shells out to -- apk-install any
+              # that the builder image somehow lacks. Build-time only; none
+              # of these end up in the produced image.
+              for need in sfdisk mkfs.vfat mkfs.ext4 losetup blkid zstd bsdtar python3; do
+                if ! command -v "$need" >/dev/null 2>&1; then
+                  echo "missing: $need"
+                  apk add --no-cache util-linux dosfstools e2fsprogs zstd libarchive-tools python3 || true
+                  break
+                fi
+              done
+
+              # Pre-populate the firmware cache if the CI cache restored one.
+              FW_ARG=""
+              if [ -s /cache/firmware.tar.gz ]; then
+                FW_ARG="--firmware-cache /cache/firmware.tar.gz"
+              else
+                # Empty cache file from actions/cache miss; let the script
+                # download fresh and stash the result back into the cache.
+                FW_ARG="--firmware-cache /cache/firmware.tar.gz"
+              fi
+
+              PKG_ARG=""
+              if [ -n "${IMG_PACKAGES:-}" ]; then
+                PKG_ARG="--packages ${IMG_PACKAGES}"
+              fi
+
+              jpkg update
+
+              python3 /workspace/image/pi5/build-image.py \
+                --output /out/jonerix-pi5.img \
+                --size "${IMG_SIZE}" \
+                --hostname "${IMG_HOSTNAME}" \
+                $PKG_ARG \
+                $FW_ARG
+            '
+
+      - name: List output
+        run: ls -lh /tmp/pi5-out
+
+      # ── Tag push: publish to a GitHub Release ────────────────────────────
+      - name: Create release (tag push)
+        if: startsWith(github.ref, 'refs/tags/pi5-image-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GH_REPO" > /dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GH_REPO" \
+              --title "jonerix Pi 5 image ${TAG}" \
+              --notes "Bootable Raspberry Pi 5 image built by image/pi5/build-image.py. Flash with: \`zstd -d < jonerix-pi5.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync\`"
+          fi
+
+      - name: Upload release assets (tag push)
+        if: startsWith(github.ref, 'refs/tags/pi5-image-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release upload "$TAG" --repo "$GH_REPO" --clobber \
+            /tmp/pi5-out/jonerix-pi5.img.zst \
+            /tmp/pi5-out/SHA256SUMS
+
+      # ── Manual dispatch: upload as workflow artifact instead ─────────────
+      - name: Upload workflow artifact (manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jonerix-pi5-image
+          path: |
+            /tmp/pi5-out/jonerix-pi5.img.zst
+            /tmp/pi5-out/SHA256SUMS
+          if-no-files-found: error
+          # Hosted runners give artifacts a 90-day default; keep short since
+          # manual runs are for ad-hoc testing, not distribution.
+          retention-days: 14
