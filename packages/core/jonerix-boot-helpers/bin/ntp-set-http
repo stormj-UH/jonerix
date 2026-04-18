@@ -35,10 +35,22 @@ m2n() {
     esac
 }
 
-for host in google.com cloudflare.com www.yahoo.com; do
+# Probe list — IPs first so we work with DNS down, hostnames as a
+# fallback for networks where the IPs above are blocked. Cold boot on
+# an RTC-less host is the motivating case: unbound can't do DNSSEC
+# validation until the clock is sane, /etc/resolv.conf may still point
+# to a loopback that isn't running, and a captive portal may hijack
+# DNS. Cloudflare 1.1.1.1, Google 8.8.8.8, and Quad9 9.9.9.9 all
+# serve plain HTTP with a Date header (each responds with a 301
+# redirect to the HTTPS version — we only need the header, not the
+# body). Host: header is intentionally omitted; these public anycast
+# endpoints respond to anything.
+for host in 1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4 9.9.9.9 \
+            google.com cloudflare.com www.yahoo.com; do
     # -s silent, -k skip cert verify (we don't care — HTTP only),
-    # -I HEAD request, -m 5 5-sec timeout
-    HDR=$(curl -skI -m 5 "http://$host" 2>/dev/null | grep -i '^date:' | cut -d' ' -f2-)
+    # -I HEAD request, -m 5 5-sec timeout,
+    # --resolve-all / --no-buffer not used; we rely on stock curl.
+    HDR=$(curl -skI -m 5 "http://$host/" 2>/dev/null | grep -i '^date:' | cut -d' ' -f2-)
     [ -z "$HDR" ] && continue
 
     # Header format: "Tue, 14 Apr 2026 23:40:12 GMT"
