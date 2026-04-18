@@ -30,7 +30,7 @@ jonerix can rebuild itself from source using only the tools it ships:
 - **Python 3 + Node.js**: Built from source with Clang/musl
 - **Container runtime**: containerd + runc + nerdctl + CNI plugins, all from source
 
-The `jonerix:builder` image installs every tool from jpkg packages. It compiles C, Go, and Rust programs out of the box.
+The `jonerix:builder` image installs these tools from jpkg packages. It compiles C, Go, and Rust programs out of the box.
 
 ## Quick Start
 
@@ -161,16 +161,7 @@ Packages are hosted on GitHub Releases and built from source in CI for both x86_
 
 ### Merged /usr Layout
 
-jonerix uses a merged `/usr` layout where `/usr` is a symlink to `/`. All binaries live in `/bin`, all libraries in `/lib`, all headers in `/include`.
-
-### Bootstrap Process
-
-1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
-2. **All packages** are installed from the jpkg repository into a clean rootfs via `Dockerfile.minimal`
-3. **Final image** is assembled `FROM scratch` with zero GPL runtime components
-4. **Self-hosting**: `jonerix:builder` contains a full toolchain (Clang 21, Go 1.26, Rust 1.94) capable of rebuilding every package from source. The cycle `jonerix:minimal → jonerix:builder → jonerix:minimal` is proven at v1.1.2.
-
-Package recipes live in `packages/*/recipe.toml`. Build dependencies are declared explicitly; the package manager resolves and installs them in order.
+jonerix uses a merged `/usr` layout where `/usr` is a symlink to `/`. All binaries live in `/bin`, all libraries in `/lib`, all headers in `/include`
 
 ### Licensing Rule
 
