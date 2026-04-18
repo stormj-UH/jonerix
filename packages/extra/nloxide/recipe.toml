@@ -1,6 +1,6 @@
 [package]
 name = "nloxide"
-version = "0.1.0-r1"
+version = "0.1.0-r2"
 license = "BSD-2-Clause"
 description = "Clean-room netlink library (libnl-3 / libnl-genl-3 drop-in) written in Rust"
 
@@ -36,16 +36,17 @@ cp "$DESTDIR/lib/libnl-3.a" "$DESTDIR/lib/libnl-genl-3.a"
 # Stub headers — generated inline so no extra source files are needed
 cat > "$DESTDIR/include/netlink/netlink.h" << 'HDR'
 #pragma once
+/* Pull the kernel UAPI for struct nlmsghdr, nlattr, nlmsgerr, sockaddr_nl.
+ * Callers like hostapd/wpa_supplicant also include <linux/rtnetlink.h>
+ * which brings in <linux/netlink.h>, so redefining those structs here
+ * causes compile errors. Inherit them from the kernel header instead. */
+#include <linux/netlink.h>
 #include <stdint.h>
 #include <stddef.h>
 struct nl_sock;
 struct nl_cb;
 struct nl_msg;
 struct nl_cache;
-struct nlmsghdr { uint32_t nlmsg_len; uint16_t nlmsg_type; uint16_t nlmsg_flags; uint32_t nlmsg_seq; uint32_t nlmsg_pid; };
-struct nlattr    { uint16_t nla_len; uint16_t nla_type; };
-struct sockaddr_nl { uint16_t nl_family; uint16_t nl_pad; uint32_t nl_pid; uint32_t nl_groups; };
-struct nlmsgerr  { int error; struct nlmsghdr msg; };
 #define NL_OK   0
 #define NL_SKIP 1
 #define NL_STOP 2
@@ -80,6 +81,42 @@ enum nl_cb_kind  { NL_CB_DEFAULT=0, NL_CB_VERBOSE=1, NL_CB_DEBUG=2, NL_CB_CUSTOM
 enum nl_cb_type  { NL_CB_VALID=0, NL_CB_FINISH=1, NL_CB_OVERRUN=2, NL_CB_SKIPPED=3,
                    NL_CB_ACK=4, NL_CB_MSG_IN=5, NL_CB_MSG_OUT=6, NL_CB_INVALID=7,
                    NL_CB_SEQ_CHECK=8, NL_CB_SEND_ACK=9, NL_CB_DUMP_INTR=10 };
+/* NLE_* error codes */
+#define NLE_SUCCESS      0
+#define NLE_FAILURE      1
+#define NLE_INTR         2
+#define NLE_BAD_SOCK     3
+#define NLE_AGAIN        4
+#define NLE_NOMEM        5
+#define NLE_EXIST        6
+#define NLE_INVAL        7
+#define NLE_RANGE        8
+#define NLE_MSGSIZE      9
+#define NLE_OPNOTSUPP    10
+#define NLE_AF_NOSUPPORT 11
+#define NLE_OBJ_NOTFOUND 12
+#define NLE_NOATTR       13
+#define NLE_MISSING_ATTR 14
+#define NLE_AF_MISMATCH  15
+#define NLE_SEQ_MISMATCH 16
+#define NLE_MSG_OVERFLOW 17
+#define NLE_MSG_TRUNC    18
+#define NLE_NOADDR       19
+#define NLE_SRCRT_NOSUPPORT 20
+#define NLE_MSG_TOOSHORT 21
+#define NLE_MSGTYPE_NOSUPPORT 22
+#define NLE_OBJ_MISMATCH 23
+#define NLE_NOCACHE      24
+#define NLE_BUSY         25
+#define NLE_PROTO        26
+#define NLE_NOACCESS     27
+#define NLE_PERM         28
+#define NLE_PKTLOC_FILE  29
+#define NLE_PARSE_ERR    30
+#define NLE_NODEV        31
+#define NLE_IMMUTABLE    32
+#define NLE_DUMP_INTR    33
+#define NLE_ATTRSIZE     34
 struct nl_sock *nl_socket_alloc(void);
 struct nl_sock *nl_socket_alloc_cb(struct nl_cb *);
 void nl_socket_free(struct nl_sock *);
@@ -94,9 +131,13 @@ int  nl_socket_set_buffer_size(struct nl_sock *, int rx, int tx);
 int  nl_socket_set_nonblocking(struct nl_sock *);
 int  nl_socket_modify_cb(struct nl_sock *, int type, int kind, nl_recvmsg_msg_cb_t, void *);
 int  nl_socket_modify_err_cb(struct nl_sock *, int kind, nl_recvmsg_err_cb_t, void *);
+struct nl_cb *nl_socket_get_cb(const struct nl_sock *);
+void nl_socket_set_cb(struct nl_sock *, struct nl_cb *);
 int  nl_connect(struct nl_sock *, int proto);
 void nl_close(struct nl_sock *);
+int  nl_send(struct nl_sock *, struct nl_msg *);
 int  nl_send_auto(struct nl_sock *, struct nl_msg *);
+int  nl_send_auto_complete(struct nl_sock *, struct nl_msg *);
 int  nl_send_sync(struct nl_sock *, struct nl_msg *);
 int  nl_recvmsgs(struct nl_sock *, struct nl_cb *);
 int  nl_recvmsgs_default(struct nl_sock *);
@@ -146,6 +187,45 @@ struct nlattr *nla_find(const struct nlattr *head, int len, int type);
 int   nla_total_size(int payload);
 int   nla_attr_size(int payload);
 const char *nl_geterror(int err);
+/* signed getters and misc put/get completions */
+int8_t   nla_get_s8(const struct nlattr *);
+int16_t  nla_get_s16(const struct nlattr *);
+int32_t  nla_get_s32(const struct nlattr *);
+int64_t  nla_get_s64(const struct nlattr *);
+int nla_put_s8(struct nl_msg *, int type, int8_t v);
+int nla_put_s16(struct nl_msg *, int type, int16_t v);
+int nla_put_s32(struct nl_msg *, int type, int32_t v);
+int nla_put_s64(struct nl_msg *, int type, int64_t v);
+int nla_put_nested(struct nl_msg *, int type, const struct nl_msg *src);
+uint64_t nla_get_msecs(const struct nlattr *);
+int      nla_put_msecs(struct nl_msg *, int type, uint64_t ms);
+int      nla_get_flag(const struct nlattr *);
+/* message extras */
+struct nl_msg *nlmsg_alloc_size(size_t max);
+int            nlmsg_total_size(int payload);
+/* nl_cache */
+void nl_cache_free(struct nl_cache *);
+/* netlink attribute policy types (used by nla_parse's policy arg) */
+enum {
+    NLA_UNSPEC=0, NLA_U8=1, NLA_U16=2, NLA_U32=3, NLA_U64=4,
+    NLA_STRING=5, NLA_FLAG=6, NLA_MSECS=7, NLA_NESTED=8,
+    NLA_NESTED_ARRAY=9, NLA_NUL_STRING=10, NLA_BINARY=11,
+    NLA_S8=12, NLA_S16=13, NLA_S32=14, NLA_S64=15,
+    NLA_BITFIELD32=16, NLA_REJECT=17, NLA_BE16=18, NLA_BE32=19,
+    NLA_SINT=20, NLA_UINT=21, __NLA_TYPE_MAX,
+};
+#define NLA_TYPE_MAX (__NLA_TYPE_MAX - 1)
+struct nla_policy { uint16_t type; uint16_t minlen; uint16_t maxlen; };
+/* nla_for_each_nested(pos, nla, rem) - iterates nested attributes */
+#define nla_for_each_nested(pos, nla, rem) \\
+    for (pos = (struct nlattr *)nla_data(nla), rem = nla_len(nla); \\
+         nla_ok(pos, rem); \\
+         pos = nla_next(pos, &(rem)))
+/* nla_for_each_attr(pos, head, len, rem) - iterates a flat attribute list */
+#define nla_for_each_attr(pos, head, len, rem) \\
+    for (pos = head, rem = len; \\
+         nla_ok(pos, rem); \\
+         pos = nla_next(pos, &(rem)))
 HDR
 
 cat > "$DESTDIR/include/netlink/genl/genl.h" << 'HDR'
@@ -167,6 +247,44 @@ HDR
 cat > "$DESTDIR/include/netlink/genl/ctrl.h" << 'HDR'
 #pragma once
 #include <netlink/genl/genl.h>
+/* CTRL_* UAPI (matches linux/genetlink.h) */
+#define GENL_ID_CTRL         0x10
+enum {
+    CTRL_CMD_UNSPEC       = 0,
+    CTRL_CMD_NEWFAMILY    = 1,
+    CTRL_CMD_DELFAMILY    = 2,
+    CTRL_CMD_GETFAMILY    = 3,
+    CTRL_CMD_NEWOPS       = 4,
+    CTRL_CMD_DELOPS       = 5,
+    CTRL_CMD_GETOPS       = 6,
+    CTRL_CMD_NEWMCAST_GRP = 7,
+    CTRL_CMD_DELMCAST_GRP = 8,
+    CTRL_CMD_GETMCAST_GRP = 9,
+    __CTRL_CMD_MAX,
+};
+#define CTRL_CMD_MAX (__CTRL_CMD_MAX - 1)
+enum {
+    CTRL_ATTR_UNSPEC        = 0,
+    CTRL_ATTR_FAMILY_ID     = 1,
+    CTRL_ATTR_FAMILY_NAME   = 2,
+    CTRL_ATTR_VERSION       = 3,
+    CTRL_ATTR_HDRSIZE       = 4,
+    CTRL_ATTR_MAXATTR       = 5,
+    CTRL_ATTR_OPS           = 6,
+    CTRL_ATTR_MCAST_GROUPS  = 7,
+    CTRL_ATTR_POLICY        = 8,
+    CTRL_ATTR_OP_POLICY     = 9,
+    CTRL_ATTR_OP            = 10,
+    __CTRL_ATTR_MAX,
+};
+#define CTRL_ATTR_MAX (__CTRL_ATTR_MAX - 1)
+enum {
+    CTRL_ATTR_MCAST_GRP_UNSPEC = 0,
+    CTRL_ATTR_MCAST_GRP_NAME   = 1,
+    CTRL_ATTR_MCAST_GRP_ID     = 2,
+    __CTRL_ATTR_MCAST_GRP_MAX,
+};
+#define CTRL_ATTR_MCAST_GRP_MAX (__CTRL_ATTR_MCAST_GRP_MAX - 1)
 struct genl_family;
 int genl_ctrl_alloc_cache(struct nl_sock *, struct nl_cache **result);
 int genl_ctrl_resolve(struct nl_sock *, const char *name);
