@@ -1,0 +1,35 @@
+[package]
+name = "llvm-all"
+version = "21.1.2"
+license = "Apache-2.0"
+description = "Full LLVM toolchain with all 80+ clang/llvm tools — pairs with slim llvm"
+
+# llvm-all shares its source build with `llvm`. The `llvm` package in
+# packages/develop/ produces a SLIM toolchain (clang, lld, core llvm-*
+# tools) intended for the builder image and most build use. llvm-all
+# ships the full set — llvm-dwp, llvm-mca, llvm-opt-report, bugpoint,
+# dsymutil, clang-tidy, clang-format, etc — for development/debugging.
+#
+# This recipe is intentionally lightweight: scripts/build-all.sh does not
+# build it directly (not in build-order.txt). The artifacts on the release
+# were produced by `scripts/repack-jpkg.py` from the existing llvm source
+# build — same payload, different manifest. A future rebuild should teach
+# build-all how to split the LLVM source build into two jpkgs instead of
+# running the whole thing twice.
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+
+[build]
+system = "custom"
+build = """
+echo "llvm-all is repackaged from the llvm source build — not built directly."
+echo "See packages/develop/llvm/recipe.toml for the source build."
+exit 1
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "libcxx", "zstd", "zlib"]
+build = ["clang", "cmake", "samurai", "python3", "libcxx"]
