@@ -171,16 +171,28 @@ GNU make for bootstrap).
 
 ## Known gaps / rough edges
 
-- **No kernel module tree shipped in `/lib/modules/$(uname -r)/`.** The
-  firmware tarball includes the kernel binary but not the module tree;
-  `raspi5-fixups`'s `pi5-wifi` service loads `brcmfmac-cyw`/`brcmfmac`
-  which live in the module tree. A proper solution is a `linux-rpi`
-  aarch64 recipe (tracked in `docs/plans/raspberry-pi.md` section 9 Tier 1).
-  Until that recipe lands, WiFi won't come up on a pure-built image --
-  wired ethernet + SSH works fine.
-- **No brcmfmac firmware blobs.** Same origin as above -- the WiFi firmware
-  lives in `linux-firmware` / `RPi-Distro/firmware-nonfree`, not in the
-  `raspberrypi/firmware` tarball we pull. Another follow-on package.
+- **Kernel modules and Broadcom WiFi/BT firmware are NOT shipped.** This is
+  deliberate: jonerix's runtime is permissive-only (MIT / BSD / Apache-2.0 /
+  ISC), so Linux kernel modules (GPL-2.0) and Broadcom's redistributable
+  firmware blobs sit on the wrong side of the licensing policy and won't be
+  baked into images automatically.
+
+  Instead, every Pi 5 image ships `/usr/local/sbin/jonerix-pi5-restricted`
+  and a `/etc/motd` banner pointing users at it. On first run the script
+  shows the upstream license URLs (Linux kernel `COPYING`, Broadcom
+  Redistributable Firmware Licence) and asks for an unambiguous `y/k/w/N`
+  consent; only on `y`/`k`/`w` does it download and install anything.
+
+  Sources:
+  - Kernel modules -- `raspberrypi/firmware` (same pin as the boot-partition
+    firmware), extracted to `/lib/modules/<kver>/`.
+  - WiFi / BT firmware -- `RPi-Distro/firmware-nonfree`, `brcm/` and
+    `cypress/` subtrees, extracted to `/lib/firmware/`.
+
+  After the script runs, `raspi5-fixups`'s `pi5-wifi` service (if present)
+  wires up the `brcmfmac -> cyfmac` symlinks so the CYW43455 radio comes up
+  as `wlan0` on the next `modprobe brcmfmac` or reboot. Wired ethernet and
+  SSH work out of the box on the base image without this step.
 - **Tailscale binary is assumed to be in a user-supplied package.** The
   first-boot service runs `tailscale up` but doesn't install `tailscale`;
   add `tailscale` (or whatever you call it) to `--packages` if you want
