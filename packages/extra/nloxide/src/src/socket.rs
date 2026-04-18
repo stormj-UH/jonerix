@@ -47,12 +47,17 @@ unsafe impl Send for NlSock {}
 
 impl NlSock {
     fn new(cb: *mut NlCb) -> *mut NlSock {
+        // Leave nl_pid=0: kernel auto-assigns a unique port at bind() time.
+        // Binding with an explicit nl_pid that matches getpid() only works
+        // for the process's FIRST netlink socket; subsequent ones collide
+        // with EADDRINUSE. Auto-assign avoids that entirely. The assigned
+        // port is read back via getsockname() after bind.
         let pid = unsafe { libc::getpid() } as u32;
         let sk = Box::new(NlSock {
             s_local: SockaddrNl {
                 nl_family: AF_NETLINK,
                 nl_pad: 0,
-                nl_pid: pid,
+                nl_pid: 0,
                 nl_groups: 0,
             },
             s_peer: SockaddrNl { nl_family: AF_NETLINK, nl_pad: 0, nl_pid: 0, nl_groups: 0 },
@@ -355,17 +360,15 @@ pub unsafe extern "C" fn nl_join_groups(sk: *mut NlSock, groups: c_int) -> c_int
 #[no_mangle]
 pub unsafe extern "C" fn nl_connect(sk: *mut NlSock, protocol: c_int) -> c_int {
     if sk.is_null() { return -(NLE_BAD_SOCK); }
-    if (*sk).s_fd != -1 { return 0; } // already connected
+    if (*sk).s_fd != -1 { return 0; }
 
     let fd = libc::socket(AF_NETLINK as c_int, libc::SOCK_RAW | SOCK_CLOEXEC, protocol);
     if fd < 0 { return -(syserr_to_nlerr(errno())); }
     (*sk).s_fd = fd;
     (*sk).s_proto = protocol;
 
-    // Set default buffer sizes
     nl_socket_set_buffer_size(sk, 0, 0);
 
-    // Bind local address
     (*sk).s_local.nl_family = AF_NETLINK;
     let local_copy = (*sk).s_local;
     let r = libc::bind(
@@ -380,7 +383,6 @@ pub unsafe extern "C" fn nl_connect(sk: *mut NlSock, protocol: c_int) -> c_int {
         return -(syserr_to_nlerr(e));
     }
 
-    // Read back actual nl_pid assigned by kernel
     let mut addr: SockaddrNl = SockaddrNl::default();
     let mut addrlen: socklen_t = core::mem::size_of::<SockaddrNl>() as socklen_t;
     if libc::getsockname(fd, &mut addr as *mut SockaddrNl as *mut sockaddr, &mut addrlen) == 0 {
@@ -428,6 +430,9 @@ pub unsafe extern "C" fn nl_send_auto_complete(sk: *mut NlSock, msg: *mut NlMsg)
 #[no_mangle]
 pub unsafe extern "C" fn nl_send_auto(sk: *mut NlSock, msg: *mut NlMsg) -> c_int {
     if sk.is_null() || msg.is_null() { return -(NLE_INVAL); }
+    // libnl semantics: force NLM_F_REQUEST on auto-sent messages. Callers like
+    // wpa_supplicant pass flags=0 to genlmsg_put and rely on this to set REQUEST.
+    (*(*msg).hdr()).nlmsg_flags |= NLM_F_REQUEST;
     nl_complete_msg(sk, msg);
 
     // MSG_OUT callback

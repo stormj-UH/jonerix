@@ -122,3 +122,24 @@ pub unsafe extern "C" fn nl_new_line(_p: *mut c_void) {}
 pub unsafe extern "C" fn nl_dump(_p: *mut c_void, _fmt: *const u8) {}
 #[no_mangle]
 pub unsafe extern "C" fn nl_dump_line(_p: *mut c_void, _fmt: *const u8) {}
+
+// ---- nl_cache stubs (nloxide does not implement object caches;
+//      wpa_supplicant and hostapd only call nl_cache_free on a pointer
+//      returned by genl_ctrl_alloc_cache — which in our impl returns
+//      a Box<GenlCache>. Free it here).
+#[no_mangle]
+pub unsafe extern "C" fn nl_cache_free(cache: *mut c_void) {
+    if cache.is_null() { return; }
+    // GenlCache is allocated via Box::into_raw in genl_ctrl_alloc_cache.
+    drop(Box::from_raw(cache as *mut crate::genl::GenlCache));
+}
+#[no_mangle]
+pub unsafe extern "C" fn nl_cache_put(_cache: *mut c_void) {}
+#[no_mangle]
+pub unsafe extern "C" fn nl_cache_get(cache: *mut c_void) -> *mut c_void { cache }
+#[no_mangle]
+pub unsafe extern "C" fn nl_cache_nitems(_c: *const c_void) -> c_int { 0 }
+#[no_mangle]
+pub unsafe extern "C" fn nl_cache_get_first(_c: *mut c_void) -> *mut c_void { core::ptr::null_mut() }
+#[no_mangle]
+pub unsafe extern "C" fn nl_cache_get_next(_o: *mut c_void) -> *mut c_void { core::ptr::null_mut() }
