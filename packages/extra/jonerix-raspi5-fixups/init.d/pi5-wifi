@@ -34,8 +34,18 @@ is_pi5() {
 start() {
     is_pi5 || { einfo "not a Pi 5; skipping"; return 0; }
 
-    ebegin "Registering modprobe shim"
-    echo -n /usr/local/bin/modprobe-shim > /proc/sys/kernel/modprobe
+    # Prefer toybox's own modprobe (0.8.11-r2 ships it with .ko.xz
+    # support) so the kernel's request_module(2) path works through a
+    # real modprobe. Fall back to the shell shim installed by this
+    # package if the toybox build predates the modprobe applet.
+    if toybox --help 2>&1 | grep -qw modprobe; then
+        MODPROBE=/bin/modprobe
+    else
+        MODPROBE=/usr/local/bin/modprobe-shim
+    fi
+
+    ebegin "Registering $MODPROBE as kernel modprobe"
+    echo -n "$MODPROBE" > /proc/sys/kernel/modprobe
     eend $? || return 1
 
     # Already up? Check by presence of a wireless PHY.
@@ -49,8 +59,8 @@ start() {
     # attach. brcmfmac-cyw itself depends on brcmfmac symbols, so we
     # expect "Unknown symbol" warnings during this first insmod; they
     # resolve once brcmfmac is loaded immediately after.
-    /usr/local/bin/modprobe-shim brcmfmac-cyw 2>/dev/null || true
-    /usr/local/bin/modprobe-shim brcmfmac
+    "$MODPROBE" brcmfmac-cyw 2>/dev/null || true
+    "$MODPROBE" brcmfmac
     eend $? || return 1
 
     # Give brcmfmac a moment to attach the SDIO device and publish phy0.
