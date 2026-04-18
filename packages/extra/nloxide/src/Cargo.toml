@@ -1,0 +1,17 @@
+[package]
+name = "nloxide"
+version = "0.1.0"
+edition = "2021"
+description = "Clean-room permissive-license drop-in for libnl-3 / libnl-genl-3"
+license = "MIT"
+
+[lib]
+name = "nloxide"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+libc = { version = "0.2", default-features = false }
+
+[profile.release]
+opt-level = 2
+strip = false
