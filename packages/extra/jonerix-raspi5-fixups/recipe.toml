@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.2.3"
+version = "1.3.0"
 license = "MIT"
-description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
 
 # No [source] section — jpkg treats a missing source.url as a local-only
 # build and hands control to the build script, which uses $RECIPE_DIR.
@@ -26,6 +26,15 @@ install -Dm755 init.d/fan-control $DESTDIR/etc/init.d/fan-control
 # adduser-safe: safe replacement for toybox adduser, which truncates
 # /etc/passwd and /etc/shadow on failure (see bin/adduser-safe header).
 install -Dm755 bin/adduser-safe $DESTDIR/bin/adduser-safe
+# Pi 5 onboard WiFi bring-up: see bin/modprobe-shim and init.d/pi5-wifi
+# headers for the full story. Short version: jonerix ships no kmod, so
+# the kernel can't request_module(brcmfmac-cyw) and the brcmfmac driver
+# never attaches; and the 4345 firmware blob is packaged under its
+# Cypress name (cyfmac43455) while the Pi 5 driver asks for the
+# Broadcom name (brcmfmac43455). The shim handles the former; the
+# firmware symlinks in post_install handle the latter.
+install -Dm755 bin/modprobe-shim   $DESTDIR/usr/local/bin/modprobe-shim
+install -Dm755 init.d/pi5-wifi     $DESTDIR/etc/init.d/pi5-wifi
 """
 install = ""
 
@@ -130,12 +139,37 @@ fi
 # --- Pi 5 hardware fixups (only on a live Pi 5) ---
 ln -sf /etc/init.d/disable-eee /etc/runlevels/boot/disable-eee 2>/dev/null || true
 ln -sf /etc/init.d/fan-control /etc/runlevels/boot/fan-control 2>/dev/null || true
+ln -sf /etc/init.d/pi5-wifi    /etc/runlevels/boot/pi5-wifi    2>/dev/null || true
+
+# Firmware symlinks for onboard WiFi (BCM4345). The brcmfmac driver
+# asks for `brcmfmac43455-sdio.bin` and the Pi5-specific variant
+# `brcmfmac43455-sdio.raspberrypi,5-model-b.bin`, but the blob we ship
+# in /lib/firmware/brcm/ is under its Cypress name. Create the
+# Broadcom-named symlinks once at install time; they persist on rootfs.
+if [ -f /lib/firmware/brcm/cyfmac43455-sdio-standard.bin ]; then
+    ln -sf cyfmac43455-sdio-standard.bin \\
+        /lib/firmware/brcm/brcmfmac43455-sdio.bin 2>/dev/null || true
+    ln -sf cyfmac43455-sdio-standard.bin \\
+        /lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin 2>/dev/null || true
+fi
+
 if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
     [ -e /sys/class/net/eth0 ] && /bin/disable-eee eth0 || true
     KVER=$(uname -r)
     MOD="/lib/modules/$KVER/kernel/drivers/hwmon/pwm-fan.ko.xz"
     if [ -f "$MOD" ] && [ ! -d /sys/class/thermal/cooling_device0 ]; then
         xzcat "$MOD" > /tmp/pwm-fan.ko && insmod /tmp/pwm-fan.ko && rm -f /tmp/pwm-fan.ko || true
+    fi
+    # Live-apply the WiFi fixes so the user doesn't have to reboot:
+    # point the kernel at the modprobe shim and load the brcmfmac stack
+    # if it isn't already up. pi5-wifi runs the same logic at every
+    # boot; we duplicate it here only for the first-install case.
+    if [ -w /proc/sys/kernel/modprobe ]; then
+        echo -n /usr/local/bin/modprobe-shim > /proc/sys/kernel/modprobe
+    fi
+    if [ ! -d /sys/class/ieee80211/phy0 ]; then
+        /usr/local/bin/modprobe-shim brcmfmac-cyw 2>/dev/null || true
+        /usr/local/bin/modprobe-shim brcmfmac      2>/dev/null || true
     fi
 fi
 exit 0"""

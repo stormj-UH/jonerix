@@ -1,0 +1,53 @@
+#!/bin/sh
+# /usr/local/bin/modprobe-shim — minimal modprobe(8) replacement for jonerix.
+#
+# jonerix does not ship kmod (it's LGPL-2.1) so the kernel's default
+# /sbin/modprobe is missing. Without one, any request_module() call made
+# by a driver — e.g. brcmfmac pulling in its vendor submodule
+# brcmfmac-cyw on Pi 5 — silently fails with -ENOENT and the driver
+# aborts attach with "brcmf_attach failed".
+#
+# Point /proc/sys/kernel/modprobe at this script (via pi5-wifi init.d)
+# and kernel auto-loading works: we look up the module in
+# /lib/modules/$(uname -r)/modules.dep, xz-decompress the .ko.xz file,
+# and insmod it (recursively for dependencies).
+#
+# Usage mirrors kmod: `modprobe-shim [flags] <modname>`. Flags are
+# accepted and ignored. A dash in the module name is treated the same as
+# an underscore (standard modprobe convention).
+set -e
+KVER=$(uname -r)
+DEPFILE=/lib/modules/$KVER/modules.dep
+KDIR=/lib/modules/$KVER
+
+# Discard leading flags (e.g. `-q`, `--`).
+while [ "${1#-}" != "$1" ]; do shift; done
+mod=$1
+[ -z "$mod" ] && exit 0
+# Normalise: kernel canonicalises `-` → `_` in module names.
+modu=$(echo "$mod" | tr '-' '_')
+
+# Already loaded? /proc/modules uses the underscore form.
+if grep -q "^${modu} " /proc/modules 2>/dev/null; then
+    exit 0
+fi
+
+# Find the .ko.xz entry. modules.dep uses paths ending in
+# /<name>.ko.xz — try both dash and underscore variants of the name.
+line=$(grep -E "/(${mod}|${modu})\.ko\.xz:" "$DEPFILE" | head -1) || exit 1
+self=$(echo "$line" | cut -d: -f1)
+deps=$(echo "$line" | cut -d: -f2)
+
+# Load dependencies first (best effort; individual failures ignored so
+# already-loaded deps or out-of-order calls don't abort the primary).
+for d in $deps; do
+    dname=$(basename "$d" .ko.xz)
+    dnameu=$(echo "$dname" | tr '-' '_')
+    grep -q "^${dnameu} " /proc/modules 2>/dev/null && continue
+    xz -dc "$KDIR/$d" > "/tmp/$dname.ko" 2>/dev/null || continue
+    insmod "/tmp/$dname.ko" 2>/dev/null || true
+done
+
+# Load the target module.
+xz -dc "$KDIR/$self" > "/tmp/$mod.ko"
+exec insmod "/tmp/$mod.ko"
