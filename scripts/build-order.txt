@@ -76,3 +76,4 @@ rust
 # Tier 10: Rust-based packages (requires from-source rust)
 uutils
 ripgrep
+jfsck
