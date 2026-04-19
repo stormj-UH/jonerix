@@ -3,6 +3,13 @@ name = "jonerix-util"
 version = "0.1.0-r1"
 license = "MIT"
 description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter)"
+# Claim toybox's multicall symlinks for hwclock, ionice, and nsenter
+# (toybox doesn't ship lscpu so there's nothing to replace there).
+# Without this, `jpkg install jonerix-util` errors out on each of
+# those paths already owned by toybox. The post_remove hook below
+# hands the names back to toybox if jonerix-util is uninstalled.
+# Requires jpkg >= 1.0.4.
+replaces = ["toybox"]
 
 # No [source] — local-only build from $RECIPE_DIR/src.
 
@@ -27,6 +34,31 @@ for t in lscpu hwclock ionice nsenter; do
     install -m 755 "$BIN/$t" "$DESTDIR/bin/$t"
 done
 """
+
+[hooks]
+# post_install: verify the takeover actually happened. With
+# `replaces = ["toybox"]` jpkg clears the conflicting toybox
+# symlinks before writing our files, so /bin/<tool> should be a
+# regular ELF after install. If any name is still a symlink,
+# something upstream (older jpkg without replaces support, or a
+# mid-upgrade race) didn't do its job — assert rather than leave
+# a silently-wrong install in place.
+post_install = """for t in hwclock ionice nsenter; do
+    if [ -L /bin/$t ] || ! [ -x /bin/$t ]; then
+        echo "jonerix-util post_install: /bin/$t is not a regular executable" >&2
+        exit 1
+    fi
+done
+true"""
+
+# post_remove hands the names back to toybox on uninstall. Each
+# line is independent so a partial restore is valid — only the
+# ones that are currently empty AND have toybox available get
+# a new symlink.
+post_remove = """[ ! -e /bin/hwclock ] && [ -x /bin/toybox ] && ln -sf toybox /bin/hwclock
+[ ! -e /bin/ionice ] && [ -x /bin/toybox ] && ln -sf toybox /bin/ionice
+[ ! -e /bin/nsenter ] && [ -x /bin/toybox ] && ln -sf toybox /bin/nsenter
+true"""
 
 [depends]
 runtime = ["musl"]
