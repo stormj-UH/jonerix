@@ -126,6 +126,16 @@ jobs:
                   || { echo "missing required tool: $need" >&2; exit 1; }
               done
 
+              # jpkg config: point the builder at the GitHub release mirror
+              # + install the jonerix signing key so INDEX verification
+              # works. Previously the jonerix builder image shipped /etc/jpkg
+              # baked in; Alpine does not, so we write it out per-run.
+              # Using printf instead of a heredoc so YAML indentation
+              # doesnt leak into the generated TOML.
+              mkdir -p /etc/jpkg/keys
+              printf "%s\n" "[repo]" "url = \"https://github.com/stormj-UH/jonerix/releases/download/packages\"" > /etc/jpkg/repos.conf
+              cp /workspace/config/defaults/etc/jpkg/keys/jonerix.pub /etc/jpkg/keys/jonerix.pub
+
               # Pre-populate the firmware cache if the CI cache restored one.
               FW_ARG=""
               if [ -s /cache/firmware.tar.gz ]; then
