@@ -90,15 +90,32 @@ ln -sf adduser-safe /bin/adduser
 # installs are no-ops, and we never clobber user edits.
 if [ -f /etc/fstab ]; then
     cp /etc/fstab /etc/fstab.pre-raspi5-fixups 2>/dev/null || true
+
+    # Heal fstabs left broken by jonerix-raspi5-fixups <= 1.4.0.
+    # That version wrote a header via printf with escaped newlines
+    # that, through TOML / shell / jpkg's here-doc layers, landed in
+    # the file as a literal four-character backslash-n-hash sequence.
+    # That malformed line stopped mount -a dead at the /boot partition
+    # and left /boot unmounted at runtime. Remove any line starting
+    # with a literal backslash.
+    if grep -q '^\\\\' /etc/fstab 2>/dev/null; then
+        sed -i '/^\\\\/d' /etc/fstab
+        echo "raspi5-fixups: removed malformed header lines from /etc/fstab"
+    fi
+
     _fstab_add() {
         # $1 = grep pattern to detect existing entry, $2 = line to append
         if ! grep -qE "$1" /etc/fstab 2>/dev/null; then
-            printf '%s\\n' "$2" >> /etc/fstab
+            echo "$2" >> /etc/fstab
             echo "raspi5-fixups: added fstab line: $2"
         fi
     }
     if ! grep -q "raspi5-fixups rescue" /etc/fstab 2>/dev/null; then
-        printf '\\n# --- added by jonerix-raspi5-fixups (base-image fstab rescue) ---\\n' >> /etc/fstab
+        # Two separate echoes — portable across busybox/toybox
+        # printf, which don't all honour `\\n` the same way in
+        # here-doc-delivered recipes.
+        echo '' >> /etc/fstab
+        echo '# --- added by jonerix-raspi5-fixups (base-image fstab rescue) ---' >> /etc/fstab
     fi
     _fstab_add "^[[:space:]]*devpts[[:space:]]" \\
         "devpts   /dev/pts   devpts   gid=5,mode=0620,ptmxmode=0666   0 0"
