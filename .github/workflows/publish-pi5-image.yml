@@ -74,6 +74,14 @@ jobs:
         run: |
           mkdir -p /tmp/pi5-out
           chmod 0777 /tmp/pi5-out
+          # Ensure the firmware-cache path exists as a FILE before the
+          # docker bind-mount below. When actions/cache misses, this
+          # path doesnt exist, and docker's -v <file>:<file> spec will
+          # auto-create the source as a directory (silent default),
+          # after which bsdtar fails with "Error reading" and Python's
+          # unlink raises IsADirectoryError. A zero-byte touch keeps
+          # fetch_firmware's integrity probe unambiguous.
+          touch /tmp/pi5-firmware.tar.gz
 
       - name: Build image in jonerix:builder container
         env:
