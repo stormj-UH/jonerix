@@ -33,7 +33,13 @@ set -e
 export CARGO_HOME=/tmp/lsusb-rs-cargo
 export CARGO_TARGET_DIR=/tmp/lsusb-rs-target
 export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
-cargo build --release --frozen --offline --bin lsusb
+# Zero external crates — this is a single src/main.rs reading
+# /sys/bus/usb/devices/. No Cargo.lock in the tarball and
+# nothing to fetch, so skip --frozen / --offline (those want a
+# lockfile that doesn't exist). CARGO_NET_OFFLINE=true remains
+# as a belt-and-suspenders guard against crates.io traffic.
+export CARGO_NET_OFFLINE=true
+cargo build --release --bin lsusb
 """
 install = """
 set -e
