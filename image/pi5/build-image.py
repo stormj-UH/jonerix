@@ -373,6 +373,31 @@ def jpkg_install(root: Path, packages: Iterable[str]) -> None:
     if not pkgs:
         log("(no packages requested)")
         return
+
+    # `--root <path>` redirects jpkg's entire worldview into <path>,
+    # including its cache + index + db. So even if we've called
+    # `jpkg update` on the host, the rooted install still needs its
+    # own `jpkg --root <path> update` first to populate
+    # <path>/var/cache/jpkg/INDEX and the keys dir. Before the update
+    # can succeed we need:
+    #  - /etc/jpkg/repos.conf pointing at the release mirror
+    #  - /etc/jpkg/keys/jonerix.pub to verify INDEX signatures
+    # ...both cloned from the host's jpkg config (CI shipped a ready
+    # jpkg layout in /etc/jpkg).
+    staging_jpkg = root / "etc" / "jpkg"
+    (staging_jpkg / "keys").mkdir(parents=True, exist_ok=True)
+    host_jpkg = Path("/etc/jpkg")
+    if (host_jpkg / "repos.conf").exists() and not (staging_jpkg / "repos.conf").exists():
+        shutil.copy(host_jpkg / "repos.conf", staging_jpkg / "repos.conf")
+    if (host_jpkg / "keys").is_dir():
+        for k in (host_jpkg / "keys").iterdir():
+            dst = staging_jpkg / "keys" / k.name
+            if not dst.exists():
+                shutil.copy(k, dst)
+
+    log(f"jpkg update -r {root}")
+    run(["jpkg", "--root", str(root), "update"])
+
     log(f"jpkg install -r {root} {' '.join(pkgs)}")
     # Per packages/jpkg/src/main.c line 81 ("-r, --root <path> Use alternative
     # root filesystem"), --root is a top-level flag BEFORE the subcommand.
