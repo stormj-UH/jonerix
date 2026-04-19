@@ -1,0 +1,86 @@
+[package]
+name = "strace"
+# 4.25 is the last release before the 2018-12 LGPL-2.1+ relicense (4.26
+# onward switched). Modern strace cannot ship in jonerix runtime under
+# the permissive-only policy, so we pin to the final BSD-3-Clause cut.
+# Trade-off: misses post-2018 syscall decoders (io_uring, openat2,
+# faccessat2, mount_setattr). Acceptable for a developer-image tool.
+version = "4.25"
+license = "BSD-3-Clause"
+description = "ptrace-based syscall tracer (last BSD-3-Clause release)"
+
+[source]
+url = "https://github.com/strace/strace/releases/download/v4.25/strace-4.25.tar.xz"
+sha256 = "d685f8e65470b7832c3aff60c57ab4459f26ff89f07c10f92bd70ee89efac701"
+
+[build]
+system = "custom"
+# autoconf-vintage configure: needs /bin/expr (toybox lacks it) and
+# raised ulimit. Pattern lifted from sudo / jq / byacc.
+build = """set -e
+ulimit -n 65536 || true
+
+if [ ! -x /bin/expr ]; then
+cat > /tmp/expr.c <<'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <regex.h>
+static long tl(const char*s,int*o){char*e;long v=strtol(s,&e,10);*o=(*e==0&&e!=s);return v;}
+int main(int c,char**v){
+ if(c==3&&!strcmp(v[1],"length")){printf("%zu\\n",strlen(v[2]));return 0;}
+ if(c==4&&!strcmp(v[2],":")){regex_t r;regmatch_t m[2];int h=!!strstr(v[3],"\\\\(");
+  if(regcomp(&r,v[3],0))return 2;
+  if(regexec(&r,v[1],2,m,0)==0){if(h&&m[1].rm_so>=0)printf("%.*s\\n",(int)(m[1].rm_eo-m[1].rm_so),v[1]+m[1].rm_so);else printf("%d\\n",(int)(m[0].rm_eo-m[0].rm_so));regfree(&r);return 0;}
+  regfree(&r);printf(h?"\\n":"0\\n");return 1;}
+ if(c==4){int o1,o2;long a=tl(v[1],&o1),b=tl(v[3],&o2);
+  if(o1&&o2){long r=0;char*o=v[2];
+   if(!strcmp(o,"+"))r=a+b;else if(!strcmp(o,"-"))r=a-b;else if(!strcmp(o,"*"))r=a*b;
+   else if(!strcmp(o,"/"))r=a/b;else if(!strcmp(o,"%"))r=a%b;
+   else if(!strcmp(o,"="))r=(a==b);else if(!strcmp(o,"!="))r=(a!=b);
+   else if(!strcmp(o,"<"))r=(a<b);else if(!strcmp(o,">"))r=(a>b);
+   else if(!strcmp(o,"<="))r=(a<=b);else if(!strcmp(o,">="))r=(a>=b);
+   else return 2;printf("%ld\\n",r);return r==0?1:0;}}
+ if(c==2){printf("%s\\n",v[1]);return 0;}
+ return 2;}
+CEOF
+clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
+rm -f /tmp/expr.c
+fi
+
+# strace 4.25 build notes for jonerix:
+#   --enable-mpers=no       — multi-personality (32+64 bit decoders) requires
+#                             a working 32-bit toolchain; jonerix is single-arch.
+#   --disable-gcc-Werror    — clang21 surfaces warnings unknown to gcc-vintage
+#                             code (e.g. -Wstring-plus-int in ucred.c).
+#   --without-libdw         — optional elfutils stack-unwind backend; we don't
+#                             ship libdw and -k stack traces aren't required.
+#   --enable-secontext=no   — selinux (libselinux is GPL-incompat anyway).
+#   CFLAGS -Wno-...         — silence the few warnings clang-21 still flags
+#                             that older gcc didn't, so configure-time probe
+#                             scripts don't accidentally treat them as fails.
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \\
+  CFLAGS="-O2 -fomit-frame-pointer -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" \\
+  LDFLAGS="-Wl,--disable-new-dtags" \\
+  ./configure \\
+    --prefix=/ \\
+    --bindir=/bin \\
+    --mandir=/share/man \\
+    --enable-mpers=no \\
+    --disable-gcc-Werror \\
+    --without-libdw \\
+    --enable-secontext=no \\
+    CC=clang
+make -j$(nproc)"""
+install = """set -e
+make DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# strace-log-merge is a perl helper for -ff multi-file output. Useful but
+# perl-dependent — keep it; perl is in the develop image anyway.
+rm -rf "$DESTDIR/share/doc"
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make", "jonerix-headers"]

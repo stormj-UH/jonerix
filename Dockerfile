@@ -81,7 +81,8 @@ RUN jpkg --root /jonerix update && \
       curl dropbear openrc doas \
       snooze dhcpcd ifupdown-ng unbound \
       mandoc pigz fastfetch \
-      micro; \
+      micro \
+      strace; \
     do \
       echo "=== Installing: $pkg ===" && \
       jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \
