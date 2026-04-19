@@ -174,6 +174,113 @@ Every package must carry a permissive license. GPL-3 tools like rsync are replac
 | Zlib, PSF-2.0, Artistic-2.0 | CC-BY-SA |
 | Public Domain, MirOS | Any copyleft |
 
+## Raspberry Pi 5
+
+jonerix has first-class support for the Pi 5. Everything below is
+installed automatically by the `jonerix-raspi5-fixups` package, which
+jpkg pulls in as part of the default rootfs for aarch64 images.
+
+### Defaults out of the box
+
+| setting                   | default        | how to change |
+| ------------------------- | -------------- | ------------- |
+| Kernel reboot mode        | **cold**       | auto — see "cold reboot" below |
+| Auto-boot on power restore| **enabled**    | `sudo pi5-wake-on-power disable` |
+| RTC coin-cell charging    | **disabled**   | add `dtparam=rtc_bbat_vchg=3000000` to `/boot/config.txt` (see "RTC battery" below) |
+| Energy-Efficient Ethernet | **disabled**   | edit `/etc/init.d/disable-eee` or remove the runlevel symlink |
+| PWM fan cooling           | **enabled**    | `rc-update del fan-control boot` |
+| Onboard Wi-Fi             | **enabled**    | `rc-update del pi5-wifi boot` |
+
+### Cold reboot
+
+Pi 5's RP1 southbridge cannot be reset by a warm reboot, so `reboot`
+hangs the board whenever the kernel is in warm mode. The Pi 5
+firmware unconditionally prepends `reboot=w` to the kernel command
+line, so jonerix does two things to pin the kernel to **cold** mode:
+
+1. `apply-pi5-cold-reboot` prepends `reboot=c` to
+   `/boot/cmdline.txt` at install time. The kernel uses the *last*
+   `reboot=` token on the line, so this wins. A one-time backup is
+   saved to `/boot/cmdline.txt.pre-pi5-fixups`.
+2. The `pi5-cold-reboot` OpenRC service writes `cold` to
+   `/sys/kernel/reboot/mode` on every boot as belt-and-suspenders.
+
+The install hook also flips the sysfs knob live, so `reboot` works
+immediately after `jpkg install jonerix-raspi5-fixups` without
+needing a round-trip reboot first.
+
+### Auto-boot on power restore (wake-on-power)
+
+The Pi 5 EEPROM ships with `WAKE_ON_GPIO=1` and `POWER_OFF_ON_HALT=0`,
+which is exactly what you want for a headless box — pulling and
+restoring power cold-boots the system automatically. jonerix does
+**not** touch the EEPROM by default; factory settings are left alone.
+
+To inspect and manage it:
+
+```sh
+sudo pi5-wake-on-power              # show current EEPROM config
+sudo pi5-wake-on-power enable       # force WAKE_ON_GPIO=1 / POWER_OFF_ON_HALT=0
+sudo pi5-wake-on-power disable      # POWER_OFF_ON_HALT=1 (stay off after halt)
+```
+
+`enable` and `disable` both write through the VideoCore mailbox into
+EEPROM and persist across reboots. The `disable` preference sticks —
+nothing in jonerix will silently re-enable wake-on-power.
+
+The `pi5-cold-reboot` service prints the current wake-on-power state
+at every boot so it's auditable via `rc-status` / `dmesg`.
+
+### RTC battery (coin cell)
+
+Pi 5 has an on-board RTC with a `J5` header for a backup coin cell.
+Trickle charging is **off by default** — wrong cell chemistry (e.g.
+an accidental CR2032 in an ML2032 socket) can vent or ignite a
+non-rechargeable cell, so we require an explicit opt-in.
+
+To enable trickle charging at 3.0 V (safe for ML2032 / MS621FE
+rechargeables):
+
+```sh
+echo 'dtparam=rtc_bbat_vchg=3000000' | sudo tee -a /boot/config.txt
+sudo reboot
+```
+
+Once charged, the RTC keeps time across full power cycles. Verify
+with `hwclock -r` after a power cut.
+
+### Firmware inspection (pi5-fw)
+
+`pi5-fw` is a zero-dependency Rust stand-in for the pieces of
+`vcgencmd` and `rpi-eeprom-config` we care about. It talks to the
+VideoCore mailbox directly via `/dev/vcio`:
+
+```sh
+sudo pi5-fw measure_temp         # SoC temperature
+sudo pi5-fw get_throttled        # under-voltage / throttle flags
+sudo pi5-fw firmware_version     # VideoCore firmware revision
+sudo pi5-fw board_info           # model, revision, serial
+sudo pi5-fw clock_rates          # ARM current / max clock
+sudo pi5-fw bootloader_config    # boot mode, reset status, cmdline reboot=
+sudo pi5-fw reboot_mode          # current kernel reboot mode
+sudo pi5-fw reboot_mode cold     # set kernel reboot mode (cold/warm/hard/soft/gpio)
+```
+
+### Other Pi 5 fixups in the same package
+
+- **EEE (Energy-Efficient Ethernet) disable** on the BCM54213PE PHY
+  — the Pi 5's integrated PHY loses link during LPI transitions.
+- **PWM fan driver** auto-load — the Pi 5 Active Cooler header needs
+  `pwm-fan.ko` loaded before the cooling device appears in sysfs.
+- **Onboard Wi-Fi bring-up** — the brcmfmac stack asks for
+  `brcmfmac43455-sdio*.bin`, but the shipped blob is under its
+  Cypress name; symlinks are created at install time.
+- **fstab rescue** — older Pi images shipped an incomplete fstab
+  (no `/dev/pts`, `/sys`, tmpfs `/run` or `/tmp`); missing entries
+  are appended and the running system is live-mounted.
+- **errors=remount-ro** added to the root ext4 line so SD-card wear
+  triggers a fail-safe remount instead of silent corruption.
+
 ## fastfetch
 
 ```
