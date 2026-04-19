@@ -82,7 +82,11 @@ sed -i "s|^ioctls_inc_h = .*|ioctls_inc_h = $INC_FILES|" Makefile
 sed -i "s|^ioctlent_h = .*|ioctlent_h = $INC_LIST|" Makefile
 sed -i "s|^ioctl_redefs_h = .*|ioctl_redefs_h = $RED_LIST|" Makefile
 
-make -j$(nproc)"""
+# Serial + verbose so a stuck jmake target is obvious in CI logs (the
+# parallel build hides which command is hanging). Strace 4.25 has ~150
+# .c files; serial should finish in 2-3 min. If it doesn't, the log
+# shows the exact last command issued so we can diagnose.
+make V=1 -j1"""
 install = """set -e
 make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
