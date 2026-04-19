@@ -51,9 +51,10 @@ install -Dm755 /tmp/pi5-fw $DESTDIR/usr/local/bin/pi5-fw
 # (fcntl, os, struct, sys) — no pip deps, PSF-2.0.
 install -Dm755 bin/pi5-wake-on-power $DESTDIR/usr/local/bin/pi5-wake-on-power
 
-# apply-pi5-cold-reboot: idempotent shell helper that prepends
-# `reboot=c` to /boot/cmdline.txt. Runs from post_install below.
-install -Dm755 bin/apply-pi5-cold-reboot $DESTDIR/usr/local/bin/apply-pi5-cold-reboot
+# apply-pi5-boot-settings: idempotent shell helper that patches
+# /boot/cmdline.txt (reboot=c) and /boot/config.txt
+# (hdmi_force_hotplug on both ports). Runs from post_install below.
+install -Dm755 bin/apply-pi5-boot-settings $DESTDIR/usr/local/bin/apply-pi5-boot-settings
 
 # pi5-cold-reboot: OpenRC boot service that forces
 # /sys/kernel/reboot/mode=cold every boot (belt-and-suspenders for
@@ -226,7 +227,7 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     # reboot=c in cmdline.txt overrides that (kernel keeps the last
     # reboot= token). Without it, `reboot` hangs because the RP1
     # southbridge can't be reset on a warm reboot.
-    /usr/local/bin/apply-pi5-cold-reboot 2>/dev/null || true
+    /usr/local/bin/apply-pi5-boot-settings 2>/dev/null || true
     if [ -w /sys/kernel/reboot/mode ]; then
         echo cold > /sys/kernel/reboot/mode 2>/dev/null || true
     fi
