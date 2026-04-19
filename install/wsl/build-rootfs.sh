@@ -300,33 +300,40 @@ ln -sf /init "${STAGING}/sbin/mount.drvfs"
 # falls through to toybox for every other mount.
 install -m 0755 /dev/stdin "${STAGING}/bin/mount" << 'MOUNTWRAPPER'
 #!/bin/sh
-# /bin/mount — tiny wrapper that knows about /sbin/mount.<type> helpers.
-# Without this, WSL's drvfs automount fails because toybox mount just
-# passes the fstype straight to the kernel and drvfs isn't a kernel fs.
+# /bin/mount — tiny wrapper that knows about /sbin/mount.<type> helpers
+# the way util-linux's mount does. Without it, WSL's drvfs automount
+# fails because toybox mount passes the fstype straight to the kernel
+# and drvfs isn't a kernel fs — it's 9p-over-virtio translated by
+# /sbin/mount.drvfs (-> /init, a helper Microsoft injects at boot).
 #
-# Contract: util-linux's mount translates
-#   mount -t drvfs C:\ /mnt/c -o <opts>
-# into
-#   /sbin/mount.drvfs -o <opts> C:\ /mnt/c
-# We emulate the same translation for any -t foo where /sbin/mount.foo
-# exists and is executable; otherwise hand the whole argv to toybox.
+# Util-linux contract:
+#   mount -t <type> [-o <opts>] <src> <dst>
+#       -> /sbin/mount.<type> -o <opts> <src> <dst>   (if helper exists)
+# The helper then typically calls /bin/mount again with `-i` + a kernel-
+# known fstype; `-i` means "DO NOT re-delegate to a helper" (prevents
+# recursion). Our wrapper respects -i by falling straight through to
+# toybox AND dropping the flag, since toybox doesn't recognise it.
 
-# Walk argv looking for "-t <type>" and capture everything else.
+# First pass: strip util-linux-only flags we can't pass to toybox, and
+# record whether -i was seen so we suppress helper delegation.
+skip_helpers=0
 fstype=""
 opts=""
 positional=""
-prev=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -t) fstype="$2"; shift 2 ;;
         -o) opts="$2"; shift 2 ;;
+        -i) skip_helpers=1; shift ;;      # drop: util-linux only
+        -n) shift ;;                      # drop: "no mtab", harmless on jonerix
         --) shift; break ;;
         -*) positional="$positional $1"; shift ;;
         *)  positional="$positional $1"; shift ;;
     esac
 done
 
-if [ -n "$fstype" ] && [ -x "/sbin/mount.$fstype" ]; then
+# Delegate to /sbin/mount.<type> if one exists AND -i wasn't passed.
+if [ "$skip_helpers" = 0 ] && [ -n "$fstype" ] && [ -x "/sbin/mount.$fstype" ]; then
     if [ -n "$opts" ]; then
         exec "/sbin/mount.$fstype" -o "$opts" $positional
     else
@@ -334,7 +341,7 @@ if [ -n "$fstype" ] && [ -x "/sbin/mount.$fstype" ]; then
     fi
 fi
 
-# No matching helper — reconstruct argv for toybox mount.
+# Fall through: reassemble argv for toybox's mount applet.
 set --
 [ -n "$fstype" ] && set -- "$@" -t "$fstype"
 [ -n "$opts" ]   && set -- "$@" -o "$opts"
