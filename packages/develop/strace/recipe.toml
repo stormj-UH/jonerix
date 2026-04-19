@@ -69,14 +69,16 @@ GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-fram
 # Makefile so neither function is involved.
 ARCH=$(clang -dumpmachine | cut -d- -f1)
 case "$ARCH" in
-    x86_64|aarch64|i386|arm|riscv64|powerpc|powerpc64|s390x|mips|mips64) ;;
     aarch64*) ARCH=aarch64 ;;
     arm*) ARCH=arm ;;
-    *) echo "WARN: untested ARCH=$ARCH for strace 4.25"; ;;
 esac
-INC_LIST=$(ls linux/$ARCH/ioctls_inc*.h | sed -n 's|linux/'"$ARCH"'/ioctls_inc\([0-9]*\)\.h|ioctlent\1.h|p' | tr '\\n' ' ')
-RED_LIST=$(echo "$INC_LIST" | sed 's/ioctlent0.h//' | sed 's/ioctlent/ioctl_redefs/g')
-sed -i "s|^ioctls_inc_h = .*|ioctls_inc_h = $(ls linux/$ARCH/ioctls_inc*.h | tr '\\n' ' ')|" Makefile
+# xargs with no command defaults to echo, which collapses whitespace
+# (including newlines) into single spaces — POSIX-portable, doesn't
+# depend on tr's `\n` interpretation inside quotes.
+INC_FILES=$(ls linux/$ARCH/ioctls_inc*.h | xargs)
+INC_LIST=$(ls linux/$ARCH/ioctls_inc*.h | sed -n 's|.*/ioctls_inc\([0-9]*\)\.h|ioctlent\1.h|p' | xargs)
+RED_LIST=$(echo "$INC_LIST" | sed 's/ioctlent0\.h//' | sed 's/ioctlent/ioctl_redefs/g')
+sed -i "s|^ioctls_inc_h = .*|ioctls_inc_h = $INC_FILES|" Makefile
 sed -i "s|^ioctlent_h = .*|ioctlent_h = $INC_LIST|" Makefile
 sed -i "s|^ioctl_redefs_h = .*|ioctl_redefs_h = $RED_LIST|" Makefile
 
