@@ -130,9 +130,9 @@ jpkg --root "${STAGING}" update
 failures=0
 failed=""
 for pkg in \
-    musl zlib xz lz4 zstd libarchive \
-    ncurses libressl \
-    toybox mksh bsdtar \
+    musl zlib xz lz4 zstd libarchive libressl \
+    toybox \
+    ncurses mksh bsdtar \
     curl dropbear \
     tzdata doas snooze pigz mandoc \
     micro fastfetch ripgrep
