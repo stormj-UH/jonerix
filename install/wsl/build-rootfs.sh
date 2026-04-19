@@ -115,13 +115,34 @@ printf '[repo]\nurl = "%s"\n' "${PKG_BASE_URL}" > "${STAGING}/etc/jpkg/repos.con
 #   LLVM/Go/Rust/nodejs/python3 — huge; install on demand.
 # ---------------------------------------------------------------------------
 echo "--- Installing packages via jpkg ---"
+# Mirrors the Dockerfile.core pattern: mksh first (it owns /bin/sh), then
+# each other package with --force so overlapping paths (toybox's multicall
+# symlinks vs ncurses/mksh's private tools) are resolved in install order
+# rather than aborting the build. Without --force jpkg refuses to touch a
+# path another package already claims.
 jpkg --root "${STAGING}" update
-jpkg --root "${STAGING}" install \
+jpkg --root "${STAGING}" install --force mksh
+ln -sf mksh "${STAGING}/bin/sh"
+
+failures=0
+failed=""
+for pkg in \
     musl ncurses libressl zlib xz lz4 zstd \
-    mksh toybox libarchive bsdtar \
+    toybox libarchive bsdtar \
     curl dropbear \
     tzdata doas snooze pigz mandoc \
     micro fastfetch ripgrep
+do
+    echo "Installing: $pkg"
+    if ! jpkg --root "${STAGING}" install --force "$pkg"; then
+        failures=$((failures + 1))
+        failed="$failed $pkg"
+    fi
+done
+if [ "$failures" -ne 0 ]; then
+    echo "package install failures:$failed" >&2
+    exit 1
+fi
 
 # Install jpkg itself into the rootfs
 echo "  -> jpkg"
