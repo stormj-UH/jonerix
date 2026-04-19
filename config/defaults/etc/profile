@@ -12,6 +12,13 @@ export PATH="/bin"
 # zsh: handled by /etc/zshrc
 # POSIX sh / toybox
 if [ -z "$ZSH_VERSION" ]; then
+    # $HOSTNAME isn't exported by every shell we run under (mksh on WSL
+    # in particular starts with it unset), so derive it from the kernel
+    # before wiring it into PS1 — otherwise the prompt renders as a
+    # naked ":/root#".
+    [ -z "$HOSTNAME" ] && HOSTNAME=$(hostname 2>/dev/null)
+    export HOSTNAME
+
     if [ "$(id -u)" -eq 0 ]; then
         PS1='$HOSTNAME:$PWD# '
     else

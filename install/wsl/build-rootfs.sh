@@ -148,10 +148,15 @@ if [ "$failures" -ne 0 ]; then
     exit 1
 fi
 
-# Install jpkg itself into the rootfs
-echo "  -> jpkg"
-jpkg --root "${STAGING}" install jpkg || \
-    install -Dm755 "$(command -v jpkg)" "${STAGING}/bin/jpkg"
+# Install jpkg into the rootfs. Always prefer the freshly-built binary
+# over whatever's in the `jpkg` package on the release — the release
+# tarball ships a lagging version (tagged "packages") while the CI
+# build produced the current main-branch jpkg (new TLS linkage,
+# bugfixes, etc.). Install the package for its metadata + recipe +
+# signing key, then clobber the binary with the fresh one.
+echo "  -> jpkg (package for metadata + fresh binary)"
+jpkg --root "${STAGING}" install jpkg || true
+install -Dm755 "$(command -v jpkg)" "${STAGING}/bin/jpkg"
 
 # ---------------------------------------------------------------------------
 # 6. Flatten merged-usr layout
@@ -277,17 +282,65 @@ cat > "${STAGING}/etc/fstab" << 'EOF'
 # you also set `mountFsTab = true` in /etc/wsl.conf.
 EOF
 
-# /sbin/mount.drvfs — helper WSL invokes when `mount -t drvfs` runs at
-# boot (the automount path). drvfs isn't a kernel filesystem type —
-# it's a 9p-over-virtio translation layer handled by WSL's own /init
-# binary, which Microsoft injects at runtime under / (not in the
-# tarball). We mirror what Debian/Ubuntu WSL ship: a symlink from
-# /sbin/mount.drvfs -> /init. The symlink is dangling in the tar but
-# resolves as soon as WSL drops /init into the live namespace; without
-# it, /bin/mount gets "drvfs" passed straight to the kernel, which
-# returns ENODEV and leaves /mnt/c unmounted.
+# /sbin/mount.drvfs — helper WSL's own /init implements as a side
+# effect of its argv[0] dispatch. When wsl-init.exe boots the distro
+# and issues `mount -t drvfs C: /mnt/c …`, util-linux's mount auto-
+# delegates to /sbin/mount.drvfs, which is a symlink to /init.
+# Microsoft injects /init into the live namespace at boot (it isn't
+# in our tarball), so this symlink is dangling on disk but resolves
+# at runtime.
 mkdir -p "${STAGING}/sbin"
 ln -sf /init "${STAGING}/sbin/mount.drvfs"
+
+# /bin/mount wrapper — toybox's mount (what /bin/mount normally is)
+# has no concept of the /sbin/mount.<type> delegation util-linux uses,
+# so `mount -t drvfs` passes "drvfs" straight to the kernel, gets
+# ENODEV, and WSL's automount bails ("Failed to mount C:\\"). This
+# shell wrapper intercepts -t drvfs and exec's the WSL helper directly,
+# falls through to toybox for every other mount.
+install -m 0755 /dev/stdin "${STAGING}/bin/mount" << 'MOUNTWRAPPER'
+#!/bin/sh
+# /bin/mount — tiny wrapper that knows about /sbin/mount.<type> helpers.
+# Without this, WSL's drvfs automount fails because toybox mount just
+# passes the fstype straight to the kernel and drvfs isn't a kernel fs.
+#
+# Contract: util-linux's mount translates
+#   mount -t drvfs C:\ /mnt/c -o <opts>
+# into
+#   /sbin/mount.drvfs -o <opts> C:\ /mnt/c
+# We emulate the same translation for any -t foo where /sbin/mount.foo
+# exists and is executable; otherwise hand the whole argv to toybox.
+
+# Walk argv looking for "-t <type>" and capture everything else.
+fstype=""
+opts=""
+positional=""
+prev=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -t) fstype="$2"; shift 2 ;;
+        -o) opts="$2"; shift 2 ;;
+        --) shift; break ;;
+        -*) positional="$positional $1"; shift ;;
+        *)  positional="$positional $1"; shift ;;
+    esac
+done
+
+if [ -n "$fstype" ] && [ -x "/sbin/mount.$fstype" ]; then
+    if [ -n "$opts" ]; then
+        exec "/sbin/mount.$fstype" -o "$opts" $positional
+    else
+        exec "/sbin/mount.$fstype" $positional
+    fi
+fi
+
+# No matching helper — reconstruct argv for toybox mount.
+set --
+[ -n "$fstype" ] && set -- "$@" -t "$fstype"
+[ -n "$opts" ]   && set -- "$@" -o "$opts"
+# shellcheck disable=SC2086
+exec /bin/toybox mount "$@" $positional
+MOUNTWRAPPER
 
 # ---------------------------------------------------------------------------
 # 10. Pack the rootfs
