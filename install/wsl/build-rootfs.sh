@@ -115,26 +115,30 @@ printf '[repo]\nurl = "%s"\n' "${PKG_BASE_URL}" > "${STAGING}/etc/jpkg/repos.con
 #   LLVM/Go/Rust/nodejs/python3 — huge; install on demand.
 # ---------------------------------------------------------------------------
 echo "--- Installing packages via jpkg ---"
-# Mirrors the Dockerfile.core pattern: mksh first (it owns /bin/sh), then
-# each other package with --force so overlapping paths (toybox's multicall
-# symlinks vs ncurses/mksh's private tools) are resolved in install order
-# rather than aborting the build. Without --force jpkg refuses to touch a
-# path another package already claims.
+# Mirrors the modern Dockerfile pattern (not Dockerfile.core's --force
+# legacy): packages with overlapping file paths now declare `replaces`
+# in their recipe.toml (mksh replaces toybox for /bin/sh, ncurses
+# replaces toybox for /bin/reset and /bin/clear, bsdtar replaces toybox
+# for /bin/tar). jpkg handles ownership transfer automatically when
+# it sees that metadata; --force is no longer needed or appropriate.
+#
+# Install order: base libs → coreutils/multicall → specialised
+# replacements → extras. Each step lets the next package's `replaces`
+# declaration take over cleanly.
 jpkg --root "${STAGING}" update
-jpkg --root "${STAGING}" install --force mksh
-ln -sf mksh "${STAGING}/bin/sh"
 
 failures=0
 failed=""
 for pkg in \
-    musl ncurses libressl zlib xz lz4 zstd \
-    toybox libarchive bsdtar \
+    musl zlib xz lz4 zstd libarchive \
+    ncurses libressl \
+    toybox mksh bsdtar \
     curl dropbear \
     tzdata doas snooze pigz mandoc \
     micro fastfetch ripgrep
 do
-    echo "Installing: $pkg"
-    if ! jpkg --root "${STAGING}" install --force "$pkg"; then
+    echo "=== Installing: $pkg ==="
+    if ! jpkg --root "${STAGING}" install "$pkg"; then
         failures=$((failures + 1))
         failed="$failed $pkg"
     fi
