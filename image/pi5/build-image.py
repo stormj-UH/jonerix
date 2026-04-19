@@ -204,19 +204,102 @@ def partition_mbr(img_path: Path, boot_mb: int) -> None:
 
 
 def losetup_attach(img_path: Path) -> str:
-    """Attach image to a loop device with kernel partition scanning. Returns
-    the loop device path, e.g. '/dev/loop0'."""
+    """Attach image to a loop device and make partition sub-devices appear.
+
+    Returns the parent loop device path, e.g. '/dev/loop0'. After this
+    call, '/dev/loop0p1' and '/dev/loop0p2' are expected to exist.
+
+    Why this is fiddly: `losetup --partscan` only creates /dev/loopNpM
+    devices when the loop driver has `max_part > 0`. On GitHub-hosted
+    runners the loop module is loaded with max_part=0 by default, so
+    --partscan silently no-ops. We work around that by calling
+    `partprobe` (from util-linux) after losetup, which issues a
+    BLKRRPART ioctl that the kernel honors even when max_part=0 — it
+    just surfaces the partitions as block devices through a different
+    code path.
+    """
     dev = run_out(["losetup", "--find", "--show", "--partscan", str(img_path)])
-    # --partscan races with udev; give it a moment before we touch /dev/loopNpN
-    for _ in range(20):
+
+    # Belt + braces: nudge the kernel to enumerate the partitions even
+    # if --partscan silently didn't. partprobe returns 0 whether or not
+    # the kernel created nodes, so this is cheap.
+    run(["partprobe", dev], check=False)
+
+    # Wait up to 3s for the partition nodes. If they still aren't
+    # there, fall back to a second-loop-per-partition layout using
+    # --offset/--sizelimit (no partscan needed at all).
+    for _ in range(30):
         if Path(f"{dev}p1").exists() and Path(f"{dev}p2").exists():
             return dev
         time.sleep(0.1)
-    die(f"loop partitions never appeared for {dev}")
-    raise RuntimeError("unreachable")  # for type checkers
+
+    # Fallback: detach and re-attach with per-partition loop devices.
+    log("partscan+partprobe didn't expose partitions; using offset-loops")
+    run(["losetup", "-d", dev], check=False)
+    return _losetup_offset_pair(img_path)
+
+
+def _losetup_offset_pair(img_path: Path) -> str:
+    """Create two loop devices, one per partition, by reading the MBR
+    and passing --offset/--sizelimit to losetup. Returns a synthetic
+    prefix such that `<prefix>p1` and `<prefix>p2` resolve to the
+    per-partition loop devices. The prefix is the directory where we
+    symlinked them; this keeps the rest of the pipeline's
+    f"{loop}p1" / f"{loop}p2" idiom working unchanged.
+    """
+    # Read the four 16-byte MBR partition entries at offset 0x1BE.
+    with img_path.open("rb") as f:
+        f.seek(0x1BE)
+        mbr = f.read(64)
+    # Each entry: 8 bytes of flags + 4 bytes start LBA + 4 bytes sector count
+    # (little-endian). We only use entries 1 and 2.
+    def _entry(idx: int) -> tuple[int, int]:
+        off = idx * 16
+        start = int.from_bytes(mbr[off + 8:off + 12], "little")
+        count = int.from_bytes(mbr[off + 12:off + 16], "little")
+        return start * 512, count * 512
+
+    p1_off, p1_sz = _entry(0)
+    p2_off, p2_sz = _entry(1)
+    if p1_sz == 0 or p2_sz == 0:
+        die(f"MBR doesn't describe two partitions: p1={p1_sz} p2={p2_sz}")
+
+    loop1 = run_out([
+        "losetup", "--find", "--show",
+        f"--offset={p1_off}", f"--sizelimit={p1_sz}", str(img_path),
+    ])
+    loop2 = run_out([
+        "losetup", "--find", "--show",
+        f"--offset={p2_off}", f"--sizelimit={p2_sz}", str(img_path),
+    ])
+
+    # Expose as /tmp/pi5-loopXXXXXXp1 / p2 so the caller's f-string
+    # concatenation still works. Symlink targets point at the two
+    # real loop devices.
+    prefix_dir = Path(tempfile.mkdtemp(prefix="pi5-loop-"))
+    prefix = str(prefix_dir / "loop")
+    Path(f"{prefix}p1").symlink_to(loop1)
+    Path(f"{prefix}p2").symlink_to(loop2)
+    # Stash real loop-device names on the prefix directory so detach
+    # can find them without re-parsing the MBR.
+    (prefix_dir / ".loops").write_text(f"{loop1}\n{loop2}\n")
+    log(f"offset-loops: p1={loop1} p2={loop2}")
+    return prefix
 
 
 def losetup_detach(dev: str) -> None:
+    """Detach whatever `losetup_attach` returned. Handles both the
+    partscan-happy path (`dev` is a /dev/loopN) and the fallback
+    offset-pair path (`dev` is a symlink-prefix with a sibling
+    `.loops` manifest naming the two real loop devices)."""
+    # Fallback path: prefix_dir contains a .loops manifest.
+    loops_file = Path(dev).parent / ".loops"
+    if loops_file.exists():
+        for loop in loops_file.read_text().split():
+            run(["losetup", "-d", loop], check=False)
+        # Clean up the symlink directory too.
+        shutil.rmtree(Path(dev).parent, ignore_errors=True)
+        return
     run(["losetup", "-d", dev], check=False)
 
 
@@ -243,6 +326,26 @@ def blkid_value(part: str, tag: str) -> str:
     if not out:
         die(f"blkid {tag} for {part} returned empty")
     return out
+
+
+def read_mbr_partuuid(img_path: Path, partnum: int) -> str:
+    """Compute the PARTUUID of an MBR partition from the image directly.
+
+    For MBR disks the kernel synthesises PARTUUID as
+    `<disk-signature>-<partition-number>`, where disk-signature is the
+    4-byte little-endian value at offset 0x1B8 of the MBR, formatted
+    as 8 lowercase hex digits; partition-number is the 1-based index
+    formatted as 2 hex digits. Reading the image ourselves dodges two
+    problems: per-partition loop devices (the fallback path) don't
+    expose PARTUUID via blkid, and some blkid versions lag behind
+    recent kernel changes to PARTUUID formatting.
+    """
+    with img_path.open("rb") as f:
+        f.seek(0x1B8)
+        sig = f.read(4)
+    if len(sig) != 4:
+        die(f"short read on MBR disk signature in {img_path}")
+    return f"{int.from_bytes(sig, 'little'):08x}-{partnum:02x}"
 
 
 # ----------------------------------------------------------------------------
@@ -832,8 +935,12 @@ def build(args: argparse.Namespace) -> int:
         root_part = f"{loop}p2"
         format_boot(boot_part)
         format_root(root_part)
-        boot_partuuid = blkid_value(boot_part, "PARTUUID")
-        root_partuuid = blkid_value(root_part, "PARTUUID")
+        # Compute PARTUUIDs from the image's MBR directly — works
+        # identically whether the loop-device pipeline went through
+        # the partscan path or the per-partition-offset fallback path
+        # (the latter doesn't let blkid see a partition-table context).
+        boot_partuuid = read_mbr_partuuid(out_img, 1)
+        root_partuuid = read_mbr_partuuid(out_img, 2)
         log(f"boot PARTUUID: {boot_partuuid}")
         log(f"root PARTUUID: {root_partuuid}")
 
