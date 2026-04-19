@@ -46,14 +46,10 @@ rustc -O \
 install -Dm755 /tmp/pi5-fw $DESTDIR/usr/local/bin/pi5-fw
 
 # pi5-wake-on-power: reads/writes the EEPROM bootloader config via
-# the VideoCore mailbox to keep WAKE_ON_GPIO=1 / POWER_OFF_ON_HALT=0
-# so the Pi 5 auto-boots after power is restored. Static-musl too.
-rustc -O \
-    -C strip=symbols \
-    -C target-feature=+crt-static \
-    -o /tmp/pi5-wake-on-power \
-    src/pi5-wake-on-power.rs
-install -Dm755 /tmp/pi5-wake-on-power $DESTDIR/usr/local/bin/pi5-wake-on-power
+# the VideoCore mailbox so the Pi 5 auto-boots after power is
+# restored (WAKE_ON_GPIO / POWER_OFF_ON_HALT). Python 3 stdlib only
+# (fcntl, os, struct, sys) — no pip deps, PSF-2.0.
+install -Dm755 bin/pi5-wake-on-power $DESTDIR/usr/local/bin/pi5-wake-on-power
 
 # apply-pi5-cold-reboot: idempotent shell helper that prepends
 # `reboot=c` to /boot/cmdline.txt. Runs from post_install below.
@@ -247,5 +243,7 @@ fi
 exit 0"""
 
 [depends]
-runtime = ["musl"]
+# pi5-wake-on-power is a Python 3 stdlib script — no pip deps.
+# python3 itself is PSF-2.0, on jonerix's permissive allowlist.
+runtime = ["musl", "python3"]
 build = ["rust"]
