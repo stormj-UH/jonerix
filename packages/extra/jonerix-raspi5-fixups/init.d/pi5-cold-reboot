@@ -1,0 +1,41 @@
+#!/bin/openrc-run
+# Pi 5: force /sys/kernel/reboot/mode=cold on every boot.
+#
+# The Pi 5 firmware prepends `reboot=w` to the kernel command line
+# even when /boot/cmdline.txt doesn't ask for it. We prepend
+# `reboot=c` in cmdline.txt so the kernel picks cold (the *last*
+# reboot= token wins), but this service is belt-and-suspenders for
+# hosts whose cmdline patch didn't take effect yet — without it,
+# `reboot` hangs the board because the RP1 southbridge can't be
+# reset by a warm reboot.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
+description="Pi 5: set kernel reboot mode to cold"
+
+depend() {
+    need localmount
+    keyword -jail -prefix -vserver
+}
+
+start() {
+    # Guard: only touch anything on an actual Pi 5.
+    if [ ! -r /proc/device-tree/model ] \
+        || ! grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null
+    then
+        return 0
+    fi
+
+    ebegin "Setting kernel reboot mode to cold"
+    if [ -w /sys/kernel/reboot/mode ]; then
+        echo cold > /sys/kernel/reboot/mode 2>/dev/null
+    fi
+    eend 0
+
+    # Log current wake-on-power / bootloader settings so they're
+    # auditable in the boot log. Non-mutating — users control the
+    # actual EEPROM state with `pi5-wake-on-power enable|disable`.
+    if [ -x /usr/local/bin/pi5-wake-on-power ]; then
+        einfo "$(/usr/local/bin/pi5-wake-on-power 2>&1 | tr '\n' ' ')"
+    fi
+}
