@@ -37,7 +37,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder-arm64
+  # Alpine-based builder. Pi 5 image assembly needs util-linux / dosfstools
+  # / e2fsprogs at BUILD time (sfdisk / mkfs.vfat / mkfs.ext4) — those are
+  # GPL and forbidden in jonerix's runtime userland, so we don't ship them
+  # in the builder container. Alpine has them one apk-install away and
+  # matches the pattern the WSL rootfs CI already uses. The produced image
+  # is populated via jpkg, so runtime stays permissive-only.
+  BUILDER_IMAGE_AARCH64: alpine:latest
 
 jobs:
   build:
@@ -51,8 +57,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      # GHCR login removed: we no longer pull a private builder image. The
+      # Alpine public image needs no auth and the apk install below
+      # replaces everything the old stormj-uh/jonerix:builder-arm64 provided.
 
       - name: Cache firmware tarball
         id: fw-cache
@@ -86,27 +93,37 @@ jobs:
             -e IMG_PACKAGES \
             "$BUILDER_IMAGE_AARCH64" /bin/sh -euc '
               set -e
-              # jpkg must be on PATH inside the builder image; the builder
-              # image ships one, but rebuild if missing so this still works
-              # against an older cached image.
-              if ! command -v jpkg >/dev/null 2>&1; then
-                cd /workspace/packages/jpkg
-                clang -std=c11 -Os -fuse-ld=lld \
-                  --rtlib=compiler-rt --unwindlib=none \
-                  -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
-                  -o /bin/jpkg src/*.c -ltls -lssl -lcrypto -lzstd
-                cd /workspace
-              fi
 
-              # Tools the Python script shells out to -- apk-install any
-              # that the builder image somehow lacks. Build-time only; none
-              # of these end up in the produced image.
-              for need in sfdisk mkfs.vfat mkfs.ext4 losetup blkid zstd bsdtar python3; do
-                if ! command -v "$need" >/dev/null 2>&1; then
-                  echo "missing: $need"
-                  apk add --no-cache util-linux dosfstools e2fsprogs zstd libarchive-tools python3 || true
-                  break
-                fi
+              # Alpine base: install everything the Python builder shells
+              # out to + the toolchain for a fresh jpkg build. libretls/
+              # libretls-static provide the libtls API jpkg links against
+              # since Alpine dropped libressl in 3.15 (same pattern as the
+              # WSL rootfs CI). samurai is ninja; jpkg is build.ninja-
+              # based. Everything installed here is build-time only and
+              # never leaks into the produced disk image.
+              apk update -q
+              apk add -q \
+                clang lld musl-dev samurai \
+                util-linux dosfstools e2fsprogs \
+                zstd libarchive-tools curl ca-certificates \
+                libretls-dev libretls-static openssl-libs-static zstd-static zstd-dev \
+                python3 tar
+
+              # Build jpkg from source against libretls — matches what
+              # .github/workflows/wsl-rootfs.yml does, so the binaries
+              # match byte-for-byte (and we do not depend on whatever
+              # arbitrarily-old jpkg a pre-built builder image might ship).
+              cd /workspace/packages/jpkg
+              LDLIBS="-ltls -lssl -lcrypto -lzstd" samu
+              ./jpkg --version
+              install -m 755 jpkg /usr/local/bin/jpkg
+              cd /workspace
+
+              # Sanity assertion (Python script also checks, but fail
+              # fast here with a clearer message).
+              for need in sfdisk mkfs.vfat mkfs.ext4 losetup blkid zstd bsdtar python3 jpkg; do
+                command -v "$need" >/dev/null 2>&1 \
+                  || { echo "missing required tool: $need" >&2; exit 1; }
               done
 
               # Pre-populate the firmware cache if the CI cache restored one.
