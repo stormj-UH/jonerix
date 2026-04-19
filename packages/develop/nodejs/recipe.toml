@@ -1,24 +1,40 @@
 [package]
 name = "nodejs"
-version = "24.14.1"
+version = "24.15.0-r1"
 license = "MIT"
-description = "JavaScript runtime built on V8 (libc++ / compiler-rt / zero GNU)"
+description = "JavaScript runtime built on V8 (libc++ / compiler-rt / full-icu / zero GNU)"
 
 [source]
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1.tar.gz"
-sha256 = "8298cf1f5774093ca819f41b8dd392fd2cff058688b4d5c8805026352e2d31b3"
+url = "https://nodejs.org/dist/v24.15.0/node-v24.15.0.tar.gz"
+sha256 = "729de494dd2872e5a3a6c32a1cd156a5413d4aca2772b2d873ee86bb5531bcd9"
 
 [build]
 system = "custom"
 build = """
 set -e
 
-# Node 24 from source — zero GNU C++ runtime.
+# Node 24 from source — zero GNU C++ runtime, full-icu.
+#
+# Changes vs the previous 24.14.1 recipe:
+# - Upstream bump 24.14.1 -> 24.15.0 (latest Krypton LTS patch).
+# - --with-intl=full-icu (was =none). Vite, Intl.*, and userland
+#   regex property escapes like `\\p{Surrogate}` depend on this:
+#   the old build left process.versions.icu undefined and RegExp
+#   threw on Unicode property escapes, breaking downstream builds
+#   (caught during the libreSRS deploy to watchtpwer). ICU data
+#   is downloaded during configure and statically linked into the
+#   node binary — no new runtime dependency, final image just has
+#   a larger `node` binary.
+# - Parallelism heuristic is CI-aware. GitHub ubuntu-latest and
+#   ubuntu-24.04-arm runners are 4 vCPU / ~14 GiB MemAvailable;
+#   V8 compiles want ~2 GB per job plus a ~3 GB linker step, so
+#   -j3 is the largest safe setting. On beefier local hosts we
+#   fall back to the original MemAvailable / 2 rule capped at
+#   nproc.
 #
 # Build notes (see jonerix-built-jpkgs/NODE24_RECIPE_FIXES.md):
 # - Must pass PATH explicitly: Python subprocess doesn't inherit jpkg's env.
 # - Use --ninja; the generated top-level Makefile is GNU-make syntax.
-# - Single job (-j1) to avoid OOM on low-memory build hosts.
 # - --rtlib=compiler-rt + --unwindlib=libunwind requires that the LLVM
 #   package has been installed with its GCC compat CRT dir populated
 #   (clang_rt.crtbegin.o / crtend.o under lib/gcc/<triple>/<ver>/).
@@ -44,30 +60,44 @@ LDFLAGS="-stdlib=libc++ -lc++abi -fuse-ld=lld --rtlib=compiler-rt --unwindlib=li
 python3 configure.py \
     --prefix=/ \
     --ninja \
-    --with-intl=none \
+    --with-intl=full-icu \
+    --download=all \
     --shared-zlib \
     --without-snapshot \
     --without-node-snapshot
 
-# V8 compiles use ~2GB per job; pick parallelism from available RAM.
+# Parallelism. V8 compilation peaks at ~2 GB per job; the final
+# link pulls another ~3 GB. GitHub runners give us 4 vCPU / ~14
+# GiB, so -j3 fits without swap thrash. On a bigger local box
+# (>= 28 GiB) we scale to nproc.
 MEM_GB=$(awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 2)
-JOBS=$((MEM_GB / 2))
-[ "$JOBS" -lt 1 ] && JOBS=1
-[ "$JOBS" -gt "$(nproc)" ] && JOBS=$(nproc)
-echo "Building with -j$JOBS (${MEM_GB}GB available)"
+CPUS=$(nproc 2>/dev/null || echo 2)
+
+if [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
+  JOBS=3
+  [ "$MEM_GB" -ge 28 ] && JOBS=$CPUS
+  [ "$JOBS" -gt "$CPUS" ] && JOBS=$CPUS
+else
+  JOBS=$((MEM_GB / 2))
+  [ "$JOBS" -lt 1 ] && JOBS=1
+  [ "$JOBS" -gt "$CPUS" ] && JOBS=$CPUS
+fi
+echo "Building with -j$JOBS (${MEM_GB}GB avail, ${CPUS} cpus, CI=${GITHUB_ACTIONS:-false})"
 samu -C out/Release -j$JOBS
 
 # Stage install using Node's own installer.
 python3 tools/install.py install --dest-dir "$DESTDIR" --prefix /
 
-# Verify: warn if GNU C++ runtime leaked in.
+# Verify: warn if GNU C++ runtime leaked in, and confirm ICU is present.
 echo "=== Verifying node binary dependencies ==="
 readelf -d "$DESTDIR/bin/node" 2>/dev/null | grep NEEDED || true
 if readelf -d "$DESTDIR/bin/node" 2>/dev/null | grep -q 'libstdc++\\|libgcc_s'; then
     echo "WARNING: GNU C++ runtime dependencies detected in node binary!"
 fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+echo "=== Verifying ICU is built in ==="
+"$DESTDIR/bin/node" -e 'if(!process.versions.icu){console.error("ICU NOT built in");process.exit(1)}console.log("ICU version:",process.versions.icu)'
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
 """
 install = ""
 
