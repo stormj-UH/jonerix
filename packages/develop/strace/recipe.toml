@@ -82,19 +82,77 @@ sed -i "s|^ioctls_inc_h = .*|ioctls_inc_h = $INC_FILES|" Makefile
 sed -i "s|^ioctlent_h = .*|ioctlent_h = $INC_LIST|" Makefile
 sed -i "s|^ioctl_redefs_h = .*|ioctl_redefs_h = $RED_LIST|" Makefile
 
-# Serial + verbose so a stuck jmake target is obvious in CI logs (the
-# parallel build hides which command is hanging). Strace 4.25 has ~150
-# .c files; serial should finish in 2-3 min. If it doesn't, the log
-# shows the exact last command issued so we can diagnose.
-make V=1 -j1"""
+# musl portability: dirent64.c references `struct dirent64` from
+# <dirent.h>, which is glibc-only (musl's `struct dirent` is already
+# 64-bit). Define the kernel ABI struct ourselves — strace reads raw
+# bytes from getdents64(), so the kernel layout is what matters.
+sed -i "/^#include <dirent.h>\$/a\\
+#ifndef __GLIBC__\\
+struct dirent64 { unsigned long long d_ino; long long d_off; unsigned short d_reclen; unsigned char d_type; char d_name[]; };\\
+#endif" dirent64.c
+
+# Modern kernel headers ship constants whose values changed since
+# 2018 (IPPROTO_MAX bumped from 256→263 when MPTCP landed, etc.).
+# strace 4.25 hard-codes 5500+ static_assert()s asserting those
+# 2018-era values. Disable them all — they're build-time sanity
+# checks, not runtime correctness, and hitting one just stops the
+# build over a constant we can't change anyway.
+echo "#ifndef STRACE_STATIC_ASSERT_H
+#define STRACE_STATIC_ASSERT_H
+#define static_assert(expr, msg) typedef char _strace_sa_unused[1]
+#endif" > static_assert.h
+
+# Build BUILT_SOURCES (printers.h, scno.h, sen.h, sys_func.h,
+# bpf_attr_check.c, ioctlent*.h) explicitly before strace itself. The
+# strace target's deps are .c files that include these generated
+# headers, but the dep chain is hidden inside .Po files which don't
+# exist yet on first build — make doesn't know to build them first.
+#
+# Use -j1 only: jmake doesn't implement the make jobserver protocol,
+# so recursive sub-makes (autotools emits all-recursive → all-am →
+# nested make) deadlock when each spawns its own worker pool.
+# strace+headers is ~150 .c files; serial runs in 5-10 min on CI.
+# jmake's $(filter $(patsubst %,\%/%,...)) double-% pattern returns
+# empty, so the Makefile rule `sen.h: $(syscallent_files)` builds an
+# empty enum and downstream `case SEN_xxx:` switch labels become
+# function-pointer expressions instead of integers. Generate sen.h
+# directly from the same arch's syscallent files.
+# sen.h must enumerate SEN_xxx for EVERY syscall name referenced in
+# any arch's syscallent table — pathtrace.c (and others) are
+# arch-generic and switch on names like SEN_sendfile that exist on
+# i386 but not on x86_64. Upstream Makefile feeds the script every
+# arch's syscallent.h via filter on EXTRA_DIST, so do the same.
+SYSC_FILES=$(find linux -name 'syscallent*.h' -o -name 'subcall.h' | xargs)
+cat $SYSC_FILES | ./generate_sen.sh > sen.h
+
+make -j1 printers.h scno.h sys_func.h bpf_attr_check.c native_printer_decls.h native_printer_defs.h
+# Generated ioctlent files (one per ioctls_inc input). We need them
+# all because syscall.c #includes ioctlent0.h directly.
+for h in $INC_LIST; do
+    make -j1 "$h"
+done
+# ioctl_redefs*.h are only referenced through MPERS_{m32,mx32}_IOCTL_MACROS
+# in defs.h, both gated by HAVE_M32_MPERS / HAVE_MX32_MPERS. Since
+# we configure --enable-mpers=no, those macros never expand and the
+# files are never included. Stub them out as empty so make's BUILT_SOURCES
+# rule is satisfied without invoking the redefs rule (which jmake
+# spins on indefinitely — pattern-rule expansion bug).
+for h in $RED_LIST; do
+    : > "$h"
+done
+make -j1 strace"""
 install = """set -e
-make DESTDIR=$DESTDIR install
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-# strace-log-merge is a perl helper for -ff multi-file output. Useful but
-# perl-dependent — keep it; perl is in the develop image anyway.
-rm -rf "$DESTDIR/share/doc"
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true"""
+# Install manually rather than `make install` — that target depends on
+# building tests/ too (which includes ~250 small test programs we
+# don't ship), and jmake serial-build of those takes 30+ minutes.
+install -Dm755 strace $DESTDIR/bin/strace
+install -Dm644 strace.1 $DESTDIR/share/man/man1/strace.1
+# strace-log-merge: perl helper for -ff multi-output. Useful and tiny.
+if [ -f strace-log-merge ]; then
+    install -Dm755 strace-log-merge $DESTDIR/bin/strace-log-merge
+    install -Dm644 strace-log-merge.1 $DESTDIR/share/man/man1/strace-log-merge.1
+fi
+llvm-strip --strip-all $DESTDIR/bin/strace 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
