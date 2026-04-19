@@ -1,0 +1,75 @@
+#!/bin/sh
+# apply-pi5-boot-settings — patch /boot/cmdline.txt and /boot/config.txt
+# with the fixups a Pi 5 needs to reboot / resume reliably.
+#
+# Idempotent: every edit is guarded, files are backed up once to
+# *.pre-pi5-fixups, and re-running is a no-op if everything's in
+# place.
+#
+# What it does:
+#   * cmdline.txt: prepend `reboot=c` so the kernel picks cold-reboot
+#     mode (firmware injects `reboot=w`, which hangs the RP1
+#     southbridge on a warm reset).
+#   * config.txt: force HDMI hot-plug detection on both ports. A Pi 5
+#     that loses power with the HDMI cable mid-insert can come back
+#     up with the display pipeline stalled, so from outside it reads
+#     as "didn't boot" even when the system is running fine. Safe on
+#     headless boxes (output goes to no monitor, no effect).
+#
+# Called from post_install on every Pi 5. Usable standalone too.
+# Part of jonerix-raspi5-fixups — MIT License.
+
+set -e
+
+# Only touch anything on a real Pi 5.
+if [ ! -r /proc/device-tree/model ] \
+    || ! grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null
+then
+    exit 0
+fi
+
+[ -d /boot ] || exit 0
+
+changed=0
+_backup() {
+    # $1 = file; snapshot once on first edit.
+    [ -f "$1.pre-pi5-fixups" ] || cp "$1" "$1.pre-pi5-fixups"
+}
+
+# --- /boot/cmdline.txt: reboot=c ---
+CMDLINE=/boot/cmdline.txt
+if [ -f "$CMDLINE" ] && ! grep -q 'reboot=c' "$CMDLINE"; then
+    _backup "$CMDLINE"
+    if sed -i '1 s|^|reboot=c |' "$CMDLINE" 2>/dev/null; then
+        :
+    else
+        tmp=$(mktemp) || exit 1
+        printf 'reboot=c ' > "$tmp"
+        cat "$CMDLINE" >> "$tmp"
+        mv "$tmp" "$CMDLINE"
+    fi
+    echo "raspi5-fixups: prepended reboot=c to $CMDLINE"
+    changed=1
+fi
+
+# --- /boot/config.txt: hdmi_force_hotplug on both ports ---
+CONFIG=/boot/config.txt
+if [ -f "$CONFIG" ] && ! grep -qE '^[[:space:]]*hdmi_force_hotplug' "$CONFIG"; then
+    _backup "$CONFIG"
+    {
+        echo ''
+        echo '# --- added by jonerix-raspi5-fixups ---'
+        echo '# Keep the HDMI pipeline live even without EDID from a'
+        echo '# monitor. Pi 5s that lose power mid-HDMI-insert sometimes'
+        echo '# come back with the display pipeline stalled, reading'
+        echo '# externally as "did not boot" even when the OS is fine.'
+        echo 'hdmi_force_hotplug:0=1'
+        echo 'hdmi_force_hotplug:1=1'
+    } >> "$CONFIG"
+    echo "raspi5-fixups: added hdmi_force_hotplug to $CONFIG"
+    changed=1
+fi
+
+if [ "$changed" = 0 ]; then
+    echo "raspi5-fixups: /boot already patched, nothing to do"
+fi
