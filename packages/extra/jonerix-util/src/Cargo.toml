@@ -1,0 +1,34 @@
+[package]
+name = "jonerix-util"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Clean-room permissive-licensed replacement for the GPL util-linux suite"
+authors = ["jonerix contributors"]
+
+[lib]
+name = "jxutil"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lscpu"
+path = "src/bin/lscpu.rs"
+
+[[bin]]
+name = "hwclock"
+path = "src/bin/hwclock.rs"
+
+[[bin]]
+name = "ionice"
+path = "src/bin/ionice.rs"
+
+[[bin]]
+name = "nsenter"
+path = "src/bin/nsenter.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
