@@ -1,9 +1,21 @@
 name: Publish Pi 5 image
 
 on:
+  # Tag push is the canonical release trigger (attaches to a GH release).
+  # Main-branch pushes that touch the image builder, the Pi 5 fixups
+  # recipe, or any core-package recipe version rebuild the image and
+  # upload it as a workflow artifact (no release — that's reserved for
+  # tag pushes). The concurrency group below collapses rapid pushes so
+  # we don't pile up runs when a merge touches multiple files.
   push:
+    branches: [main]
     tags:
       - 'pi5-image-v*'
+    paths:
+      - 'image/pi5/**'
+      - 'packages/extra/jonerix-raspi5-fixups/**'
+      - 'packages/core/**/recipe.toml'
+      - '.github/workflows/publish-pi5-image.yml'
   workflow_dispatch:
     inputs:
       size:
