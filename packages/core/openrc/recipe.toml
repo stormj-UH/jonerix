@@ -99,10 +99,13 @@ fi
 # followed by `. "$_dir/$RC_SVCNAME"`. After the cd, the relative path
 # resolves wrong and every init script sourcing fails with:
 #   /lib/rc/sh/gendepends.sh[129]: .: etc/init.d/<svc>: No such file
-# ~40 of those errors per invocation pollute the boot log. Trivially
-# fixed by absolutizing the path. Reported upstream TBD.
+# ~40 of those errors per invocation pollute the boot log. The
+# earlier sed here used `\\$` as the end-of-line match, which
+# GNU sed accepts but toybox sed (jonerix's sed) silently fails
+# to match — so the fix was a no-op on every real install. The
+# prefix-only match below works on both.
 if [ -f "$DESTDIR/lib/rc/sh/gendepends.sh" ]; then
-    sed -i 's|^etc/init.d \\\\$|/etc/init.d \\\\|' \\
+    sed -i 's|^etc/init|/etc/init|' \\
         "$DESTDIR/lib/rc/sh/gendepends.sh"
 fi
 # Ensure basic runlevel symlinks exist. OpenRC's upstream install
