@@ -75,7 +75,6 @@ jobs:
           # Sanity: confirm no missing TLS symbols (the runtime bug we're
           # fixing manifested as "Error relocating: tls_config_set_ca_file").
           ./jpkg --version
-          file jpkg
 
       - name: Install jpkg
         run: install -m 755 /tmp/jpkg-bin-x86_64/jpkg /usr/local/bin/jpkg
