@@ -277,6 +277,18 @@ cat > "${STAGING}/etc/fstab" << 'EOF'
 # you also set `mountFsTab = true` in /etc/wsl.conf.
 EOF
 
+# /sbin/mount.drvfs — helper WSL invokes when `mount -t drvfs` runs at
+# boot (the automount path). drvfs isn't a kernel filesystem type —
+# it's a 9p-over-virtio translation layer handled by WSL's own /init
+# binary, which Microsoft injects at runtime under / (not in the
+# tarball). We mirror what Debian/Ubuntu WSL ship: a symlink from
+# /sbin/mount.drvfs -> /init. The symlink is dangling in the tar but
+# resolves as soon as WSL drops /init into the live namespace; without
+# it, /bin/mount gets "drvfs" passed straight to the kernel, which
+# returns ENODEV and leaves /mnt/c unmounted.
+mkdir -p "${STAGING}/sbin"
+ln -sf /init "${STAGING}/sbin/mount.drvfs"
+
 # ---------------------------------------------------------------------------
 # 10. Pack the rootfs
 # ---------------------------------------------------------------------------
