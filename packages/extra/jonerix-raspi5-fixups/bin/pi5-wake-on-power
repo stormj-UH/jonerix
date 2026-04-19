@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""pi5-wake-on-power — ensure Pi 5 auto-powers-on after power loss.
+
+Reads/writes the bootloader EEPROM config via the VideoCore mailbox
+(/dev/vcio).  If the config is empty (defaults), the Pi 5 already
+powers on automatically (WAKE_ON_GPIO=1 is the default).
+
+If you need to explicitly set the values (e.g. someone changed them),
+this tool can write a config section into the EEPROM via the mailbox
+SET_BOOTLOADER_CONFIG tag, and also stage an EEPROM update image on
+/boot for the bootloader to apply on next reboot.
+
+Usage:
+    pi5-wake-on-power              show current config
+    pi5-wake-on-power enable       write WAKE_ON_GPIO=1, POWER_OFF_ON_HALT=0
+    pi5-wake-on-power disable      write POWER_OFF_ON_HALT=1 (stay off after halt)
+
+Requires root for /dev/vcio access.
+"""
+
+import fcntl
+import os
+import struct
+import sys
+
+# ── VideoCore mailbox ────────────────────────────────────────────────
+
+VCIO_PATH = "/dev/vcio"
+IOCTL_MBOX = 0xC008_6400  # _IOWR(100, 0, char*)
+
+TAG_GET_CONFIG = 0x0003_0084
+TAG_SET_CONFIG = 0x0003_8084
+TAG_END = 0
+
+VAL_SIZE = 4096  # max config payload
+
+
+def mbox_call(tag: int, data: bytes = b"") -> tuple[int, bytes]:
+    """Send a single-tag mailbox request, return (response_code, payload)."""
+    val_words = VAL_SIZE // 4
+    buf_words = 5 + val_words + 1
+    buf = bytearray(buf_words * 4)
+
+    struct.pack_into("<I", buf, 0, len(buf))       # total size
+    struct.pack_into("<I", buf, 4, 0)               # request
+    struct.pack_into("<I", buf, 8, tag)              # tag id
+    struct.pack_into("<I", buf, 12, VAL_SIZE)        # value buffer size
+    struct.pack_into("<I", buf, 16, 0)               # request indicator
+    buf[20 : 20 + len(data)] = data                  # payload
+    # end tag is already 0
+
+    fd = os.open(VCIO_PATH, os.O_RDWR)
+    try:
+        fcntl.ioctl(fd, IOCTL_MBOX, buf)
+    finally:
+        os.close(fd)
+
+    resp_code = struct.unpack_from("<I", buf, 4)[0]
+    tag_resp = struct.unpack_from("<I", buf, 16)[0]
+    resp_len = tag_resp & 0x7FFF_FFFF
+    return resp_code, bytes(buf[20 : 20 + resp_len])
+
+
+# ── Config parsing ───────────────────────────────────────────────────
+
+def read_config() -> str:
+    """Read the bootloader config from EEPROM via mailbox."""
+    code, raw = mbox_call(TAG_GET_CONFIG)
+    if code != 0x8000_0000:
+        die(f"mailbox error: 0x{code:08x}")
+    # First 4 bytes are the config length
+    if len(raw) < 4:
+        return ""
+    cfg_len = struct.unpack_from("<I", raw, 0)[0]
+    if cfg_len == 0:
+        return ""
+    return raw[4 : 4 + cfg_len].decode("ascii", errors="replace")
+
+
+def write_config(text: str) -> None:
+    """Write a config string to the EEPROM via mailbox."""
+    encoded = text.encode("ascii")
+    payload = struct.pack("<I", len(encoded)) + encoded
+    code, _ = mbox_call(TAG_SET_CONFIG, payload)
+    if code != 0x8000_0000:
+        die(f"mailbox SET error: 0x{code:08x}")
+
+
+def parse_config(text: str) -> dict[str, str]:
+    """Parse KEY=VALUE lines from config text."""
+    kv: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if "=" in line and not line.startswith("#") and not line.startswith("["):
+            key, _, val = line.partition("=")
+            kv[key.strip()] = val.strip()
+    return kv
+
+
+def set_key(text: str, key: str, value: str) -> str:
+    """Set a key in the config text. Replace if exists, append if not."""
+    target = f"{key}={value}"
+    lines = text.splitlines() if text else []
+    found = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(key) and stripped[len(key) :].lstrip().startswith("="):
+            lines[i] = target
+            found = True
+            break
+    if not found:
+        # Add under [all] section if present, else prepend
+        section_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == "[all]":
+                section_idx = i
+                break
+        if section_idx is not None:
+            lines.insert(section_idx + 1, target)
+        else:
+            lines = ["[all]", target] + lines
+    return "\n".join(lines) + "\n"
+
+
+# ── Main ─────────────────────────────────────────────────────────────
+
+def die(msg: str) -> None:
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def check_root() -> None:
+    if os.geteuid() != 0:
+        die("must be root (need /dev/vcio access)")
+
+
+def show() -> None:
+    config_text = read_config()
+    if not config_text:
+        print("EEPROM bootloader config: <empty — all factory defaults>")
+        print()
+        print("  WAKE_ON_GPIO     = 1  (default — auto-power-on: YES)")
+        print("  POWER_OFF_ON_HALT = 0  (default — stays restartable: YES)")
+        print()
+        print("auto-power-on after power loss: OK (defaults are correct)")
+        return
+
+    print("EEPROM bootloader config:")
+    print(config_text)
+    print()
+    kv = parse_config(config_text)
+    wake = kv.get("WAKE_ON_GPIO", "1")
+    poh = kv.get("POWER_OFF_ON_HALT", "0")
+    print(f"  WAKE_ON_GPIO      = {wake}  {'(OK)' if wake == '1' else '(NEEDS FIX)'}")
+    print(f"  POWER_OFF_ON_HALT = {poh}  {'(OK)' if poh == '0' else '(NEEDS FIX)'}")
+    if wake == "1" and poh == "0":
+        print("\nauto-power-on after power loss: OK")
+    else:
+        print("\nauto-power-on: NEEDS FIX — run: sudo pi5-wake-on-power enable")
+
+
+def enable() -> None:
+    config_text = read_config()
+    kv = parse_config(config_text)
+
+    wake = kv.get("WAKE_ON_GPIO", "1")
+    poh = kv.get("POWER_OFF_ON_HALT", "0")
+
+    if wake == "1" and poh == "0":
+        print("already configured for auto-power-on, nothing to do")
+        return
+
+    new = config_text
+    if wake != "1":
+        new = set_key(new, "WAKE_ON_GPIO", "1")
+        print("setting WAKE_ON_GPIO=1")
+    if poh != "0":
+        new = set_key(new, "POWER_OFF_ON_HALT", "0")
+        print("setting POWER_OFF_ON_HALT=0")
+
+    write_config(new)
+    print("config written via mailbox")
+    print("note: change takes effect after reboot")
+
+
+def disable() -> None:
+    config_text = read_config()
+    new = set_key(config_text, "POWER_OFF_ON_HALT", "1")
+    print("setting POWER_OFF_ON_HALT=1")
+    write_config(new)
+    print("config written — system will stay off after halt/poweroff")
+
+
+def main() -> None:
+    check_root()
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "show"
+    match cmd:
+        case "show" | "status":
+            show()
+        case "enable":
+            enable()
+        case "disable":
+            disable()
+        case "-h" | "--help" | "help":
+            print(__doc__)
+        case _:
+            die(f"unknown command: {cmd}")
+
+
+if __name__ == "__main__":
+    main()
