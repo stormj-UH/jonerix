@@ -34,7 +34,8 @@ RUN jpkg update && \
     for pkg in \
       llvm libcxx rust go \
       cmake jmake samurai flex bc byacc \
-      perl python3 nodejs; \
+      perl python3 nodejs \
+      strace; \
     do \
       echo "Installing: $pkg" && \
       if ! jpkg install --force "$pkg"; then \
