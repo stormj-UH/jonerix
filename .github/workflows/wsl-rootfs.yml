@@ -69,7 +69,7 @@ jobs:
           # LDLIBS pulls in libtls + libssl + libcrypto statically via
           # libretls-static so the resulting binary has no libtls.so
           # dependency.
-          LDLIBS='-ltls -lssl -lcrypto' samu
+          LDLIBS='-ltls -lssl -lcrypto -lzstd' samu
           mkdir -p /tmp/jpkg-bin-x86_64
           cp jpkg /tmp/jpkg-bin-x86_64/jpkg
           # Sanity: confirm no missing TLS symbols (the runtime bug we're
@@ -200,7 +200,7 @@ jobs:
               else
                 cd /workspace/packages/jpkg
                 # jpkg is ninja-based; there is no Makefile.
-                LDLIBS="-ltls -lssl -lcrypto" samu
+                LDLIBS="-ltls -lssl -lcrypto -lzstd" samu
                 ./jpkg --version
                 install -m 755 jpkg /usr/local/bin/jpkg
                 cp jpkg /jpkg-bin/jpkg
