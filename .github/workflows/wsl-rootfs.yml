@@ -1,13 +1,18 @@
 name: Build WSL rootfs
 
 on:
-  # Push trigger disabled — building locally.
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - 'packages/core/**'
-  #     - 'install/wsl/**'
-  #     - '.github/workflows/wsl-rootfs.yml'
+  # Auto-rebuild when the rootfs recipe, installer, default configs, or
+  # any core-package version changes land on main. The `concurrency:`
+  # group below collapses rapid pushes so we don't pile up runs when a
+  # PR merges touching multiple files.
+  push:
+    branches: [main]
+    paths:
+      - 'install/wsl/**'
+      - 'config/defaults/etc/**'
+      - 'packages/core/**/recipe.toml'
+      - 'packages/jpkg/**'
+      - '.github/workflows/wsl-rootfs.yml'
   workflow_dispatch:
 
 # Only one rootfs build at a time; a newer push supersedes an in-progress one.
