@@ -1,0 +1,39 @@
+#!/bin/sh
+# apply-pi5-cold-reboot — prepend `reboot=c` to /boot/cmdline.txt so
+# the kernel overrides the firmware-injected `reboot=w`.
+#
+# Safe to re-run: backs up /boot/cmdline.txt once to
+# cmdline.txt.pre-pi5-fixups, and exits cleanly if the file already
+# contains `reboot=c`.
+#
+# Part of jonerix-raspi5-fixups — MIT License.
+
+set -e
+
+# Only touch anything on a real Pi 5.
+if [ ! -r /proc/device-tree/model ] \
+    || ! grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null
+then
+    exit 0
+fi
+
+CMDLINE=/boot/cmdline.txt
+[ -f "$CMDLINE" ] || exit 0
+
+if grep -q 'reboot=c' "$CMDLINE"; then
+    exit 0
+fi
+
+[ -f "$CMDLINE.pre-pi5-fixups" ] || cp "$CMDLINE" "$CMDLINE.pre-pi5-fixups"
+
+# Prepend `reboot=c ` to the first line. BusyBox/toybox sed handles
+# -i on current jonerix builds; fall back to a tmpfile if it doesn't.
+if sed -i '1 s|^|reboot=c |' "$CMDLINE" 2>/dev/null; then
+    :
+else
+    tmp=$(mktemp) || exit 1
+    printf 'reboot=c ' > "$tmp"
+    cat "$CMDLINE" >> "$tmp"
+    mv "$tmp" "$CMDLINE"
+fi
+echo "raspi5-fixups: prepended reboot=c to $CMDLINE"
