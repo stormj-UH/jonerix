@@ -65,7 +65,13 @@ jobs:
         id: fw-cache
         uses: actions/cache@v4
         with:
-          path: /tmp/pi5-firmware.tar.gz
+          # Cache a DIRECTORY, not a single file. The docker step below
+          # bind-mounts this into the container; with a single-file
+          # source, Python's `tmp.rename(dest)` against the bind-mount
+          # target hits EBUSY because rename(2) can't replace a mount
+          # point. A directory mount lets fetch_firmware write its
+          # `.partial` and then rename-within-dir normally.
+          path: /tmp/pi5-cache
           # Pin cache key to the tag the Python script expects. Bump when
           # FIRMWARE_REPO_TAG in build-image.py changes.
           key: pi5-firmware-1.20240306
@@ -74,14 +80,11 @@ jobs:
         run: |
           mkdir -p /tmp/pi5-out
           chmod 0777 /tmp/pi5-out
-          # Ensure the firmware-cache path exists as a FILE before the
-          # docker bind-mount below. When actions/cache misses, this
-          # path doesnt exist, and docker's -v <file>:<file> spec will
-          # auto-create the source as a directory (silent default),
-          # after which bsdtar fails with "Error reading" and Python's
-          # unlink raises IsADirectoryError. A zero-byte touch keeps
-          # fetch_firmware's integrity probe unambiguous.
-          touch /tmp/pi5-firmware.tar.gz
+          # Ensure the firmware-cache directory exists. actions/cache
+          # doesn't create it on miss; docker would auto-create it if
+          # missing, which is fine, but being explicit avoids a race.
+          mkdir -p /tmp/pi5-cache
+          chmod 0777 /tmp/pi5-cache
 
       - name: Build image in jonerix:builder container
         env:
@@ -94,7 +97,7 @@ jobs:
           docker run --rm --privileged --entrypoint "" \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/tmp/pi5-out:/out" \
-            -v "/tmp/pi5-firmware.tar.gz:/cache/firmware.tar.gz" \
+            -v "/tmp/pi5-cache:/cache" \
             -w /workspace \
             -e IMG_SIZE \
             -e IMG_HOSTNAME \
