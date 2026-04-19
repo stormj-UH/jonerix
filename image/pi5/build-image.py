@@ -415,10 +415,28 @@ def jpkg_install(root: Path, packages: Iterable[str]) -> None:
 
 
 def fetch_firmware(dest_tarball: Path, url: str = FIRMWARE_TARBALL_URL) -> None:
-    """Download the raspberrypi/firmware tarball if not already cached."""
+    """Download the raspberrypi/firmware tarball if not already cached,
+    validating any existing cache file before trusting it.
+
+    A size > 0 check isn't enough: a previous run that died mid-
+    download leaves a partial file the next run then hands to bsdtar
+    and gets 'Error opening archive'. Run a cheap `bsdtar -tf` listing
+    to confirm the cache is a valid archive before reusing it; fall
+    through to re-download on any failure.
+    """
     if dest_tarball.exists() and dest_tarball.stat().st_size > 0:
-        log(f"firmware tarball already cached: {dest_tarball}")
-        return
+        # Cheap integrity probe.
+        probe = subprocess.run(
+            ["bsdtar", "-tf", str(dest_tarball)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if probe.returncode == 0:
+            log(f"firmware tarball already cached (valid): {dest_tarball}")
+            return
+        log(f"firmware tarball cached but UNREADABLE; redownloading")
+        dest_tarball.unlink(missing_ok=True)
+
     dest_tarball.parent.mkdir(parents=True, exist_ok=True)
     log(f"downloading firmware tarball: {url}")
     tmp = dest_tarball.with_suffix(dest_tarball.suffix + ".partial")
