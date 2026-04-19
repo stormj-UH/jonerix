@@ -235,8 +235,21 @@ appendWindowsPath = false
 
 [automount]
 enabled = true
-mountFsTab = true
+mountFsTab = false
 options = "metadata,umask=22,fmask=11"
+EOF
+
+# /etc/fstab — WSL runs `mount -a` at boot when mountFsTab=true. We
+# disable that in wsl.conf (mountFsTab=false) because the Pi-inherited
+# fstab lines in any package we install (raspi5-fixups' base rescue,
+# etc.) reference /dev/mmcblk0p2 and blow up. Still ship an empty
+# header file so tools that read /etc/fstab (e.g. `findmnt --source`)
+# don't trip on ENOENT.
+cat > "${STAGING}/etc/fstab" << 'EOF'
+# /etc/fstab — intentionally empty on WSL.
+# WSL mounts rootfs itself (via --import) and /mnt/<drive> via drvfs
+# from [automount] in /etc/wsl.conf. Add extra mounts here only if
+# you also set `mountFsTab = true` in /etc/wsl.conf.
 EOF
 
 # ---------------------------------------------------------------------------
