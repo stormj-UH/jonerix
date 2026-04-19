@@ -41,10 +41,15 @@ jobs:
         run: |
           mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
           apk update -q
+          # libretls-{dev,static}: provides the LibreSSL libtls API on top
+          # of OpenSSL. Alpine dropped libressl in 3.15, so without this
+          # the static-link step silently falls back to dynamic, and the
+          # resulting jpkg can't relocate tls_* symbols at runtime.
           apk add -q \
-            clang lld musl-dev make \
+            clang lld musl-dev make samurai \
             curl tar zstd libarchive-tools ca-certificates \
             zstd-dev zstd-static \
+            libretls-dev libretls-static openssl-libs-static \
             github-cli
 
       - name: Restore jpkg binary cache
@@ -52,15 +57,25 @@ jobs:
         id: jpkg-cache
         with:
           path: /tmp/jpkg-bin-x86_64
-          key: jpkg-bin-x86_64-${{ hashFiles('packages/jpkg/src/**') }}
+          # Cache key v2: pre-v2 keys point at pre-libretls-linkage binaries
+          # that fail at runtime with missing tls_* symbols. Invalidating.
+          key: jpkg-bin-x86_64-v2-${{ hashFiles('packages/jpkg/src/**', 'packages/jpkg/build.ninja') }}
 
       - name: Build jpkg
         if: steps.jpkg-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/jpkg
-          make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+          # Use samu (there's no Makefile; the project is ninja-based).
+          # LDLIBS pulls in libtls + libssl + libcrypto statically via
+          # libretls-static so the resulting binary has no libtls.so
+          # dependency.
+          LDLIBS='-ltls -lssl -lcrypto' samu
           mkdir -p /tmp/jpkg-bin-x86_64
           cp jpkg /tmp/jpkg-bin-x86_64/jpkg
+          # Sanity: confirm no missing TLS symbols (the runtime bug we're
+          # fixing manifested as "Error relocating: tls_config_set_ca_file").
+          ./jpkg --version
+          file jpkg
 
       - name: Install jpkg
         run: install -m 755 /tmp/jpkg-bin-x86_64/jpkg /usr/local/bin/jpkg
@@ -135,7 +150,8 @@ jobs:
         id: jpkg-cache-aarch64
         with:
           path: /tmp/jpkg-bin-aarch64
-          key: jpkg-bin-aarch64-${{ hashFiles('packages/jpkg/src/**') }}
+          # v2: see x86_64 job for rationale (pre-libretls binaries are stale).
+          key: jpkg-bin-aarch64-v2-${{ hashFiles('packages/jpkg/src/**', 'packages/jpkg/build.ninja') }}
 
       - name: Download packages from release (aarch64)
         env:
@@ -170,17 +186,22 @@ jobs:
               set -e
               mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
               apk update -q
+              # libretls = libtls API shim on top of OpenSSL; required for
+              # static linking of jpkg after Alpine dropped libressl.
               apk add -q \
-                clang lld musl-dev make \
+                clang lld musl-dev make samurai \
                 curl tar zstd libarchive-tools ca-certificates \
-                zstd-dev zstd-static
+                zstd-dev zstd-static \
+                libretls-dev libretls-static openssl-libs-static
 
               if [ "$JPKG_CACHE_HIT" = "true" ] && [ -f /jpkg-bin/jpkg ]; then
                 install -m 755 /jpkg-bin/jpkg /usr/local/bin/jpkg
                 echo "jpkg: using cached binary"
               else
                 cd /workspace/packages/jpkg
-                make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+                # jpkg is ninja-based; there is no Makefile.
+                LDLIBS="-ltls -lssl -lcrypto" samu
+                ./jpkg --version
                 install -m 755 jpkg /usr/local/bin/jpkg
                 cp jpkg /jpkg-bin/jpkg
               fi
