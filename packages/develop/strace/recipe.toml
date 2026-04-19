@@ -60,6 +60,26 @@ fi
 #                             that older gcc didn't, so configure-time probe
 #                             scripts don't accidentally treat them as fails.
 GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" LDFLAGS="-Wl,--disable-new-dtags" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --enable-mpers=no --disable-gcc-Werror --without-libdw --enable-secontext=no CC=clang
+
+# jmake's $(wildcard) + $(patsubst) chain on
+#   ioctls_inc_h = $(wildcard $(srcdir)/$(OS)/$(ARCH)/ioctls_inc*.h)
+#   ioctlent_h = $(patsubst $(srcdir)/$(OS)/$(ARCH)/ioctls_inc%,ioctlent%,$(ioctls_inc_h))
+# produces a doubled path (./linux/ARCH/linux/ARCH/ioctls_inc0.h) that
+# breaks `all`. Resolve the wildcard ourselves and hardcode it into the
+# Makefile so neither function is involved.
+ARCH=$(clang -dumpmachine | cut -d- -f1)
+case "$ARCH" in
+    x86_64|aarch64|i386|arm|riscv64|powerpc|powerpc64|s390x|mips|mips64) ;;
+    aarch64*) ARCH=aarch64 ;;
+    arm*) ARCH=arm ;;
+    *) echo "WARN: untested ARCH=$ARCH for strace 4.25"; ;;
+esac
+INC_LIST=$(ls linux/$ARCH/ioctls_inc*.h | sed -n 's|linux/'"$ARCH"'/ioctls_inc\([0-9]*\)\.h|ioctlent\1.h|p' | tr '\\n' ' ')
+RED_LIST=$(echo "$INC_LIST" | sed 's/ioctlent0.h//' | sed 's/ioctlent/ioctl_redefs/g')
+sed -i "s|^ioctls_inc_h = .*|ioctls_inc_h = $(ls linux/$ARCH/ioctls_inc*.h | tr '\\n' ' ')|" Makefile
+sed -i "s|^ioctlent_h = .*|ioctlent_h = $INC_LIST|" Makefile
+sed -i "s|^ioctl_redefs_h = .*|ioctl_redefs_h = $RED_LIST|" Makefile
+
 make -j$(nproc)"""
 install = """set -e
 make DESTDIR=$DESTDIR install
