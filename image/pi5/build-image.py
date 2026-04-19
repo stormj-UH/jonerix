@@ -177,11 +177,21 @@ def partition_mbr(img_path: Path, boot_mb: int) -> None:
     log("writing MBR partition table via sfdisk")
     # 4 MiB-aligned start (sector 8192) matches official Raspberry Pi OS images
     # and is safe for SD wear-leveling block boundaries.
+    # Partition 1 starts at sector 8192 (4 MiB-aligned) — matches official
+    # Raspberry Pi OS images and is SD-friendly. Partition 2 must start
+    # immediately after p1 (start = 8192 + size_of_p1) and takes all
+    # remaining space. Leaving p2's start unspecified lets sfdisk pick
+    # the first free region, which is the 6 KiB pre-p1 gap from sectors
+    # 2048-8191 — giving you a 3 MiB "root" partition and partition-
+    # table chaos. Pin it explicitly.
+    p1_start = 8192
+    p1_size = boot_mb * 2048
+    p2_start = p1_start + p1_size
     layout = (
         "label: dos\n"
         "unit: sectors\n"
-        f"1 : start=8192, size={boot_mb * 2048}, type=c, bootable\n"  # 0x0C = FAT32 LBA
-        "2 : type=83\n"  # 0x83 = Linux; grows to end of disk
+        f"1 : start={p1_start}, size={p1_size}, type=c, bootable\n"  # 0x0C = FAT32 LBA
+        f"2 : start={p2_start}, type=83\n"  # 0x83 = Linux; grows to end of disk
     )
     proc = subprocess.run(
         ["sfdisk", str(img_path)],
