@@ -1,5 +1,6 @@
 #!/bin/sh
-# /bin/ntp-set-http — set system clock from HTTP Date header.
+# /bin/ntp-set-http — establish a plausible system clock before any
+# TLS-using daemon starts.
 #
 # Why: jonerix is permissive-only (no GPL coreutils' `date -u -d`,
 # no GNU `date` with extended parsing). On hosts without a battery-
@@ -14,18 +15,42 @@
 # even when NTP servers clearly say to. The old `ntpd -s` set-then-
 # exit mode was removed upstream.
 #
-# Solution: fetch any HTTP (not HTTPS — bypasses cert checks) URL,
-# read the Date header, and call `date -u -s` with a toybox-style
-# MMDDhhmmYYYY.ss stamp. HTTP Date precision is 1 second which is
-# more than enough for TLS validity — ntpd then takes over for
-# proper time sync.
+# Priority order (stop at the first one that sets a plausible clock):
+#
+#   1. Hardware RTC — if /dev/rtc0 exists AND hwclock --show returns
+#      a year >= 2020, copy RTC → system via `hwclock --hctosys`.
+#      Skipped when there's no battery (RTC reads back as 1970) or
+#      no RTC hardware at all (Pi 5 default).
+#
+#   2. HTTP Date header — plain HTTP (not HTTPS; we explicitly can't
+#      do TLS yet) against well-known IPs first (Cloudflare/Google/
+#      Quad9 public anycast), falling back to hostnames. IPs first
+#      matters because DNS is frequently the second thing broken on
+#      a misconfigured network (captive portals, unbound waiting on
+#      DNSSEC-which-needs-a-clock, resolv.conf still loopback, etc).
+#
+#   3. Deterministic fallback — 2026-04-01 00:00:00 UTC. This is
+#      deliberately recent enough that TLS cert chains from 2024+
+#      haven't expired yet, and far enough in the past that any
+#      current NTP response will be a forward adjustment (the
+#      direction openntpd is willing to make). Better than leaving
+#      the clock at 1970 — lets the rest of boot proceed instead of
+#      deadlocking on TLS.
 #
 # Usage:
 #   /bin/ntp-set-http
 #
-# Exits 0 if the clock was set, 1 if no host was reachable.
+# Exit codes:
+#   0 — clock was set (RTC, HTTP, or fallback all count)
+#   1 — could not set the clock even to the fallback (date(1) missing?)
+#
 # Part of jonerix-boot-helpers; called by /etc/init.d/ntp-bootstrap
 # before ntpd and tailscaled start at boot.
+
+# Deterministic fallback: 2026-04-01 00:00:00 UTC.
+# Epoch seconds precomputed so we don't depend on coreutils' parser.
+FALLBACK_UNIX=1775001600
+FALLBACK_HUMAN='2026-04-01 00:00:00 UTC'
 
 m2n() {
     case $1 in
@@ -35,6 +60,62 @@ m2n() {
     esac
 }
 
+apply_fallback() {
+    if date -u -s "@${FALLBACK_UNIX}" >/dev/null 2>&1; then
+        echo "ntp-set-http: fallback clock set to ${FALLBACK_HUMAN} ($(date))" >&2
+        return 0
+    fi
+    # Older toybox variants parse `@secs` differently; retry with a
+    # literal MMDDhhmmYYYY.ss string for 2026-04-01 00:00:00 UTC.
+    if date -u -s '040100002026.00' >/dev/null 2>&1; then
+        echo "ntp-set-http: fallback clock set to ${FALLBACK_HUMAN} ($(date))" >&2
+        return 0
+    fi
+    echo "ntp-set-http: ERROR: unable to set clock to fallback via date(1)" >&2
+    return 1
+}
+
+# ─── (1) RTC — battery-backed only ────────────────────────────────────
+#
+# Detection:
+#   - /dev/rtc0 or /dev/rtc must exist as a character device
+#   - hwclock(1) must be present (toybox / util-linux)
+#   - `hwclock --show` must succeed AND return a year >= 2020
+#
+# A missing battery reports the RTC's epoch (usually 1970 or 2000),
+# which we reject as "no good time here". Year >= 2020 is our "is
+# this obviously junk" floor; not strict calendar validation.
+try_rtc() {
+    # Some kernels expose /dev/rtc as a symlink to rtc0; accept either.
+    [ -c /dev/rtc0 ] || [ -c /dev/rtc ] || return 1
+    command -v hwclock >/dev/null 2>&1 || return 1
+
+    RTC_OUT=$(hwclock --show 2>/dev/null) || return 1
+    # hwclock --show formats vary across toybox/util-linux/busybox but
+    # all start with an ISO date (YYYY-MM-DD) or a traditional
+    # `Sat Apr 18 …` line. Extract a four-digit year conservatively.
+    RTC_YEAR=$(printf '%s\n' "$RTC_OUT" | awk '{
+        for (i = 1; i <= NF; i++)
+            if ($i ~ /^2[0-9]{3}$/) { print $i; exit }
+        # ISO form: first field is 2026-04-18T... or 2026-04-18
+        split($1, a, /[-T]/)
+        if (a[1] ~ /^2[0-9]{3}$/) print a[1]
+    }')
+    [ -n "$RTC_YEAR" ] || return 1
+    [ "$RTC_YEAR" -ge 2020 ] 2>/dev/null || return 1
+
+    # RTC looks plausible; push it into the system clock.
+    if hwclock --hctosys >/dev/null 2>&1; then
+        echo "ntp-set-http: clock set from RTC (battery OK): $(date)"
+        return 0
+    fi
+    return 1
+}
+
+try_rtc && exit 0
+
+# ─── (2) HTTP Date header ─────────────────────────────────────────────
+#
 # Probe list — IPs first so we work with DNS down, hostnames as a
 # fallback for networks where the IPs above are blocked. Cold boot on
 # an RTC-less host is the motivating case: unbound can't do DNSSEC
@@ -48,8 +129,7 @@ m2n() {
 for host in 1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4 9.9.9.9 \
             google.com cloudflare.com www.yahoo.com; do
     # -s silent, -k skip cert verify (we don't care — HTTP only),
-    # -I HEAD request, -m 5 5-sec timeout,
-    # --resolve-all / --no-buffer not used; we rely on stock curl.
+    # -I HEAD request, -m 5 5-sec timeout.
     HDR=$(curl -skI -m 5 "http://$host/" 2>/dev/null | grep -i '^date:' | cut -d' ' -f2-)
     [ -z "$HDR" ] && continue
 
@@ -73,5 +153,7 @@ for host in 1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4 9.9.9.9 \
     fi
 done
 
-echo "ntp-set-http: no host reachable, clock unchanged" >&2
-exit 1
+# ─── (3) Deterministic fallback ───────────────────────────────────────
+echo "ntp-set-http: no RTC and no host reachable; applying fallback date" >&2
+apply_fallback
+exit $?
