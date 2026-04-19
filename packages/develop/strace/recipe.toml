@@ -59,18 +59,7 @@ fi
 #   CFLAGS -Wno-...         — silence the few warnings clang-21 still flags
 #                             that older gcc didn't, so configure-time probe
 #                             scripts don't accidentally treat them as fails.
-GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \\
-  CFLAGS="-O2 -fomit-frame-pointer -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" \\
-  LDFLAGS="-Wl,--disable-new-dtags" \\
-  ./configure \\
-    --prefix=/ \\
-    --bindir=/bin \\
-    --mandir=/share/man \\
-    --enable-mpers=no \\
-    --disable-gcc-Werror \\
-    --without-libdw \\
-    --enable-secontext=no \\
-    CC=clang
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" LDFLAGS="-Wl,--disable-new-dtags" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --enable-mpers=no --disable-gcc-Werror --without-libdw --enable-secontext=no CC=clang
 make -j$(nproc)"""
 install = """set -e
 make DESTDIR=$DESTDIR install
