@@ -47,6 +47,14 @@ DEFAULT_PACKAGES = [
     "dropbear",
     "ifupdown-ng",
     "bsdtar",
+    # anvil: MIT clean-room ext2/3/4 + FAT12/16/32 userland
+    # (mkfs.ext4, mkfs.vfat, e2fsck, tune2fs, debugfs, resize2fs,
+    # dumpe2fs, e2image, e2label, e2freefrag, e4defrag, logsave,
+    # findfs, filefrag, blkid, chattr, lsattr, mklost+found).
+    # Default-include: every Pi 5 image needs at least fsck on
+    # first mount, and without anvil the permissive policy has no
+    # answer (e2fsprogs/dosfstools are GPL-2/GPL-3).
+    "anvil",
     # Intentionally NOT in the default set: ca-certificates.
     # jonerix doesn't yet ship a ca-certificates jpkg; the WSL rootfs
     # curl's the Mozilla bundle from curl.se at build time instead.
