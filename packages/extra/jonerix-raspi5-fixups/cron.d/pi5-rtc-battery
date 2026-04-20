@@ -1,0 +1,6 @@
+# Daily RTC coin-cell voltage check.
+# Fires at 04:30 local time. Logs OK/INFO/WARN/ERROR via `logger`;
+# see /usr/local/bin/pi5-rtc-battery-check for the threshold table.
+# Only meaningful on a Pi 5 — the script is a no-op on other models.
+SNOOZE_ARGS="-H4 -M30 -S0"
+COMMAND="/usr/local/bin/pi5-rtc-battery-check"
