@@ -59,7 +59,18 @@ fi
 #   CFLAGS -Wno-...         — silence the few warnings clang-21 still flags
 #                             that older gcc didn't, so configure-time probe
 #                             scripts don't accidentally treat them as fails.
-GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" LDFLAGS="-Wl,--disable-new-dtags" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --enable-mpers=no --disable-gcc-Werror --without-libdw --enable-secontext=no CC=clang
+# aarch64: musl's <bits/signal.h> defines struct sigcontext / _aarch64_ctx /
+# fpsimd_context / esr_context / extra_context / sve_context, AND so does
+# kernel <asm/sigcontext.h> which strace pulls in via <linux/ptrace.h>
+# from ptrace.h. The two definitions collide. Predefine the kernel
+# header guard so the kernel file skips its struct definitions; musl's
+# are API-equivalent and that's what we end up with.
+EXTRA_CFLAGS=""
+case "$(clang -dumpmachine | cut -d- -f1)" in
+    aarch64*) EXTRA_CFLAGS="-D__ASM_SIGCONTEXT_H" ;;
+esac
+
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types $EXTRA_CFLAGS" LDFLAGS="-Wl,--disable-new-dtags" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --enable-mpers=no --disable-gcc-Werror --without-libdw --enable-secontext=no CC=clang
 
 # jmake's $(wildcard) + $(patsubst) chain on
 #   ioctls_inc_h = $(wildcard $(srcdir)/$(OS)/$(ARCH)/ioctls_inc*.h)
