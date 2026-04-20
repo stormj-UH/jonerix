@@ -18,12 +18,73 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <limits.h>
 
-/* Run a package hook (pre_install, post_install, etc.) */
+/* Run a package hook (pre_install, post_install, etc.).
+ *
+ * When `jpkg -r TARGET` is in effect (g_rootfs non-empty), the hook must
+ * operate on the target rootfs, NOT the host. We try two strategies:
+ *
+ *   1. chroot into the target and run /bin/sh -c "<cmd>". This is the
+ *      clean path and what every Linux distro's package manager does.
+ *      Requires the target to already have /bin/sh (it won't on the
+ *      very first package installed from an empty root — e.g. musl
+ *      before toybox — but those packages generally don't ship hooks).
+ *
+ *   2. Fall back: run the hook on the host with JPKG_ROOT=<target>
+ *      in the environment, and let the hook cooperate (many don't).
+ *      We emit a warning so misbehaving hooks get noticed in the log.
+ *
+ * When g_rootfs is empty we preserve the original system() behavior —
+ * this is the hot path for host-local installs.
+ */
 static int run_hook(const char *hook_name, const char *cmd, const char *pkg_name) {
     if (!cmd || !cmd[0]) return 0;
     log_info("running %s hook for %s...", hook_name, pkg_name);
-    int rc = system(cmd);
+
+    int rc;
+    if (g_rootfs && g_rootfs[0]) {
+        /* Does the target have a usable /bin/sh? */
+        char sh_path[PATH_MAX];
+        snprintf(sh_path, sizeof(sh_path), "%s/bin/sh", g_rootfs);
+        struct stat st;
+        int have_sh = (stat(sh_path, &st) == 0 && (st.st_mode & S_IXUSR));
+
+        if (have_sh) {
+            /* Pass the hook body to the chrooted shell via a heredoc
+             * so arbitrary shell metacharacters survive both layers of
+             * parsing (the outer /bin/sh that system() invokes, and the
+             * chrooted /bin/sh). Using a unique delimiter keeps the
+             * heredoc immune to hook content. */
+            char outer[16384];
+            int n = snprintf(outer, sizeof(outer),
+                "chroot %s /bin/sh <<'__JPKG_HOOK_EOF__'\n%s\n__JPKG_HOOK_EOF__\n",
+                g_rootfs, cmd);
+            if (n <= 0 || (size_t)n >= sizeof(outer)) {
+                log_error("%s hook: command too long for chroot wrapper", hook_name);
+                return -1;
+            }
+            rc = system(outer);
+        } else {
+            log_warn("%s: target %s has no /bin/sh yet; running %s hook"
+                     " on host with JPKG_ROOT=%s (hook must honor it)",
+                     pkg_name, g_rootfs, hook_name, g_rootfs);
+            /* Export JPKG_ROOT so hook bodies can prefix paths. Same
+             * heredoc trick as above for safe hook-content passthrough. */
+            char outer[16384];
+            int n = snprintf(outer, sizeof(outer),
+                "JPKG_ROOT='%s' DESTDIR='%s' /bin/sh <<'__JPKG_HOOK_EOF__'\n%s\n__JPKG_HOOK_EOF__\n",
+                g_rootfs, g_rootfs, cmd);
+            if (n <= 0 || (size_t)n >= sizeof(outer)) {
+                log_error("%s hook: command too long", hook_name);
+                return -1;
+            }
+            rc = system(outer);
+        }
+    } else {
+        rc = system(cmd);
+    }
+
     if (rc != 0) {
         log_error("%s hook failed for %s (exit %d)", hook_name, pkg_name, rc);
         return -1;
