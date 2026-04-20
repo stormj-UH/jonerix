@@ -1,8 +1,18 @@
 [package]
-name = "expre"
-version = "0.1.0-r0"
+# Package name corrected from "expre" → "exproxide" on 2026-04-20.
+# Matches the other "-oxide" Rust clean-room reimplementations in the
+# jonerix tree (anvil, nloxide, m4oxide). The upstream cargo crate is
+# still named `expre` (that's what the vendored source tarball
+# builds); the binary on disk is `/bin/expre` with a `/bin/expr`
+# symlink so autoconf-generated ./configure scripts resolve `expr`
+# to the Rust implementation instead of toybox's multicall.
+name = "exproxide"
+version = "0.1.0-r1"
 license = "MIT"
 description = "Clean-room Rust implementation of expr for jonerix"
+# Claim /bin/expr from toybox's multicall so configure scripts land
+# on the exproxide binary. Without replaces, jpkg rejects the install
+# on a file-conflict.
 replaces = ["toybox"]
 
 [source]
