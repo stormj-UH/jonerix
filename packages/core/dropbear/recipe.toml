@@ -10,7 +10,17 @@ sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"
+# dropbear's Makefile.in uses TAB-indented variable assignments
+# inside `ifndef`/`ifeq` blocks (e.g. line 12
+# `\tPROGRAMS=dropbear dbclient ...`). GNU make tolerates that
+# quirk but jmake 1.1.0 treats the tab as a recipe-line prefix
+# and silently drops the assignment, leaving PROGRAMS unset →
+# TARGETS empty → `make all` is a no-op → 400-byte empty jpkg.
+# Reproduced 2026-04-20 runs 24693845801 and 24694265855.
+# De-indent those assignments before configure touches anything.
+configure = """sed -i -E 's/^	+([A-Z_][A-Z0-9_]*=)/\\1/' Makefile.in
+grep -E '^[A-Z_]+=' Makefile.in | head -3
+CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"""
 # Plain `make` — dropbear's default `all` builds its built-in
 # PROGRAMS list (dropbear dbclient dropbearkey dropbearconvert
 # scp). Two earlier variants failed under jmake 1.1.0:
