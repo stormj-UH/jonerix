@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-headers"
-version = "4.19.88"
+version = "4.19.88-r1"
 license = "MIT"
 description = "Linux UAPI kernel headers for jonerix package builds"
 
@@ -11,13 +11,35 @@ sha256 = "2806e2d689c6affb45ff8761a1011e6ab8a39369a617421fbff9c29f6dbefec6"
 [build]
 system = "custom"
 build = ""
+# sabotage-linux/kernel-headers ships arch trees named `arm64/` and
+# `x86/` — NOT `x86_64/`. The old `sed 's/x86_64/x86_64/'` was a
+# no-op, so `cp -a x86_64/include/*` silently found nothing and the
+# x86_64 jpkg shipped with zero arch-specific headers. nodejs,
+# wpa_supplicant, and every other x86_64 package that needs
+# `asm/hwcap.h`, `asm/unistd.h`, `asm/byteorder.h`, etc. blew up as
+# a result. Map x86_64 → x86 (and drop the silent-failure
+# `|| true`). Reproduced 2026-04-20 in CI run 24682993326.
 install = """set -e
-KHARCH=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x86_64/')
+KHARCH=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x86/')
+if [ ! -d "$KHARCH/include" ]; then
+    echo "jonerix-headers: no arch dir '$KHARCH/include' in upstream tree" >&2
+    ls -1 2>&1 | head -20 >&2
+    exit 1
+fi
 mkdir -p "$DESTDIR/include"
 # Copy generic headers (shared across all arches)
 cp -a generic/include/* "$DESTDIR/include/"
-# Copy arch-specific headers (overrides generic where needed)
-cp -a "$KHARCH/include/"* "$DESTDIR/include/" 2>/dev/null || true"""
+# Copy arch-specific headers (overrides generic where needed). This
+# MUST succeed — a silent failure shipped empty x86_64 headers for
+# months before 2026-04-20.
+cp -a "$KHARCH/include/"* "$DESTDIR/include/"
+# Sanity check: asm/unistd.h is present on every supported arch
+# and is included by most userland via libc. If it's missing, the
+# copy didn't cover the arch tree.
+if [ ! -f "$DESTDIR/include/asm/unistd.h" ]; then
+    echo "jonerix-headers: asm/unistd.h missing after copy — $KHARCH tree incomplete" >&2
+    exit 1
+fi"""
 
 [depends]
 runtime = []
