@@ -1,6 +1,6 @@
 [package]
 name = "nloxide"
-version = "0.1.0-r2"
+version = "0.1.0-r3"
 license = "BSD-2-Clause"
 description = "Clean-room netlink library (libnl-3 / libnl-genl-3 drop-in) written in Rust"
 
@@ -217,14 +217,20 @@ enum {
 #define NLA_TYPE_MAX (__NLA_TYPE_MAX - 1)
 struct nla_policy { uint16_t type; uint16_t minlen; uint16_t maxlen; };
 /* nla_for_each_nested(pos, nla, rem) - iterates nested attributes */
-#define nla_for_each_nested(pos, nla, rem) \\
-    for (pos = (struct nlattr *)nla_data(nla), rem = nla_len(nla); \\
-         nla_ok(pos, rem); \\
+/* Single backslash (not \\) because jpkg's TOML parser doesn't
+   process escapes inside triple-basic strings — `\\` would reach
+   the quoted heredoc as two literal backslashes, which breaks the
+   C preprocessor line continuation (clang-21 errors with
+   "expected expression"). Verified by wpa_supplicant 2.11-r2
+   CI run 24678196637. */
+#define nla_for_each_nested(pos, nla, rem) \
+    for (pos = (struct nlattr *)nla_data(nla), rem = nla_len(nla); \
+         nla_ok(pos, rem); \
          pos = nla_next(pos, &(rem)))
 /* nla_for_each_attr(pos, head, len, rem) - iterates a flat attribute list */
-#define nla_for_each_attr(pos, head, len, rem) \\
-    for (pos = head, rem = len; \\
-         nla_ok(pos, rem); \\
+#define nla_for_each_attr(pos, head, len, rem) \
+    for (pos = head, rem = len; \
+         nla_ok(pos, rem); \
          pos = nla_next(pos, &(rem)))
 HDR
 
