@@ -27,7 +27,7 @@ configure = """CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir
 # TAB-indented `VAR=...` inside ifeq/ifdef blocks with
 # "Makefile:12: missing separator" (reproduced 2026-04-20 runs
 # 24693845801 / 24694265855 / 24694484694 / 24694726551).
-sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\\1/' Makefile
+sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\1/' Makefile
 echo "=== post-sed Makefile lines 10-14 ==="
 sed -n '10,14p' Makefile"""
 # Plain `make` — dropbear's default `all` builds its built-in
