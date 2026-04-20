@@ -69,8 +69,8 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     for pkg in \
       musl zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
       toybox openrc doas snooze tzdata \
-      dropbear dhcpcd ifupdown-ng unbound \
-      libarchive bsdtar \
+      dropbear dhcpcd ifupdown-ng unbound openntpd \
+      libarchive bsdtar openrsync \
       pigz mandoc onetrueawk \
       anvil \
       micro libcxx fastfetch ripgrep gitoxide \
