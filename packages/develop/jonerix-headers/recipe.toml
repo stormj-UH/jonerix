@@ -27,12 +27,16 @@ if [ ! -d "$KHARCH/include" ]; then
     exit 1
 fi
 mkdir -p "$DESTDIR/include"
-# Copy generic headers (shared across all arches)
-cp -a generic/include/* "$DESTDIR/include/"
-# Copy arch-specific headers (overrides generic where needed). This
-# MUST succeed — a silent failure shipped empty x86_64 headers for
-# months before 2026-04-20.
-cp -a "$KHARCH/include/"* "$DESTDIR/include/"
+# sabotage-linux/kernel-headers ships convenience symlinks in each
+# arch tree: x86/include/asm-generic -> ../../generic/include/
+# asm-generic, same for drm/, linux/, mtd/, etc. Two sequential
+# `cp -a` passes fail — the second one tries to overwrite the
+# directory the first pass created with a symlink, which cp
+# correctly refuses. Tar-pipe handles this cleanly: generic tree
+# first (creates real dirs), then arch tree (tar skips pre-
+# existing same-named dirs and merges the rest).
+(cd generic/include && tar cf - .) | (cd "$DESTDIR/include" && tar xf -)
+(cd "$KHARCH/include" && tar cf - .) | (cd "$DESTDIR/include" && tar xf -)
 # Sanity check: asm/unistd.h is present on every supported arch
 # and is included by most userland via libc. If it's missing, the
 # copy didn't cover the arch tree.
