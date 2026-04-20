@@ -1,0 +1,37 @@
+[package]
+name = "expre"
+version = "0.1.0-r0"
+license = "MIT"
+description = "Clean-room Rust implementation of expr for jonerix"
+replaces = ["toybox"]
+
+[source]
+url = "https://github.com/stormj-UH/jonerix/releases/download/packages/expre-656b79b918af36f619a9dea269390566e8d4e856.tar.gz"
+sha256 = "9894c8e87e88bb605335eab763a3d7acf7a709986c08766397ffe3252115e206"
+
+[build]
+system = "custom"
+build = """
+set -e
+export CARGO_HOME=/tmp/expre-cargo
+export CARGO_TARGET_DIR="$PWD/target"
+export CARGO_NET_OFFLINE=true
+export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
+cargo test --locked
+cargo build --release --locked --bin expre
+"""
+install = """
+set -e
+BIN="$PWD/target/release/expre"
+install -Dm755 "$BIN" "$DESTDIR/bin/expre"
+ln -sf expre "$DESTDIR/bin/expr"
+llvm-strip --strip-all "$DESTDIR/bin/expre" 2>/dev/null || true
+"""
+
+[hooks]
+post_install = """[ -x /bin/expre ] && ln -sf expre /bin/expr || true"""
+post_remove = """[ ! -e /bin/expr ] && [ -x /bin/toybox ] && ln -sf toybox /bin/expr || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]
