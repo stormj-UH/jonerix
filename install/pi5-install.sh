@@ -75,9 +75,17 @@ DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd dropbear bsdtar python3 sudo an
 # it when the current board NEEDS it.
 #
 # Thresholds match bin/pi5-rtc-battery-check in raspi5-fixups:
-#   ≥ 2400 mV → cell healthy (ML2032 rechargeable sweet spot);
+#   ≥ 2.400 V → cell healthy (ML2032 rechargeable sweet spot);
 #               HTTP bootstrap not needed
-#   <  2400 mV or absent → HTTP bootstrap is worth the disk space
+#   <  2.400 V or absent → HTTP bootstrap is worth the disk space
+#
+# Unit note: /sys/class/rtc/rtc0/battery_voltage reports microvolts
+# (raspberrypi/linux drivers/rtc/rtc-rpi.c — battery_voltage_show
+# reads RTC_BBAT_VOLTS via the videocore mailbox in µV). A healthy
+# 3.07 V cell reads 3070082 µV. The earlier version of this check
+# compared the raw µV value against 2400 ("millivolts") and treated
+# every populated healthy cell as "missing/weak" — the correct
+# threshold in these units is 2_400_000 µV.
 _needs_http_time_bootstrap() {
     # Only relevant when running live on a Pi 5. If we're not on
     # a Pi (e.g. developer laptop), err on the side of inclusion
@@ -85,9 +93,13 @@ _needs_http_time_bootstrap() {
     if ! grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
         return 0
     fi
-    _bv=$(cat /sys/class/rtc/rtc0/battery_voltage 2>/dev/null || echo 0)
-    [ "${_bv:-0}" -ge 2400 ] && return 1  # battery good → skip
-    return 0                               # missing/weak → include
+    _bv=$(cat /sys/class/rtc/rtc0/battery_voltage 2>/dev/null | tr -d ' \t\r\n')
+    # Non-numeric / empty → no readable ADC → treat as no battery.
+    if [ -z "$_bv" ] || ! [ "$_bv" -eq "$_bv" ] 2>/dev/null; then
+        return 0
+    fi
+    [ "$_bv" -ge 2400000 ] && return 1  # ≥ 2.4 V → healthy → skip
+    return 0                            # missing/weak → include
 }
 if _needs_http_time_bootstrap; then
     DEFAULT_PACKAGES="$DEFAULT_PACKAGES jonerix-ntp-http-bootstrap"
