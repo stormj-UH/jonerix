@@ -266,6 +266,38 @@ sudo pi5-fw reboot_mode          # current kernel reboot mode
 sudo pi5-fw reboot_mode cold     # set kernel reboot mode (cold/warm/hard/soft/gpio)
 ```
 
+### Console login defaults — what jonerix ships and how to change them
+
+The image ships `tty1-console`, an OpenRC service that respawns
+`/bin/login` on `/dev/tty1`, plus an unlocked `root` account:
+
+```sh
+# /etc/shadow as shipped
+root::0:0:99999:7:::
+```
+
+The empty second field (the password hash) is what toybox `login`
+reads as "no password required". **A fresh jonerix image lets anyone
+at the console log in as root without a password.** That's
+intentional for first-boot bring-up — no headache pairing a display
+with an SSH keyboard just to set up Wi-Fi — but you'll want to lock
+it down before exposing the box:
+
+```sh
+sudo passwd root      # set a password
+# or
+sudo passwd -l root   # lock the account entirely (SSH keys still work)
+```
+
+The other console quirk people notice: after typing nothing for
+~60 seconds at the `login:` prompt the shell clears and respawns a
+fresh one. That's toybox `login`'s hard-coded timeout; it's not a
+tty1-console setting. The service loops so the new prompt appears
+instantly. Replacing `/bin/login` with a different permissive-
+licensed implementation (shadow is GPL-2; util-linux is GPL-2; both
+are out) is the only real fix — BSD-licensed alternatives exist but
+none are packaged in jonerix yet.
+
 ### Other Pi 5 fixups in the same package
 
 - **EEE (Energy-Efficient Ethernet) disable** on the BCM54213PE PHY
