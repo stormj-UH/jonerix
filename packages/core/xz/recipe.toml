@@ -1,8 +1,8 @@
 [package]
 name = "xz"
-version = "5.8.2"
+version = "5.8.2-r1"
 license = "0BSD"
-description = "XZ compression utilities and liblzma"
+description = "XZ compression utilities and liblzma (with development headers)"
 
 [source]
 url = "https://github.com/tukaani-project/xz/releases/download/v5.8.2/xz-5.8.2.tar.xz"
@@ -12,11 +12,30 @@ sha256 = "890966ec3f5d5cc151077879e157c0593500a522f413ac50ba26d22a9a145214"
 system = "cmake"
 configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib"
 build = "samu -C build -j$(nproc)"
-install = """DESTDIR=$DESTDIR samu -C build install
+# xz 5.8+ splits its install() rules into two CMake components:
+#   liblzma_Runtime      — liblzma.so.5.* + xz/xzdec/lzma* binaries
+#   liblzma_Development  — lzma.h headers, lib/liblzma.so namelink,
+#                          lib/pkgconfig/liblzma.pc, lib/cmake/liblzma/
+# `samu install` only catches Runtime, which is why python3 builds
+# hit "lzma.h file not found" — reproduced CI run 24688259688.
+# `cmake --install` per-component pulls both. Runtime must come
+# first so the namelink has something to point at.
+install = """set -e
+# xz 5.8.2 defines a handful of install components; iterate all
+# the ones we want (excludes Documentation since we strip man
+# pages from jonerix images anyway). If a component isn't present
+# in a future xz release, `|| true` keeps things moving.
+for comp in liblzma_Runtime liblzma_Development xz_Runtime lzmainfo_Runtime scripts_Runtime; do
+    DESTDIR="$DESTDIR" cmake --install build --component "$comp" || true
+done
+# Sanity: the header MUST be present — python3 and every other
+# lzma consumer needs it. Fail loud if CMake changed the component
+# name out from under us.
+[ -f "$DESTDIR/include/lzma.h" ] || { echo "xz: lzma.h missing after install" >&2; find "$DESTDIR" -name '*.h' | head -20 >&2; exit 1; }
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+find "$DESTDIR/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
