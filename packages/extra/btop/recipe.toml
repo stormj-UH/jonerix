@@ -1,6 +1,6 @@
 [package]
 name = "btop"
-version = "1.4.5"
+version = "1.4.5-r1"
 license = "Apache-2.0"
 description = "Terminal resource monitor with CPU, memory, disk, network, and process views"
 
