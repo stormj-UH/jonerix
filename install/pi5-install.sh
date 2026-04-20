@@ -63,7 +63,35 @@ DO_USERLAND=1
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd dropbear bsdtar python3 sudo anvil raspi-config jonerix-raspi5-fixups jonerix-boot-helpers openntpd"
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd dropbear bsdtar python3 sudo anvil raspi-config jonerix-raspi5-fixups openntpd"
+
+# ── RTC battery pre-check: conditional jonerix-ntp-http-bootstrap ───
+# The Pi 5 carries an RTC whose SRAM keeps wall clock across power
+# cuts IF a coin cell is wired to J5. Cells dead or absent →
+# the kernel clock boots at UNIX epoch and openntpd refuses to
+# step time by more than a few seconds, so ntp won't converge
+# without a prior HTTP-date bootstrap. That bootstrap lives in
+# the split-out package jonerix-ntp-http-bootstrap; only include
+# it when the current board NEEDS it.
+#
+# Thresholds match bin/pi5-rtc-battery-check in raspi5-fixups:
+#   ≥ 2400 mV → cell healthy (ML2032 rechargeable sweet spot);
+#               HTTP bootstrap not needed
+#   <  2400 mV or absent → HTTP bootstrap is worth the disk space
+_needs_http_time_bootstrap() {
+    # Only relevant when running live on a Pi 5. If we're not on
+    # a Pi (e.g. developer laptop), err on the side of inclusion
+    # since the target hardware is unknown.
+    if ! grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
+        return 0
+    fi
+    _bv=$(cat /sys/class/rtc/rtc0/battery_voltage 2>/dev/null || echo 0)
+    [ "${_bv:-0}" -ge 2400 ] && return 1  # battery good → skip
+    return 0                               # missing/weak → include
+}
+if _needs_http_time_bootstrap; then
+    DEFAULT_PACKAGES="$DEFAULT_PACKAGES jonerix-ntp-http-bootstrap"
+fi
 
 # ── Logging helpers ─────────────────────────────────────────────────
 msg()  { printf '==> %s\n' "$*"; }

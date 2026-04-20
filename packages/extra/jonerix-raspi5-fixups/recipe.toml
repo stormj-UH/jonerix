@@ -1,13 +1,18 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.5.1"
+version = "1.6.0"
 arch = "aarch64"
 license = "MIT"
-description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, OpenRC-backed reboot, cold-reboot, wake-on-power via pi5-fw / pi5-wake-on-power, daily RTC coin-cell voltage monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor, tty1 HDMI console) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.0: absorbs the tty1-console HDMI getty from the retired
+# jonerix-boot-helpers package (reboot-clean was already
+# superseded by reboot-openrc, ntp-set-http / ntp-bootstrap
+# split out to jonerix-ntp-http-bootstrap for RTC-less hosts).
+#
 # Claim toybox's /bin/reboot multicall symlink so jpkg can transfer
 # file ownership instead of relying only on a post_install rewrite.
 # Requires jpkg >= 1.0.4 (package.replaces support).
-replaces = ["toybox"]
+replaces = ["toybox", "jonerix-boot-helpers"]
 
 # No [source] section — jpkg treats a missing source.url as a local-only
 # build and hands control to the build script, which uses $RECIPE_DIR.
@@ -74,6 +79,12 @@ ln -sf /usr/local/bin/reboot-openrc $DESTDIR/bin/reboot
 # the cmdline patch above) and logs pi5-wake-on-power status for
 # auditability.
 install -Dm755 init.d/pi5-cold-reboot $DESTDIR/etc/init.d/pi5-cold-reboot
+
+# tty1-console: HDMI/serial getty on tty1. Absorbed from the
+# retired jonerix-boot-helpers package — every Pi 5 image wants
+# a login prompt on the HDMI-attached console.
+install -Dm755 init.d/tty1-console $DESTDIR/etc/init.d/tty1-console
+mksh -n $DESTDIR/etc/init.d/tty1-console
 
 # pi5-rtc-battery-check: reads /sys/class/rtc/rtc0/battery_voltage
 # and logs INFO / WARN / ERROR depending on the cell state. Paired
@@ -221,6 +232,8 @@ ln -sf /etc/init.d/disable-eee     /etc/runlevels/boot/disable-eee     2>/dev/nu
 ln -sf /etc/init.d/fan-control     /etc/runlevels/boot/fan-control     2>/dev/null || true
 ln -sf /etc/init.d/pi5-wifi        /etc/runlevels/boot/pi5-wifi        2>/dev/null || true
 ln -sf /etc/init.d/pi5-cold-reboot /etc/runlevels/boot/pi5-cold-reboot 2>/dev/null || true
+# tty1-console: default runlevel so the HDMI login prompt comes up after boot.
+[ -d /etc/runlevels/default ] && ln -sf /etc/init.d/tty1-console /etc/runlevels/default/tty1-console 2>/dev/null || true
 
 # Firmware symlinks for onboard WiFi (BCM4345). The brcmfmac driver
 # asks for `brcmfmac43455-sdio.bin` and the Pi5-specific variant
@@ -290,7 +303,7 @@ exit 0"""
 # Tear down the runlevel symlinks that post_install created.
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
 # Also restore the original /bin/adduser symlink if we have a record of it.
-post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot
+post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console
 if [ -f /etc/jpkg/raspi5-fixups/adduser.prev ]; then
     prev=$(cat /etc/jpkg/raspi5-fixups/adduser.prev)
     [ -n "$prev" ] && ln -sf "$prev" /bin/adduser
