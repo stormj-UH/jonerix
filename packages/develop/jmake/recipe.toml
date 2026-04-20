@@ -1,8 +1,17 @@
 [package]
 name = "jmake"
-version = "1.0.13"
+version = "1.0.14"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.0.14: fix parallel-scheduler deadlock that hung the builder
+# forever when a CC fails with -j>1 and -k is not set. has_work()
+# used to report the ready_queue as live work even after draining
+# began — so main blocked on recv_result() while every worker sat
+# idle. Reproduced in jonerix:builder-arm64 against wpa_supplicant
+# with -j4 on 2026-04-20 via JMAKE_DEBUG_DEADLOCK. Also imports the
+# 1.0.13 src tree onto Forgejo so the GNU Make 4.4.1 test suite
+# hard-gate actually runs for every future jmake release.
+#
 # 1.0.13: populate $<, $^, $+, $? in expand_include_recipe_lines so
 # recipes fired via `-include X.mk` (pending_includes rebuild path)
 # get the same automatic variables GNU make sets. Previously only $@
@@ -13,8 +22,8 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Ruby 3.4's build hit this exactly.
 
 [source]
-url = "https://cache.invalid/jmake-1.0.13.tar"
-sha256 = "56e993a5cc8a565f0eed513d93a9fb111ae42d169b6875824a26e2b51a984121"
+url = "https://cache.invalid/jmake-1.0.14.tar"
+sha256 = "1769711ed8ebc024f3949decb592163c11772ff7eae63a82059e4b5d7441b4d9"
 
 [build]
 system = "custom"
