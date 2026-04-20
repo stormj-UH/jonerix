@@ -281,6 +281,22 @@ build_one() {
         return 0
     fi
 
+    # Operational skip list — packages whose off-CI-built jpkg works
+    # fine and whose CI rebuild is expensive (nodejs' v8 takes 20-30
+    # min) or flaky. Accepts any published version of the package,
+    # not just the recipe's current version. Bypass via
+    # `REBUILD_INPUT=true` or a single-package `PKG_INPUT` dispatch.
+    if [ "${REBUILD_INPUT:-false}" != "true" ] && [ -z "$PKG_INPUT" ]; then
+        case "$pkg_name" in
+            nodejs)
+                if ls /var/cache/jpkg-published/${pkg_name}-*-aarch64.jpkg >/dev/null 2>&1; then
+                    echo "=== Skipping ${pkg_name} (NO_CI_REBUILD — existing jpkg works fine) ==="
+                    return 0
+                fi
+                ;;
+        esac
+    fi
+
     expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-aarch64.jpkg"
     legacy="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
 
