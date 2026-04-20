@@ -1,6 +1,6 @@
 [package]
 name = "jpkg-local"
-version = "1.0.9"
+version = "1.0.10"
 license = "MIT"
 description = "jpkg subcommand for local .jpkg install and recipe builds"
 # Tracks jpkg's version in lockstep: jpkg-local is just a thin
