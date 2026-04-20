@@ -1,8 +1,8 @@
 [package]
 name = "python3"
-version = "3.14.3-r8"
+version = "3.14.3-r9"
 license = "PSF-2.0"
-description = "Python programming language interpreter"
+description = "Python programming language interpreter (with _bz2)"
 
 [source]
 url = "https://www.python.org/ftp/python/3.14.3/Python-3.14.3.tar.xz"
@@ -64,7 +64,11 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 # the issue entirely since sys.prefix is cleanly /usr.
 find "$DESTDIR" -type f -name '*.py' -exec grep -l '/lib64' {} + 2>/dev/null | while read f; do sed -i 's|/lib64|/lib|g' "$f"; done
 # Stale python packages bundled shared libs that already belong to other
-# runtime packages; drop any duplicates from the staged payload.
+# runtime packages; drop any duplicates from the staged payload so the
+# jpkg we ship doesn't conflict with the authoritative packages.
+# libbz2 now genuinely comes from the `bzip2` jpkg; if python's install
+# step copies one into staging we still want the bzip2 package's
+# version on disk instead.
 rm -f "$DESTDIR"/lib/libbz2.so* \
       "$DESTDIR"/lib/libexpat.so* \
       "$DESTDIR"/lib/libffi.so* \
@@ -74,6 +78,20 @@ rm -f "$DESTDIR"/lib/libbz2.so* \
       "$DESTDIR"/lib/libreadline.so* \
       "$DESTDIR"/lib/libstdc++.so*
 ln -sf python3 $DESTDIR/bin/python 2>/dev/null || true
+# Verify optional stdlib modules that we depend on at later build
+# steps (or that downstream recipes silently expect). A missing
+# _bz2 took out the node 24 build in April 2026 — fail loud here
+# instead of shipping a half-broken interpreter.
+python_mod_check() {
+    local name=$1
+    if ! find "$DESTDIR/lib/python3.14/lib-dynload" -name "${name}*.so" 2>/dev/null | grep -q .; then
+        echo "ERROR: python3 built without ${name} module" >&2
+        return 1
+    fi
+}
+python_mod_check _bz2     || exit 1
+python_mod_check _lzma    || exit 1
+python_mod_check _sqlite3 || exit 1
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
@@ -102,5 +120,10 @@ exit 0"""
 # Needed by AWS CLI v2 and anything else that imports sqlite3. The sqlite
 # package installs libsqlite3.so + headers to /lib and /include, where
 # Python's setup.py auto-detects them.
-runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi", "sqlite"]
-build = ["clang", "libffi", "sqlite"]
+#
+# bzip2 added in 3.14.3-r9 so `_bz2` gets built — Python 3.14's
+# setup.py links the stdlib bz2 extension iff bzlib.h + libbz2 are
+# visible at configure time. Without it, `import bz2` throws
+# ModuleNotFoundError, which breaks e.g. node configure.py.
+runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi", "sqlite", "bzip2"]
+build = ["clang", "libffi", "sqlite", "bzip2"]

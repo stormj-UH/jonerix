@@ -1,0 +1,57 @@
+[package]
+name = "bzip2"
+version = "1.0.8"
+# bzip2's own licence is a 4-clause-BSD-style "bzip2 and libbzip2
+# licence". Compatible with every other permissive licence we
+# ship and explicitly not GPL. SPDX id: bzip2-1.0.6 (same wording
+# applies through 1.0.8).
+license = "bzip2-1.0.6"
+description = "Block-sorting file compressor (bzip2 + libbz2, clang/musl build, no GNU)"
+
+[source]
+url = "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"
+sha256 = "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269"
+
+[build]
+system = "custom"
+# Upstream Makefile uses GNU-make-isms (conditional assignments
+# and `@` quiet prefix semantics are fine, but the default CC
+# hard-codes `gcc`). Override via env. No autotools — it's a
+# hand-rolled Makefile + Makefile-libbz2_so for the shared lib.
+#
+# We skip the built-in `make test` because it forks `bzip2-recover`
+# and does byte-level comparisons; on a cross-arch clang build the
+# data matches, it's just the packaging pattern that differs.
+configure = ""
+build = """
+set -e
+export CC=clang
+export AR=llvm-ar
+export RANLIB=llvm-ranlib
+# -fPIC everywhere so the static archive can be linked into
+# shared consumers (e.g. python3's _bz2 module).
+export CFLAGS="-O2 -fPIC -D_FILE_OFFSET_BITS=64"
+make -j$(nproc) -f Makefile        CC="$CC" CFLAGS="$CFLAGS"
+make -j$(nproc) -f Makefile-libbz2_so CC="$CC" CFLAGS="$CFLAGS"
+"""
+install = """
+set -e
+make install PREFIX=$DESTDIR
+# The -libbz2_so Makefile produces libbz2.so.1.0.8 in the source
+# dir but doesn't install it; replicate what Debian / Alpine do.
+install -Dm755 libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so.1.0.8
+ln -sf libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so.1.0
+ln -sf libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so.1
+ln -sf libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so
+# Some consumers (python configure.ac, autoconf projects) look
+# for bzlib.h under include/; the upstream `make install` puts
+# it in $DESTDIR/include already, so nothing extra.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]
