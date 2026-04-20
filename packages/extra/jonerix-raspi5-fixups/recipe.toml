@@ -1,6 +1,7 @@
 [package]
 name = "jonerix-raspi5-fixups"
 version = "1.5.1"
+arch = "aarch64"
 license = "MIT"
 description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, OpenRC-backed reboot, cold-reboot, wake-on-power via pi5-fw / pi5-wake-on-power, daily RTC coin-cell voltage monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
 # Claim toybox's /bin/reboot multicall symlink so jpkg can transfer
