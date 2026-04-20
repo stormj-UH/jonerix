@@ -18,6 +18,7 @@
 #   rust      → musl, llvm, rust (prebuilt), cmake, samurai, python3, curl
 #   ripgrep   → musl, rust
 #   uutils    → musl, rust
+#   anvil     → musl, rust
 #
 # Within each dependency tier, packages are ordered smallest-first
 # so that interrupted builds leave the most useful artifacts.
@@ -84,3 +85,4 @@ rust
 uutils
 ripgrep
 jfsck
+anvil
