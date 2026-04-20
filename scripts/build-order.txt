@@ -82,6 +82,9 @@ cni-plugins
 # Tier 9: Rust from source (requires prebuilt rust + llvm)
 rust
 # Tier 10: Rust-based packages (requires from-source rust)
+exproxide
+m4oxide
+readlineoxide
 uutils
 ripgrep
 jfsck
