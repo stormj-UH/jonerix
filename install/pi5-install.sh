@@ -244,6 +244,27 @@ mount "$P1" "$BOOT_MNT"
 
 # ── Boot partition (firmware + kernel) ──────────────────────────────
 if [ "$DO_FIRMWARE" = 1 ]; then
+    cat <<'LICENSE_NOTICE'
+
+------------------------------------------------------------------------
+The Pi 5 firmware tarball from raspberrypi/firmware contains two
+categories of third-party software, each under its own license:
+
+  1. Linux kernel (kernel_2712.img, device-tree blobs)
+     License: GNU General Public License v2.0
+     Source:  https://github.com/raspberrypi/linux
+
+  2. VideoCore / Broadcom firmware blobs (start4.elf, fixup4.dat, etc.)
+     License: proprietary Broadcom binary — see LICENCE.broadcom in
+              the tarball. Free to redistribute with Raspberry Pi
+              hardware; may NOT be modified or used outside Pi boards.
+     Source:  closed-source
+
+Installing either means you have reviewed and accept BOTH licenses.
+LICENSE_NOTICE
+    if [ "$(ask 'Accept the Linux kernel GPL-2.0 and Broadcom firmware licenses and proceed with download?' n)" != y ]; then
+        die "declined firmware / kernel license — aborting"
+    fi
     if [ "$(ask 'Download Raspberry Pi 5 firmware and kernel from raspberrypi/firmware?' y)" = y ]; then
         msg "Fetching $FIRMWARE_URL (~500 MiB — this takes a while)"
         _fw_tar="$WORK/firmware.tar.gz"
@@ -264,6 +285,14 @@ if [ "$DO_FIRMWARE" = 1 ]; then
             ! -name '*.pre-pi5-fixups' -exec rm -rf {} +
         cp -a "$_fwboot"/. "$BOOT_MNT"/
         rm -rf "$_tmpx" "$_fw_tar"
+        # Record the license acceptance alongside the files it
+        # covers — makes "what did I agree to" auditable on the
+        # installed volume.
+        if [ -f "$BOOT_MNT/LICENCE.broadcom" ]; then
+            msg "Broadcom firmware license placed at $BOOT_MNT/LICENCE.broadcom"
+        fi
+        printf 'Firmware + kernel installed %s by pi5-install.sh.\nKernel license: GPL-2.0 (raspberrypi/linux).\nFirmware license: see LICENCE.broadcom in this directory.\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$BOOT_MNT/LICENSES-ACCEPTED.txt"
     fi
 fi
 
