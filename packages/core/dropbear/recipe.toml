@@ -28,8 +28,14 @@ configure = """CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir
 # "Makefile:12: missing separator" (reproduced 2026-04-20 runs
 # 24693845801 / 24694265855 / 24694484694 / 24694726551).
 sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\1/' Makefile
-echo "=== post-sed Makefile lines 10-14 ==="
-sed -n '10,14p' Makefile"""
+# jmake 1.1.0 double-prefixes VPATH: a prereq that already
+# includes `src/` gets searched as `./src/src/<file>` (reproduced
+# 2026-04-20 runs 24694484694 / 24694726551 — `./src/src/
+# agentfwd.h not found`). Clearing VPATH makes jmake search from
+# pwd, which already has `src/` as a subdir.
+sed -i -E 's|^VPATH=.*|VPATH=.|' Makefile
+echo "=== post-sed Makefile lines 10-16 ==="
+sed -n '10,16p' Makefile"""
 # Plain `make` — dropbear's default `all` builds its built-in
 # PROGRAMS list (dropbear dbclient dropbearkey dropbearconvert
 # scp). Two earlier variants failed under jmake 1.1.0:
