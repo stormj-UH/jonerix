@@ -18,6 +18,10 @@ PATH="$PWD/.jpkg-tools:$PATH" \
   CFLAGS="$CFLAGS -I/include/ncursesw" \
   LIBSQLITE3_CFLAGS="-I/include" \
   LIBSQLITE3_LIBS="-lsqlite3" \
+  LIBLZMA_CFLAGS="-I/include" \
+  LIBLZMA_LIBS="-llzma" \
+  LIBBZIP2_CFLAGS="-I/include" \
+  LIBBZIP2_LIBS="-lbz2" \
   CC=clang CXX=clang++ ./configure \
   --prefix=/usr \
   --enable-shared \
