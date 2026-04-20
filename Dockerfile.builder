@@ -32,8 +32,7 @@ RUN jpkg update && \
     failures=0 && \
     failed='' && \
     for pkg in \
-      exproxide \
-      llvm libcxx rust go \
+      llvm rust go \
       cmake jmake samurai flex bc byacc \
       perl python3 nodejs \
       strace; \
