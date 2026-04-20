@@ -137,11 +137,11 @@ if [ -f /etc/fstab ]; then
         echo '# --- added by jonerix-raspi5-fixups (base-image fstab rescue) ---' >> /etc/fstab
     fi
     # NOTE: no shell line-continuations here. jpkg's TOML parser does not
-    # process escape sequences inside triple-basic strings (""..."""), so
+    # process escape sequences inside triple-basic recipe strings, so
     # `\\<newline>` would reach the shell as two backslashes followed by
     # LF — not a continuation — and the fstab line below would be
-    # executed as a command. Reproduced 2026-04-20 in CI: "sh: devpts
-    # /dev/pts devpts ...: not found". Keep each call on one line.
+    # executed as a command. Reproduced 2026-04-20 in CI: sh: devpts
+    # /dev/pts devpts ...: not found. Keep each call on one line.
     _fstab_add "^[[:space:]]*devpts[[:space:]]"         "devpts   /dev/pts   devpts   gid=5,mode=0620,ptmxmode=0666   0 0"
     _fstab_add "^[[:space:]]*sysfs[[:space:]]"          "sysfs    /sys       sysfs    defaults                         0 0"
     _fstab_add "[[:space:]]/run[[:space:]].*tmpfs"      "tmpfs    /run       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
