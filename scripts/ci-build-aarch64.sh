@@ -266,6 +266,21 @@ build_one() {
     pkg_dir="$(dirname "$recipe")"
     pkg_name="$(basename "$pkg_dir")"
     pkg_ver=$(grep "^version" "${pkg_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+
+    # Arch gate: a recipe can pin itself to one arch via
+    #   [package]
+    #   arch = "aarch64"
+    # which jpkg already honors at packaging time. Skip the build
+    # entirely when the pinned arch doesn't match this runner —
+    # otherwise hardware-specific recipes (jonerix-raspi5-fixups'
+    # aarch64 inline asm, etc.) fail at compile on the wrong arch.
+    pkg_arch=$(grep "^arch" "${pkg_dir}/recipe.toml" | head -1 \
+        | sed 's/.*= *"\(.*\)"/\1/')
+    if [ -n "$pkg_arch" ] && [ "$pkg_arch" != "aarch64" ]; then
+        echo "=== Skipping ${pkg_name}-${pkg_ver} (arch=${pkg_arch}, runner=aarch64) ==="
+        return 0
+    fi
+
     expected="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}-aarch64.jpkg"
     legacy="/var/cache/jpkg-published/${pkg_name}-${pkg_ver}.jpkg"
 

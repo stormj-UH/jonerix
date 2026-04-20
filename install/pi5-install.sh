@@ -63,11 +63,6 @@ DO_USERLAND=1
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-#
-# tailscale is deliberately NOT default yet — the package exists but
-# hasn't soaked on real installs. Add it with `--packages tailscale`
-# (when that flag lands) or install it after first boot with
-# `jpkg install tailscale`.
 DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd dropbear bsdtar python3 sudo anvil raspi-config jonerix-raspi5-fixups jonerix-boot-helpers openntpd"
 
 # ── Logging helpers ─────────────────────────────────────────────────
