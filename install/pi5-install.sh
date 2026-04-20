@@ -341,6 +341,24 @@ if [ "$DO_USERLAND" = 1 ]; then
             cp -a /var/db/jpkg/keys "$ROOT_MNT/var/db/jpkg/"
         fi
 
+        # merged-usr: create /usr -> . symlink before any package installs.
+        # jonerix flattens /usr into / everywhere, but anything that
+        # hard-codes /usr paths (notably python3 built with
+        # --prefix=/usr, which reads sys.prefix via /proc/self/exe)
+        # needs this symlink to resolve to the flat tree. Without it,
+        # jpkg 1.0.8's chrooted post_install for python3 errors with
+        # "Fatal Python error: Failed to import encodings module".
+        if [ ! -L "$ROOT_MNT/usr" ]; then
+            # Promote a pre-existing /usr directory's contents into the
+            # flat tree, then replace it with a relative symlink.
+            if [ -d "$ROOT_MNT/usr" ]; then
+                (cd "$ROOT_MNT/usr" && tar cf - .) \
+                    | (cd "$ROOT_MNT" && tar xf -) 2>/dev/null || true
+                rm -rf "$ROOT_MNT/usr"
+            fi
+            ln -sf . "$ROOT_MNT/usr"
+        fi
+
         msg "Installing core packages into $ROOT_MNT"
         # shellcheck disable=SC2086  # word-split is intentional
         jpkg -r "$ROOT_MNT" install $DEFAULT_PACKAGES 2>&1 \

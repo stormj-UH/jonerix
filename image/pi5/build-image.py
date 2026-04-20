@@ -395,6 +395,41 @@ def jpkg_install(root: Path, packages: Iterable[str]) -> None:
         log("(no packages requested)")
         return
 
+    # merged-usr: jonerix ships /usr as a symlink to / so every path
+    # that references /usr/... resolves to the same flat tree jpkg
+    # writes to (/bin, /lib, /include, /share). Python 3.14 was
+    # built with --prefix=/usr; at runtime it resolves sys.prefix
+    # via /proc/self/exe + landmark discovery and expects its stdlib
+    # at /usr/lib/python3.14/. Without the symlink the chrooted
+    # `python3 -m ensurepip` post_install hook dies with:
+    #   "Fatal Python error: Failed to import encodings module"
+    # Reproduced in CI 2026-04-20 run 24649369096. Create it before
+    # any jpkg install so /usr resolves correctly from the very first
+    # hook run. Safe to re-create (symlink target is stable).
+    usr_link = root / "usr"
+    if not usr_link.is_symlink():
+        # If something installed earlier created it as a dir, move
+        # its contents into the flat tree; then replace with symlink.
+        if usr_link.is_dir():
+            for child in usr_link.iterdir():
+                dest = root / child.name
+                if dest.exists():
+                    # Merge directories; leave conflicting files alone.
+                    if dest.is_dir() and child.is_dir():
+                        for sub in child.rglob("*"):
+                            rel = sub.relative_to(child)
+                            target = dest / rel
+                            if not target.exists():
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.move(str(sub), str(target))
+                else:
+                    shutil.move(str(child), str(dest))
+            usr_link.rmdir()
+        # Use a relative symlink ('.') so mounts under $root don't
+        # escape to the host when the chroot resolves /usr.
+        usr_link.symlink_to(".")
+    log(f"merged-usr: {usr_link} -> .")
+
     # `--root <path>` redirects jpkg's entire worldview into <path>,
     # including its cache + index + db. So even if we've called
     # `jpkg update` on the host, the rooted install still needs its
