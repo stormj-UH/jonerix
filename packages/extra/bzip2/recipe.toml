@@ -1,6 +1,6 @@
 [package]
 name = "bzip2"
-version = "1.0.8"
+version = "1.0.8-r1"
 # bzip2's own licence is a 4-clause-BSD-style "bzip2 and libbzip2
 # licence". Compatible with every other permissive licence we
 # ship and explicitly not GPL. SPDX id: bzip2-1.0.6 (same wording
@@ -43,6 +43,21 @@ install -Dm755 libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so.1.0.8
 ln -sf libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so.1.0
 ln -sf libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so.1
 ln -sf libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so
+# pkgconfig file for downstream PKG_CHECK_MODULES(bzip2) probes.
+# Upstream bzip2 1.0.8 doesn't ship one.
+mkdir -p $DESTDIR/lib/pkgconfig
+cat > $DESTDIR/lib/pkgconfig/bzip2.pc <<'PCEOF'
+prefix=/
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: bzip2
+Description: Block-sorting file compressor library
+Version: 1.0.8
+Libs: -L${libdir} -lbz2
+Cflags: -I${includedir}
+PCEOF
 # Some consumers (python configure.ac, autoconf projects) look
 # for bzlib.h under include/; the upstream `make install` puts
 # it in $DESTDIR/include already, so nothing extra.
