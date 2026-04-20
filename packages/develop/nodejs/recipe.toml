@@ -68,13 +68,33 @@ def open(*a, **kw): raise NotImplementedError()
 PYEOF
 export PYTHONPATH=/tmp/py-shim:${PYTHONPATH:-}
 
-# Pre-expand deps/icu-small's bzipped ICU data file. bsdcat
-# (libarchive, already in the builder) handles bz2 streams.
+# Pre-expand deps/icu-small's bzipped ICU data file. The
+# builder's libarchive 3.8.6 was compiled without bzip2
+# support and there's no bzip2/bunzip2 binary available
+# either, so bsdcat refuses to touch .bz2. Compile a tiny
+# bzcat from upstream bzip2 1.0.8 in-place — it's ~6 kB of
+# BSD-style C that builds in a couple of seconds, used only
+# at recipe build time and thrown away.
+(
+  set -e
+  mkdir -p /tmp/bzip2-build
+  cd /tmp/bzip2-build
+  curl -sL https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz -o bz.tgz
+  echo "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269  bz.tgz" \
+    | sha256sum -c -
+  bsdtar -xzf bz.tgz
+  cd bzip2-1.0.8
+  clang -O2 -D_FILE_OFFSET_BITS=64 -o /tmp/bzip2-build/bzcat \
+    bzip2.c blocksort.c huffman.c crctable.c randtable.c compress.c \
+    decompress.c bzlib.c
+)
+BZCAT=/tmp/bzip2-build/bzcat
+
 for bz in deps/icu-small/source/data/in/*.bz2; do
   [ -f "$bz" ] || continue
   out="${bz%.bz2}"
   echo "Pre-expanding $bz -> $out"
-  bsdcat "$bz" > "$out"
+  "$BZCAT" -dc "$bz" > "$out"
 done
 
 # Strip explicit -latomic injections that GYP adds for Linux+Clang.
