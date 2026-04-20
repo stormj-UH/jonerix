@@ -31,9 +31,7 @@ system = "custom"
 # upstream ships for.
 build = "true"
 install = """
-set -ex
-echo "=== raspi-config install: cwd=$(pwd) DESTDIR=$DESTDIR ==="
-ls -la
+set -e
 
 # Main script -> /bin/raspi-config (merged-usr; upstream targets /usr/bin).
 # The script is #!/bin/sh and works under mksh (no bashisms in hot paths).
@@ -67,6 +65,14 @@ if [ -n "$DESTDIR" ] && [ "$DESTDIR" != "/" ]; then
     [ -d "$DESTDIR/usr" ]   && cp -a "$DESTDIR/usr/."   "$DESTDIR/"     && rm -rf "$DESTDIR/usr"
     [ -d "$DESTDIR/lib64" ] && cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"
 fi
+# Explicit success at end: the if-block's last compound is
+# `[ -d $DESTDIR/lib64 ] && cp && rm`, which exits 1 when /lib64 doesn't
+# exist (it never does for this pure-shell package). Under set -e that
+# sinks the whole script. Other jonerix recipes get away with the same
+# flatten because they end with `find ... || true` for the strip pass;
+# raspi-config has nothing to strip, so give the shell an unconditional
+# success here instead.
+true
 """
 
 [depends]
