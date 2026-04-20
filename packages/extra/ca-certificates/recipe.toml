@@ -36,9 +36,11 @@ if [ "$GOT" != "$PEM_SHA256" ]; then
     echo "  got:      $GOT" >&2
     exit 1
 fi
-# Sanity: the file must begin with the curl.se PEM banner.
-head -1 cacert.pem | grep -q "^## Bundle of CA Root Certificates" || \
-    { echo "ca-certificates: unexpected header"; head -2 cacert.pem; exit 1; }
+# Sanity: the file must contain the curl.se PEM banner somewhere
+# in the first few lines. Actual layout is `##` on line 1 then
+# `## Bundle of CA Root Certificates` on line 2.
+head -5 cacert.pem | grep -q "Bundle of CA Root Certificates" || \
+    { echo "ca-certificates: unexpected header"; head -5 cacert.pem; exit 1; }
 """
 install = """
 set -e
