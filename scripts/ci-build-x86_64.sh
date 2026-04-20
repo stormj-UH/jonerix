@@ -271,7 +271,7 @@ build_one() {
     # Bypass via REBUILD_INPUT=true or a single-package PKG_INPUT dispatch.
     if [ "${REBUILD_INPUT:-false}" != "true" ] && [ -z "$PKG_INPUT" ]; then
         case "$pkg_name" in
-            nodejs)
+            nodejs|rust|llvm)
                 if ls /var/cache/jpkg-published/${pkg_name}-*-x86_64.jpkg >/dev/null 2>&1; then
                     echo "=== Skipping ${pkg_name} (NO_CI_REBUILD — existing jpkg works fine) ==="
                     return 0
