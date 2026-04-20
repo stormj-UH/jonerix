@@ -313,6 +313,156 @@ none are packaged in jonerix yet.
 - **errors=remount-ro** added to the root ext4 line so SD-card wear
   triggers a fail-safe remount instead of silent corruption.
 
+## Building a Pi 5 image
+
+`install/pi5-install.sh` writes a bootable jonerix image onto a raw block
+device — SD card, USB stick, or NVMe. It runs on any POSIX host.
+
+### Prerequisites
+
+| Tool | Notes |
+| ---- | ----- |
+| `mount` / `umount` | standard on any Linux host |
+| `curl` | for firmware download |
+| `bsdtar` (preferred) or `tar` | toybox tar mishandles pax long-name headers |
+| `mkfs.ext4` / `mkfs.vfat` | only needed if the target disk is unformatted; provided by `jpkg install anvil` |
+
+If `mkfs.ext4` or `mkfs.vfat` are absent and the target partition is not
+already formatted, the script bails with an explicit message:
+
+```
+error: /dev/sdX2 is not ext4 and mkfs.ext4 is unavailable. Pre-format it.
+```
+
+Pre-format the partitions by hand (p1 FAT32, p2 ext4) and re-run, or install
+`anvil` first (`jpkg install anvil`) and then re-run.
+
+The target device must already have two partitions (p1, p2). The script will
+not repartition from scratch; use `sfdisk` or a similar tool first.
+
+### Quick start — curl-into-sh
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/pi5-install.sh \
+  | sudo sh -s -- -y -d /dev/sdX
+```
+
+Replace `/dev/sdX` with the actual block device. `-y` / `--yes` accepts all
+prompts (device confirmation, license acceptance, firmware download, userland
+install) on the operator's behalf.
+
+### Interactive walk-through
+
+Run from a jonerix host (or any POSIX host with `jpkg` on PATH):
+
+```sh
+sudo install/pi5-install.sh
+```
+
+The script proceeds through these stages in order:
+
+1. **Device selection.** Scans `/sys/block` for removable devices and
+   presents a numbered list. Pass `-d /dev/sdX` to skip the prompt.
+
+2. **Confirmation.** Warns that the target will be overwritten. Requires an
+   explicit `y`.
+
+3. **Filesystem check.** Probes p1 for FAT32 and p2 for ext4. Offers to
+   format them if `mkfs.vfat` / `mkfs.ext4` are available; bails otherwise.
+
+4. **License acceptance.** Before touching the network, prints the full text
+   of both covered licenses and requires an explicit `y`:
+   - Linux kernel — GPL-2.0 (`kernel_2712.img`, device-tree blobs)
+   - Broadcom firmware — proprietary binary (`start4.elf`, `fixup4.dat`,
+     `LICENCE.broadcom`); free to redistribute with Raspberry Pi hardware,
+     not modifiable
+
+   `--yes` / `-y` accepts both on the operator's behalf. A
+   `LICENSES-ACCEPTED.txt` file is written to the boot partition recording
+   the timestamp and which licenses were accepted.
+
+5. **Firmware download.** Fetches `raspberrypi/firmware` (stable branch,
+   ~500 MiB) from GitHub, extracts only the `boot/` payload onto p1, and
+   discards the tarball. The boot partition is cleared first; any existing
+   `*.pre-pi5-fixups` backups are preserved.
+
+6. **Userland install.** Runs `jpkg -r <root> install <packages>` to
+   populate p2 with the default package set (see table below). Requires
+   `jpkg` on the host PATH; the script aborts with a clear message if it is
+   not found.
+
+7. **Config.** Writes `/boot/cmdline.txt` (UUID-based root, `reboot=c`
+   first so it wins over the firmware's `reboot=w`), `/boot/config.txt`
+   (`hdmi_force_hotplug` on both HDMI ports, RTC trickle charging commented
+   out), and `/etc/fstab`.
+
+8. **Verify + unmount.** Checks that all boot-critical files are present,
+   syncs, and unmounts cleanly.
+
+### Flags
+
+| Flag | Effect |
+| ---- | ------ |
+| `-y` / `--yes` | Accept all prompts, including license acceptance |
+| `-d PATH` / `--device PATH` | Target block device (skip interactive scan) |
+| `--no-firmware` | Skip firmware download; reuse whatever is on p1 already |
+| `--no-userland` | Skip jpkg install; stop after p1 is populated |
+| `--branch NAME` | Pull recipes and helpers from this jonerix branch (default: `main`) |
+
+Unattended scripted form:
+
+```sh
+sudo install/pi5-install.sh -y -d /dev/sdX
+```
+
+### What ends up on the disk
+
+**p1 — FAT32 (boot)**
+
+| File | Purpose |
+| ---- | ------- |
+| `kernel_2712.img` | Pi 5 kernel (ARM Cortex-A76 64-bit) |
+| `bcm2712-rpi-5-b.dtb` | Device-tree blob |
+| `start4.elf` / `fixup4.dat` | Broadcom VideoCore firmware blobs |
+| `cmdline.txt` | `reboot=c console=serial0,115200 root=UUID=… rootfstype=ext4 rootwait rw init=/bin/openrc-init` |
+| `config.txt` | `arm_64bit=1`, `enable_uart=1`, `gpu_mem=16`, `hdmi_force_hotplug:0/1=1` |
+| `LICENCE.broadcom` | Broadcom firmware license (from upstream tarball) |
+| `LICENSES-ACCEPTED.txt` | Acceptance record with timestamp |
+
+**p2 — ext4 (root, label `jonerix`)**
+
+Default package set installed by jpkg:
+
+| Package | Role |
+| ------- | ---- |
+| `musl` | C standard library |
+| `toybox` | Base coreutils |
+| `mksh` | Shell |
+| `openrc` | Init system (`/bin/openrc-init`) |
+| `dhcpcd` | DHCP client |
+| `dropbear` | SSH server |
+| `bsdtar` | Archive tool |
+| `python3` | Scripting |
+| `sudo` | Privilege escalation |
+| `anvil` | mkfs.ext4 / mkfs.vfat / e2fsck / blkid and friends (MIT clean-room) |
+| `jonerix-raspi5-fixups` | Cold-reboot service, wake-on-power, EEE disable, PWM fan, Wi-Fi shim, fstab rescue |
+| `jonerix-boot-helpers` | Boot-time helper scripts |
+| `openntpd` | NTP client |
+
+Tailscale is deliberately not in the default set. Install it after first boot
+with `jpkg install tailscale`.
+
+OpenRC services wired into the `boot` runlevel by `jonerix-raspi5-fixups`:
+`pi5-cold-reboot`, `pi5-wake-on-power`, `pi5-rtc-battery-check`,
+`pi5-wifi`, `disable-eee`, `fan-control`.
+
+### Re-running
+
+The script is safe to re-run. On the first edit, `cmdline.txt` and
+`config.txt` are backed up as `cmdline.txt.pre-pi5-fixups` and
+`config.txt.pre-pi5-fixups`. Subsequent runs overwrite those files in place
+but leave the `*.pre-pi5-fixups` backups untouched.
+
 ## fastfetch
 
 ```
