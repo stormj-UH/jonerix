@@ -157,8 +157,12 @@ if readelf -d "$DESTDIR/bin/node" 2>/dev/null | grep -q 'libstdc++\\|libgcc_s'; 
 fi
 echo "=== Verifying ICU is built in ==="
 "$DESTDIR/bin/node" -e 'if(!process.versions.icu){console.error("ICU NOT built in");process.exit(1)}console.log("ICU version:",process.versions.icu)'
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+# Quote the `;` terminator. Same TOML + shell escape trap the
+# anvil and bzip2 recipes hit: `\\;` inside a basic string
+# arrives at find as a bare `;` and errors with
+# "find: -exec without \\;". Single-quoted `;` survives both.
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
 """
 install = ""
 
