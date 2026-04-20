@@ -19,7 +19,7 @@ Tested on:
 
 --- a/src/linux/btop_collect.cpp
 +++ b/src/linux/btop_collect.cpp
-@@ -374,19 +374,32 @@ namespace Cpu {
+@@ -374,19 +374,31 @@ namespace Cpu {
  				cpuinfo.ignore(1);
  				getline(cpuinfo, name);
  			}
@@ -28,6 +28,15 @@ Tested on:
 -					if (string(d.path().filename()).starts_with("arm")) {
 -						name = d.path().filename();
 -						break;
+-					}
+-				}
+-				if (not name.empty()) {
+-					auto name_vec = ssplit(name, '_');
+-					if (name_vec.size() < 2) return capitalize(name);
+-					else return capitalize(name_vec.at(1)) + (name_vec.size() > 2 ? ' ' + capitalize(name_vec.at(2)) : "");
+-				}
+-
+-			}
 +			else {
 +				// Prefer /sys/bus/event_source/devices/ — stable across kernel
 +				// versions. 6.x moved the PMU node from /sys/devices/armv8_cortex_aNN
@@ -45,15 +54,14 @@ Tested on:
 +							name = d.path().filename();
 +							break;
 +						}
- 					}
++					}
 +					if (not name.empty()) break;
- 				}
- 				if (not name.empty()) {
- 					auto name_vec = ssplit(name, '_');
- 					if (name_vec.size() < 2) return capitalize(name);
- 					else return capitalize(name_vec.at(1)) + (name_vec.size() > 2 ? ' ' + capitalize(name_vec.at(2)) : "");
- 				}
-
- 			}
++				}
++				if (not name.empty()) {
++					auto name_vec = ssplit(name, '_');
++					if (name_vec.size() < 2) return capitalize(name);
++					else return capitalize(name_vec.at(1)) + (name_vec.size() > 2 ? ' ' + capitalize(name_vec.at(2)) : "");
++				}
++			}
 
  			name = trim_name(name);
