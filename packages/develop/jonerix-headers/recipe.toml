@@ -21,25 +21,26 @@ build = ""
 # `|| true`). Reproduced 2026-04-20 in CI run 24682993326.
 install = """set -e
 KHARCH=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x86/')
-if [ ! -d "$KHARCH/include" ]; then
-    echo "jonerix-headers: no arch dir '$KHARCH/include' in upstream tree" >&2
+if [ ! -d "$KHARCH/include/asm" ]; then
+    echo "jonerix-headers: no arch dir '$KHARCH/include/asm' in upstream tree" >&2
     ls -1 2>&1 | head -20 >&2
     exit 1
 fi
 mkdir -p "$DESTDIR/include"
-# sabotage-linux/kernel-headers ships convenience symlinks in each
-# arch tree: x86/include/asm-generic -> ../../generic/include/
-# asm-generic, same for drm/, linux/, mtd/, etc. Two sequential
-# `cp -a` passes fail — the second one tries to overwrite the
-# directory the first pass created with a symlink, which cp
-# correctly refuses. Tar-pipe handles this cleanly: generic tree
-# first (creates real dirs), then arch tree (tar skips pre-
-# existing same-named dirs and merges the rest).
+# sabotage-linux/kernel-headers arch trees contain exactly one real
+# subdir — asm/ — and a family of convenience symlinks
+# (asm-generic, drm, linux, mtd, rdma, scsi, sound, video, xen)
+# that point back into ../../generic/include/<same>. Copying the
+# symlinks into the staging tree either errors out ("Can't replace
+# existing directory with non-directory" from bsdtar/tar, "Is a
+# directory" from cp) OR produces dangling symlinks that escape
+# the installed jpkg prefix. Skip them entirely: copy generic/*
+# first, then only the real asm/ dir from the arch tree.
 (cd generic/include && tar cf - .) | (cd "$DESTDIR/include" && tar xf -)
-(cd "$KHARCH/include" && tar cf - .) | (cd "$DESTDIR/include" && tar xf -)
+cp -a "$KHARCH/include/asm" "$DESTDIR/include/"
 # Sanity check: asm/unistd.h is present on every supported arch
 # and is included by most userland via libc. If it's missing, the
-# copy didn't cover the arch tree.
+# arch copy didn't land.
 if [ ! -f "$DESTDIR/include/asm/unistd.h" ]; then
     echo "jonerix-headers: asm/unistd.h missing after copy — $KHARCH tree incomplete" >&2
     exit 1
