@@ -1,13 +1,12 @@
 [package]
-# Package name corrected from "expre" → "exproxide" on 2026-04-20.
-# Matches the other "-oxide" Rust clean-room reimplementations in the
-# jonerix tree (anvil, nloxide, m4oxide). The upstream cargo crate is
-# still named `expre` (that's what the vendored source tarball
-# builds); the binary on disk is `/bin/expre` with a `/bin/expr`
-# symlink so autoconf-generated ./configure scripts resolve `expr`
-# to the Rust implementation instead of toybox's multicall.
+# Clean-room Rust implementation of expr(1). Naming matches the
+# other "-oxide" Rust reimplementations in jonerix (anvil, nloxide,
+# m4oxide). Cargo crate, binary on disk, and jpkg package are all
+# named `exproxide`; a /bin/expr symlink is installed so autoconf
+# ./configure scripts resolve `expr` to the Rust implementation
+# instead of toybox's multicall.
 name = "exproxide"
-version = "0.1.0-r1"
+version = "0.1.0"
 license = "MIT"
 description = "Clean-room Rust implementation of expr for jonerix"
 # Claim /bin/expr from toybox's multicall so configure scripts land
@@ -16,30 +15,42 @@ description = "Clean-room Rust implementation of expr for jonerix"
 replaces = ["toybox"]
 
 [source]
-url = "https://github.com/stormj-UH/jonerix/releases/download/packages/expre-656b79b918af36f619a9dea269390566e8d4e856.tar.gz"
-sha256 = "9894c8e87e88bb605335eab763a3d7acf7a709986c08766397ffe3252115e206"
+# Canonical source: Forgejo jonerik/exproxide on
+# castle.great-morpho.ts.net:3000. That host is behind Tailscale and
+# unreachable from GitHub-hosted runners, so the tarball is mirrored
+# to a jonerix GH release tag for CI to fetch.
+#
+# Forgejo URL (primary, reachable from inside the jonerix network):
+#   https://castle.great-morpho.ts.net:3000/jonerik/exproxide/archive/bb31ea6.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-exproxide-v0.1.0/exproxide-0.1.0.tar.gz"
+sha256 = "68860948092e82764295afb2407bf22fb6f866c1db367721de30253177556012"
 
 [build]
 system = "custom"
 build = """
 set -e
-export CARGO_HOME=/tmp/expre-cargo
+export CARGO_HOME=/tmp/exproxide-cargo
 export CARGO_TARGET_DIR="$PWD/target"
 export CARGO_NET_OFFLINE=true
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
 cargo test --locked
-cargo build --release --locked --bin expre
+cargo build --release --locked --bin exproxide
 """
 install = """
 set -e
-BIN="$PWD/target/release/expre"
-install -Dm755 "$BIN" "$DESTDIR/bin/expre"
-ln -sf expre "$DESTDIR/bin/expr"
-llvm-strip --strip-all "$DESTDIR/bin/expre" 2>/dev/null || true
+BIN="$PWD/target/release/exproxide"
+install -Dm755 "$BIN" "$DESTDIR/bin/exproxide"
+ln -sf exproxide "$DESTDIR/bin/expr"
+llvm-strip --strip-all "$DESTDIR/bin/exproxide" 2>/dev/null || true
 """
 
 [hooks]
-post_install = """[ -x /bin/expre ] && ln -sf expre /bin/expr || true"""
+# Defensive: install(1) above already creates the symlink inside
+# $DESTDIR, and jpkg carries that into the live rootfs. The
+# post_install here is a belt-and-suspenders refresh for upgrades
+# from the earlier (mis-typed) expre package where /bin/expr may
+# still point at /bin/expre.
+post_install = """[ -x /bin/exproxide ] && ln -sf exproxide /bin/expr || true"""
 post_remove = """[ ! -e /bin/expr ] && [ -x /bin/toybox ] && ln -sf toybox /bin/expr || true"""
 
 [depends]
