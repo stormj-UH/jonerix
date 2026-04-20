@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.4.1"
+version = "1.5.0"
 license = "MIT"
-description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, OpenRC-backed reboot, cold-reboot, wake-on-power via pi5-fw / pi5-wake-on-power) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, OpenRC-backed reboot, cold-reboot, wake-on-power via pi5-fw / pi5-wake-on-power, daily RTC coin-cell voltage monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
 # Claim toybox's /bin/reboot multicall symlink so jpkg can transfer
 # file ownership instead of relying only on a post_install rewrite.
 # Requires jpkg >= 1.0.4 (package.replaces support).
@@ -73,6 +73,12 @@ ln -sf /usr/local/bin/reboot-openrc $DESTDIR/bin/reboot
 # the cmdline patch above) and logs pi5-wake-on-power status for
 # auditability.
 install -Dm755 init.d/pi5-cold-reboot $DESTDIR/etc/init.d/pi5-cold-reboot
+
+# pi5-rtc-battery-check: reads /sys/class/rtc/rtc0/battery_voltage
+# and logs INFO / WARN / ERROR depending on the cell state. Paired
+# with a snooze-cron entry that runs it daily.
+install -Dm755 bin/pi5-rtc-battery-check $DESTDIR/usr/local/bin/pi5-rtc-battery-check
+install -Dm644 cron.d/pi5-rtc-battery     $DESTDIR/etc/cron.d/pi5-rtc-battery
 """
 install = ""
 
@@ -268,6 +274,15 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     # in EEPROM across installs/reboots.
     if [ -x /usr/local/bin/pi5-wake-on-power ]; then
         /usr/local/bin/pi5-wake-on-power 2>&1 | sed 's/^/raspi5-fixups: /' || true
+    fi
+
+    # --- RTC coin-cell initial read + daily cron wiring ---
+    # Run the check once now so the current voltage (or "no battery"
+    # verdict) shows up in the install log. Idempotent otherwise —
+    # the cron.d entry handles the daily recurrence after boot.
+    if [ -x /usr/local/bin/pi5-rtc-battery-check ]; then
+        /usr/local/bin/pi5-rtc-battery-check -v 2>&1 \\
+            | sed 's/^/raspi5-fixups: /' || true
     fi
 fi
 exit 0"""

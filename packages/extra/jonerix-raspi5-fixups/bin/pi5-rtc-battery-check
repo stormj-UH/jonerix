@@ -1,0 +1,98 @@
+#!/bin/sh
+# pi5-rtc-battery-check — poll the Pi 5 RTC coin-cell voltage
+# (exposed by the rpi-rtc driver at /sys/class/rtc/rtc0/battery_voltage,
+# reported in microvolts) and log at an appropriate severity.
+#
+# Severity ladder:
+#   INFO  — reading is zero or the sysfs file is missing. Both mean
+#           the RTC's ADC is reading no cell on the VBAT pin, i.e.
+#           nobody installed a battery. Nothing to do; time will
+#           still work while the Pi has main power.
+#   WARN  — between 2.0 V and 2.4 V. The RTC block runs down to
+#           roughly 1.8 V per the RP1 datasheet; at typical self-
+#           discharge plus RTC load a cell in this band will cross
+#           the fail line inside about a month. Recommend replacing
+#           the coin cell at next convenience.
+#   ERROR — below 2.0 V. Clock is likely to stop the next time
+#           the Pi loses mains power. Replace the cell now.
+#   OK    — 2.4 V or above. Silent by default; `-v` prints it anyway.
+#
+# Output goes to both stderr (for interactive runs) and `logger`
+# (for cron / syslog forwarding). Exit status:
+#   0 = OK / INFO (no action needed by the operator)
+#   1 = WARN (replace soon)
+#   2 = ERROR (replace now)
+#
+# Part of jonerix-raspi5-fixups — MIT License.
+
+VERBOSE=0
+case "${1:-}" in
+    -v|--verbose) VERBOSE=1 ;;
+esac
+
+SRC=/sys/class/rtc/rtc0/battery_voltage
+TAG=pi5-rtc-battery
+
+# Helper: log at a given level both to stderr (with a visible
+# prefix) and to syslog via logger, so the message lands in
+# `/var/log/messages` for cron runs and on a human's terminal for
+# interactive ones.
+_log() {
+    _lvl=$1; shift
+    printf '[%s] %s\n' "$_lvl" "$*" >&2
+    if command -v logger >/dev/null 2>&1; then
+        case "$_lvl" in
+            ERROR) logger -t "$TAG" -p user.err  -- "$*" ;;
+            WARN)  logger -t "$TAG" -p user.warn -- "$*" ;;
+            INFO)  logger -t "$TAG" -p user.info -- "$*" ;;
+            OK)    logger -t "$TAG" -p user.info -- "$*" ;;
+        esac
+    fi
+}
+
+if [ ! -r "$SRC" ]; then
+    _log INFO "no rpi-rtc battery_voltage sysfs attribute — driver not loaded or model lacks VBAT ADC"
+    exit 0
+fi
+
+RAW=$(cat "$SRC" 2>/dev/null)
+case "$RAW" in
+    ''|*[!0-9]*)
+        _log INFO "battery_voltage unreadable (content: '$RAW') — treating as no battery"
+        exit 0
+        ;;
+esac
+
+# Microvolts → millivolts (integer math; /bin/sh has no floats).
+MV=$(( RAW / 1000 ))
+
+# ≤ 500 mV is below the ADC noise floor for an unpopulated socket.
+if [ "$MV" -le 500 ]; then
+    _log INFO "no coin cell detected on RTC VBAT pin (reading ${MV} mV)"
+    exit 0
+fi
+
+# Thresholds in millivolts.  Picked from RP1 datasheet minimum
+# operating voltage (1.8 V) plus the ~1 month / 0.2 V typical drop
+# observed on a loaded CR2032.
+ERR_MV=2000
+WARN_MV=2400
+
+# Format back to volts with three decimals without relying on bc.
+V_WHOLE=$(( MV / 1000 ))
+V_FRAC=$(( MV % 1000 ))
+VOLT=$(printf '%d.%03d' "$V_WHOLE" "$V_FRAC")
+
+if [ "$MV" -lt "$ERR_MV" ]; then
+    _log ERROR "RTC coin cell at ${VOLT} V — below ${ERR_MV} mV, clock likely to stop at next power loss. Replace battery."
+    exit 2
+fi
+
+if [ "$MV" -lt "$WARN_MV" ]; then
+    _log WARN "RTC coin cell at ${VOLT} V — below ${WARN_MV} mV, expected to fail within ~1 month. Schedule a replacement."
+    exit 1
+fi
+
+# Healthy.
+[ "$VERBOSE" = 1 ] && _log OK "RTC coin cell at ${VOLT} V (healthy, >= ${WARN_MV} mV)"
+exit 0
