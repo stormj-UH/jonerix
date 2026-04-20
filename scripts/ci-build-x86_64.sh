@@ -178,6 +178,17 @@ package_timeout() {
     esac
 }
 
+install_local_jpkg() {
+    # Extract a jpkg file directly into / — see aarch64 sibling for
+    # rationale. jpkg format: 8B magic + 4B LE header_len + TOML +
+    # zstd tar payload.
+    local f="$1"
+    local hdr_len skip
+    hdr_len=$(od -An -v -tu4 -N4 -j8 "$f" | tr -d ' ')
+    skip=$((12 + hdr_len))
+    tail -c +$((skip + 1)) "$f" | zstd -dc | tar xf - -C /
+}
+
 install_target_build_deps() {
     recipe_dir="$1"
     deps_line=$(awk '
@@ -228,12 +239,13 @@ install_target_build_deps() {
         esac
 
         # Prefer a just-built jpkg in /var/cache/jpkg over INDEX. See
-        # aarch64 sibling for the reproduction and rationale.
+        # aarch64 sibling for rationale. jpkg install only takes
+        # names, so local hits go through install_local_jpkg.
         local_pkg=$(ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg 2>/dev/null \
             | sort -V | tail -1)
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
-            echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — from local build $(basename "$local_pkg") ==="
-            jpkg install --force "$local_pkg"
+            echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
+            install_local_jpkg "$local_pkg"
         else
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
             jpkg install --force "$dep_pkg"
