@@ -74,10 +74,21 @@ done
 # License tracking (same convention as lsusb-rs) ------------------
 install -Dm644 LICENSE "$DESTDIR/share/licenses/anvil/LICENSE"
 
-# merged-usr flatten + strip (same post-pass as ripgrep / lsusb-rs)
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+# merged-usr flatten + strip (same post-pass as ripgrep / lsusb-rs).
+# Guard the flatten against DESTDIR unset/empty/root — jpkg < 1.0.5
+# sometimes hands us DESTDIR=/, which makes `cp -a /usr/. /` copy
+# /usr into itself and the whole install step dies. Skip the flatten
+# in that case; each install line above already writes straight to
+# /bin / /lib etc., so there's nothing to move anyway.
+if [ -n "$DESTDIR" ] && [ "$DESTDIR" != "/" ]; then
+    [ -d "$DESTDIR/usr"   ] && cp -a "$DESTDIR/usr/."   "$DESTDIR/"     && rm -rf "$DESTDIR/usr"
+    [ -d "$DESTDIR/lib64" ] && cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"
+fi
+# Quote the `;` terminator. Unquoted, `\\;` in the .toml gets eaten
+# one level by TOML basic-string escaping and another level by the
+# shell, arriving at /usr/bin/find as bare `;` and erroring with
+# "find: -exec without \\;". A single-quoted `;` survives both.
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 """
 
 [depends]
