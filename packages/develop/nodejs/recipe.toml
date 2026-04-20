@@ -1,6 +1,6 @@
 [package]
 name = "nodejs"
-version = "24.15.0-r2"
+version = "24.15.0-r3"
 license = "MIT"
 description = "JavaScript runtime built on V8 (libc++ / compiler-rt / small-icu / zero GNU)"
 
@@ -44,25 +44,38 @@ set -e
 
 export PATH=/bin:/usr/bin
 
-# The jonerix python3 jpkg is currently built without the `_bz2`
-# extension (no libbz2 at python build time). Node 24.15+'s
-# configure.py imports `bz2` unconditionally at module load,
-# even when the code paths that use it are unreachable for our
-# `--with-intl=full-icu --download=all` flags. Ship a tiny stub
-# module earlier in PYTHONPATH so the import succeeds. If any
-# part of configure actually reaches bz2.BZ2File it'll throw
-# `NotImplementedError` — better than silently mis-building.
+# Python 3.14 in jonerix's builder image is currently compiled
+# without the _bz2 extension (no libbz2 at python build time),
+# so `import bz2` in configure.py fails at module load. We
+# satisfy the import with a shim and — more importantly —
+# pre-expand the only real consumer (deps/icu-small's
+# icudt*l.dat.bz2, which configure_intl would otherwise decode
+# via bz2.BZ2File) using libarchive's bsdcat. Once the .dat is
+# present uncompressed, configure_intl takes its
+# "file already exists" branch and never touches bz2.
+
 mkdir -p /tmp/py-shim
 cat > /tmp/py-shim/bz2.py <<'PYEOF'
 class _Missing:
     def __call__(self, *a, **kw):
-        raise NotImplementedError("jonerix python3 missing _bz2; shim reached at runtime")
+        raise NotImplementedError(
+            "jonerix python3 missing _bz2; shim reached at runtime — "
+            "pre-expand any .bz2 inputs in the recipe before invoking python")
 BZ2File = _Missing(); BZ2Compressor = _Missing(); BZ2Decompressor = _Missing()
 def compress(*a, **kw): raise NotImplementedError()
 def decompress(*a, **kw): raise NotImplementedError()
 def open(*a, **kw): raise NotImplementedError()
 PYEOF
 export PYTHONPATH=/tmp/py-shim:${PYTHONPATH:-}
+
+# Pre-expand deps/icu-small's bzipped ICU data file. bsdcat
+# (libarchive, already in the builder) handles bz2 streams.
+for bz in deps/icu-small/source/data/in/*.bz2; do
+  [ -f "$bz" ] || continue
+  out="${bz%.bz2}"
+  echo "Pre-expanding $bz -> $out"
+  bsdcat "$bz" > "$out"
+done
 
 # Strip explicit -latomic injections that GYP adds for Linux+Clang.
 # compiler-rt builtins provide the same symbols.
