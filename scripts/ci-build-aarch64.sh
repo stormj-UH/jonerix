@@ -107,6 +107,16 @@ jpkg update
 # Python 3.14 build perf AND Ruby 3.4 configure's GNU-make detection.
 jpkg upgrade jmake 2>&1 | tail -5
 
+# exproxide — clean-room Rust `expr(1)`. Autoconf-generated
+# configure scripts call `expr` at probe time (unbound, libevent,
+# and anything else with `expr "x$FOO"` checks); toybox's expr
+# applet errors "inaccessible or not found" on some builders,
+# so flip /bin/expr to exproxide up-front. exproxide declares
+# replaces=["toybox","uutils"] so jpkg transfers the symlink
+# cleanly. Reproduced unbound 2026-04-20 run 24691899673.
+echo "=== Installing exproxide for /bin/expr ==="
+jpkg install --force exproxide 2>&1 | tail -5 || echo "exproxide install failed — recipe-level fallback only"
+
 # Meson is bootstrapped from its upstream source tarball to avoid depending
 # on pip/SSL support in older builder images.
 /workspace/scripts/bootstrap-meson.sh
