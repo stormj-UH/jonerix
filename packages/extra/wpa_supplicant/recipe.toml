@@ -1,6 +1,6 @@
 [package]
 name = "wpa_supplicant"
-version = "2.11"
+version = "2.11-r1"
 license = "BSD-3-Clause"
 description = "WPA/WPA2/WPA3 supplicant for wireless network authentication"
 
@@ -10,7 +10,28 @@ sha256 = "912ea06f74e30a8e36fbb68064d6cdff218d8d591db0fc5d75dee6c81ac7fc0a"
 
 [build]
 system = "custom"
-configure = """cd wpa_supplicant
+# The two `-I$(abspath ../src)` + `-I$(abspath ../src/utils)` lines in
+# wpa_supplicant/Makefile (lines 50/51 of upstream 2.11) expand to -I
+# followed by nothing under jmake — the `$(abspath ...)` function
+# returns empty when jmake -C switches into the subdir before
+# evaluating the expression. Reproduced 2026-04-20 in run 24659112050
+# where every CC errored "fatal error: 'includes.h' file not found".
+# EXTRA_CFLAGS alone is not enough because `CFLAGS += -I$(abspath ...)`
+# appends two bare `-I` flags AFTER the extra flags, and clang
+# swallows the next arg (`-DGIT_VERSION_STR_POSTFIX=...`) as the
+# include path — poisoning the whole CC invocation.
+#
+# Pre-substitute the two abspath calls with absolute paths so jmake
+# never needs to evaluate them. sed's # delimiter avoids clashing
+# with the `/` in the replacement; single-quoting the pattern keeps
+# the shell from interpreting `$(abspath ...)` as command
+# substitution.
+#
+# CONFIG_LIBNL32=y + LIBNL_INC=/include bypasses the pkg-config probe
+# in src/drivers/drivers.mak so jmake does not need a pkg-config
+# binary.
+configure = """ROOT=$(pwd)
+cd wpa_supplicant
 cat > .config << 'CONF'
 CONFIG_DRIVER_NL80211=y
 CONFIG_DRIVER_WEXT=y
@@ -28,20 +49,12 @@ CONFIG_EAP_MSCHAPV2=y
 CONFIG_PKCS12=y
 CONFIG_WPS=y
 CONFIG_CTRL_IFACE=y
-CONF"""
-# wpa_supplicant's Makefile uses $(abspath ../src) which bmake (jmake) does not
-# implement — it expands to literally nothing, so the -I paths vanish. Supply
-# ABSOLUTE paths via EXTRA_CFLAGS (honored at wpa_supplicant/Makefile:49).
-# CONFIG_LIBNL32=y + LIBNL_INC=/include bypasses the pkg-config probe in
-# src/drivers/drivers.mak so jmake does not need a pkg-config binary.
-build = """ROOT=$(pwd)
-jmake -C wpa_supplicant \
-  CC=clang \
-  LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" \
-  CONFIG_LIBNL32=y \
-  LIBNL_INC=/include \
-  EXTRA_CFLAGS="-I$ROOT/src -I$ROOT/src/utils -I/include" \
-  -j$(nproc)"""
+CONF
+cd ..
+sed -i 's#-I$(abspath ../src)#-I'"$ROOT"'/src#g' wpa_supplicant/Makefile
+sed -i 's#-I$(abspath ../src/utils)#-I'"$ROOT"'/src/utils#g' wpa_supplicant/Makefile
+grep -n '^CFLAGS' wpa_supplicant/Makefile | head -5"""
+build = """jmake -C wpa_supplicant CC=clang LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" CONFIG_LIBNL32=y LIBNL_INC=/include EXTRA_CFLAGS="-I/include" -j$(nproc)"""
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/wpa_supplicant
 install -m 755 wpa_supplicant/wpa_supplicant $DESTDIR/bin/wpa_supplicant
 install -m 755 wpa_supplicant/wpa_cli $DESTDIR/bin/wpa_cli
