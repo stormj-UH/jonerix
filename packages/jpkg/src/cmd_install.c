@@ -664,10 +664,24 @@ int cmd_install(int argc, char **argv) {
         }
     }
 
-    /* Install each package in dependency order */
+    /* Install each package in dependency order.
+     *
+     * --force applies ONLY to the names the user typed on the command
+     * line, not to transitive dependencies. Otherwise `jpkg upgrade nodejs`
+     * (which spawns `cmd_install --force nodejs`) would also re-download
+     * musl, ncurses, libressl, etc. every time — wasting bandwidth and
+     * burning into the INDEX rate limit for no reason. Deps that are
+     * already at the target version skip via the same-version check in
+     * install_single_package (line ~318). */
     int failures = 0;
     for (size_t i = 0; i < install_list->count; i++) {
-        if (install_single_package(cfg, idx, db, install_list->packages[i], force) != 0) {
+        const char *name = install_list->packages[i];
+        int is_explicit = 0;
+        for (int j = pkg_start; j < argc; j++) {
+            if (strcmp(argv[j], name) == 0) { is_explicit = 1; break; }
+        }
+        bool pkg_force = force && is_explicit;
+        if (install_single_package(cfg, idx, db, name, pkg_force) != 0) {
             failures++;
         }
     }
