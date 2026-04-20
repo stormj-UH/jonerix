@@ -300,6 +300,20 @@ build_one() {
         return 0
     fi
 
+    # License gate: GPL recipes are kept in-tree purely for header
+    # reference (Linux kernel UAPI) and build-system documentation.
+    # jpkg's own license gate blocks them; running `jpkg build` just
+    # to hit that block pollutes CI logs with a spurious `FAILED:`
+    # line. Skip here with a clear message instead.
+    pkg_license=$(grep "^license" "${pkg_dir}/recipe.toml" | head -1 \
+        | sed 's/.*= *"\(.*\)"/\1/')
+    case "$pkg_license" in
+        GPL-*|LGPL-*|AGPL-*)
+            echo "=== Skipping ${pkg_name}-${pkg_ver} (license=${pkg_license}, blocked by permissive-only policy; in-tree for headers/reference only) ==="
+            return 0
+            ;;
+    esac
+
     # Operational skip list — packages whose off-CI-built jpkg works
     # fine and whose CI rebuild is expensive (nodejs' v8 takes 20-30
     # min) or flaky. Accepts any published version of the package,
