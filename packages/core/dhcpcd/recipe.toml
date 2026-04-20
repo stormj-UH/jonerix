@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r3"
+version = "10.1.0-r4"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -9,9 +9,52 @@ url = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.1.0/
 sha256 = "abc307c63853da3199baa5c1e15fd5ede9d68d068b2a59ca14c5a6768e9cc3b7"
 
 [build]
-system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib/dhcpcd CC=clang"
-build = "make -j$(nproc)"
+system = "custom"
+# Three Pi-reproducible tweaks vs. a vanilla autoconf run:
+#
+#   1. TAILQ_* = no short-circuits dhcpcd's configure probes for
+#      BSD sys/queue.h macros. The probes compile test programs
+#      that `#include <sys/queue.h>`; jonerix's sabotage-kernel-
+#      headers don't ship one, so every probe fails silently —
+#      but the fallback branch that would `#include "compat/
+#      queue.h"` only fires when at least one probe was actually
+#      attempted without being skipped. Forcing the three vars
+#      to "no" up front lands the `#include "compat/queue.h"`
+#      line in config.h without running the broken probes.
+#
+#   2. genembedh / genembedc are sh scripts that turn
+#      dhcpcd-definitions.conf into dhcpcd-embedded.{h,c}. The
+#      src/Makefile recipe invokes them with `${HOST_SH}
+#      ${.ALLSRC} $^ > $@` — BSD-make-isms (HOST_SH, .ALLSRC)
+#      that jmake doesn't populate. Pre-generate the two files
+#      in the configure step so src/if-options.c finds its
+#      required header.
+#
+#   3. `clang --config=/etc/clang/<triple>.cfg` because jonerix's
+#      clang-21 doesn't auto-load /etc/clang/*.cfg (CLANG_CONFIG_
+#      FILE_SYSTEM_DIR unset). Without this the configure probe
+#      for "CC creates executables" fails at link time with
+#      crtbeginS.o / -lgcc errors and configure aborts.
+configure = """CFG_FILE=$(ls /etc/clang/*.cfg 2>/dev/null | head -1)
+CC_CMD="clang${CFG_FILE:+ --config=$CFG_FILE}"
+# Pre-generate dhcpcd-embedded.{h,c} — jmake can't evaluate the
+# BSD-make rule that would do it at build time.
+( cd src && \
+sh genembedh dhcpcd-definitions.conf dhcpcd-definitions-small.conf dhcpcd-embedded.h.in > dhcpcd-embedded.h && \
+sh genembedc dhcpcd-definitions.conf dhcpcd-definitions-small.conf dhcpcd-embedded.c.in > dhcpcd-embedded.c )
+# Short-circuit the sys/queue.h probes so configure takes the
+# compat/queue.h branch.
+export TAILQ_FOREACH_SAFE=no TAILQ_CONCAT=no TAILQ_FOREACH=no
+# dhcpcd's configure relies on POSIX++ features (function
+# definitions, "here-string" variants) that toybox sh can't
+# parse — line 63 trips "syntax error ... newline" — so invoke
+# mksh explicitly. mksh is a runtime dep on every jonerix box.
+CC="$CC_CMD" CFLAGS="-O2 -fomit-frame-pointer" \
+  mksh ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib/dhcpcd
+grep -E 'queue|HAVE_SYS' config.h"""
+build = """CFG_FILE=$(ls /etc/clang/*.cfg 2>/dev/null | head -1)
+CC="clang${CFG_FILE:+ --config=$CFG_FILE}" \
+  make -j$(nproc)"""
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi

@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-headers"
-version = "4.19.88-r1"
-license = "MIT"
-description = "Linux UAPI kernel headers for jonerix package builds"
+version = "4.19.88-r2"
+license = "MIT AND BSD-3-Clause"
+description = "Linux UAPI kernel headers for jonerix package builds + BSD sys/queue.h compat"
 
 [source]
 url = "https://github.com/sabotage-linux/kernel-headers/archive/refs/tags/v4.19.88-1.tar.gz"
@@ -44,7 +44,21 @@ cp -a "$KHARCH/include/asm" "$DESTDIR/include/"
 if [ ! -f "$DESTDIR/include/asm/unistd.h" ]; then
     echo "jonerix-headers: asm/unistd.h missing after copy — $KHARCH tree incomplete" >&2
     exit 1
-fi"""
+fi
+
+# Ship a BSD sys/queue.h so packages that expect it (dhcpcd,
+# unbound, openssh, wpa_supplicant privilege-separation layer,
+# anything using TAILQ_* / LIST_* / SLIST_* macros) find one on
+# the jonerix include path. musl libc doesn't provide queue.h
+# (it's a BSD extension, not POSIX). Vendored from NetBSD 10's
+# sys/sys/queue.h (BSD-3-Clause, Regents of UC Berkeley), no
+# modifications.
+mkdir -p "$DESTDIR/include/sys"
+install -Dm644 "$RECIPE_DIR/vendor/queue.h" "$DESTDIR/include/sys/queue.h"
+[ -f "$DESTDIR/include/sys/queue.h" ] || {
+    echo "jonerix-headers: sys/queue.h install failed" >&2
+    exit 1
+}"""
 
 [depends]
 runtime = []
