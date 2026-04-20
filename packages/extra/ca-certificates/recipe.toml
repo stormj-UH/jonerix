@@ -1,6 +1,6 @@
 [package]
 name = "ca-certificates"
-version = "20260211"
+version = "20260211-r1"
 license = "MPL-2.0"
 description = "Mozilla CA certificate bundle for TLS verification (sourced from curl.se)"
 # Vital for every TLS client on jonerix (curl, openntpd-http-date,
