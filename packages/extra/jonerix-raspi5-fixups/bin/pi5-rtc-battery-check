@@ -86,15 +86,26 @@ if [ ! -r "$SRC" ]; then
     exit 0
 fi
 
-RAW=$(cat "$SRC" 2>/dev/null)
-case "$RAW" in
-    ''|*[!0-9]*)
-        _log INFO "battery_voltage unreadable (content: '$RAW') — treating as no battery"
-        exit 0
-        ;;
-esac
+# Read + normalize: strip ALL whitespace (spaces, tabs, CR, LF).
+# Observed on jonerix-tormenta 2026-04-20: a reading of 3070082
+# (genuine 3.07 V, healthy cell) was rejected as "unreadable" by
+# the earlier `case $RAW in *[!0-9]*)` pattern. Negated-class case
+# patterns are POSIX but fragile across /bin/sh implementations —
+# mksh, toybox sh, and busybox-ash don't all agree on how `[!...]`
+# applies here. Swap to an arithmetic probe which is unambiguous:
+# if RAW isn't a plain non-negative integer, the `test -eq` fails
+# and we report "no battery".
+RAW=$(cat "$SRC" 2>/dev/null | tr -d ' \t\r\n')
+if [ -z "$RAW" ] || ! [ "$RAW" -eq "$RAW" ] 2>/dev/null; then
+    _log INFO "battery_voltage unreadable (content: '$RAW') — treating as no battery"
+    exit 0
+fi
 
 # Microvolts → millivolts (integer math; /bin/sh has no floats).
+# Kernel reports battery_voltage in microvolts (rtc-rpi.c uses
+# RTC_BBAT_VOLTS via the videocore mailbox; millivolt-conversion
+# is already applied there and the sysfs attribute is scaled to
+# microvolts by `show`). A 3.070 V CR2032 reads 3070000-ish µV.
 MV=$(( RAW / 1000 ))
 
 # ≤ 500 mV is below the ADC noise floor for an unpopulated socket.
