@@ -28,12 +28,17 @@ install = """set -e
 for comp in liblzma_Runtime liblzma_Development xz_Runtime lzmainfo_Runtime scripts_Runtime; do
     DESTDIR="$DESTDIR" cmake --install build --component "$comp" || true
 done
-# Sanity: the header MUST be present — python3 and every other
-# lzma consumer needs it. Fail loud if CMake changed the component
-# name out from under us.
-[ -f "$DESTDIR/include/lzma.h" ] || { echo "xz: lzma.h missing after install" >&2; find "$DESTDIR" -name '*.h' | head -20 >&2; exit 1; }
+# Merged-usr flatten FIRST — cmake with PREFIX=/ still writes
+# headers + cmake/pkgconfig exports under $DESTDIR/usr/... (cmake
+# treats absolute prefix + DESTDIR as prefix-relative, so
+# /include ends up at $DESTDIR/usr/include). Collapse /usr/ into
+# / so the jpkg ships merged-usr paths.
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# Sanity: the header MUST be present post-flatten — python3 and
+# every other lzma consumer needs it. Fail loud if CMake changed
+# the component layout out from under us.
+[ -f "$DESTDIR/include/lzma.h" ] || { echo "xz: lzma.h missing after install+flatten" >&2; find "$DESTDIR" -name '*.h' | head -20 >&2; exit 1; }
 find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 find "$DESTDIR/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true"""
 
