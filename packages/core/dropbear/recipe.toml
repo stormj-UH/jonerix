@@ -11,15 +11,20 @@ sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 [build]
 system = "autoconf"
 configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"
-# Explicit targets. `make PROGRAMS="..."` alone routes through
-# dropbear/Makefile's `all` target, which under jmake 1.1.0 expands
-# to an empty recipe when PROGRAMS is overridden on the command
-# line — reproduced 2026-04-20 run 24693845801 which packaged a
-# 413 B empty jpkg and broke every downstream docker build of
-# jonerix:minimal with "dropbear extracted no installable files".
-# Passing the binaries as targets forces each rule to fire.
-build = "make -j$(nproc) dropbear dbclient dropbearkey dropbearconvert scp"
-install = """make DESTDIR=$DESTDIR PROGRAMS="dropbear dbclient dropbearkey dropbearconvert scp" install
+# Plain `make` — dropbear's default `all` builds its built-in
+# PROGRAMS list (dropbear dbclient dropbearkey dropbearconvert
+# scp). Two earlier variants failed under jmake 1.1.0:
+#   1. `make PROGRAMS="..."` → `Nothing to be done for 'all'`
+#      (jmake evaluates all's prerequisite list before the
+#      cmdline override lands, so all is empty by the time its
+#      recipe fires). Ship: 0.4 KiB empty jpkg.
+#   2. `make dropbear dbclient ...` → `No rule to make target
+#      './src/src/agentfwd.h'` — jmake doubles the srcdir path
+#      when header prerequisites resolve via VPATH.
+# Dropping the override and just building the default target
+# keeps jmake on its happy path.
+build = "make -j$(nproc)"
+install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
