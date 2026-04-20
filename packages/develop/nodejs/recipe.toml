@@ -1,8 +1,8 @@
 [package]
 name = "nodejs"
-version = "24.15.0-r1"
+version = "24.15.0-r2"
 license = "MIT"
-description = "JavaScript runtime built on V8 (libc++ / compiler-rt / full-icu / zero GNU)"
+description = "JavaScript runtime built on V8 (libc++ / compiler-rt / small-icu / zero GNU)"
 
 [source]
 url = "https://nodejs.org/dist/v24.15.0/node-v24.15.0.tar.gz"
@@ -80,11 +80,19 @@ LDFLAGS="-stdlib=libc++ -lc++abi -fuse-ld=lld --rtlib=compiler-rt --unwindlib=li
 python3 configure.py \
     --prefix=/ \
     --ninja \
-    --with-intl=full-icu \
-    --download=all \
+    --with-intl=small-icu \
     --shared-zlib \
     --without-snapshot \
     --without-node-snapshot
+# --with-intl=small-icu uses the ICU source bundled in Node's
+# deps/icu-small/ — no network download, no bz2 decompression.
+# V8 gets its Unicode regex data from ICU either way, so
+# \p{Surrogate} and other property escapes resolve correctly.
+# Full locale data (formatDate/etc.) isn't needed for the
+# build-time tools our consumers run. If a downstream workload
+# needs full-icu, it can either require ICU data at runtime
+# (NODE_ICU_DATA env var pointing to an icu4c-*.dat) or we
+# rebuild this package after the python3 recipe learns _bz2.
 
 # Parallelism. V8 compilation peaks at ~2 GB per job; the final
 # link pulls another ~3 GB. GitHub runners give us 4 vCPU / ~14
