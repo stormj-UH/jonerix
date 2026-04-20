@@ -1,0 +1,69 @@
+[package]
+name = "tailscale"
+version = "1.96.4"
+license = "BSD-3-Clause"
+description = "Tailscale node agent (tailscaled) + control CLI (tailscale). Ships the upstream static Go binaries plus jonerix OpenRC integration (boot-runlevel tailscaled + default-runlevel tailscale-up)."
+
+[source]
+# tailscale's own pkgs.tailscale.com publishes static-linked Go
+# binaries for every supported arch. These are the official release
+# tarballs, not a source build — the `src.tar.gz` on the same host
+# *is* the full Go source (Apache-2.0 + BSD-3-Clause), but for this
+# recipe we install the prebuilt binaries so we don't pull Go into
+# the image builder.
+url = "https://pkgs.tailscale.com/stable/tailscale_1.96.4_arm64.tgz"
+sha256 = "a27249bc70d7b37a68f8be7f5c4507ea5f354e592dce43cb5d4f3e742b313c3c"
+
+[build]
+system = "custom"
+# The tarball is already built. Just unpack, install, wire services.
+# We provide the OpenRC init.d scripts from $RECIPE_DIR — the
+# upstream tarball ships only `systemd/tailscaled.service`, which
+# jonerix can't use.
+build = """
+set -e
+# Nothing to compile; the tarball is static-linked binaries.
+"""
+install = """
+set -e
+# Upstream layout after extract:
+#   tailscale_<ver>_arm64/
+#     tailscale                 (CLI)
+#     tailscaled                (daemon)
+#     systemd/
+#     LICENSE
+B=$(pwd)
+install -Dm755 "$B/tailscale"  "$DESTDIR/bin/tailscale"
+install -Dm755 "$B/tailscaled" "$DESTDIR/bin/tailscaled"
+
+# OpenRC integration (from RECIPE_DIR because upstream ships only
+# systemd units). Note the `use ntpd` — not `need` — so a bad
+# ntpd doesn't block the VPN. Same reasoning for dns/logger.
+install -Dm755 "$RECIPE_DIR/init.d/tailscaled"    "$DESTDIR/etc/init.d/tailscaled"
+install -Dm755 "$RECIPE_DIR/init.d/tailscale-up"  "$DESTDIR/etc/init.d/tailscale-up"
+
+# License tracking.
+install -Dm644 "$B/LICENSE" "$DESTDIR/share/licenses/tailscale/LICENSE"
+"""
+
+[hooks]
+# Wire tailscaled into the boot runlevel on install (gets the VPN
+# up early) and tailscale-up into default (runs `tailscale up`
+# after tailscaled's socket appears). Dynamic symlinks removed in
+# post_remove.
+post_install = """
+ln -sf /etc/init.d/tailscaled   /etc/runlevels/boot/tailscaled   2>/dev/null || true
+ln -sf /etc/init.d/tailscale-up /etc/runlevels/default/tailscale-up 2>/dev/null || true
+mkdir -p /var/lib/tailscale /run/tailscale /var/cache/tailscale 2>/dev/null || true
+chmod 0700 /var/lib/tailscale 2>/dev/null || true
+exit 0
+"""
+
+post_remove = """
+rm -f /etc/runlevels/boot/tailscaled /etc/runlevels/default/tailscale-up
+exit 0
+"""
+
+[depends]
+runtime = ["musl"]
+build = []
