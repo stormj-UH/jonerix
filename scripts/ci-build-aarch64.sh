@@ -215,7 +215,26 @@ install_target_build_deps() {
             echo "byacc: clearing stale symlink loop from builder image"
             rm -f /bin/yacc /bin/byacc
         fi
-        if command -v "$dep" >/dev/null 2>&1; then
+        # Library packages — always install via jpkg, even if a
+        # namesake binary is on PATH (Alpine's xz/bzip2/zstd/curl
+        # satisfy `command -v` but don't put headers at /include).
+        # python3 build failed 2026-04-20 run 24687524373 on
+        # `lzma.h not found` because Alpine's xz short-circuited
+        # the install of the jonerix xz jpkg (which ships
+        # /include/lzma.h). Recognise these by name so they
+        # always get jpkg-installed.
+        case "$dep" in
+            xz|bzip2|zstd|zlib|lz4|ncurses|pcre2|libffi|sqlite|\
+            libressl|libarchive|libevent|libcxx|nloxide|curl|\
+            jonerix-headers)
+                is_library_pkg=1
+                ;;
+            *)
+                is_library_pkg=0
+                ;;
+        esac
+
+        if [ "$is_library_pkg" = 0 ] && command -v "$dep" >/dev/null 2>&1; then
             continue
         fi
 

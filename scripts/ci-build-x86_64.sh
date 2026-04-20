@@ -213,7 +213,21 @@ install_target_build_deps() {
             echo "byacc: clearing stale symlink loop from builder image"
             rm -f /bin/yacc /bin/byacc
         fi
-        if command -v "$dep" >/dev/null 2>&1; then
+        # Library packages — always install via jpkg, even if a
+        # namesake binary is on PATH. See aarch64 sibling for the
+        # python3 `lzma.h` reproducer and rationale.
+        case "$dep" in
+            xz|bzip2|zstd|zlib|lz4|ncurses|pcre2|libffi|sqlite|\
+            libressl|libarchive|libevent|libcxx|nloxide|curl|\
+            jonerix-headers)
+                is_library_pkg=1
+                ;;
+            *)
+                is_library_pkg=0
+                ;;
+        esac
+
+        if [ "$is_library_pkg" = 0 ] && command -v "$dep" >/dev/null 2>&1; then
             continue
         fi
 
