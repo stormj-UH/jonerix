@@ -18,8 +18,8 @@ system = "autoconf"
 # TARGETS empty → `make all` is a no-op → 400-byte empty jpkg.
 # Reproduced 2026-04-20 runs 24693845801 and 24694265855.
 # De-indent those assignments before configure touches anything.
-configure = """sed -i -E 's/^	+([A-Z_][A-Z0-9_]*=)/\\1/' Makefile.in
-grep -E '^[A-Z_]+=' Makefile.in | head -3
+configure = """sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\\1/' Makefile.in
+grep -cE '^[A-Za-z_]+[+:?]?=' Makefile.in
 CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"""
 # Plain `make` — dropbear's default `all` builds its built-in
 # PROGRAMS list (dropbear dbclient dropbearkey dropbearconvert
