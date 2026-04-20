@@ -324,11 +324,22 @@ if [ "$DO_USERLAND" = 1 ]; then
         command -v jpkg >/dev/null 2>&1 \
             || die "jpkg not found. Run this from a jonerix host, or install jpkg first."
 
-        # Make sure the local jpkg index is current before we hand it
-        # an alternate root — the index lives outside the -r path and
-        # is shared with the host's jpkg state.
+        # Make sure the host's jpkg index is current, then seed the
+        # target root so `jpkg -r` can resolve packages against its
+        # *own* /var/cache. With `-r TARGET`, jpkg reads INDEX and
+        # the installed-files db from TARGET, not from the host.
+        # A freshly-mkfs'd root has neither, so every package lookup
+        # fails with "no cached INDEX found". Populate both from the
+        # host's state.
         msg "Refreshing jpkg index"
         jpkg update >/dev/null 2>&1 || warn "jpkg update failed; using cached index"
+        mkdir -p "$ROOT_MNT/var/cache/jpkg" "$ROOT_MNT/var/db/jpkg"
+        for _f in INDEX INDEX.zst INDEX.zst.sig; do
+            [ -f "/var/cache/jpkg/$_f" ] && cp -p "/var/cache/jpkg/$_f" "$ROOT_MNT/var/cache/jpkg/"
+        done
+        if [ -d /var/db/jpkg/keys ]; then
+            cp -a /var/db/jpkg/keys "$ROOT_MNT/var/db/jpkg/"
+        fi
 
         msg "Installing core packages into $ROOT_MNT"
         # shellcheck disable=SC2086  # word-split is intentional
