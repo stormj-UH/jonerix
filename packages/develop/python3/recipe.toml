@@ -130,4 +130,10 @@ exit 0"""
 # visible at configure time. Without it, `import bz2` throws
 # ModuleNotFoundError, which breaks e.g. node configure.py.
 runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi", "sqlite", "bzip2"]
-build = ["clang", "libffi", "sqlite", "bzip2"]
+# xz added to build deps 2026-04-20: python's _lzma stdlib module
+# needs lzma.h at configure / compile time. It was already a runtime
+# dep (for libreadline-independent xz import) but was missing from
+# the build list, so a clean aarch64 CI runner hit `'lzma.h' file
+# not found` mid-build. Matches the sqlite / bzip2 / libffi pattern
+# (headers needed both at build and runtime).
+build = ["clang", "libffi", "sqlite", "bzip2", "xz"]
