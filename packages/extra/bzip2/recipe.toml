@@ -48,8 +48,13 @@ ln -sf libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so
 # it in $DESTDIR/include already, so nothing extra.
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
-find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+# Quote the `;` terminator. Unquoted, `\\;` in a TOML basic
+# string gets stripped to bare `;` by the time /usr/bin/find
+# parses it and errors with "find: -exec without \\;". Single-
+# quoted `;` survives TOML and shell intact. Same workaround
+# as the anvil recipe.
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
 """
 
 [depends]
