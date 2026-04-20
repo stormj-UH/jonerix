@@ -281,6 +281,16 @@ build_one() {
         return 0
     fi
 
+    # License gate — see aarch64 sibling.
+    pkg_license=$(grep "^license" "${pkg_dir}/recipe.toml" | head -1 \
+        | sed 's/.*= *"\(.*\)"/\1/')
+    case "$pkg_license" in
+        GPL-*|LGPL-*|AGPL-*)
+            echo "=== Skipping ${pkg_name}-${pkg_ver} (license=${pkg_license}, blocked by permissive-only policy; in-tree for headers/reference only) ==="
+            return 0
+            ;;
+    esac
+
     # Operational skip list — see aarch64 sibling for the rationale.
     # Bypass via REBUILD_INPUT=true or a single-package PKG_INPUT dispatch.
     if [ "${REBUILD_INPUT:-false}" != "true" ] && [ -z "$PKG_INPUT" ]; then
