@@ -50,8 +50,11 @@ ln -sf e2fsck "$DESTDIR/bin/fsck.ext3"
 ln -sf e2fsck "$DESTDIR/bin/fsck.ext4"
 
 # Remaining binaries installed under their cargo bin names --------
-for b in dumpe2fs tune2fs debugfs resize2fs e4defrag e2image e2label \\
-         e2freefrag logsave findfs filefrag blkid chattr lsattr; do
+# Keep the for-loop on a single line: jpkg runs the install script
+# under mksh, whose backslash-newline handling inside a heredoc'd TOML
+# string ate the '\' we had here the first time around and left
+# `e2freefrag` dangling as a standalone word.
+for b in dumpe2fs tune2fs debugfs resize2fs e4defrag e2image e2label e2freefrag logsave findfs filefrag blkid chattr lsattr; do
     install -Dm755 "$B/$b" "$DESTDIR/bin/$b"
 done
 
