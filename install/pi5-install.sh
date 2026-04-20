@@ -183,25 +183,30 @@ create them automatically."
 fi
 
 # Filesystem sanity. Don't auto-mkfs unless tools exist AND the user
-# confirms. Check via blkid when available (most reliable across
-# toybox/util-linux); fall back to poking magic bytes if not.
+# confirms. blkid is the preferred probe, but on jonerix blkid is
+# whatever anvil ships — currently ext-only and reports "unrecognized
+# filesystem" on FAT partitions. Always cross-check with magic bytes
+# so anvil's blkid doesn't cause a false-negative FAT32 detection.
 _have_fat32=0; _have_ext4=0
 if command -v blkid >/dev/null 2>&1; then
-    # Accept vfat/fat12/fat16/fat32 all as "FAT" — any of those will
-    # boot the Pi firmware even if the label isn't strictly FAT32.
     case "$(blkid -s TYPE -o value "$P1" 2>/dev/null)" in
         vfat|fat12|fat16|fat32|msdos) _have_fat32=1 ;;
     esac
     case "$(blkid -s TYPE -o value "$P2" 2>/dev/null)" in
         ext2|ext3|ext4) _have_ext4=1 ;;
     esac
-else
-    # FAT signature: "FAT3" at offset 82 (FAT32) or "FAT1" at offset 54.
+fi
+# Magic-byte fallback — FAT signature "FAT3" at offset 82 (FAT32)
+# or "FAT1" at offset 54 (FAT12/16); ext* magic 0xEF53 at sb
+# offset 0x438 = byte 1080 from partition start.
+if [ "$_have_fat32" = 0 ]; then
     _fat_sig32=$(dd if="$P1" bs=1 skip=82 count=5 2>/dev/null)
     _fat_sig16=$(dd if="$P1" bs=1 skip=54 count=5 2>/dev/null)
     case "$_fat_sig32$_fat_sig16" in
         *FAT3*|*FAT1*) _have_fat32=1 ;;
     esac
+fi
+if [ "$_have_ext4" = 0 ]; then
     _magic=$(dd if="$P2" bs=1 skip=1080 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')
     [ "$_magic" = "53ef" ] && _have_ext4=1
 fi
@@ -326,9 +331,26 @@ fi
 # jonerix disk in the same Pi. We don't need tune2fs for this — the
 # UUID lives at offset 0x468 in the ext4 superblock (16 bytes) and we
 # can poke it with dd + /dev/urandom when mkfs.ext4 wasn't available.
+# Helper: return a UUID string if blkid recognises the partition,
+# empty otherwise. Anvil's blkid prints its "unrecognized filesystem"
+# line to stdout and exits non-zero, which both poisons the capture
+# and trips `set -e`. Swallow both and re-validate the output looks
+# UUID-shaped (hex or 4345-C4D4 FAT-style) before trusting it.
+_probe_uuid() {
+    _out=$(blkid -s UUID -o value "$1" 2>/dev/null || true)
+    case "$_out" in
+        *unrecognized*|*error*|*refused*|*": "*) _out="" ;;
+    esac
+    # Accept anything matching UUID-ish or FAT-ish formats.
+    case "$_out" in
+        *[!0-9a-fA-F-]*) _out="" ;;
+    esac
+    printf '%s' "$_out"
+}
+
 _root_uuid=""
 if command -v blkid >/dev/null 2>&1; then
-    _root_uuid=$(blkid -s UUID -o value "$P2")
+    _root_uuid=$(_probe_uuid "$P2")
 fi
 if [ -z "$_root_uuid" ]; then
     warn "blkid missing; leaving root partition UUID unchanged"
@@ -371,7 +393,7 @@ EOF
 msg "Writing $ROOT_MNT/etc/fstab"
 mkdir -p "$ROOT_MNT/etc"
 _p1_uuid=""
-command -v blkid >/dev/null 2>&1 && _p1_uuid=$(blkid -s UUID -o value "$P1")
+command -v blkid >/dev/null 2>&1 && _p1_uuid=$(_probe_uuid "$P1")
 # Pick UUID= form when we have one, fall back to raw device path
 # otherwise. The earlier `${var:+A}${var:-B}` trick expanded BOTH
 # branches when the var was set — busted.
