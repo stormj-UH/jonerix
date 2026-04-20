@@ -18,9 +18,18 @@ system = "autoconf"
 # TARGETS empty → `make all` is a no-op → 400-byte empty jpkg.
 # Reproduced 2026-04-20 runs 24693845801 and 24694265855.
 # De-indent those assignments before configure touches anything.
-configure = """sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\\1/' Makefile.in
-grep -cE '^[A-Za-z_]+[+:?]?=' Makefile.in
-CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"""
+configure = """CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang
+# De-indent TAB-prefixed variable assignments in the generated
+# Makefile. autoconf regenerates Makefile from Makefile.in at
+# ./configure time, so sed'ing Makefile.in before configure is a
+# no-op for the generated file. Run sed AFTER configure on the
+# actual Makefile that jmake will read. jmake 1.1.0 rejects
+# TAB-indented `VAR=...` inside ifeq/ifdef blocks with
+# "Makefile:12: missing separator" (reproduced 2026-04-20 runs
+# 24693845801 / 24694265855 / 24694484694 / 24694726551).
+sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\\1/' Makefile
+echo "=== post-sed Makefile lines 10-14 ==="
+sed -n '10,14p' Makefile"""
 # Plain `make` — dropbear's default `all` builds its built-in
 # PROGRAMS list (dropbear dbclient dropbearkey dropbearconvert
 # scp). Two earlier variants failed under jmake 1.1.0:
