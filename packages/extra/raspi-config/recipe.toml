@@ -1,0 +1,81 @@
+[package]
+name = "raspi-config"
+version = "20260326"
+license = "MIT"
+description = "Raspberry Pi configuration tool (MIT, upstream RPi-Distro/raspi-config pinned to 08a52319)"
+
+[source]
+# Upstream has no git tags; they version via debian/changelog (date-based).
+# Pinned to commit 08a52319a04aadd1dabd6e8323d9af1ea428d9ac on the `trixie`
+# branch (2026-03-26, "Remove libliftoff advanced option") — this is the
+# latest HEAD at the time of vendoring. Upstream LICENSE is verbatim MIT,
+# copyright 2012 Alex Bradbury <asb@asbradbury.org>.
+#
+# NOTE ON RUNTIME DEPS: raspi-config's interactive menus shell out to
+#   - whiptail   (newt, LGPL-2+)       — not in jonerix
+#   - parted     (GNU parted, GPL-3+)  — not in jonerix
+#   - dpkg/apt   (Debian only)         — not in jonerix
+# For jonerix those menus fail gracefully. The `raspi-config nonint
+# <command>` path is usable for anything that doesn't need whiptail
+# (e.g. `do_ssh 0`, `do_wifi_country US`, `do_hostname my-pi`,
+# `do_boot_behaviour B2`). Interactive mode will land once we package a
+# permissive dialog replacement (candidate: bsddialog, BSD-2-Clause).
+url = "https://github.com/RPi-Distro/raspi-config/archive/08a52319a04aadd1dabd6e8323d9af1ea428d9ac.tar.gz"
+sha256 = "284f0dc36aab7b0f54f0c0fa189b72afb4011e898d4a656686b4f1eeb7fe7e68"
+
+[build]
+system = "custom"
+# Pure shell / lua script — nothing to compile. The build step just
+# lays out the files; every install path uses the jonerix merged-usr
+# root (/bin, /lib, /share, /etc) rather than the Debian /usr/... that
+# upstream ships for.
+build = "true"
+install = """
+set -e
+
+# Main script -> /bin/raspi-config (merged-usr; upstream targets /usr/bin).
+# The script is #!/bin/sh and works under mksh (no bashisms in hot paths).
+install -Dm755 raspi-config "$DESTDIR/bin/raspi-config"
+
+# Helper scripts under /lib/raspi-config/. Upstream ships these at
+# /usr/lib/raspi-config/ and the main script hardcodes that prefix in
+# a few places — patch the refs to the flattened path at install time
+# so the helpers resolve correctly on jonerix.
+install -Dm755 usr/lib/raspi-config/init_resize.sh "$DESTDIR/lib/raspi-config/init_resize.sh"
+install -Dm755 usr/lib/raspi-config/cmstart.sh     "$DESTDIR/lib/raspi-config/cmstart.sh"
+sed -i 's|/usr/lib/raspi-config|/lib/raspi-config|g' "$DESTDIR/bin/raspi-config"
+sed -i 's|/usr/lib/raspi-config|/lib/raspi-config|g' "$DESTDIR/lib/raspi-config/init_resize.sh"
+
+# X display-blanking config snippet (only meaningful on desktop spins;
+# harmless on headless installs — X just never reads it).
+install -Dm644 usr/share/raspi-config/10-blanking.conf "$DESTDIR/share/raspi-config/10-blanking.conf"
+
+# sudoers drop-in that preserves proxy env vars across `sudo raspi-config`.
+# Mode 0440 matches the upstream packaging and what sudo expects on
+# /etc/sudoers.d/*.
+install -Dm440 etc/sudoers.d/010_proxy "$DESTDIR/etc/sudoers.d/010_proxy"
+
+# License tracking (same convention as other jonerix recipes).
+install -Dm644 LICENSE "$DESTDIR/share/licenses/raspi-config/LICENSE"
+
+# merged-usr flatten + strip: raspi-config has no compiled artifacts
+# but the guarded flatten below is safe and keeps the recipe symmetric
+# with the rest of jonerix.
+if [ -n "$DESTDIR" ] && [ "$DESTDIR" != "/" ]; then
+    [ -d "$DESTDIR/usr" ]   && cp -a "$DESTDIR/usr/."   "$DESTDIR/"     && rm -rf "$DESTDIR/usr"
+    [ -d "$DESTDIR/lib64" ] && cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"
+fi
+"""
+
+[depends]
+# Hard runtime deps: mksh (provides /bin/sh) and toybox (for ip, grep,
+# sed, sort, and other coreutils the script calls). Upstream Debian
+# lists lua5.1 as a dep but nothing in the current HEAD invokes lua —
+# probably a vestige of an older feature — so we skip it.
+#
+# Soft deps (NOT listed — would pull in GPL code and/or don't build
+# on jonerix yet): whiptail, parted, dpkg, update-rc.d. Interactive
+# menus will no-op or error cleanly when these are missing; the
+# `raspi-config nonint` subcommands cover the common cases.
+runtime = ["mksh", "toybox"]
+build = []
