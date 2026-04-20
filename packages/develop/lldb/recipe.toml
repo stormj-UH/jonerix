@@ -1,0 +1,91 @@
+[package]
+name = "lldb"
+version = "21.1.2"
+license = "Apache-2.0"
+description = "LLVM debugger — carved out of llvm-all (no separate compile)"
+# lldb is a slice of the llvm-project source that already builds
+# (and ships) as part of the `llvm-all` jpkg. Rather than stand up
+# a second cmake -> samu -> strip pipeline that would bake another
+# 200 GB/hr of CI time and double the llvm-project disk usage, this
+# recipe reinstalls llvm-all into a staging dir and copies only the
+# lldb-relevant files (bin/lldb*, lib/liblldb*, lib/cmake/lldb*,
+# share/man/man1/lldb*) into $DESTDIR. The payload lands as a
+# purely permissive slice of llvm-all with no clang/lld noise.
+#
+# PREREQUISITE: llvm-all must ship lldb. If a downloaded llvm-all
+# lacks /bin/lldb (true on releases built with the pre-lldb
+# LLVM_ENABLE_PROJECTS), the install step fails loud so we can
+# flip llvm-all's enable-projects to include lldb and rebuild it.
+
+# No [source] — nothing to fetch; files come from llvm-all.
+
+[build]
+system = "custom"
+configure = ""
+build = """set -e
+# Stage llvm-all into a scratch prefix so we can carve files out
+# of it without polluting the builder's /bin.
+STAGE=/tmp/jpkg-build-lldb-$$
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+# Use jpkg --root to land llvm-all under STAGE without touching
+# the live filesystem. --force because the builder already has
+# its own llvm-all installed.
+jpkg --root "$STAGE" update
+jpkg --root "$STAGE" install --force llvm-all
+echo "lldb: staged llvm-all under $STAGE"
+ls -l "$STAGE/bin" | head -5
+# Sanity: llvm-all must have the binaries we're about to carve
+# out. If this fails, rebuild llvm-all with
+# -DLLVM_ENABLE_PROJECTS="clang;lld;lldb" first.
+[ -x "$STAGE/bin/lldb" ] || {
+    echo "lldb: /bin/lldb not in llvm-all — rebuild llvm-all with lldb enabled" >&2
+    ls "$STAGE/bin" | grep -i lldb >&2 || true
+    exit 1
+}
+echo "STAGE=$STAGE" > /tmp/lldb-stage.env"""
+install = """set -e
+. /tmp/lldb-stage.env   # sets STAGE from the build step
+mkdir -p "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/share/man/man1"
+
+# Binaries — lldb CLI, lldb-server (remote debug), lldb-argdumper,
+# lldb-instr, and any lldb-* helper llvm-all happens to ship.
+for b in "$STAGE"/bin/lldb*; do
+    [ -f "$b" ] || continue
+    install -Dm755 "$b" "$DESTDIR/bin/$(basename "$b")"
+done
+
+# Shared libs — liblldb.so + any plugin libraries under /lib.
+for l in "$STAGE"/lib/liblldb*; do
+    [ -e "$l" ] || continue
+    cp -a "$l" "$DESTDIR/lib/"
+done
+
+# CMake config for embedding lldb in downstream tooling (optional
+# but tiny — KB, not MB).
+if [ -d "$STAGE/lib/cmake/lldb" ]; then
+    mkdir -p "$DESTDIR/lib/cmake"
+    cp -a "$STAGE/lib/cmake/lldb" "$DESTDIR/lib/cmake/"
+fi
+
+# Manpages if llvm-all shipped them.
+for m in "$STAGE"/share/man/man1/lldb*; do
+    [ -f "$m" ] || continue
+    install -Dm644 "$m" "$DESTDIR/share/man/man1/$(basename "$m")"
+done
+
+# Final sanity — refuse to ship an empty package.
+[ -x "$DESTDIR/bin/lldb" ] || { echo "lldb: staged install produced no /bin/lldb"; exit 1; }
+
+# Cleanup staging dir.
+rm -rf "$STAGE" /tmp/lldb-stage.env"""
+
+[depends]
+# lldb dynamically links against libLLVM*.so from the llvm jpkg and
+# libc++ from libcxx. xz/zstd/zlib feed its DWARF decompression
+# code paths; ncurses is not needed because the slim build path
+# disables curses (LLDB_ENABLE_CURSES=OFF in the llvm-all rebuild).
+runtime = ["musl", "llvm", "libcxx", "xz", "zstd", "zlib"]
+# Build-time: llvm-all itself (so the staging install has files to
+# copy) plus jpkg (implicit).
+build = ["llvm-all"]
