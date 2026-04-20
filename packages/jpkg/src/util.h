@@ -9,7 +9,7 @@
 #ifndef JPKG_UTIL_H
 #define JPKG_UTIL_H
 
-#define JPKG_VERSION "1.0.7"
+#define JPKG_VERSION "1.0.8"
 
 #include <stddef.h>
 #include <stdarg.h>

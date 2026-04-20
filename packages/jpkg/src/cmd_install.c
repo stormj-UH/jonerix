@@ -55,10 +55,36 @@ static int run_hook(const char *hook_name, const char *cmd, const char *pkg_name
              * so arbitrary shell metacharacters survive both layers of
              * parsing (the outer /bin/sh that system() invokes, and the
              * chrooted /bin/sh). Using a unique delimiter keeps the
-             * heredoc immune to hook content. */
+             * heredoc immune to hook content.
+             *
+             * Bind-mount /dev, /proc, /sys before the chroot so hooks
+             * that redirect to /dev/null or run a target-built python3
+             * (which reads /proc/self/exe to locate its stdlib) work
+             * inside the chroot. We swallow mount failures — on a
+             * non-privileged host jpkg still runs the hook, it just
+             * won't have /dev/null, which the caller already saw
+             * reported. Unmounts happen in reverse order after.
+             *
+             * Using `mount --bind` (Linux) / `mount -t nullfs` would
+             * both need root; we already require root for install. */
             char outer[16384];
             int n = snprintf(outer, sizeof(outer),
-                "chroot %s /bin/sh <<'__JPKG_HOOK_EOF__'\n%s\n__JPKG_HOOK_EOF__\n",
+                "ROOT=%s\n"
+                "mkdir -p \"$ROOT/dev\" \"$ROOT/proc\" \"$ROOT/sys\" 2>/dev/null\n"
+                "_unmount() {\n"
+                "    umount \"$ROOT/sys\" 2>/dev/null || true\n"
+                "    umount \"$ROOT/proc\" 2>/dev/null || true\n"
+                "    umount \"$ROOT/dev\" 2>/dev/null || true\n"
+                "}\n"
+                "mountpoint -q \"$ROOT/dev\" 2>/dev/null || mount --bind /dev \"$ROOT/dev\" 2>/dev/null || true\n"
+                "mountpoint -q \"$ROOT/proc\" 2>/dev/null || mount -t proc proc \"$ROOT/proc\" 2>/dev/null || mount --bind /proc \"$ROOT/proc\" 2>/dev/null || true\n"
+                "mountpoint -q \"$ROOT/sys\" 2>/dev/null || mount -t sysfs sysfs \"$ROOT/sys\" 2>/dev/null || mount --bind /sys \"$ROOT/sys\" 2>/dev/null || true\n"
+                "trap _unmount EXIT INT TERM\n"
+                "chroot \"$ROOT\" /bin/sh <<'__JPKG_HOOK_EOF__'\n%s\n__JPKG_HOOK_EOF__\n"
+                "_rc=$?\n"
+                "_unmount\n"
+                "trap - EXIT INT TERM\n"
+                "exit $_rc\n",
                 g_rootfs, cmd);
             if (n <= 0 || (size_t)n >= sizeof(outer)) {
                 log_error("%s hook: command too long for chroot wrapper", hook_name);
