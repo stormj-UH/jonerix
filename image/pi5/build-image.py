@@ -55,6 +55,14 @@ DEFAULT_PACKAGES = [
     # first mount, and without anvil the permissive policy has no
     # answer (e2fsprogs/dosfstools are GPL-2/GPL-3).
     "anvil",
+    # raspi-config: MIT-licensed Raspberry Pi configuration tool vendored
+    # from RPi-Distro/raspi-config@08a52319 (trixie branch). The full
+    # interactive menu system needs whiptail + parted (both GPL, not in
+    # jonerix), but the `raspi-config nonint <cmd>` subcommands cover the
+    # practical provisioning path (do_ssh, do_hostname, do_wifi_country,
+    # do_boot_behaviour, do_boot_wait, ...) using only tools we already
+    # ship. Fine to default-include — the package is ~40 KB of shell.
+    "raspi-config",
     # Intentionally NOT in the default set: ca-certificates.
     # jonerix doesn't yet ship a ca-certificates jpkg; the WSL rootfs
     # curl's the Mozilla bundle from curl.se at build time instead.
