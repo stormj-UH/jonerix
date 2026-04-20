@@ -10,7 +10,13 @@ sha256 = "0ffe03d3e26a3e9bbfd5375adf34934137757994f297d6b699a46edd43c3fc02"
 
 [build]
 system = "cmake"
-configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DBTOP_GPU=OFF"
+# Pre-configure step: rewrite get_cpuName() so the /sys fallback also
+# checks /sys/bus/event_source/devices/ (where 6.x aarch64 kernels put
+# the PMU node — the upstream /sys/devices/ shallow scan misses it on
+# the Pi 5). Done as a Python text substitution instead of a patch(1)
+# hunk because the CI builder's toybox patch 0.8.11 rejects hunks with
+# heavy context re-indentation. See cpuname-patch.py for the full story.
+configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DBTOP_GPU=OFF"
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR cmake --install build
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
