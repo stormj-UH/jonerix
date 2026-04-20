@@ -117,6 +117,9 @@ jobs:
             "$BUILDER_IMAGE_X86_64" /bin/sh /workspace/scripts/ci-build-x86_64.sh
 
       - name: Upload packages to release
+        # Run even on partial build failure — see aarch64 sibling
+        # step for rationale.
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -176,6 +179,14 @@ jobs:
             "$BUILDER_IMAGE_AARCH64" /bin/sh /workspace/scripts/ci-build-aarch64.sh
 
       - name: Upload packages to release
+        # Run even when the preceding Build step exits 1 — a single
+        # failed recipe shouldn't starve a batch of otherwise-good
+        # packages of publication. Reproduced 2026-04-20 run
+        # 24651362217: wpa_supplicant failed, 10+ other recipes
+        # built cleanly but were never uploaded so INDEX stayed
+        # stale and Pi 5 image builds couldn't pick up the new
+        # anvil / openrc / openntpd.
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -188,7 +199,11 @@ jobs:
   # ------ Generate combined INDEX from all uploaded packages ------------------------------------------------------------
   index:
     name: Generate combined INDEX
-    if: ${{ always() && (inputs.index_only || ((needs.build-x86_64.result == 'success' || needs.build-x86_64.result == 'skipped') && (needs.build-aarch64.result == 'success' || needs.build-aarch64.result == 'skipped'))) }}
+    # Changed from `success || skipped` to `!= cancelled` so a partial
+    # build failure still rebuilds INDEX over whatever DID upload.
+    # Without this, one flaky recipe pins the whole fleet to the last
+    # green INDEX and blocks downstream image builds indefinitely.
+    if: ${{ always() && needs.build-x86_64.result != 'cancelled' && needs.build-aarch64.result != 'cancelled' }}
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
     container:
