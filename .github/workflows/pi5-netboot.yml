@@ -1,0 +1,124 @@
+name: Publish Pi 5 netboot payload
+
+# Generates a TFTP-ready payload tree for Raspberry Pi 5 by
+# running image/pi5/network-boot.py on a POSIX runner. The
+# script's only runtime dep is Python 3.9+ stdlib; it pulls
+# the Raspberry Pi firmware tarball straight from
+# github.com/raspberrypi/firmware, so this workflow needs no
+# apt-get step beyond what the ubuntu-latest runner ships.
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'pi5-netboot-v*'
+    paths:
+      - 'image/pi5/network-boot.py'
+      - '.github/workflows/pi5-netboot.yml'
+  workflow_dispatch:
+    inputs:
+      serial:
+        description: 'Pi 5 board serial (16 hex, lower-case) or "any"'
+        required: false
+        default: 'any'
+      root_source:
+        description: 'Root filesystem source (nfs|http|local|none)'
+        required: false
+        default: 'none'
+      nfs_server:
+        description: 'NFS server IP (root_source=nfs)'
+        required: false
+        default: ''
+      nfs_path:
+        description: 'NFS exported path (root_source=nfs)'
+        required: false
+        default: ''
+      firmware_tag:
+        description: 'raspberrypi/firmware branch or tag'
+        required: false
+        default: 'stable'
+
+concurrency:
+  group: pi5-netboot
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Pi 5 netboot payload
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Syntax-check network-boot.py
+        run: |
+          python3 -c "import py_compile; py_compile.compile('image/pi5/network-boot.py', doraise=True)"
+
+      - name: Build netboot payload
+        env:
+          SERIAL: ${{ inputs.serial || 'any' }}
+          ROOT_SOURCE: ${{ inputs.root_source || 'none' }}
+          NFS_SERVER: ${{ inputs.nfs_server || '' }}
+          NFS_PATH: ${{ inputs.nfs_path || '' }}
+          FIRMWARE_TAG: ${{ inputs.firmware_tag || 'stable' }}
+        run: |
+          set -eu
+          ARGS="--output out/tftp --serial ${SERIAL} --firmware-tag ${FIRMWARE_TAG} --root-source ${ROOT_SOURCE} --yes"
+          if [ "${ROOT_SOURCE}" = "nfs" ]; then
+            ARGS="${ARGS} --nfs-server ${NFS_SERVER} --nfs-path ${NFS_PATH}"
+          fi
+          python3 image/pi5/network-boot.py ${ARGS}
+          ls -lR out/tftp | head -200
+
+      - name: Package payload as tarball
+        run: |
+          set -eu
+          cd out
+          tar czf jonerix-pi5-netboot.tar.gz tftp
+          sha256sum jonerix-pi5-netboot.tar.gz > SHA256SUMS
+          ls -lh jonerix-pi5-netboot.tar.gz SHA256SUMS
+
+      # ── Tag push: publish to a GitHub Release ───────────────────────────
+      - name: Create release (tag push)
+        if: startsWith(github.ref, 'refs/tags/pi5-netboot-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GH_REPO" > /dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GH_REPO" \
+              --title "jonerix Pi 5 netboot payload ${TAG}" \
+              --notes "TFTP-ready payload tree for Raspberry Pi 5. Drop behind dnsmasq or in.tftpd; see README.md inside the tarball."
+          fi
+
+      - name: Upload release assets (tag push)
+        if: startsWith(github.ref, 'refs/tags/pi5-netboot-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release upload "$TAG" --repo "$GH_REPO" --clobber \
+            out/jonerix-pi5-netboot.tar.gz \
+            out/SHA256SUMS
+
+      # ── Manual dispatch / main push: workflow artifact ──────────────────
+      - name: Upload workflow artifact
+        if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: jonerix-pi5-netboot
+          path: |
+            out/jonerix-pi5-netboot.tar.gz
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
