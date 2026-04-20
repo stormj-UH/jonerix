@@ -57,7 +57,13 @@ DO_USERLAND=1
 
 # Minimal package set for a bootable headless Pi 5. Anything else is
 # additive — you can `jpkg -r /mnt/usb-root add <pkg>` after boot.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd dropbear bsdtar python3 sudo jonerix-raspi5-fixups jonerix-boot-helpers openntpd"
+# `anvil` — MIT clean-room mkfs.ext4 / mkfs.vfat / e2fsck / fsck.vfat
+# / dumpe2fs / tune2fs / resize2fs / debugfs / blkid / chattr / lsattr /
+# e2image / e2label / e2freefrag / e4defrag / filefrag / findfs /
+# logsave / mklost+found. Pulled in by default so every Pi 5 image
+# can format, check, and inspect its own filesystems without needing
+# the GPL e2fsprogs + dosfstools stack.
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd dropbear bsdtar python3 sudo anvil jonerix-raspi5-fixups jonerix-boot-helpers openntpd tailscale"
 
 # ── Logging helpers ─────────────────────────────────────────────────
 msg()  { printf '==> %s\n' "$*"; }
