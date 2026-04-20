@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r2"
+version = "10.1.0-r3"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -59,8 +59,7 @@ depend() {
 }
 
 start_pre() {
-    checkpath -d -m 0755 -o dhcpcd:dhcpcd /var/lib/dhcpcd 2>/dev/null \\
-        || checkpath -d -m 0755 /var/lib/dhcpcd
+    checkpath -d -m 0755 -o dhcpcd:dhcpcd /var/lib/dhcpcd 2>/dev/null || checkpath -d -m 0755 /var/lib/dhcpcd
     checkpath -d -m 0755 /run
 }
 INIT

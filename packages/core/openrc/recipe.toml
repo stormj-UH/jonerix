@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r5"
+version = "0.54-r6"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -57,9 +57,7 @@ done
 # non-zero — partial flush state caused the dhcpcd lease to be dropped
 # and took the box offline until power cycle.
 if [ -f "$DESTDIR/etc/init.d/network" ]; then
-    sed -i \\
-        's~ip route flush scope global~ip -o -4 route show 2>/dev/null | while read -r _pfx _rest; do case " $_rest " in *" scope global "*) ip route del "$_pfx" 2>/dev/null || true;; esac; done~' \\
-        "$DESTDIR/etc/init.d/network"
+    sed -i 's~ip route flush scope global~ip -o -4 route show 2>/dev/null | while read -r _pfx _rest; do case " $_rest " in *" scope global "*) ip route del "$_pfx" 2>/dev/null || true;; esac; done~' "$DESTDIR/etc/init.d/network"
 fi
 # toybox sysctl compatibility: OpenRC's /etc/init.d/sysctl calls
 #   sysctl --system
@@ -105,8 +103,7 @@ fi
 # to match — so the fix was a no-op on every real install. The
 # prefix-only match below works on both.
 if [ -f "$DESTDIR/lib/rc/sh/gendepends.sh" ]; then
-    sed -i 's|^etc/init|/etc/init|' \\
-        "$DESTDIR/lib/rc/sh/gendepends.sh"
+    sed -i 's|^etc/init|/etc/init|' "$DESTDIR/lib/rc/sh/gendepends.sh"
 fi
 # Ensure basic runlevel symlinks exist. OpenRC's upstream install
 # creates /etc/runlevels/{sysinit,boot,default,shutdown} directories

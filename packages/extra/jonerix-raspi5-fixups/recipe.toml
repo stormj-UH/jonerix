@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.5.0"
+version = "1.5.1"
 license = "MIT"
 description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, OpenRC-backed reboot, cold-reboot, wake-on-power via pi5-fw / pi5-wake-on-power, daily RTC coin-cell voltage monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
 # Claim toybox's /bin/reboot multicall symlink so jpkg can transfer
@@ -136,14 +136,16 @@ if [ -f /etc/fstab ]; then
         echo '' >> /etc/fstab
         echo '# --- added by jonerix-raspi5-fixups (base-image fstab rescue) ---' >> /etc/fstab
     fi
-    _fstab_add "^[[:space:]]*devpts[[:space:]]" \\
-        "devpts   /dev/pts   devpts   gid=5,mode=0620,ptmxmode=0666   0 0"
-    _fstab_add "^[[:space:]]*sysfs[[:space:]]" \\
-        "sysfs    /sys       sysfs    defaults                         0 0"
-    _fstab_add "[[:space:]]/run[[:space:]].*tmpfs" \\
-        "tmpfs    /run       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
-    _fstab_add "[[:space:]]/tmp[[:space:]].*tmpfs" \\
-        "tmpfs    /tmp       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
+    # NOTE: no shell line-continuations here. jpkg's TOML parser does not
+    # process escape sequences inside triple-basic strings (""..."""), so
+    # `\\<newline>` would reach the shell as two backslashes followed by
+    # LF — not a continuation — and the fstab line below would be
+    # executed as a command. Reproduced 2026-04-20 in CI: "sh: devpts
+    # /dev/pts devpts ...: not found". Keep each call on one line.
+    _fstab_add "^[[:space:]]*devpts[[:space:]]"         "devpts   /dev/pts   devpts   gid=5,mode=0620,ptmxmode=0666   0 0"
+    _fstab_add "^[[:space:]]*sysfs[[:space:]]"          "sysfs    /sys       sysfs    defaults                         0 0"
+    _fstab_add "[[:space:]]/run[[:space:]].*tmpfs"      "tmpfs    /run       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
+    _fstab_add "[[:space:]]/tmp[[:space:]].*tmpfs"      "tmpfs    /tmp       tmpfs    defaults,nosuid,nodev,size=20%   0 0"
 
     # Add errors=remount-ro to existing root ext4 line if not present.
     # mkimage.sh bakes this in for fresh images (PR #107), but existing
@@ -225,10 +227,8 @@ ln -sf /etc/init.d/pi5-cold-reboot /etc/runlevels/boot/pi5-cold-reboot 2>/dev/nu
 # in /lib/firmware/brcm/ is under its Cypress name. Create the
 # Broadcom-named symlinks once at install time; they persist on rootfs.
 if [ -f /lib/firmware/brcm/cyfmac43455-sdio-standard.bin ]; then
-    ln -sf cyfmac43455-sdio-standard.bin \\
-        /lib/firmware/brcm/brcmfmac43455-sdio.bin 2>/dev/null || true
-    ln -sf cyfmac43455-sdio-standard.bin \\
-        /lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin 2>/dev/null || true
+    ln -sf cyfmac43455-sdio-standard.bin /lib/firmware/brcm/brcmfmac43455-sdio.bin 2>/dev/null || true
+    ln -sf cyfmac43455-sdio-standard.bin /lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin 2>/dev/null || true
 fi
 
 if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
@@ -281,8 +281,7 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     # verdict) shows up in the install log. Idempotent otherwise —
     # the cron.d entry handles the daily recurrence after boot.
     if [ -x /usr/local/bin/pi5-rtc-battery-check ]; then
-        /usr/local/bin/pi5-rtc-battery-check -v 2>&1 \\
-            | sed 's/^/raspi5-fixups: /' || true
+        /usr/local/bin/pi5-rtc-battery-check -v 2>&1 | sed 's/^/raspi5-fixups: /' || true
     fi
 fi
 exit 0"""
@@ -290,10 +289,7 @@ exit 0"""
 # Tear down the runlevel symlinks that post_install created.
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
 # Also restore the original /bin/adduser symlink if we have a record of it.
-post_remove = """rm -f /etc/runlevels/boot/disable-eee \\
-      /etc/runlevels/boot/fan-control \\
-      /etc/runlevels/boot/pi5-wifi \\
-      /etc/runlevels/boot/pi5-cold-reboot
+post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot
 if [ -f /etc/jpkg/raspi5-fixups/adduser.prev ]; then
     prev=$(cat /etc/jpkg/raspi5-fixups/adduser.prev)
     [ -n "$prev" ] && ln -sf "$prev" /bin/adduser
