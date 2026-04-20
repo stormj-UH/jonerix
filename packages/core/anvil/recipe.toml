@@ -1,8 +1,16 @@
 [package]
 name = "anvil"
-version = "0.2.1"
+version = "0.2.1-r1"
 license = "MIT"
 description = "Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...)"
+# anvil ships the full MIT-licensed ext4/vfat tooling, which overlaps
+# with three multicall symlinks that toybox also owns: /bin/blkid,
+# /bin/chattr, /bin/lsattr. Claim them via `replaces` so jpkg transfers
+# ownership transparently instead of failing the install with a file
+# conflict (reproduced in Pi 5 image CI 2026-04-20 run 24649864227).
+# `replaces` only transfers files the incoming package actually
+# installs — toybox keeps everything else.
+replaces = ["toybox"]
 
 [source]
 # Canonical source of truth is the Forgejo repo jonerik/anvil on
