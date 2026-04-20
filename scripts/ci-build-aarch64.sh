@@ -177,6 +177,20 @@ package_timeout() {
     esac
 }
 
+install_local_jpkg() {
+    # Extract a jpkg file directly into / — needed when a build dep
+    # was rebuilt earlier in this same CI run and therefore isn't
+    # yet in the release INDEX. jpkg install only accepts package
+    # names via INDEX, so we replicate its tail half here.
+    # Format (packages/jpkg/src/pkg.h): 8B magic + 4B LE header_len
+    # + TOML header + zstd-compressed tar payload.
+    local f="$1"
+    local hdr_len skip
+    hdr_len=$(od -An -v -tu4 -N4 -j8 "$f" | tr -d ' ')
+    skip=$((12 + hdr_len))
+    tail -c +$((skip + 1)) "$f" | zstd -dc | tar xf - -C /
+}
+
 install_target_build_deps() {
     recipe_dir="$1"
     deps_line=$(awk '
@@ -230,16 +244,16 @@ install_target_build_deps() {
         # in INDEX. Uploads to the release happen at end-of-job, so a
         # dep rebuilt earlier in the same run isn't yet indexed; a
         # plain `jpkg install --force <name>` would pull the stale
-        # released version. Reproduced on x86_64 2026-04-20 run
-        # 24682739978: nloxide-r3 was built, wpa_supplicant still got
-        # nloxide-r2 as a build dep and failed on the known-broken
-        # nla_for_each_nested macro.
+        # released version (run 24682739978: nloxide-r3 built, but
+        # wpa_supplicant got r2 and failed). `jpkg install` only
+        # takes package names, so for local-cache hits we extract
+        # the jpkg directly via install_local_jpkg.
         # Pick the highest-sorting version; sort -V so r10 > r2.
         local_pkg=$(ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg 2>/dev/null \
             | sort -V | tail -1)
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
-            echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — from local build $(basename "$local_pkg") ==="
-            jpkg install --force "$local_pkg"
+            echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
+            install_local_jpkg "$local_pkg"
         else
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
             jpkg install --force "$dep_pkg"
