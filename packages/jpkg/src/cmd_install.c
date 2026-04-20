@@ -16,9 +16,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <limits.h>
+
+/* Local mirror of db.c:name_in_list — kept static to avoid a header
+ * change for a single call site. */
+static bool name_in_list(const char *pkg,
+                         const char *const *list, size_t count) {
+    if (!pkg || !list) return false;
+    for (size_t i = 0; i < count; i++) {
+        if (list[i] && strcmp(pkg, list[i]) == 0) return true;
+    }
+    return false;
+}
 
 /* Run a package hook (pre_install, post_install, etc.).
  *
@@ -430,6 +443,66 @@ static int install_single_package(const repo_config_t *cfg, const repo_index_t *
             return -1;
         }
         log_warn("%d file conflict(s) detected — proceeding (--force)", conflicts);
+
+        /* Force-mode conflict resolution:
+         *
+         * On upgrade, the new package's tarball can still contain
+         * files that a *different* installed package has claimed via
+         * `replaces`. Historical bug: `jpkg upgrade toybox` silently
+         * clobbered /bin/rm (and every other uutils-owned symlink)
+         * because tar -x doesn't know about db manifests.
+         *
+         * Policy: if a conflicting path is owned by a package NOT in
+         * our `replaces` list, the other package keeps it — we drop
+         * the file from both the staging directory (so tar skips it)
+         * and our manifest (so db_register doesn't re-claim it).
+         *
+         * Listing the other package in `replaces` is still the way
+         * to re-assert ownership; the bug was that NOT listing it
+         * wasn't being respected. */
+        pkg_file_t **slot = &files;
+        while (*slot) {
+            pkg_file_t *f = *slot;
+            const char *owner = NULL;
+            for (db_pkg_t *p = db->packages; p; p = p->next) {
+                if (installed && strcmp(p->name, meta->name) == 0) continue;
+                if (name_in_list(p->name,
+                                 (const char *const *)meta->replaces,
+                                 meta->replaces_count)) continue;
+                for (pkg_file_t *pf = p->files; pf; pf = pf->next) {
+                    if (strcmp(f->path, pf->path) == 0) {
+                        owner = p->name;
+                        break;
+                    }
+                }
+                if (owner) break;
+            }
+            if (owner) {
+                /* Peel the file out of stage_dir so tar doesn't touch
+                 * it on extraction. Relative to the stage root. */
+                char staged[2048];
+                snprintf(staged, sizeof(staged), "%s%s",
+                         stage_dir, f->path);
+                if (unlink(staged) != 0) {
+                    /* Best-effort; might be a non-regular entry.
+                     * Ignore ENOENT too — staging layout can diverge
+                     * from the manifest for synthetic links. */
+                    if (errno != ENOENT) {
+                        log_warn("  could not unlink %s from stage: %s",
+                                 staged, strerror(errno));
+                    }
+                }
+                log_info("  keeping %s (owned by %s; not in %s's replaces list)",
+                         f->path, owner, meta->name);
+
+                *slot = f->next;
+                free(f->path);
+                free(f->link_target);
+                free(f);
+            } else {
+                slot = &f->next;
+            }
+        }
     }
 
     /* Run pre-install hook */
