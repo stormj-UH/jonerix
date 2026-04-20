@@ -227,8 +227,17 @@ install_target_build_deps() {
                 ;;
         esac
 
-        echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
-        jpkg install --force "$dep_pkg"
+        # Prefer a just-built jpkg in /var/cache/jpkg over INDEX. See
+        # aarch64 sibling for the reproduction and rationale.
+        local_pkg=$(ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg 2>/dev/null \
+            | sort -V | tail -1)
+        if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
+            echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — from local build $(basename "$local_pkg") ==="
+            jpkg install --force "$local_pkg"
+        else
+            echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
+            jpkg install --force "$dep_pkg"
+        fi
     done
 }
 
