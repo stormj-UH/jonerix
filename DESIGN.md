@@ -150,6 +150,21 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 
 **systemd**: OpenRC is simpler, BSD-licensed, and proven in Alpine. The service file format is plain shell.
 
+### POSIX-First Code Discipline
+
+Every shell script, init script, build recipe, and in-tree tool jonerix ships should run under a strict POSIX interpretation. Concretely: **no bashisms, no GNUisms.** This is a practical consequence of the runtime — `/bin/sh` is mksh (not bash), coreutils is toybox (not GNU coreutils), sed/awk/grep are toybox (or BSD equivalents), and `patch(1)` is toybox. A script that quietly depends on `[[ ... ]]`, `local`, `echo -e`, `sed -i` with a backup argument, `grep -P`, `readlink -f`, `mktemp --tmpdir`, or `getent` works on the author's Debian laptop and fails in CI or on a fresh Pi install. We have already paid for each of those lessons.
+
+Concrete rules:
+
+- **Shebangs.** Prefer `#!/bin/sh` for scripts we author. Only switch to `#!/bin/mksh` or `#!/usr/bin/env python3` when you actually need features POSIX sh doesn't provide. Never `#!/bin/bash` in anything that ships — bash is not on the runtime image.
+- **Shell features.** Stick to POSIX.1-2017: `$()` (not backticks), `[ ... ]` (not `[[ ... ]]`), `"$var"` (quoting is not optional), `getopts` (not GNU getopt), `case` statements (not bash regex), arithmetic via `$(( ))`. Avoid `local`, arrays, `${var^^}`/`${var,,}`, process substitution `<(...)`, `function foo()`, `read -p`, `echo -e` / `echo -n` — use `printf` instead.
+- **Coreutils flags.** Use only the flags documented in POSIX or SUS. `sed -i` is GNU-only — emit to stdout and redirect, or `mv` afterwards. `cp -a` and `install -D` are GNU-ish but supported by toybox; they are OK. `readlink -f` is GNU — use the POSIX `readlink` in a loop, or shell out to python for path resolution. `grep -P` is GNU — rewrite using POSIX ERE (`grep -E`). `xargs -r` is GNU — check for empty input explicitly.
+- **Patches.** Unified diffs must apply under strict `patch(1)` (toybox 0.8.11). No fuzz, no re-indenting context lines, no preamble tricks. If a patch won't hold cleanly, use a Python or awk text-substitution pre-step instead (see `packages/extra/btop/cpuname-patch.py` for the pattern).
+- **New C / Rust tools.** Prefer POSIX APIs over `_GNU_SOURCE` extensions. No `asprintf`, no `getline` without a fallback, no `pipe2` (use `pipe` + `fcntl(F_SETFD, FD_CLOEXEC)`), no `ppoll`/`epoll_pwait` unless the feature actively matters. In Rust, avoid crates that assume glibc (`rustix` is fine, `nix` usually fine; watch for crates that gate behind `target_env = "gnu"`).
+- **Testing.** Run new scripts through `mksh -n` (syntax check) and ideally `shellcheck --shell=sh --severity=style` before landing. Tool smoke tests should run under both the x86_64 and aarch64 jonerix builder images, which are the closest thing we have to the real target.
+
+When portability and pragmatism collide, portability wins unless there's a written-down reason (e.g., a recipe's comment block) explaining why the GNU/bash extension is load-bearing for this specific case.
+
 ---
 
 ## 4. Package Manager: jpkg
