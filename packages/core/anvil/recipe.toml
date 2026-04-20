@@ -1,26 +1,27 @@
 [package]
 name = "anvil"
-version = "0.2.0"
+version = "0.2.1"
 license = "MIT"
 description = "Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...)"
 
 [source]
 # Canonical source of truth is the Forgejo repo jonerik/anvil on
 # castle.great-morpho.ts.net:3000 at commit
-# 36420962ab424660fada2abed69823735078e652. That host sits behind
-# Tailscale and GitHub's cloud-hosted runners can't reach it, so
-# the tarball is mirrored to a jonerix GH release
-# (source-anvil-v0.2.0) for CI to fetch. sha256 matches the
-# `git archive --prefix=anvil-0.2.0/` output at the pinned commit.
+# 822efda (mkfs_vfat: skip backup boot when reserved_sectors < 8 to
+# avoid FAT overlap). That host sits behind Tailscale and GitHub's
+# cloud-hosted runners can't reach it, so the tarball is mirrored
+# to a jonerix GH release (source-anvil-v0.2.1) for CI to fetch.
 #
-# 0.2.0 adds a new crate: mkfs_vfat (FAT12/16/32 creation). All
-# 17 ext4-family tools from 0.1.0 are unchanged; this bump is
-# purely additive.
+# 0.2.1 bugfix-only: mkfs_vfat no longer writes the backup-boot /
+# backup-FSInfo sectors at LBA 6 / 7 when the user asks for
+# -R N with N < 8. Previously those writes clobbered the first
+# FAT and fsck.vfat rejected the image. Verified on the
+# dosfstools reference corpus at 7/7 fsck-valid (up from 6/7).
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/anvil/archive/36420962ab424660fada2abed69823735078e652.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-anvil-v0.2.0/anvil-0.2.0.tar.gz"
-sha256 = "52692abc7ffdff7857020db386a4e5d624a680a18bc76cf0428783569c5d1918"
+#   https://castle.great-morpho.ts.net:3000/jonerik/anvil/archive/822efda.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-anvil-v0.2.1/anvil-0.2.1.tar.gz"
+sha256 = "a7f46aebc37f9628ef750f97f40fcfa17027e5897076ef9669907367ffb137c9"
 
 [build]
 system = "custom"
