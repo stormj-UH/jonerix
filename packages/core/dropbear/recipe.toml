@@ -34,8 +34,13 @@ sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\1/' Makefile
 # agentfwd.h not found`). Clearing VPATH makes jmake search from
 # pwd, which already has `src/` as a subdir.
 sed -i -E 's|^VPATH=.*|VPATH=.|' Makefile
-echo "=== post-sed Makefile lines 10-16 ==="
-sed -n '10,16p' Makefile"""
+# Belt-and-suspenders: jmake's `$(wildcard)` under a prior
+# VPATH=./src evaluated `$(wildcard $(srcdir)/*.h *.h)` to a
+# list with `./src/src/` double prefix, so `dropbear`'s prereq
+# list expects headers at `./src/src/*.h`. We can't rewrite the
+# expansion from the outside, but we CAN make the path resolve
+# by dropping a `src/src -> .` symlink.
+ln -s . src/src 2>/dev/null || true"""
 # Plain `make` — dropbear's default `all` builds its built-in
 # PROGRAMS list (dropbear dbclient dropbearkey dropbearconvert
 # scp). Two earlier variants failed under jmake 1.1.0:
