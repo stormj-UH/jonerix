@@ -1,15 +1,20 @@
 [package]
 name = "jpkg-local"
-version = "1.0.0"
+version = "1.0.9"
 license = "MIT"
 description = "jpkg subcommand for local .jpkg install and recipe builds"
+# Tracks jpkg's version in lockstep: jpkg-local is just a thin
+# alternate entry point that re-links jpkg's util/toml/pkg/db
+# modules, so any jpkg core fix (TOML parser tweaks, merged-usr
+# flattening, chroot install layout audit, zstd format updates,
+# etc.) flows into jpkg-local automatically.
 
 [build]
 system = "custom"
 build = """
 set -e
 cd packages/jpkg-local
-clang -std=c11 -Os -static -fuse-ld=lld \
+clang -std=c11 -Os -fuse-ld=lld \
   -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
   -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
   -fstack-protector-strong \
@@ -20,11 +25,16 @@ clang -std=c11 -Os -static -fuse-ld=lld \
   ../jpkg/src/util.c \
   ../jpkg/src/toml.c \
   ../jpkg/src/pkg.c \
-  ../jpkg/src/db.c
+  ../jpkg/src/db.c \
+  -lzstd
+# Note: pkg.c pulls in libzstd via #include <zstd.h> for payload
+# extraction. Dynamic link against the jonerix zstd jpkg — matches
+# what jpkg itself does. The previous `-static` recipe would have
+# failed to link on a runtime that has zstd-dev but not zstd-static.
 install -Dm755 jpkg-local $DESTDIR/bin/jpkg-local
 """
 install = ""
 
 [depends]
-runtime = ["jpkg"]
-build = ["clang", "llvm"]
+runtime = ["jpkg", "zstd"]
+build = ["clang", "llvm", "zstd"]
