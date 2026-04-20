@@ -9,10 +9,12 @@ name = "exproxide"
 version = "0.1.0"
 license = "MIT"
 description = "Clean-room Rust implementation of expr for jonerix"
-# Claim /bin/expr from toybox's multicall so configure scripts land
-# on the exproxide binary. Without replaces, jpkg rejects the install
-# on a file-conflict.
-replaces = ["toybox"]
+# Claim /bin/expr from whichever package was previously providing it
+# — toybox's multicall shim on a fresh jonerix, or uutils on a host
+# that has already pulled in the Rust coreutils reimplementation.
+# Without replaces, jpkg rejects the install on a file-conflict and
+# the /bin/expr symlink never flips over to exproxide.
+replaces = ["toybox", "uutils"]
 
 [source]
 # Canonical source: Forgejo jonerik/exproxide on
@@ -45,13 +47,46 @@ llvm-strip --strip-all "$DESTDIR/bin/exproxide" 2>/dev/null || true
 """
 
 [hooks]
-# Defensive: install(1) above already creates the symlink inside
-# $DESTDIR, and jpkg carries that into the live rootfs. The
-# post_install here is a belt-and-suspenders refresh for upgrades
-# from the earlier (mis-typed) expre package where /bin/expr may
-# still point at /bin/expre.
-post_install = """[ -x /bin/exproxide ] && ln -sf exproxide /bin/expr || true"""
-post_remove = """[ ! -e /bin/expr ] && [ -x /bin/toybox ] && ln -sf toybox /bin/expr || true"""
+# Takeover logic. install(1) above already put /bin/exproxide and a
+# /bin/expr -> exproxide symlink into $DESTDIR, and jpkg carries
+# those onto the live rootfs with replaces = [toybox, uutils]
+# transferring ownership of /bin/expr away from whichever package
+# previously owned it. This post_install is a belt-and-suspenders
+# refresh for two real-world cases:
+#   1. Upgrading from the typo'd `expre` package where /bin/expr
+#      might still be a dangling symlink to /bin/expre.
+#   2. A rare jpkg race where replaces transfer happens after
+#      extraction and another package's post-install hook (toybox
+#      re-link, uutils symlink sweep) was fired first and clobbered
+#      /bin/expr back to its own multicall.
+# We unconditionally relink to /bin/exproxide so the target lands on
+# the Rust implementation once this hook runs.
+post_install = """
+if [ -x /bin/exproxide ]; then
+    ln -sf exproxide /bin/expr 2>/dev/null || true
+fi
+exit 0
+"""
+
+# Hand /bin/expr back on removal. Prefer uutils (full Rust coreutils
+# reimplementation — closer semantics than toybox's minimal expr) if
+# it's installed; fall back to toybox; otherwise leave /bin/expr
+# absent so the user sees an honest "command not found" instead of
+# silently running an incompatible implementation. jpkg will have
+# already removed /bin/exproxide and /bin/expr since they were ours;
+# this hook only re-creates /bin/expr, not /bin/exproxide.
+post_remove = """
+if [ -e /bin/expr ] || [ -L /bin/expr ]; then
+    # Something already owns /bin/expr — don't clobber.
+    exit 0
+fi
+if [ -x /bin/uutils ]; then
+    ln -sf uutils /bin/expr
+elif [ -x /bin/toybox ]; then
+    ln -sf toybox /bin/expr
+fi
+exit 0
+"""
 
 [depends]
 runtime = ["musl"]
