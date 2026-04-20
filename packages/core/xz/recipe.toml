@@ -10,7 +10,7 @@ sha256 = "890966ec3f5d5cc151077879e157c0593500a522f413ac50ba26d22a9a145214"
 
 [build]
 system = "cmake"
-configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib"
+configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON"
 build = "samu -C build -j$(nproc)"
 # xz 5.8+ splits its install() rules into two CMake components:
 #   liblzma_Runtime      — liblzma.so.5.* + xz/xzdec/lzma* binaries
