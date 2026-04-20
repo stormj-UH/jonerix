@@ -506,6 +506,12 @@ static const char *permissive_licenses[] = {
     "public domain", "Public-Domain",
     "BSD-2-Clause-Patent", "PSF-2.0", "BSL-1.0", "Artistic-2.0",
     "Ruby", "MPL-2.0", "Info-ZIP",
+    /* bzip2's licence is 4-clause-BSD-style; SPDX id
+     * `bzip2-1.0.6` applies through 1.0.8. Permissive, not
+     * copyleft, no patent clauses, standard BSD warranty
+     * disclaimer. Debian main, FSF's list, Fedora's legal list
+     * all classify it as GPL-compatible / permissive. */
+    "bzip2-1.0.6",
     NULL
 };
 
