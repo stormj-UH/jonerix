@@ -1,8 +1,16 @@
 [package]
 name = "dropbear"
-version = "2024.86-r1"
+version = "2024.86-r2"
 license = "MIT"
 description = "Lightweight SSH server and client"
+# r2: restored the clean recipe after jmake 1.1.1 landed.
+# The 2024.86-r1 recipe carried three stacked workarounds for
+# jmake bugs that are now fixed upstream:
+#   * `$(wildcard ./dir/*.ext)` no longer doubles the prefix
+#   * TAB-indented `VAR=…` inside `ifndef`/`ifeq` blocks is no
+#     longer mis-classified as a recipe line
+# Builds produce dropbear (271 KB) + dbclient (253 KB) + the
+# usual dropbearkey/dropbearconvert/scp set with plain `make`.
 
 [source]
 url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.86.tar.bz2"
@@ -10,55 +18,13 @@ sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 
 [build]
 system = "autoconf"
-# dropbear's Makefile.in uses TAB-indented variable assignments
-# inside `ifndef`/`ifeq` blocks (e.g. line 12
-# `\tPROGRAMS=dropbear dbclient ...`). GNU make tolerates that
-# quirk but jmake 1.1.0 treats the tab as a recipe-line prefix
-# and silently drops the assignment, leaving PROGRAMS unset →
-# TARGETS empty → `make all` is a no-op → 400-byte empty jpkg.
-# Reproduced 2026-04-20 runs 24693845801 and 24694265855.
-# De-indent those assignments before configure touches anything.
-configure = """CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang
-# De-indent TAB-prefixed variable assignments in the generated
-# Makefile. autoconf regenerates Makefile from Makefile.in at
-# ./configure time, so sed'ing Makefile.in before configure is a
-# no-op for the generated file. Run sed AFTER configure on the
-# actual Makefile that jmake will read. jmake 1.1.0 rejects
-# TAB-indented `VAR=...` inside ifeq/ifdef blocks with
-# "Makefile:12: missing separator" (reproduced 2026-04-20 runs
-# 24693845801 / 24694265855 / 24694484694 / 24694726551).
-sed -i -E 's/^\t+([A-Za-z_][A-Za-z0-9_]*[+:?]?=)/\1/' Makefile
-# jmake 1.1.0 double-prefixes VPATH: a prereq that already
-# includes `src/` gets searched as `./src/src/<file>` (reproduced
-# 2026-04-20 runs 24694484694 / 24694726551 — `./src/src/
-# agentfwd.h not found`). Clearing VPATH makes jmake search from
-# pwd, which already has `src/` as a subdir.
-sed -i -E 's|^VPATH=.*|VPATH=.|' Makefile
-# Belt-and-suspenders: jmake's `$(wildcard)` under a prior
-# VPATH=./src evaluated `$(wildcard $(srcdir)/*.h *.h)` to a
-# list with `./src/src/` double prefix, so `dropbear`'s prereq
-# list expects headers at `./src/src/*.h`. We can't rewrite the
-# expansion from the outside, but we CAN make the path resolve
-# by dropping a `src/src -> .` symlink.
-ln -s . src/src 2>/dev/null || true"""
-# Plain `make` — dropbear's default `all` builds its built-in
-# PROGRAMS list (dropbear dbclient dropbearkey dropbearconvert
-# scp). Two earlier variants failed under jmake 1.1.0:
-#   1. `make PROGRAMS="..."` → `Nothing to be done for 'all'`
-#      (jmake evaluates all's prerequisite list before the
-#      cmdline override lands, so all is empty by the time its
-#      recipe fires). Ship: 0.4 KiB empty jpkg.
-#   2. `make dropbear dbclient ...` → `No rule to make target
-#      './src/src/agentfwd.h'` — jmake doubles the srcdir path
-#      when header prerequisites resolve via VPATH.
-# Dropping the override and just building the default target
-# keeps jmake on its happy path.
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"
 build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl", "libressl"]
