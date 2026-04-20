@@ -1,6 +1,6 @@
 [package]
 name = "hostapd"
-version = "2.11"
+version = "2.11-r1"
 license = "BSD-3-Clause"
 description = "IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator"
 
@@ -10,7 +10,24 @@ sha256 = "2b3facb632fd4f65e32f4bf82a76b4b72c501f995a4f62e330219fe7aed1747a"
 
 [build]
 system = "custom"
-configure = """cd hostapd
+# hostapd shares a Makefile pattern with wpa_supplicant (same hostap.git
+# upstream). Two jmake issues trip it:
+#
+#   1. `-I$(abspath ../src)` / `-I$(abspath ../src/utils)` in
+#      hostapd/Makefile end up as bare `-I` flags that clang
+#      swallows the next arg as. Pre-substitute to absolute paths.
+#
+#   2. `CFLAGS += $(EXTRA_CFLAGS)` and the post-include `CFLAGS +=`
+#      additions don't thread through to `$(CFLAGS)` at recipe-
+#      expansion time when CFLAGS is pre-set via jpkg's environment
+#      (always set by cmd_build.c). Inject -I paths into the CFLAGS
+#      env directly.
+#
+# Same pair of fixes as wpa_supplicant 2.11-r2 — see that recipe's
+# comment block for the full diagnosis and CI reproduction (run
+# 24678196637 + 24679561680).
+configure = """ROOT=$(pwd)
+cd hostapd
 cat > .config << 'CONF'
 CONFIG_DRIVER_HOSTAP=y
 CONFIG_DRIVER_NL80211=y
@@ -30,20 +47,18 @@ CONFIG_EAP_MSCHAPV2=y
 CONFIG_PKCS12=y
 CONFIG_WPS=y
 CONFIG_ACS=y
-CONF"""
-# hostapd's Makefile uses $(abspath ../src) which bmake (jmake) does not
-# implement — it expands to literally nothing, so the -I paths vanish. Supply
-# ABSOLUTE paths via EXTRA_CFLAGS (honored at hostapd/Makefile's EXTRA_CFLAGS).
-# CONFIG_LIBNL32=y + LIBNL_INC=/include bypasses the pkg-config probe in
-# src/drivers/drivers.mak so jmake does not need a pkg-config binary.
+CONF
+cd ..
+sed -i 's#-I$(abspath ../src)#-I'"$ROOT"'/src#g' hostapd/Makefile
+sed -i 's#-I$(abspath ../src/utils)#-I'"$ROOT"'/src/utils#g' hostapd/Makefile"""
 build = """ROOT=$(pwd)
-jmake -C hostapd \
-  CC=clang \
-  LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" \
-  CONFIG_LIBNL32=y \
-  LIBNL_INC=/include \
-  EXTRA_CFLAGS="-I$ROOT/src -I$ROOT/src/utils -I/include" \
-  -j$(nproc)"""
+CFLAGS="${CFLAGS:-} -I$ROOT/src -I$ROOT/src/utils -I/include" \
+    jmake V=1 -C hostapd \
+        CC=clang \
+        LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" \
+        CONFIG_LIBNL32=y \
+        LIBNL_INC=/include \
+        -j$(nproc)"""
 install = """mkdir -p $DESTDIR/bin $DESTDIR/etc/hostapd
 install -m 755 hostapd/hostapd $DESTDIR/bin/hostapd
 install -m 755 hostapd/hostapd_cli $DESTDIR/bin/hostapd_cli
