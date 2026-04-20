@@ -1,8 +1,12 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.4.0"
+version = "1.4.1"
 license = "MIT"
-description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, cold-reboot, wake-on-power via pi5-fw / pi5-wake-on-power) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, OpenRC-backed reboot, cold-reboot, wake-on-power via pi5-fw / pi5-wake-on-power) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# Claim toybox's /bin/reboot multicall symlink so jpkg can transfer
+# file ownership instead of relying only on a post_install rewrite.
+# Requires jpkg >= 1.0.4 (package.replaces support).
+replaces = ["toybox"]
 
 # No [source] section — jpkg treats a missing source.url as a local-only
 # build and hands control to the build script, which uses $RECIPE_DIR.
@@ -55,6 +59,14 @@ install -Dm755 bin/pi5-wake-on-power $DESTDIR/usr/local/bin/pi5-wake-on-power
 # /boot/cmdline.txt (reboot=c) and /boot/config.txt
 # (hdmi_force_hotplug on both ports). Runs from post_install below.
 install -Dm755 bin/apply-pi5-boot-settings $DESTDIR/usr/local/bin/apply-pi5-boot-settings
+
+# reboot-openrc: Pi 5-safe reboot backend. The package owns
+# /bin/reboot via replaces=["toybox"], while post_install also refreshes
+# the live /sbin aliases because jpkg intentionally flattens /sbin into
+# /bin during packaging.
+install -Dm755 bin/reboot-openrc $DESTDIR/usr/local/bin/reboot-openrc
+mkdir -p $DESTDIR/bin
+ln -sf /usr/local/bin/reboot-openrc $DESTDIR/bin/reboot
 
 # pi5-cold-reboot: OpenRC boot service that forces
 # /sys/kernel/reboot/mode=cold every boot (belt-and-suspenders for
@@ -134,8 +146,7 @@ if [ -f /etc/fstab ]; then
     # of triggering a fail-safe read-only remount. Reproduced on
     # jonerix-tormenta 2026-04-16: inode 287372 had a bad extent header
     # and rm returned EUCLEAN when trying to truncate.
-    if grep -E '^[^#].*[[:space:]]/[[:space:]]+ext4[[:space:]]' /etc/fstab \\
-            | grep -vq 'errors='; then
+    if grep -E '^[^#].*[[:space:]]/[[:space:]]+ext4[[:space:]]' /etc/fstab | grep -vq 'errors='; then
         sed -i -E '/^[^#].*[[:space:]]\\/[[:space:]]+ext4[[:space:]]/{
             /errors=/!s|(ext4[[:space:]]+)([^[:space:]]+)|\\1\\2,errors=remount-ro|
         }' /etc/fstab
@@ -177,6 +188,23 @@ if [ -e /etc/init.d/networking ] && [ ! -L /etc/init.d/networking ]; then
         rm -f /etc/init.d/networking
         echo "raspi5-fixups: removed orphan /etc/init.d/networking"
     fi
+fi
+
+# --- reboot command: use OpenRC native reboot ---
+# Reproduced on jonerix-tormenta 2026-04-19: toybox `reboot` cleanly
+# stopped OpenRC and remounted / read-only, but the Pi stayed red-only
+# until physical power cycle. `openrc-shutdown -r now` rebooted the
+# same board successfully. /bin/reboot is package-owned; the hook below
+# also takes over /sbin and /usr/sbin aliases that may exist in older
+# images outside jpkg's file database.
+if [ -x /usr/local/bin/reboot-openrc ]; then
+    if [ -L /bin/reboot ] && [ ! -e /etc/jpkg/raspi5-fixups/reboot.prev ]; then
+        mkdir -p /etc/jpkg/raspi5-fixups
+        readlink /bin/reboot > /etc/jpkg/raspi5-fixups/reboot.prev 2>/dev/null || true
+    fi
+    ln -sf /usr/local/bin/reboot-openrc /bin/reboot
+    [ -d /sbin ] && ln -sf /usr/local/bin/reboot-openrc /sbin/reboot
+    [ -d /usr/sbin ] && ln -sf /usr/local/bin/reboot-openrc /usr/sbin/reboot
 fi
 
 # --- Pi 5 hardware fixups (only on a live Pi 5) ---
@@ -258,10 +286,40 @@ if [ -f /etc/jpkg/raspi5-fixups/adduser.prev ]; then
     rmdir /etc/jpkg/raspi5-fixups 2>/dev/null || true
     rmdir /etc/jpkg 2>/dev/null || true
 fi
+_restore_reboot_link() {
+    _path=$1
+    _target=$2
+    if [ -L "$_path" ]; then
+        _cur=$(readlink "$_path" 2>/dev/null || true)
+        case "$_cur" in
+            /usr/local/bin/reboot-openrc|/local/bin/reboot-openrc)
+                rm -f "$_path"
+                ;;
+        esac
+    fi
+    [ ! -e "$_path" ] && [ -x /bin/toybox ] && ln -sf "$_target" "$_path"
+}
+_reboot_bin_target=toybox
+if [ -f /etc/jpkg/raspi5-fixups/reboot.prev ]; then
+    _saved=$(cat /etc/jpkg/raspi5-fixups/reboot.prev)
+    case "$_saved" in
+        ""|/usr/local/bin/reboot-openrc|/local/bin/reboot-openrc)
+            ;;
+        *)
+            _reboot_bin_target=$_saved
+            ;;
+    esac
+    rm -f /etc/jpkg/raspi5-fixups/reboot.prev
+fi
+_restore_reboot_link /bin/reboot "$_reboot_bin_target"
+_restore_reboot_link /sbin/reboot ../bin/toybox
+_restore_reboot_link /usr/sbin/reboot ../bin/toybox
+rmdir /etc/jpkg/raspi5-fixups 2>/dev/null || true
+rmdir /etc/jpkg 2>/dev/null || true
 exit 0"""
 
 [depends]
 # pi5-wake-on-power is a Python 3 stdlib script — no pip deps.
 # python3 itself is PSF-2.0, on jonerix's permissive allowlist.
-runtime = ["musl", "python3"]
+runtime = ["musl", "openrc", "python3"]
 build = ["rust"]
