@@ -245,6 +245,13 @@ build_one() {
         return 0
     fi
 
+    # Install the recipe's declared build deps before invoking jpkg.
+    # Same reasoning as the aarch64 sibling — without this, header-
+    # only build deps (jonerix-headers, nloxide, libressl) never get
+    # installed and dependent packages blow up with missing-header
+    # errors mid-compile.
+    install_target_build_deps "$pkg_dir"
+
     echo "=== Building ${pkg_name} ==="
     if ! timeout "$(package_timeout "$pkg_name")" jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg; then
         echo "FAILED: ${pkg_name}"

@@ -244,6 +244,17 @@ build_one() {
         return 0
     fi
 
+    # Install the recipe's declared build deps BEFORE invoking jpkg
+    # build. Without this, packages that need header-only deps like
+    # jonerix-headers (Linux UAPI), nloxide (netlink C headers), or
+    # libressl (TLS headers) fail mid-compile with missing-header
+    # errors. The single-package `PKG_INPUT` branch below already
+    # calls install_target_build_deps; the full-run loop did not,
+    # which is why every full publish-packages run since at least
+    # 2026-04-20 lost nodejs, wpa_supplicant, hostapd, dhcpcd, and
+    # friends to this pattern.
+    install_target_build_deps "$pkg_dir"
+
     echo "=== Building ${pkg_name} ==="
     if ! timeout "$(package_timeout "$pkg_name")" jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg; then
         echo "FAILED: ${pkg_name}"
