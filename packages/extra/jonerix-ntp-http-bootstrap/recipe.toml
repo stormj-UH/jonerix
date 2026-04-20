@@ -1,0 +1,39 @@
+[package]
+name = "jonerix-ntp-http-bootstrap"
+version = "1.0.0"
+license = "MIT"
+description = "HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service)"
+# Split out from jonerix-boot-helpers 2026-04-20. On a Pi 5 (or any
+# board with a working coin-cell backed RTC) this package is a
+# no-op; the installer checks /sys/class/rtc/rtc0/battery_voltage
+# before adding it to the default set. Keep it standalone so
+# RTC-equipped systems don't carry unused bootstrap logic.
+
+# No [source] — local-only build using $RECIPE_DIR contents.
+
+[build]
+system = "custom"
+build = """
+set -e
+cd "$RECIPE_DIR"
+install -Dm755 bin/ntp-set-http       $DESTDIR/bin/ntp-set-http
+install -Dm755 init.d/ntp-bootstrap   $DESTDIR/etc/init.d/ntp-bootstrap
+# Syntax-check before packaging.
+sh   -n $DESTDIR/bin/ntp-set-http
+mksh -n $DESTDIR/etc/init.d/ntp-bootstrap
+"""
+install = ""
+
+[hooks]
+# Register ntp-bootstrap in the boot runlevel on install.
+post_install = """if [ -d /etc/runlevels/boot ]; then
+    ln -sf /etc/init.d/ntp-bootstrap /etc/runlevels/boot/ntp-bootstrap
+fi
+exit 0"""
+
+post_remove = """rm -f /etc/runlevels/boot/ntp-bootstrap
+exit 0"""
+
+[depends]
+runtime = ["mksh", "openrc", "curl"]
+build = []
