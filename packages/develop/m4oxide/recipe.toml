@@ -5,22 +5,22 @@ license = "MIT"
 description = "Clean-room Rust implementation of m4 for jonerix"
 
 [source]
-url = "https://github.com/stormj-UH/jonerix/releases/download/packages/m4oxide-fd39658bd16cd4dd8aa16f1fdba75a06a84ff8f1.tar.gz"
-sha256 = "09355d4d49a2f1a47bf5ce43108c68605244c94f8a958d8d249d941821f1f5a3"
+url = "https://github.com/stormj-UH/jonerix/releases/download/packages/m4oxide-f983eece7cf16a859ef87e76819d5941bd890838.tar.gz"
+sha256 = "ff61ae7877fbfef6f26131b8405d0e1d8f1f6c4ad2ff85c95642a2bd26cbf48b"
 
 [build]
 system = "custom"
 build = """
 set -e
 export CARGO_HOME=/tmp/m4oxide-cargo
-export CARGO_TARGET_DIR=/tmp/m4oxide-target
+export CARGO_TARGET_DIR="$PWD/target"
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
 cargo test --locked
 cargo build --release --locked --bin m4oxide
 """
 install = """
 set -e
-BIN=/tmp/m4oxide-target/release/m4oxide
+BIN="$PWD/target/release/m4oxide"
 install -Dm755 "$BIN" "$DESTDIR/bin/m4oxide"
 ln -sf m4oxide "$DESTDIR/bin/m4"
 llvm-strip --strip-all "$DESTDIR/bin/m4oxide" 2>/dev/null || true
