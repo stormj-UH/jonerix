@@ -108,6 +108,10 @@ jpkg update
 # force-install from the INDEX so we always have the perf fix.
 jpkg upgrade jmake 2>&1 | tail -5
 
+# exproxide — clean-room Rust expr(1). See aarch64 sibling.
+echo "=== Installing exproxide for /bin/expr ==="
+jpkg install --force exproxide 2>&1 | tail -5 || echo "exproxide install failed — recipe-level fallback only"
+
 # Meson is bootstrapped from its upstream source tarball to avoid depending
 # on pip/SSL support in older builder images.
 /workspace/scripts/bootstrap-meson.sh
