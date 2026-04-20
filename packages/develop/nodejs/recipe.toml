@@ -44,6 +44,26 @@ set -e
 
 export PATH=/bin:/usr/bin
 
+# The jonerix python3 jpkg is currently built without the `_bz2`
+# extension (no libbz2 at python build time). Node 24.15+'s
+# configure.py imports `bz2` unconditionally at module load,
+# even when the code paths that use it are unreachable for our
+# `--with-intl=full-icu --download=all` flags. Ship a tiny stub
+# module earlier in PYTHONPATH so the import succeeds. If any
+# part of configure actually reaches bz2.BZ2File it'll throw
+# `NotImplementedError` — better than silently mis-building.
+mkdir -p /tmp/py-shim
+cat > /tmp/py-shim/bz2.py <<'PYEOF'
+class _Missing:
+    def __call__(self, *a, **kw):
+        raise NotImplementedError("jonerix python3 missing _bz2; shim reached at runtime")
+BZ2File = _Missing(); BZ2Compressor = _Missing(); BZ2Decompressor = _Missing()
+def compress(*a, **kw): raise NotImplementedError()
+def decompress(*a, **kw): raise NotImplementedError()
+def open(*a, **kw): raise NotImplementedError()
+PYEOF
+export PYTHONPATH=/tmp/py-shim:${PYTHONPATH:-}
+
 # Strip explicit -latomic injections that GYP adds for Linux+Clang.
 # compiler-rt builtins provide the same symbols.
 sed -i "s/'-latomic',//g" node.gyp tools/v8_gypfiles/v8.gyp 2>/dev/null || true
