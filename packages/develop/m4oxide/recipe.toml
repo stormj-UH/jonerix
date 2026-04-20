@@ -5,8 +5,8 @@ license = "MIT"
 description = "Clean-room Rust implementation of m4 for jonerix"
 
 [source]
-url = "https://github.com/stormj-UH/m4oxide/archive/1aee1e3a37a960566b30ea037446e12b9096d345.tar.gz"
-sha256 = "2c5c0deb7fb486492b4054061d58a0b9fcc153d0019a6a616c12b9fdaab85460"
+url = "https://github.com/stormj-UH/jonerix/releases/download/packages/m4oxide-fd39658bd16cd4dd8aa16f1fdba75a06a84ff8f1.tar.gz"
+sha256 = "09355d4d49a2f1a47bf5ce43108c68605244c94f8a958d8d249d941821f1f5a3"
 
 [build]
 system = "custom"
