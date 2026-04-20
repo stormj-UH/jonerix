@@ -1,21 +1,52 @@
 #!/bin/sh
 # pi5-rtc-battery-check — poll the Pi 5 RTC coin-cell voltage
-# (exposed by the rpi-rtc driver at /sys/class/rtc/rtc0/battery_voltage,
-# reported in microvolts) and log at an appropriate severity.
+# exposed by the rpi-rtc driver at /sys/class/rtc/rtc0/battery_voltage
+# (microvolts) and log at an appropriate severity.
 #
-# Severity ladder:
-#   INFO  — reading is zero or the sysfs file is missing. Both mean
-#           the RTC's ADC is reading no cell on the VBAT pin, i.e.
-#           nobody installed a battery. Nothing to do; time will
-#           still work while the Pi has main power.
-#   WARN  — between 2.0 V and 2.4 V. The RTC block runs down to
-#           roughly 1.8 V per the RP1 datasheet; at typical self-
-#           discharge plus RTC load a cell in this band will cross
-#           the fail line inside about a month. Recommend replacing
-#           the coin cell at next convenience.
-#   ERROR — below 2.0 V. Clock is likely to stop the next time
-#           the Pi loses mains power. Replace the cell now.
-#   OK    — 2.4 V or above. Silent by default; `-v` prints it anyway.
+# Source references for the sysfs attribute + value units:
+#   raspberrypi/linux drivers/rtc/rtc-rpi.c — `battery_voltage_show`
+#       reads RTC_BBAT_VOLTS via the videocore mailbox; reported in
+#       microvolts (same units as charging_voltage*).
+#   raspberrypi/documentation computers/raspberry-pi/rtc.adoc —
+#       documents the J5 battery connector, lists the official
+#       rechargeable ML coin cell part, and confirms that "retention
+#       time measures in months" at single-digit-µA backup current.
+#
+# Threshold rationale — measured in millivolts internally:
+#
+#   INFO ≤ 500 mV — the RP1 RTC's ADC reads essentially zero when
+#         no cell is populated at J5. The driver's own charging
+#         range reports as [1.3 V, 4.4 V] (see
+#         /sys/class/rtc/rtc0/charging_voltage_min / _max, which in
+#         the kernel come from RTC_BBAT_CHG_VOLTS_MIN /_MAX). A
+#         reading well below the charging floor is the "no battery"
+#         signal.
+#
+#   ERROR <  2000 mV — end-of-life cutoff for both the recommended
+#         lithium-manganese rechargeable cells (Panasonic ML2032
+#         datasheet, "Discharge voltage cut-off 2.0 V") and the
+#         incompatible-but-frequently-installed primary CR2032
+#         (Panasonic CR2032 datasheet, "Nominal 3.0 V, minimum
+#         operating 2.0 V"). Below 2.0 V the ML cell is fully
+#         discharged and the RTC can start miscounting / stopping
+#         at the next power loss.
+#
+#   WARN  <  2400 mV — the knee of the ML2032 / CR2032 discharge
+#         curves. Both cells sit within ~100 mV of nominal for the
+#         bulk of their capacity, then drop sharply from ~2.5 V
+#         down to the 2.0 V cutoff inside the final few percent.
+#         Panasonic's published curves put this tail at roughly
+#         3–6 weeks of typical RTC-load service, so hitting
+#         2.4 V is the "schedule a replacement in the next month"
+#         signal.
+#
+#   OK    ≥ 2400 mV — healthy. Silent by default; `-v` still logs.
+#
+# All thresholds are dB-conservative relative to the RP1 itself:
+# the RP1 datasheet does not publish an absolute VBAT operating
+# minimum, but the charging_voltage_min sysfs value (1.3 V) is a
+# floor for any RP1-supported cell, so the 2.0 V ERROR leaves
+# 700 mV of margin against the silicon.
 #
 # Output goes to both stderr (for interactive runs) and `logger`
 # (for cron / syslog forwarding). Exit status:
