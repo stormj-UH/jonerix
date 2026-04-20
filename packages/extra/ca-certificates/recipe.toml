@@ -45,11 +45,11 @@ head -5 cacert.pem | grep -q "Bundle of CA Root Certificates" || \
 install = """
 set -e
 install -Dm644 cacert.pem "$DESTDIR/etc/ssl/certs/ca-certificates.crt"
-# Convention: curl, wget, python's ssl.get_default_verify_paths all
-# accept either /etc/ssl/cert.pem or /etc/ssl/certs/ca-
-# certificates.crt. Ship both so tools find them without per-tool
-# env fiddling.
-ln -sf certs/ca-certificates.crt "$DESTDIR/etc/ssl/cert.pem"
+# Note: do NOT ship /etc/ssl/cert.pem — libressl already ships
+# that path (as a symlink into its own CA chain). File-conflict
+# on docker:core stage-1 install otherwise. Apps that check
+# /etc/ssl/cert.pem see libressl's symlink; apps that check
+# /etc/ssl/certs/ca-certificates.crt see this file.
 """
 
 [depends]
