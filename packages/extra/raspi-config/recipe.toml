@@ -31,7 +31,9 @@ system = "custom"
 # upstream ships for.
 build = "true"
 install = """
-set -e
+set -ex
+echo "=== raspi-config install: cwd=$(pwd) DESTDIR=$DESTDIR ==="
+ls -la
 
 # Main script -> /bin/raspi-config (merged-usr; upstream targets /usr/bin).
 # The script is #!/bin/sh and works under mksh (no bashisms in hot paths).
