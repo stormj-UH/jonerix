@@ -2,21 +2,54 @@
 name = "ca-certificates"
 version = "20260211"
 license = "MPL-2.0"
-description = "Mozilla CA certificate bundle for TLS verification"
+description = "Mozilla CA certificate bundle for TLS verification (sourced from curl.se)"
+# Vital for every TLS client on jonerix (curl, openntpd-http-date,
+# headscale, wpa_supplicant EAP-TLS, …). The Mozilla NSS CA store
+# itself is MPL-2.0; curl.se just repackages it as a single PEM.
 
-[source]
-url = "https://curl.se/ca/cacert.pem"
-sha256 = "b6e66569cc3d438dd5abe514d0df50005d570bfc96c14dca8f768d020cb96171"
+# No [source] section — jpkg's source fetcher assumes a tarball it
+# can extract, and this is a single PEM file. The previous recipe
+# declared [source].url = cacert.pem and silently failed at extract
+# ("failed to extract source", reproduced CI run 24686782348).
+# Instead fetch the PEM in the build step, verify its sha256
+# inline, and drop it straight into $DESTDIR.
 
 [build]
 system = "custom"
-build = ""
+configure = ""
+build = """
+set -e
+# Pinned upstream hash — bump both this and [package].version when
+# Mozilla's CA list changes. curl.se updates cacert.pem in place,
+# so the hash is the authoritative integrity check.
+PEM_URL="https://curl.se/ca/cacert.pem"
+PEM_SHA256="b6e66569cc3d438dd5abe514d0df50005d570bfc96c14dca8f768d020cb96171"
+curl -fsSL -o cacert.pem "$PEM_URL"
+if command -v sha256sum >/dev/null 2>&1; then
+    GOT=$(sha256sum cacert.pem | awk '{print $1}')
+else
+    GOT=$(openssl dgst -sha256 cacert.pem | awk '{print $NF}')
+fi
+if [ "$GOT" != "$PEM_SHA256" ]; then
+    echo "ca-certificates: sha256 mismatch" >&2
+    echo "  expected: $PEM_SHA256" >&2
+    echo "  got:      $GOT" >&2
+    exit 1
+fi
+# Sanity: the file must begin with the curl.se PEM banner.
+head -1 cacert.pem | grep -q "^## Bundle of CA Root Certificates" || \
+    { echo "ca-certificates: unexpected header"; head -2 cacert.pem; exit 1; }
+"""
 install = """
 set -e
-mkdir -p "$DESTDIR/etc/ssl/certs"
-cp -a "$SRC" "$DESTDIR/etc/ssl/certs/ca-certificates.crt"
+install -Dm644 cacert.pem "$DESTDIR/etc/ssl/certs/ca-certificates.crt"
+# Convention: curl, wget, python's ssl.get_default_verify_paths all
+# accept either /etc/ssl/cert.pem or /etc/ssl/certs/ca-
+# certificates.crt. Ship both so tools find them without per-tool
+# env fiddling.
+ln -sf certs/ca-certificates.crt "$DESTDIR/etc/ssl/cert.pem"
 """
 
 [depends]
 runtime = []
-build = []
+build = ["curl"]
