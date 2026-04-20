@@ -1,6 +1,6 @@
 [package]
 name = "dropbear"
-version = "2024.86"
+version = "2024.86-r1"
 license = "MIT"
 description = "Lightweight SSH server and client"
 
@@ -11,8 +11,15 @@ sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
 [build]
 system = "autoconf"
 configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"
-build = "make -j$(nproc) PROGRAMS=\"dropbear dbclient dropbearkey dropbearconvert scp\""
-install = """make DESTDIR=$DESTDIR install
+# Explicit targets. `make PROGRAMS="..."` alone routes through
+# dropbear/Makefile's `all` target, which under jmake 1.1.0 expands
+# to an empty recipe when PROGRAMS is overridden on the command
+# line — reproduced 2026-04-20 run 24693845801 which packaged a
+# 413 B empty jpkg and broke every downstream docker build of
+# jonerix:minimal with "dropbear extracted no installable files".
+# Passing the binaries as targets forces each rule to fire.
+build = "make -j$(nproc) dropbear dbclient dropbearkey dropbearconvert scp"
+install = """make DESTDIR=$DESTDIR PROGRAMS="dropbear dbclient dropbearkey dropbearconvert scp" install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
