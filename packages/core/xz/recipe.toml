@@ -1,6 +1,6 @@
 [package]
 name = "xz"
-version = "5.8.2-r1"
+version = "5.8.2-r2"
 license = "0BSD"
 description = "XZ compression utilities and liblzma (with development headers)"
 
@@ -23,9 +23,13 @@ build = "samu -C build -j$(nproc)"
 install = """set -e
 # xz 5.8.2 defines a handful of install components; iterate all
 # the ones we want (excludes Documentation since we strip man
-# pages from jonerix images anyway). If a component isn't present
-# in a future xz release, `|| true` keeps things moving.
-for comp in liblzma_Runtime liblzma_Development xz_Runtime lzmainfo_Runtime scripts_Runtime; do
+# pages from jonerix images anyway). The liblzma runtime and
+# development components are mandatory; the command symlink sets
+# remain optional across upstream CMake changes.
+for comp in liblzma_Runtime liblzma_Development; do
+    DESTDIR="$DESTDIR" cmake --install build --component "$comp"
+done
+for comp in xz_Runtime lzmainfo_Runtime scripts_Runtime; do
     DESTDIR="$DESTDIR" cmake --install build --component "$comp" || true
 done
 # Merged-usr flatten FIRST — cmake with PREFIX=/ still writes
@@ -39,6 +43,7 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 # every other lzma consumer needs it. Fail loud if CMake changed
 # the component layout out from under us.
 [ -f "$DESTDIR/include/lzma.h" ] || { echo "xz: lzma.h missing after install+flatten" >&2; find "$DESTDIR" -name '*.h' | head -20 >&2; exit 1; }
+[ -e "$DESTDIR/lib/liblzma.so.5" ] || { echo "xz: liblzma.so.5 missing after install+flatten" >&2; find "$DESTDIR/lib" -maxdepth 1 \\( -type f -o -type l \\) | sort >&2; exit 1; }
 find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 find "$DESTDIR/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true"""
 

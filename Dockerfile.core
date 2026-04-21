@@ -91,7 +91,9 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       echo "core package install failures:$failed"; \
       exit 1; \
     fi && \
-    [ -x /bin/ln ] && [ -x /bin/rm ] && [ -e /lib/libz.so.1 ] || { \
+    [ -x /bin/ln ] && [ -x /bin/rm ] && [ -e /lib/libz.so.1 ] && \
+    [ -e /lib/liblzma.so.5 ] && bsdtar --version >/dev/null 2>&1 && \
+    command -v gzip >/dev/null 2>&1 || { \
       echo "core image missing expected runtime tooling after package install" >&2; \
       exit 1; \
     } && \
