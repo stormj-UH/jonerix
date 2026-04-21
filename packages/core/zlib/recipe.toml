@@ -1,6 +1,6 @@
 [package]
 name = "zlib"
-version = "1.3.2"
+version = "1.3.2-r1"
 license = "Zlib"
 description = "General-purpose compression library"
 
@@ -10,7 +10,11 @@ sha256 = "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
 
 [build]
 system = "custom"
-configure = "CC=clang ./configure --prefix=/"
+configure = """CC=clang \
+CFLAGS="-O2 -fomit-frame-pointer -fPIC" \
+LDFLAGS="-fuse-ld=lld" \
+LDSHARED="clang -shared -Wl,--undefined-version,-soname,libz.so.1,--version-script,zlib.map" \
+./configure --prefix=/ --libdir=/lib --includedir=/include --shared"""
 build = "make -j$(nproc)"
 install = """make install DESTDIR=$DESTDIR
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
