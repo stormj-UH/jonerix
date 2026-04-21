@@ -56,18 +56,22 @@ COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 # Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
 ARG CACHEBUST=0
 
-# Installing mksh first ensures /bin/sh remains functional throughout.
+# Refresh toybox before switching /bin/sh to mksh. The minimal image only
+# guarantees /bin/toybox itself; the applet symlinks (ln, rm, cp, ...) are
+# created by the toybox package and jpkg's own cleanup + our shell handoff
+# need them to exist.
 # toybox remains the coreutils provider in this image; uutils is not yet
 # reproducible with the musl-hosted Rust toolchain used in jonerix:builder.
 # All symlinks are created in the same RUN to avoid broken /bin/sh between layers.
 RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     jpkg update && \
+    jpkg install --force toybox && \
     jpkg install --force mksh && \
-    ln -sf mksh /bin/sh && \
+    /bin/toybox ln -sf mksh /bin/sh && \
     failures=0 && \
     failed='' && \
     for pkg in \
-      musl toybox \
+      musl \
       zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
       openrc doas snooze tzdata \
       dropbear dhcpcd ifupdown-ng unbound openntpd \
@@ -87,13 +91,17 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       echo "core package install failures:$failed"; \
       exit 1; \
     fi && \
-    ln -sf bsdtar /bin/tar 2>/dev/null || true && \
-    ln -sf dbclient /bin/ssh 2>/dev/null || true && \
-    ln -sf micro /bin/editor 2>/dev/null || true && \
-    ln -sf micro /bin/vi 2>/dev/null || true && \
+    [ -x /bin/ln ] && [ -x /bin/rm ] && [ -e /lib/libz.so.1 ] || { \
+      echo "core image missing expected runtime tooling after package install" >&2; \
+      exit 1; \
+    } && \
+    /bin/toybox ln -sf bsdtar /bin/tar 2>/dev/null || true && \
+    /bin/toybox ln -sf dbclient /bin/ssh 2>/dev/null || true && \
+    /bin/toybox ln -sf micro /bin/editor 2>/dev/null || true && \
+    /bin/toybox ln -sf micro /bin/vi 2>/dev/null || true && \
     # GCC compat symlinks for Rust binaries (gix, etc.)
-    ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true && \
-    ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
+    /bin/toybox ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true && \
+    /bin/toybox ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
 
 # Set SUID bits on login utilities (required for multi-user auth)
 RUN chmod 4755 /bin/su /bin/passwd /bin/login /bin/sudo 2>/dev/null || true
