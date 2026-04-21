@@ -468,7 +468,7 @@ but leave the `*.pre-pi5-fixups` backups untouched.
 ```
                                     root@jonerix-tormenta
    _                       _        ---------------------
-  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.1.3 aarch64
+  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.1.5 aarch64
   | |/ _ \| '_ \ / _ \ '__| \ \/ /  Kernel -> Linux 6.18.22-v8-16k+
   | | (_) | | | |  __/ |  | |>  <   Uptime -> 16 hours, 28 mins
  _/ |\___/|_| |_|\___|_|  |_/_/\_\  Packages -> 44 (jpkg)
