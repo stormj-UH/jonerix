@@ -1,0 +1,25 @@
+# Shipped by the mksh jpkg. Safe to edit; pristine version at
+# /usr/share/mksh/skel/.mkshrc.
+#
+# mksh's line editor needs a special non-printing-sequence wrapper for
+# coloured prompts. The \001...\001 markers below are the documented mksh
+# prompt hack, not Bash/readline markers.
+
+jonerix_mksh_prompt_host() {
+    if [ -n "$HOSTNAME" ]; then
+        print -r -- "$HOSTNAME"
+    else
+        hostname 2>/dev/null
+    fi
+}
+
+jonerix_mksh_prompt_mark() {
+    case ${USER_ID:-$(id -u 2>/dev/null)} in
+        0) print '#'
+           ;;
+        *) print '$'
+           ;;
+    esac
+}
+
+PS1=$'\001\r\001\033[38;5;19m\001[\001\033[38;5;250m\001$(jonerix_mksh_prompt_host)\001\033[38;5;19m\001 \001\033[38;5;250m\001$(date +%H:%M:%S)\001\033[38;5;19m\001 \001\033[38;5;250m\001$PWD\001\033[38;5;19m\001]\001\033[0m\001 $(jonerix_mksh_prompt_mark) '
