@@ -10,14 +10,23 @@ description = "u-root's ip command — Go reimplementation of iproute2's ip(8)"
 replaces = ["toybox"]
 
 [source]
-url = "https://github.com/u-root/u-root/archive/refs/tags/v0.16.0.tar.gz"
-sha256 = "161da1394da9acd96f69957620db630ce086f71bef62785bad4a82884eee9b77"
+# Canonical source is the upstream u-root v0.16.0 tag. The full
+# upstream tarball is ~130MB and carries ~200 commands, which is too
+# large to vendor directly in git. jonerix only builds cmds/core/ip
+# and its local unixflag helper, so we mirror a minimal source snapshot
+# to a jonerix GH release for CI and vendoring.
+#
+# Upstream URL (primary):
+#   https://github.com/u-root/u-root/archive/refs/tags/v0.16.0.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-iproute-go-v0.16.0/iproute-go-0.16.0.tar.gz"
+sha256 = "66ce4c51b9d8371af0e0788bc7f5eeaf07428c41c9a9cab0893664696e5a691c"
 
 [build]
 system = "custom"
-# The u-root tarball is ~130MB and contains ~200 commands. We only want
-# cmds/core/ip. `go build` will pull in exactly what that package
-# requires via go.mod (vishvananda/netlink et al.) and nothing else.
+# The mirrored snapshot contains only go.mod/go.sum, LICENSE,
+# cmds/core/ip, and pkg/uroot/unixflag. `go build` still pulls in
+# exactly the external module graph that package needs
+# (vishvananda/netlink et al.) and nothing else.
 # CGO_ENABLED=0 + -trimpath -ldflags "-s -w" gives a static musl binary
 # (~5-8MB) with no runtime deps.
 build = """export GOPROXY=https://proxy.golang.org,direct
