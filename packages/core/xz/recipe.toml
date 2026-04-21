@@ -43,7 +43,7 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 # every other lzma consumer needs it. Fail loud if CMake changed
 # the component layout out from under us.
 [ -f "$DESTDIR/include/lzma.h" ] || { echo "xz: lzma.h missing after install+flatten" >&2; find "$DESTDIR" -name '*.h' | head -20 >&2; exit 1; }
-[ -e "$DESTDIR/lib/liblzma.so.5" ] || { echo "xz: liblzma.so.5 missing after install+flatten" >&2; find "$DESTDIR/lib" -maxdepth 1 \\( -type f -o -type l \\) | sort >&2; exit 1; }
+[ -e "$DESTDIR/lib/liblzma.so.5" ] || { echo "xz: liblzma.so.5 missing after install+flatten" >&2; find "$DESTDIR/lib" -maxdepth 1 \( -type f -o -type l \) | sort >&2; exit 1; }
 find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 find "$DESTDIR/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true"""
 
