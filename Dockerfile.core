@@ -91,10 +91,16 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       echo "core package install failures:$failed"; \
       exit 1; \
     fi && \
-    [ -x /bin/ln ] && [ -x /bin/rm ] && [ -e /lib/libz.so.1 ] && \
-    [ -e /lib/liblzma.so.5 ] && bsdtar --version >/dev/null 2>&1 && \
-    command -v gzip >/dev/null 2>&1 || { \
-      echo "core image missing expected runtime tooling after package install" >&2; \
+    missing='' && \
+    for path in /bin/ln /bin/rm /lib/libz.so.1 /lib/liblzma.so.5 /bin/gzip; do \
+      [ -e "$path" ] || missing="$missing $path"; \
+    done && \
+    if [ ! -x /bin/ln ]; then missing="$missing /bin/ln(not-executable)"; fi && \
+    if [ ! -x /bin/rm ]; then missing="$missing /bin/rm(not-executable)"; fi && \
+    if ! /bin/gzip -V >/dev/null 2>&1; then missing="$missing gzip(exec)"; fi && \
+    if ! bsdtar --version >/dev/null 2>&1; then missing="$missing bsdtar(exec)"; fi && \
+    [ -z "$missing" ] || { \
+      echo "core image missing expected runtime tooling after package install:$missing" >&2; \
       exit 1; \
     } && \
     /bin/toybox ln -sf bsdtar /bin/tar 2>/dev/null || true && \
