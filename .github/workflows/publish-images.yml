@@ -26,7 +26,7 @@ jobs:
         run: |
           MISSING=0
           # Packages that are too large to vendor or intentionally left unvendored.
-          SKIP="rust go llvm nodejs linux libcxx"
+          SKIP="rust go llvm llvm-all nodejs linux libcxx"
           for recipe in packages/core/*/recipe.toml packages/develop/*/recipe.toml packages/extra/*/recipe.toml; do
             [ -f "$recipe" ] || continue
             pkg=$(basename "$(dirname "$recipe")")
