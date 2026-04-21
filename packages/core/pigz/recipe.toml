@@ -1,6 +1,6 @@
 [package]
 name = "pigz"
-version = "2.8"
+version = "2.8-r1"
 license = "Zlib"
 description = "Parallel implementation of gzip"
 
@@ -12,9 +12,13 @@ sha256 = "2f7f6a6986996d21cb8658535fff95f1c7107ddce22b5324f4b41890e2904706"
 system = "custom"
 build = "make CC=clang CFLAGS=\"-O2 -fomit-frame-pointer\" -j$(nproc)"
 install = """install -Dm755 pigz $DESTDIR/bin/pigz
+ln -sf pigz $DESTDIR/bin/gzip
+ln -sf pigz $DESTDIR/bin/gunzip
+ln -sf pigz $DESTDIR/bin/zcat
 ln -sf pigz $DESTDIR/bin/unpigz
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+[ -L "$DESTDIR/bin/gzip" ] && [ -L "$DESTDIR/bin/gunzip" ] && [ -L "$DESTDIR/bin/zcat" ] || { echo "pigz: gzip compatibility symlinks missing after install" >&2; exit 1; }
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
