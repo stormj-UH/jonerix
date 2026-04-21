@@ -53,7 +53,7 @@ if [ -d /home ]; then
 fi
 exit 0"""
 
-post_remove = '[ ! -e /bin/sh ] && [ -x /bin/toybox ] && ln -sf toybox /bin/sh'
+post_remove = "[ ! -e /bin/sh ] && [ -x /bin/toybox ] && ln -sf toybox /bin/sh"
 
 [depends]
 runtime = ["musl"]
