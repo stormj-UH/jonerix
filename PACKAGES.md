@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from `packages/*/*/recipe.toml` — **89 recipes**. All jonerix-built packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception, `linux` (GPL-2.0), is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` — **90 recipes**. All jonerix-built packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception, `linux` (GPL-2.0), is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -38,22 +38,21 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 
 | Package | Folder | Version | License | Arch | Runtime deps | Build deps | Used in | Description |
 |---|---|---|---|---|---|---|---|---|
-| **`jpkg`** | `(top)` | 1.0.9 | MIT | any | `musl` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager |
-| **`jpkg-local`** | `(top)` | 1.0.9 | MIT | any | `jpkg`, `zstd` | `clang`, `llvm`, `zstd` | — | jpkg subcommand for local .jpkg install and recipe builds |
+| **`jpkg`** | `(top)` | 1.0.10 | MIT | any | `musl` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager |
+| **`jpkg-local`** | `(top)` | 1.0.10 | MIT | any | `jpkg`, `zstd` | `clang`, `llvm`, `zstd` | — | jpkg subcommand for local .jpkg install and recipe builds |
 | **`anvil`** | `core` | 0.2.1-r1 | MIT | any | `musl` | `rust` | `pi5-install`, `pi5-image` | Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...) |
 | **`bsdtar`** | `core` | 3.8.6-r6 | Apache-2.0 | any | `libarchive` | — | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | Compatibility package providing /bin/tar via libarchive bsdtar |
 | **`curl`** | `core` | 8.11.1-r1 | MIT | any | `musl`, `libressl`, `zlib` | `clang`, `cmake`, `samurai`, `libressl`, `zlib` | `docker:minimal`, `docker:core`, `docker:full` | Command-line tool and library for transferring data with URLs |
-| **`dhcpcd`** | `core` | 10.1.0-r3 | BSD-2-Clause | any | `musl`, `openrc` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | RFC2131-compliant DHCP client daemon |
+| **`dhcpcd`** | `core` | 10.1.0-r4 | BSD-2-Clause | any | `musl`, `openrc` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | RFC2131-compliant DHCP client daemon |
 | **`doas`** | `core` | 6.8.2 | ISC | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | Lightweight privilege escalation tool (OpenDoas) |
-| **`dropbear`** | `core` | 2024.86 | MIT | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight SSH server and client |
+| **`dropbear`** | `core` | 2024.86-r2 | MIT | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight SSH server and client |
 | **`exproxide`** | `core` | 0.1.0 | MIT | any | `musl` | `rust` | `docker:builder` | Clean-room Rust implementation of expr for jonerix |
 | **`fastfetch`** | `core` | 2.36.1 | MIT | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | `docker:core`, `docker:full` | Feature-rich system information tool |
 | **`gitoxide`** | `core` | 0.52.0-r5 | MIT OR Apache-2.0 | any | `musl` | `rust` | `docker:core` | Pure Rust implementation of git (gix + ein) |
 | **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | — | — | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
 | **`ifupdown-ng`** | `core` | 0.12.1 | ISC | any | `musl` | `clang`, `make`, `jonerix-headers` | `pi5-image`, `docker:core`, `docker:full` | Next-generation network interface configuration tool |
 | **`iproute-go`** | `core` | 0.16.0 | BSD-3-Clause | any | — | `go` | `docker:core` | u-root's ip command — Go reimplementation of iproute2's ip(8) |
-| **`jonerix-boot-helpers`** | `core` | 1.2.2 | MIT | any | `mksh`, `openrc`, `curl` | — | `pi5-install`, `pi5-image` | Boot + shutdown helpers for jonerix: reboot-clean, tty1-console, ntp-bootstrap |
-| **`jpkg`** | `core` | 1.0.8 | MIT | any | `musl`, `libressl`, `zstd` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager |
+| **`jpkg`** | `core` | 1.0.10 | MIT | any | `musl`, `libressl`, `zstd` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager |
 | **`jq`** | `core` | 1.8.1 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Lightweight and flexible command-line JSON processor |
 | **`libarchive`** | `core` | 3.8.6-r5 | Apache-2.0 | any | `musl`, `zlib`, `xz`, `zstd`, `lz4`, `libressl` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `xz`, `zstd`, `lz4` | `docker:core` | Multi-format archive and compression library with bsdtar |
 | **`libffi`** | `core` | 3.4.6 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Foreign Function Interface library — dispatches to C ABI from dynamic callers |
@@ -67,7 +66,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`onetrueawk`** | `core` | 20240728 | MIT | any | `musl` | `clang`, `byacc` | `docker:core` | Brian Kernighan's one true awk |
 | **`openntpd`** | `core` | 6.8p1-r3 | ISC | any | `musl`, `libressl` | `clang`, `jmake` | `pi5-install`, `pi5-image` | OpenBSD NTP daemon — lightweight, secure time synchronization |
 | **`openrc`** | `core` | 0.54-r6 | BSD-2-Clause | any | `musl`, `mksh` | `clang`, `meson`, `samurai`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Dependency-based init system for Unix-like systems |
-| **`pigz`** | `core` | 2.8 | Zlib | any | `musl`, `zlib` | `clang`, `make` | `docker:core`, `docker:full` | Parallel implementation of gzip |
+| **`pigz`** | `core` | 2.8-r1 | Zlib | any | `musl`, `zlib` | `clang`, `make` | `docker:core`, `docker:full` | Parallel implementation of gzip |
 | **`ripgrep`** | `core` | 15.1.0 | MIT | any | `musl` | `rust` | `docker:core` | Fast line-oriented search tool (grep replacement) |
 | **`snooze`** | `core` | 0.5-r1 | CC0 | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | Lightweight cron alternative for running a command at a specific time |
 | **`sudo`** | `core` | 1.9.17p2 | ISC | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image` | Privilege escalation utility |
@@ -75,17 +74,18 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`tzdata`** | `core` | 2026a | Public-Domain | any | `musl` | `clang` | `docker:core` | IANA time zone database (zoneinfo data plus zic/zdump tools) |
 | **`unbound`** | `core` | 1.22.0 | BSD-3-Clause | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `docker:core`, `docker:full` | Validating, recursive, and caching DNS resolver |
 | **`uutils`** | `core` | 0.7.0-r1 | MIT | any | `musl` | `rust`, `jmake` | — | Rust rewrite of GNU coreutils (tr, expr, sort, wc, cut, and 70+ more) |
-| **`xz`** | `core` | 5.8.2 | 0BSD | any | `musl` | `clang`, `cmake`, `samurai` | `docker:core`, `docker:full` | XZ compression utilities and liblzma |
-| **`zlib`** | `core` | 1.3.2 | Zlib | any | `musl` | `clang`, `make` | `docker:minimal`, `docker:core`, `docker:full` | General-purpose compression library |
+| **`xz`** | `core` | 5.8.2-r2 | 0BSD | any | `musl` | `clang`, `cmake`, `samurai` | `docker:core`, `docker:full` | XZ compression utilities and liblzma |
+| **`zlib`** | `core` | 1.3.2-r1 | Zlib | any | `musl` | `clang`, `make` | `docker:minimal`, `docker:core`, `docker:full` | General-purpose compression library |
 | **`zstd`** | `core` | 1.5.6 | BSD-3-Clause | any | `musl` | `clang`, `cmake`, `samurai` | `docker:minimal`, `docker:core`, `docker:full` | Zstandard compression library and tool |
 | **`bc`** | `develop` | 7.0.3 | BSD-2-Clause | any | `musl` | `clang`, `make` | `docker:full`, `docker:builder` | Implementation of the bc calculator language |
 | **`byacc`** | `develop` | 20241231 | public domain | any | `musl` | `clang`, `make` | `docker:full`, `docker:builder` | Berkeley Yacc parser generator |
 | **`cmake`** | `develop` | 4.1.0 | BSD-3-Clause | any | `musl` | `clang`, `python3`, `samurai` | `docker:full`, `docker:builder` | Cross-platform build system generator |
 | **`flex`** | `develop` | 2.6.4 | BSD-2-Clause | any | `musl` | `clang`, `make` | `docker:full`, `docker:builder` | Fast lexical analyzer generator |
 | **`go`** | `develop` | 1.26.1 | BSD-3-Clause | any | `musl`, `gnu-compat-symlinks` | `python3` | `docker:builder` | Go programming language compiler and tools |
-| **`jmake`** | `develop` | 1.0.14 | MIT | any | `musl` | `rust` | `docker:full`, `docker:builder` | Clean-room drop-in replacement for GNU Make, written in Rust |
-| **`jonerix-headers`** | `develop` | 4.19.88-r1 | MIT | any | — | — | — | Linux UAPI kernel headers for jonerix package builds |
+| **`jmake`** | `develop` | 1.1.1 | MIT | any | `musl` | `rust` | `docker:full`, `docker:builder` | Clean-room drop-in replacement for GNU Make, written in Rust |
+| **`jonerix-headers`** | `develop` | 4.19.88-r2 | MIT | any | — | — | — | Linux UAPI kernel headers for jonerix package builds |
 | **`libcxx`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl` | `clang`, `cmake`, `samurai`, `python3` | `docker:core`, `docker:builder` | LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME |
+| **`lldb`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `llvm`, `libcxx`, `xz`, `zstd`, `zlib` | `llvm-all` | — | LLVM debugger — carved out of llvm-all (no separate compile) |
 | **`llvm`** | `develop` | 21.1.2-r1 | Apache-2.0 | any | `musl`, `libcxx`, `zstd`, `zlib` | `clang`, `cmake`, `samurai`, `python3`, `libcxx` | `docker:full`, `docker:builder` | Slim LLVM toolchain (toolchain-only: clang, lld, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc)… |
 | **`m4oxide`** | `develop` | 0.1.0-r0 | MIT | any | `musl` | `rust` | — | Clean-room Rust implementation of m4 for jonerix |
 | **`nodejs`** | `develop` | 24.15.0-r3 | MIT | any | `musl`, `zlib`, `libcxx` | `clang`, `python3`, `samurai`, `zlib`, `libcxx`, `jonerix-headers` | `docker:full`, `docker:builder` | JavaScript runtime built on V8 (libc++ / compiler-rt / small-icu / zero GNU) |
@@ -97,7 +97,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`bsdsed`** | `extra` | 0.99.2 | BSD-2-Clause | any | `musl` | `clang`, `make` | — | FreeBSD sed made portable — POSIX stream editor |
 | **`btop`** | `extra` | 1.4.5-r1 | Apache-2.0 | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | `docker:router` | Terminal resource monitor with CPU, memory, disk, network, and process views |
 | **`bzip2`** | `extra` | 1.0.8-r1 | bzip2-1.0.6 | any | `musl` | `clang`, `make` | — | Block-sorting file compressor (bzip2 + libbz2, clang/musl build, no GNU) |
-| **`ca-certificates`** | `extra` | 20260211 | MPL-2.0 | any | — | — | `docker:full` | Mozilla CA certificate bundle for TLS verification |
+| **`ca-certificates`** | `extra` | 20260211-r1 | MPL-2.0 | any | — | — | `docker:full` | Mozilla CA certificate bundle for TLS verification |
 | **`cni-plugins`** | `extra` | 1.9.1 | Apache-2.0 | any | `musl` | `go` | — | CNI network plugins for container networking |
 | **`containerd`** | `extra` | 2.2.2 | Apache-2.0 | any | `musl` | `go` | — | Industry-standard container runtime |
 | **`derper`** | `extra` | 1.96.5 | BSD-3-Clause | any | `musl` | `go` | — | Tailscale DERP relay server |
@@ -105,7 +105,8 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`hostapd`** | `extra` | 2.11-r1 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | `docker:router` | IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator |
 | **`jfsck`** | `extra` | 0.1.0-r0 | BSD-2-Clause | any | — | `rust` | — | Clean-room fsck for ext4 + FAT32 (Raspberry Pi scope) derived from Ghidra binary analysis of e2fsprogs and … |
 | **`jonerix-ext4-rescue`** | `extra` | 0.1.0 | MIT | any | — | `rust` | — | Reset a corrupted ext4 inode's extent header so the file can be rm'd |
-| **`jonerix-raspi5-fixups`** | `extra` | 1.5.1 | MIT | aarch64 | `musl`, `openrc`, `python3` | `rust` | `pi5-install`, `pi5-image` | Hardware-specific fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi bring-up, OpenRC-backed rebo… |
+| **`jonerix-ntp-http-bootstrap`** | `extra` | 1.0.0 | MIT | any | `mksh`, `openrc`, `curl` | — | `pi5-install` | HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service) |
+| **`jonerix-raspi5-fixups`** | `extra` | 1.6.1 | MIT | aarch64 | `musl`, `openrc`, `python3` | `rust` | `pi5-install`, `pi5-image` | Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor, tty1 HDMI console) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro |
 | **`jonerix-util`** | `extra` | 0.1.0-r3 | MIT | any | `musl` | `clang`, `rust` | — | Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter) |
 | **`libevent`** | `extra` | 2.1.12-stable | BSD-3-Clause | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers`, `libressl` | — | Event notification library (prerequisite for tmux) |
 | **`limine`** | `extra` | 11.2.1 | BSD-2-Clause | any | `musl` | — | — | Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-2-Clause) |
