@@ -60,7 +60,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`lz4`** | `core` | 1.10.0 | BSD-2-Clause | any | `musl` | `clang`, `cmake`, `samurai` | `docker:core`, `docker:full` | Extremely fast lossless compression library and tool |
 | **`mandoc`** | `core` | 1.14.6 | ISC | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | UNIX manpage compiler and viewer |
 | **`micro`** | `core` | 2.0.15 | MIT | any | — | `go` | `docker:core`, `docker:full` | Modern terminal text editor (intuitive keybindings, syntax highlighting) |
-| **`mksh`** | `core` | R59c-r1 | MirOS | any | `musl` | `clang` | `pi5-install`, `pi5-image` | MirBSD Korn Shell — POSIX shell for /bin/sh |
+| **`mksh`** | `core` | R59c-r2 | MirOS | any | `musl` | `clang` | `pi5-install`, `pi5-image` | MirBSD Korn Shell — POSIX shell for /bin/sh |
 | **`musl`** | `core` | 1.2.6 | MIT | any | — | `clang`, `make` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight, fast, and standards-conformant C library |
 | **`ncurses`** | `core` | 6.5-r1 | MIT | any | — | `clang`, `make` | `docker:core`, `docker:full` | Terminal handling library |
 | **`onetrueawk`** | `core` | 20240728 | MIT | any | `musl` | `clang`, `byacc` | `docker:core` | Brian Kernighan's one true awk |
