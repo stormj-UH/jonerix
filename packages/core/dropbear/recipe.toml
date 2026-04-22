@@ -1,11 +1,16 @@
 [package]
 name = "dropbear"
-version = "2024.86-r2"
+version = "2024.86-r3"
 license = "MIT"
 description = "Lightweight SSH server and client"
+# r3: republish the clean recipe after jmake 1.1.3 fixed TAB-indented
+# assignments inside conditional blocks. The published r2 payloads were
+# empty because dropbear's Makefiles hit that parser bug and both `make`
+# phases short-circuited with "Nothing to be done".
+#
 # r2: restored the clean recipe after jmake 1.1.1 landed.
-# The 2024.86-r1 recipe carried three stacked workarounds for
-# jmake bugs that are now fixed upstream:
+# The 2024.86-r1 recipe carried three stacked workarounds for jmake bugs
+# that are now fixed upstream:
 #   * `$(wildcard ./dir/*.ext)` no longer doubles the prefix
 #   * TAB-indented `VAR=…` inside `ifndef`/`ifeq` blocks is no
 #     longer mis-classified as a recipe line
