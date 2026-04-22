@@ -15,38 +15,10 @@ sha256 = "d685f8e65470b7832c3aff60c57ab4459f26ff89f07c10f92bd70ee89efac701"
 
 [build]
 system = "custom"
-# autoconf-vintage configure: needs /bin/expr (toybox lacks it) and
-# raised ulimit. Pattern lifted from sudo / jq / byacc.
+# autoconf-vintage configure: needs a working /bin/expr and raised
+# ulimit. exproxide provides the /bin/expr probes configure expects.
 build = """set -e
 ulimit -n 65536 || true
-
-if [ ! -x /bin/expr ]; then
-cat > /tmp/expr.c <<'CEOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <regex.h>
-static long tl(const char*s,int*o){char*e;long v=strtol(s,&e,10);*o=(*e==0&&e!=s);return v;}
-int main(int c,char**v){
- if(c==3&&!strcmp(v[1],"length")){printf("%zu\\n",strlen(v[2]));return 0;}
- if(c==4&&!strcmp(v[2],":")){regex_t r;regmatch_t m[2];int h=!!strstr(v[3],"\\\\(");
-  if(regcomp(&r,v[3],0))return 2;
-  if(regexec(&r,v[1],2,m,0)==0){if(h&&m[1].rm_so>=0)printf("%.*s\\n",(int)(m[1].rm_eo-m[1].rm_so),v[1]+m[1].rm_so);else printf("%d\\n",(int)(m[0].rm_eo-m[0].rm_so));regfree(&r);return 0;}
-  regfree(&r);printf(h?"\\n":"0\\n");return 1;}
- if(c==4){int o1,o2;long a=tl(v[1],&o1),b=tl(v[3],&o2);
-  if(o1&&o2){long r=0;char*o=v[2];
-   if(!strcmp(o,"+"))r=a+b;else if(!strcmp(o,"-"))r=a-b;else if(!strcmp(o,"*"))r=a*b;
-   else if(!strcmp(o,"/"))r=a/b;else if(!strcmp(o,"%"))r=a%b;
-   else if(!strcmp(o,"="))r=(a==b);else if(!strcmp(o,"!="))r=(a!=b);
-   else if(!strcmp(o,"<"))r=(a<b);else if(!strcmp(o,">"))r=(a>b);
-   else if(!strcmp(o,"<="))r=(a<=b);else if(!strcmp(o,">="))r=(a>=b);
-   else return 2;printf("%ld\\n",r);return r==0?1:0;}}
- if(c==2){printf("%s\\n",v[1]);return 0;}
- return 2;}
-CEOF
-clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr /tmp/expr.c
-rm -f /tmp/expr.c
-fi
 
 # strace 4.25 build notes for jonerix:
 #   --enable-mpers=no       — multi-personality (32+64 bit decoders) requires
@@ -167,4 +139,4 @@ llvm-strip --strip-all $DESTDIR/bin/strace 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "make", "jonerix-headers"]
+build = ["clang", "make", "exproxide", "jonerix-headers"]
