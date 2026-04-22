@@ -1,6 +1,6 @@
 [package]
 name = "jmake"
-version = "1.1.1"
+version = "1.1.2"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # 1.1.2: fix two remaining GNU Make 4.4.1 suite regressions and make the
