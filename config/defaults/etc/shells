@@ -1,4 +1,5 @@
 # /etc/shells — valid login shells
-# minimal: toybox sh (POSIX), develop: zsh (bash-compatible, MIT)
+# base: toybox sh (POSIX) + mksh, optional: zsh
 /bin/sh
+/bin/mksh
 /bin/zsh

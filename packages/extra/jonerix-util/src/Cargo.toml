@@ -26,6 +26,10 @@ path = "src/bin/ionice.rs"
 name = "nsenter"
 path = "src/bin/nsenter.rs"
 
+[[bin]]
+name = "chsh"
+path = "src/bin/chsh.rs"
+
 [profile.release]
 opt-level = "s"
 lto = true

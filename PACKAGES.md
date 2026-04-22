@@ -107,7 +107,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`jonerix-ext4-rescue`** | `extra` | 0.1.0 | MIT | any | — | `rust` | — | Reset a corrupted ext4 inode's extent header so the file can be rm'd |
 | **`jonerix-ntp-http-bootstrap`** | `extra` | 1.0.0 | MIT | any | `mksh`, `openrc`, `curl` | — | `pi5-install` | HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service) |
 | **`jonerix-raspi5-fixups`** | `extra` | 1.6.1 | MIT | aarch64 | `musl`, `openrc`, `python3` | `rust` | `pi5-install`, `pi5-image` | Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor, tty1 HDMI console) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro |
-| **`jonerix-util`** | `extra` | 0.1.0-r3 | MIT | any | `musl` | `clang`, `rust` | — | Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter) |
+| **`jonerix-util`** | `extra` | 0.1.0-r4 | MIT | any | `musl` | `clang`, `rust` | — | Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh) |
 | **`libevent`** | `extra` | 2.1.12-stable | BSD-3-Clause | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers`, `libressl` | — | Event notification library (prerequisite for tmux) |
 | **`limine`** | `extra` | 11.2.1 | BSD-2-Clause | any | `musl` | — | — | Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-2-Clause) |
 | **`linux`** | `extra` | 6.14.2 | GPL-2.0-only | any | — | — | — | Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers. |
@@ -127,7 +127,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`tmux`** | `extra` | 3.6a | ISC | any | `musl`, `ncurses`, `libevent` | `clang`, `make`, `libevent`, `ncurses`, `jonerix-headers`, `byacc` | — | Terminal multiplexer |
 | **`unzip`** | `extra` | 0.1.0 | Apache-2.0 | any | `libarchive` | — | — | Compatibility package: /bin/unzip → /bin/bsdunzip (libarchive) |
 | **`wpa_supplicant`** | `extra` | 2.11-r2 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | `docker:router` | WPA/WPA2/WPA3 supplicant for wireless network authentication |
-| **`zsh`** | `extra` | 5.9 | MIT | any | `musl`, `ncurses` | `clang`, `make` | `docker:full` | Z shell — feature-rich interactive shell |
+| **`zsh`** | `extra` | 5.9-r1 | MIT | any | `musl`, `ncurses` | `clang`, `make` | `docker:full` | Z shell — feature-rich interactive shell |
 
 ## Special-purpose / not-built-by-CI
 
