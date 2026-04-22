@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r4"
+version = "5.9-r5"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
@@ -19,6 +19,7 @@ install = """
 make DESTDIR=$DESTDIR install
 install -Dm644 "$RECIPE_DIR/zshrc" "$DESTDIR/etc/zshrc"
 install -Dm644 "$RECIPE_DIR/_pick_variant" "$DESTDIR/share/zsh/site-functions/_pick_variant"
+install -Dm644 "$RECIPE_DIR/_ls" "$DESTDIR/share/zsh/site-functions/_ls"
 rm -f "$DESTDIR/bin/sh"
 for gcc_comp in "$DESTDIR"/share/zsh/*/functions/_gcc; do
     [ -f "$gcc_comp" ] || continue
