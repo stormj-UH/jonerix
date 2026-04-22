@@ -3,6 +3,15 @@ name = "jmake"
 version = "1.1.1"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.1.2: fix two remaining GNU Make 4.4.1 suite regressions and make the
+# Forgejo CI fail hard on any upstream test-suite miss:
+#   - parallel multi-target pattern rules now propagate completion through
+#     also-make siblings, so dependents waiting on implicit peer outputs
+#     (SV 54233 / SV 60435) unblock in the correct order under -j.
+#   - path-alias lookups only normalize explicit path-like rule names, so
+#     bare targets like `all` no longer collide with same-named cwd entries
+#     during VPATH resolution.
+#
 # 1.1.1: fix $(wildcard) re-prepending a doubled directory prefix
 # when the glob crate strips the leading `./`. Pattern `./src/*.h`
 # was coming back from glob as `src/agentfwd.h` and fn_wildcard
@@ -40,9 +49,9 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Forgejo tag moves.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/jmake/archive/v1.1.1.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.1/jmake-1.1.1.tar.gz"
-sha256 = "2705f80645b905b28ae46f34d350335953e9e22b9ba50c6f4e926acb90bf65e2"
+#   https://castle.great-morpho.ts.net:3000/jonerik/jmake/archive/v1.1.2.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.2/jmake-1.1.2.tar.gz"
+sha256 = "8d76a4a294f38092a8b90704f42d804e37fb1c87d8b57b2c66e0a712c1f011ec"
 
 [build]
 system = "custom"
