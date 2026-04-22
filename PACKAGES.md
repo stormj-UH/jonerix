@@ -127,7 +127,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`tmux`** | `extra` | 3.6a | ISC | any | `musl`, `ncurses`, `libevent` | `clang`, `make`, `libevent`, `ncurses`, `jonerix-headers`, `byacc` | — | Terminal multiplexer |
 | **`unzip`** | `extra` | 0.1.0 | Apache-2.0 | any | `libarchive` | — | — | Compatibility package: /bin/unzip → /bin/bsdunzip (libarchive) |
 | **`wpa_supplicant`** | `extra` | 2.11-r2 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | `docker:router` | WPA/WPA2/WPA3 supplicant for wireless network authentication |
-| **`zsh`** | `extra` | 5.9-r2 | MIT | any | `musl`, `ncurses` | `clang`, `make` | `docker:core`, `docker:builder`, `docker:full` | Z shell — feature-rich interactive shell |
+| **`zsh`** | `extra` | 5.9-r3 | MIT | any | `musl`, `ncurses` | `clang`, `make` | `docker:core`, `docker:builder`, `docker:full` | Z shell — feature-rich interactive shell |
 
 ## Special-purpose / not-built-by-CI
 

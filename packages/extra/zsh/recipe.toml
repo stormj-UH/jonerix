@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r2"
+version = "5.9-r3"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the

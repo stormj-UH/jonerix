@@ -6,7 +6,9 @@ typeset -gU fpath
 [ -d /share/zsh/$ZSH_VERSION/functions ] && fpath=(/share/zsh/$ZSH_VERSION/functions $fpath)
 
 autoload -Uz compinit
-compinit -i
+# On jonerix/musl, compinit's dumpfile path can wedge in ppoll(NULL, 0, ...).
+# Keep completions enabled, but skip .zcompdump read/write entirely.
+compinit -D -i
 
 HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
 HISTSIZE=1000
