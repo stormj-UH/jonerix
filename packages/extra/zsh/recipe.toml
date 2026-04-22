@@ -1,11 +1,11 @@
 [package]
 name = "zsh"
-version = "5.9-r1"
+version = "5.9-r2"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
-# Upstream `make install` drops /bin/sh -> zsh. Claim that path away
-# from the active /bin/sh provider so jpkg can install zsh cleanly.
-replaces = ["toybox", "mksh"]
+# Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
+# package payload so mksh remains the system /bin/sh provider and zsh stays
+# an interactive/login shell package.
 
 [source]
 url = "https://www.zsh.org/pub/zsh-5.9.tar.xz"
@@ -18,6 +18,12 @@ build = "make -j$(nproc)"
 install = """
 make DESTDIR=$DESTDIR install
 install -Dm644 "$RECIPE_DIR/zshrc" "$DESTDIR/etc/zshrc"
+rm -f "$DESTDIR/bin/sh"
+for gcc_comp in "$DESTDIR"/share/zsh/*/functions/_gcc; do
+    [ -f "$gcc_comp" ] || continue
+    tmp="$gcc_comp.tmp"
+    sed 's#/usr/lib64#/lib#g; s#/usr/lib#/lib#g' "$gcc_comp" > "$tmp" && mv "$tmp" "$gcc_comp"
+done
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
@@ -62,15 +68,6 @@ fi
 
 [ -x /bin/zsh ] && refresh_completions
 exit 0"""
-
-post_remove = """if [ ! -e /bin/sh ]; then
-    if [ -x /bin/mksh ]; then
-        ln -sf mksh /bin/sh
-    elif [ -x /bin/toybox ]; then
-        ln -sf toybox /bin/sh
-    fi
-fi
-true"""
 
 [depends]
 runtime = ["musl", "ncurses"]
