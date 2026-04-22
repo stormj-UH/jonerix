@@ -1,8 +1,11 @@
 [package]
 name = "zsh"
-version = "5.9"
+version = "5.9-r1"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
+# Upstream `make install` drops /bin/sh -> zsh. Claim that path away
+# from the active /bin/sh provider so jpkg can install zsh cleanly.
+replaces = ["toybox", "mksh"]
 
 [source]
 url = "https://www.zsh.org/pub/zsh-5.9.tar.xz"
@@ -14,11 +17,60 @@ configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir
 build = "make -j$(nproc)"
 install = """
 make DESTDIR=$DESTDIR install
-printf '# /etc/zshrc — jonerix system-wide zsh interactive config\n\nautoload -Uz colors && colors\n\nPROMPT='"'"'%%F{cyan}%%~%%f %%F{yellow}%%m%%f %%# '"'"'\n' > $DESTDIR/etc/zshrc
+install -Dm644 "$RECIPE_DIR/zshrc" "$DESTDIR/etc/zshrc"
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
 """
+
+[hooks]
+post_install = """refresh_completions() {
+    site=/share/zsh/site-functions
+    funcs=
+    ver=
+
+    for cand in /share/zsh/*/functions; do
+        [ -d "$cand" ] || continue
+        funcs=$cand
+        ver=$(basename "$(dirname "$cand")")
+        break
+    done
+    [ -n "$funcs" ] || return 0
+
+    mkdir -p "$site"
+    for cmdpath in /bin/*; do
+        [ -e "$cmdpath" ] || continue
+        cmd=$(basename "$cmdpath")
+        case "$cmd" in
+            ''|.*) continue
+                ;;
+        esac
+        [ -f "$funcs/_$cmd" ] || continue
+        dest=$site/_$cmd
+        if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+            continue
+        fi
+        ln -sf "../$ver/functions/_$cmd" "$dest"
+    done
+}
+
+if [ -f /etc/shells ]; then
+    grep -qx '/bin/zsh' /etc/shells 2>/dev/null || printf '%s\\n' /bin/zsh >> /etc/shells
+else
+    printf '%s\\n' '# /etc/shells — valid login shells' '/bin/sh' '/bin/mksh' '/bin/zsh' > /etc/shells
+fi
+
+[ -x /bin/zsh ] && refresh_completions
+exit 0"""
+
+post_remove = """if [ ! -e /bin/sh ]; then
+    if [ -x /bin/mksh ]; then
+        ln -sf mksh /bin/sh
+    elif [ -x /bin/toybox ]; then
+        ln -sf toybox /bin/sh
+    fi
+fi
+true"""
 
 [depends]
 runtime = ["musl", "ncurses"]

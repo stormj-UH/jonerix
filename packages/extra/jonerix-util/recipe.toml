@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-util"
-version = "0.1.0-r3"
+version = "0.1.0-r4"
 license = "MIT"
-description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter)"
+description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh)"
 # Claim toybox's multicall symlinks for hwclock, ionice, and nsenter
 # (toybox doesn't ship lscpu so there's nothing to replace there).
 # Without this, `jpkg install jonerix-util` errors out on each of
@@ -30,7 +30,7 @@ set -e
 BIN=/tmp/jonerix-util-target/release
 
 mkdir -p "$DESTDIR/bin"
-for t in lscpu hwclock ionice nsenter; do
+for t in lscpu hwclock ionice nsenter chsh; do
     install -m 755 "$BIN/$t" "$DESTDIR/bin/$t"
 done
 """
