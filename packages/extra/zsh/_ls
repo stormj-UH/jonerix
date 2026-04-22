@@ -1,0 +1,33 @@
+#compdef ls gls
+
+local -a arguments
+
+arguments=(
+  '(-a -A)-a[list entries starting with .]'
+  '(-A -a)-A[list all except . and ..]'
+  '-c[sort and show ctime]'
+  '-d[list directories instead of their contents]'
+  '-F[append file type indicators]'
+  '-f[disable sorting]'
+  '(-h -k)-h[print sizes in human readable form]'
+  '-H[follow symlinks on the command line]'
+  '-i[show inode numbers]'
+  '(-1 -C -l -m -x)-l[long listing]'
+  '(-l -C -m -x)-1[one entry per line]'
+  '(-1 -l -m -x)-C[list entries in columns]'
+  '(-1 -C -l -x)-m[comma separated output]'
+  '(-1 -C -l -m)-x[list entries by lines]'
+  '-L[follow symlinks]'
+  '-p[append / to directory names]'
+  '-q[hide control characters]'
+  '-R[list subdirectories recursively]'
+  '-r[reverse sort order]'
+  '-S[sort by size]'
+  '-s[show block counts]'
+  '-t[sort by modification time]'
+  '-u[sort and show atime]'
+  '(-h -k)-k[print sizes in kilobytes]'
+  '*:file:_files'
+)
+
+_arguments -s -S : $arguments

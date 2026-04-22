@@ -2,6 +2,9 @@
 
 typeset -gU fpath
 
+[ -n "${LANG-}" ] || export LANG=C.UTF-8
+[ -n "${LC_CTYPE-}" ] || export LC_CTYPE=$LANG
+
 [ -d /share/zsh/site-functions ] && fpath=(/share/zsh/site-functions $fpath)
 [ -d /share/zsh/$ZSH_VERSION/functions ] && fpath=(/share/zsh/$ZSH_VERSION/functions $fpath)
 
