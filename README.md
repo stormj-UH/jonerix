@@ -37,7 +37,7 @@ The `jonerix:builder` image installs these tools from jpkg packages. It compiles
 ```sh
 # Pull from GHCR (fastest)
 docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, libressl, openrc
-docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh, uutils, micro, ripgrep, networking
+docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh (/bin/sh), zsh, uutils, micro, ripgrep, networking
 docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, go, nodejs, python3
 
 # Per-arch tags: -amd64 and -arm64 are also available
@@ -65,7 +65,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | Image | Based on | Contents |
 |-------|----------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
-| `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
+| `core` | minimal | mksh (/bin/sh), zsh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 
 ### Core System
@@ -76,6 +76,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | toybox | 0BSD | Base coreutils (ls, cp, cat, ...) |
 | uutils | MIT | Extended coreutils (sort, wc, tr, ...) |
 | mksh | MirOS | Shell (/bin/sh) — POSIX-compliant, musl-safe |
+| zsh | MIT | Default interactive shell in the larger container images |
 | jpkg | MIT | Package manager |
 | OpenRC | BSD-2-Clause | Init system |
 | dropbear | MIT | SSH server/client |

@@ -45,8 +45,8 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`curl`** | `core` | 8.11.1-r1 | MIT | any | `musl`, `libressl`, `zlib` | `clang`, `cmake`, `samurai`, `libressl`, `zlib` | `docker:minimal`, `docker:core`, `docker:full` | Command-line tool and library for transferring data with URLs |
 | **`dhcpcd`** | `core` | 10.1.0-r4 | BSD-2-Clause | any | `musl`, `openrc` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | RFC2131-compliant DHCP client daemon |
 | **`doas`** | `core` | 6.8.2 | ISC | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | Lightweight privilege escalation tool (OpenDoas) |
-| **`dropbear`** | `core` | 2024.86-r2 | MIT | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight SSH server and client |
-| **`exproxide`** | `core` | 0.1.0 | MIT | any | `musl` | `rust` | `docker:builder` | Clean-room Rust implementation of expr for jonerix |
+| **`dropbear`** | `core` | 2024.86-r3 | MIT | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight SSH server and client |
+| **`exproxide`** | `core` | 0.1.0 | MIT | any | `musl` | `rust` | `docker:core`, `docker:builder`, `docker:full` | Clean-room Rust implementation of expr for jonerix |
 | **`fastfetch`** | `core` | 2.36.1 | MIT | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | `docker:core`, `docker:full` | Feature-rich system information tool |
 | **`gitoxide`** | `core` | 0.52.0-r5 | MIT OR Apache-2.0 | any | `musl` | `rust` | `docker:core` | Pure Rust implementation of git (gix + ein) |
 | **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | — | — | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
@@ -82,7 +82,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`cmake`** | `develop` | 4.1.0 | BSD-3-Clause | any | `musl` | `clang`, `python3`, `samurai` | `docker:full`, `docker:builder` | Cross-platform build system generator |
 | **`flex`** | `develop` | 2.6.4 | BSD-2-Clause | any | `musl` | `clang`, `make` | `docker:full`, `docker:builder` | Fast lexical analyzer generator |
 | **`go`** | `develop` | 1.26.1 | BSD-3-Clause | any | `musl`, `gnu-compat-symlinks` | `python3` | `docker:builder` | Go programming language compiler and tools |
-| **`jmake`** | `develop` | 1.1.1 | MIT | any | `musl` | `rust` | `docker:full`, `docker:builder` | Clean-room drop-in replacement for GNU Make, written in Rust |
+| **`jmake`** | `develop` | 1.1.4 | MIT | any | `musl` | `rust` | `docker:full`, `docker:builder` | Clean-room drop-in replacement for GNU Make, written in Rust |
 | **`jonerix-headers`** | `develop` | 4.19.88-r2 | MIT | any | — | — | — | Linux UAPI kernel headers for jonerix package builds |
 | **`libcxx`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl` | `clang`, `cmake`, `samurai`, `python3` | `docker:core`, `docker:builder` | LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME |
 | **`lldb`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `llvm`, `libcxx`, `xz`, `zstd`, `zlib` | `llvm-all` | — | LLVM debugger — carved out of llvm-all (no separate compile) |
@@ -127,7 +127,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`tmux`** | `extra` | 3.6a | ISC | any | `musl`, `ncurses`, `libevent` | `clang`, `make`, `libevent`, `ncurses`, `jonerix-headers`, `byacc` | — | Terminal multiplexer |
 | **`unzip`** | `extra` | 0.1.0 | Apache-2.0 | any | `libarchive` | — | — | Compatibility package: /bin/unzip → /bin/bsdunzip (libarchive) |
 | **`wpa_supplicant`** | `extra` | 2.11-r2 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | `docker:router` | WPA/WPA2/WPA3 supplicant for wireless network authentication |
-| **`zsh`** | `extra` | 5.9-r1 | MIT | any | `musl`, `ncurses` | `clang`, `make` | `docker:full` | Z shell — feature-rich interactive shell |
+| **`zsh`** | `extra` | 5.9-r2 | MIT | any | `musl`, `ncurses` | `clang`, `make` | `docker:core`, `docker:builder`, `docker:full` | Z shell — feature-rich interactive shell |
 
 ## Special-purpose / not-built-by-CI
 

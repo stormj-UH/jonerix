@@ -1,13 +1,13 @@
 # jonerix:builder — Development and build image
 #
 # Starts from jonerix:core, adds compilers, build tools, and languages.
-# Shell: mksh (MirOS, POSIX-compliant — zsh deadlocks on musl)
+# Interactive shell: zsh (system /bin/sh remains mksh)
 #
 # Build: docker build -f Dockerfile.builder --tag jonerix:builder .
 #
 # Usage (build packages from source):
 #   docker run --rm -v "$PWD:/workspace" -w /workspace jonerix:builder \
-#     sh scripts/build-all.sh --output /workspace/.build/pkgs
+#     -lc 'sh scripts/build-all.sh --output /workspace/.build/pkgs'
 
 ARG CORE_IMAGE=jonerix:core
 
@@ -104,5 +104,5 @@ RUN TRIPLE=$(/bin/clang-21 -dumpmachine 2>/dev/null || echo "unknown") && \
     printf '!<arch>\n' > /lib/libssp_nonshared.a 2>/dev/null || true
 
 WORKDIR /root
-ENTRYPOINT ["/bin/mksh"]
+ENTRYPOINT ["/bin/zsh"]
 CMD ["-l"]

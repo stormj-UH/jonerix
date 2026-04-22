@@ -69,20 +69,22 @@ RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/downloa
 # Install bsdtar on Alpine HOST so jpkg can extract symlinks correctly
 RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 
-# Install all packages via jpkg
-# Order: base libs → compilers → build tools → languages → utilities
+# Install all packages via jpkg.
+# Keep zsh late in the list so its post-install completion refresh sees the
+# final command set in the image.
 RUN jpkg --root /jonerix update && \
     for pkg in \
       musl ncurses libressl zlib xz lz4 zstd ca-certificates \
-      toybox bsdtar zsh \
+      toybox bsdtar \
       llvm \
       cmake jmake samurai flex bc byacc \
       perl python3 nodejs \
+      exproxide \
       curl dropbear openrc doas \
       snooze dhcpcd ifupdown-ng unbound \
       mandoc pigz fastfetch \
       micro \
-      strace; \
+      strace zsh; \
     do \
       echo "=== Installing: $pkg ===" && \
       jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \

@@ -2,7 +2,7 @@
 #
 # Starts from jonerix:minimal, installs core packages via jpkg.
 # No compilers or dev tools — use jonerix:builder for that.
-# Shell: mksh (MirOS, POSIX-compliant)
+# Interactive shell: zsh (system /bin/sh remains mksh)
 #
 # Build: docker build -f Dockerfile.core --tag jonerix:core .
 
@@ -50,7 +50,9 @@ RUN if command -v apk >/dev/null 2>&1; then \
 # Install fixed jpkg (with toybox tar pipe instead of cp -a in install_files)
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
 
-# Install core runtime packages via jpkg
+# Install core runtime packages via jpkg.
+# Keep zsh late in the list so its post-install completion refresh sees the
+# final command set in the image.
 #
 # IMPORTANT: mksh is installed first and immediately symlinked to /bin/sh.
 # Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
@@ -77,9 +79,9 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       dropbear dhcpcd ifupdown-ng unbound openntpd \
       libarchive bsdtar openrsync \
       pigz mandoc onetrueawk \
-      anvil \
+      anvil exproxide \
       micro libcxx fastfetch ripgrep gitoxide \
-      iproute-go; \
+      iproute-go zsh; \
     do \
       echo "Installing: $pkg" && \
       if ! jpkg install --force "$pkg"; then \
@@ -123,7 +125,7 @@ COPY config/defaults/etc/fastfetch/   /etc/fastfetch/
 
 ENV PATH=/bin
 ENV HOME=/root
-ENV SHELL=/bin/sh
+ENV SHELL=/bin/zsh
 ENV TERM=xterm
 ENV EDITOR=micro
 ENV VISUAL=micro
@@ -131,4 +133,4 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
 WORKDIR /root
-CMD ["/bin/sh", "-l"]
+CMD ["/bin/zsh", "-l"]
