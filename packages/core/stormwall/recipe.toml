@@ -1,0 +1,41 @@
+[package]
+name = "stormwall"
+version = "0.1.1"
+license = "MIT"
+description = "Drop-in replacement for the nft CLI"
+
+[source]
+# Canonical source of truth is the Forgejo repo jonerik/stormwall on
+# castle.great-morpho.ts.net:3000 at commit
+# 92b00796ec9ea0eb9407b8700480463a2909d4b7 (version bump to 0.1.1).
+# That host sits behind Tailscale and GitHub's runners cannot reach it,
+# so the tarball is mirrored to a jonerix GH release for CI to fetch.
+#
+# Forgejo URL (primary, reachable from inside the jonerix network):
+#   https://castle.great-morpho.ts.net:3000/jonerik/stormwall/archive/92b00796ec9ea0eb9407b8700480463a2909d4b7.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v0.1.1/stormwall-0.1.1.tar.gz"
+sha256 = "6ad9b1b1b12691ac805697d8eeadbc6303ddf2cb7ae7339022b3303714ab37a8"
+
+[build]
+system = "custom"
+build = """
+set -e
+export CARGO_HOME=/tmp/stormwall-cargo
+export CARGO_TARGET_DIR="$PWD/target"
+export CARGO_NET_OFFLINE=true
+export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
+cargo test --locked
+cargo build --release --locked --bin stormwall
+"""
+install = """
+set -e
+BIN="$PWD/target/release/stormwall"
+install -Dm755 "$BIN" "$DESTDIR/bin/stormwall"
+ln -sf stormwall "$DESTDIR/bin/nft"
+install -Dm644 LICENSE "$DESTDIR/share/licenses/stormwall/LICENSE"
+llvm-strip --strip-all "$DESTDIR/bin/stormwall" 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]

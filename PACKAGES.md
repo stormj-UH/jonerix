@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` — **90 recipes**. All jonerix-built packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception, `linux` (GPL-2.0), is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` — **91 recipes**. All jonerix-built packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception, `linux` (GPL-2.0), is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -69,6 +69,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`pigz`** | `core` | 2.8-r1 | Zlib | any | `musl`, `zlib` | `clang`, `make` | `docker:core`, `docker:full` | Parallel implementation of gzip |
 | **`ripgrep`** | `core` | 15.1.0 | MIT | any | `musl` | `rust` | `docker:core` | Fast line-oriented search tool (grep replacement) |
 | **`snooze`** | `core` | 0.5-r1 | CC0 | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | Lightweight cron alternative for running a command at a specific time |
+| **`stormwall`** | `core` | 0.1.1 | MIT | any | `musl` | `rust` | — | Drop-in replacement for the nft CLI |
 | **`sudo`** | `core` | 1.9.17p2 | ISC | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image` | Privilege escalation utility |
 | **`toybox`** | `core` | 0.8.11-r2 | 0BSD | any | `musl` | `clang` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | BSD-licensed coreutils replacement |
 | **`tzdata`** | `core` | 2026a | Public-Domain | any | `musl` | `clang` | `docker:core` | IANA time zone database (zoneinfo data plus zic/zdump tools) |
