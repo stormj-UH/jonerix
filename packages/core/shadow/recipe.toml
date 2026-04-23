@@ -1,0 +1,165 @@
+[package]
+name = "shadow"
+version = "4.19.4"
+license = "BSD-3-Clause"
+description = "Password-management and login utilities (shadow-utils). Replaces toybox's buggy passwd / login / adduser implementations — toybox passwd truncates /etc/shadow on a write error, and toybox getty is missing, so /sbin/agetty had to be a mksh auto-login shim. Real login(1) + passwd(1) from the upstream shadow suite is BSD-3-Clause, builds static against musl, and matches Linux userland convention for auth flow."
+
+[source]
+url = "https://github.com/shadow-maint/shadow/releases/download/4.19.4/shadow-4.19.4.tar.xz"
+sha256 = "ce57a313e315a0a7cb04a8f50cc20753e994e487bbe9b78a2a824ca75cb486c0"
+
+[build]
+system = "autoconf"
+# Minimal feature set: no PAM, no SELinux, no audit, no NLS, no sssd,
+# no tcb, no utmpx/wtmp via libbsd — we sync with toybox's login
+# record path (/var/log/lastlog, /var/run/utmp, /var/log/wtmp). Keep
+# sha-crypt / yescrypt / bcrypt enabled so existing /etc/shadow
+# hashes keep verifying after the swap. Disable shared libraries
+# to avoid dragging a libshadow.so onto every runtime image.
+configure = """CFLAGS="-Os -fstack-protector-strong" \
+./configure \
+    --prefix=/ \
+    --bindir=/bin \
+    --sbindir=/bin \
+    --libdir=/lib \
+    --sysconfdir=/etc \
+    --libexecdir=/lib/shadow \
+    --datarootdir=/usr/share \
+    --disable-nls \
+    --disable-logind \
+    --disable-shared \
+    --enable-static \
+    --enable-shadowgrp \
+    --enable-lastlog \
+    --enable-subordinate-ids \
+    --with-sha-crypt \
+    --with-bcrypt \
+    --with-yescrypt \
+    --without-libpam \
+    --without-audit \
+    --without-selinux \
+    --without-acl \
+    --without-attr \
+    --without-skey \
+    --without-tcb \
+    --without-btrfs \
+    --without-libbsd \
+    --without-sssd \
+    --without-nscd \
+    --without-su \
+    CC=clang"""
+build = "make -j$(nproc)"
+install = """set -e
+make DESTDIR=$DESTDIR install
+
+# Merged-usr: collapse any /usr/* back into /* the way every other
+# jonerix recipe does.
+for d in usr/bin usr/sbin sbin lib64 usr/lib; do
+    if [ -d "$DESTDIR/$d" ]; then
+        target="$(echo "$d" | sed 's|^usr/||; s|^sbin|bin|; s|^lib64|lib|')"
+        mkdir -p "$DESTDIR/$target"
+        cp -a "$DESTDIR/$d/." "$DESTDIR/$target/"
+        rm -rf "$DESTDIR/$d"
+    fi
+done
+[ -d "$DESTDIR/usr" ] && rmdir "$DESTDIR/usr" 2>/dev/null || true
+
+# Trim the binaries we don't ship in core. The toybox replacements
+# we care about are login + passwd; leaving the other shadow tools
+# available (chsh, chfn, chpasswd, useradd, userdel, usermod,
+# groupadd, groupdel, groupmod) is useful but not the point —
+# keep them so a single jpkg gives a complete user-management
+# stack instead of the toybox subset.
+#
+# Binaries intentionally kept:
+#   /bin/login, /bin/passwd, /bin/chpasswd, /bin/chage, /bin/chfn,
+#   /bin/chsh, /bin/useradd, /bin/userdel, /bin/usermod,
+#   /bin/groupadd, /bin/groupdel, /bin/groupmod, /bin/gpasswd,
+#   /bin/newgrp, /bin/newusers, /bin/nologin, /bin/vipw,
+#   /bin/pwck, /bin/grpck, /bin/pwconv, /bin/pwunconv,
+#   /bin/grpconv, /bin/grpunconv, /bin/expiry,
+#   /bin/newgidmap, /bin/newuidmap, /bin/logoutd
+
+# Strip every binary we produce — static-musl links can get chunky.
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find "$DESTDIR/lib" -type f \\( -name "*.a" -o -name "*.so*" \\) \\
+    -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+
+# /etc/login.defs: shadow ships one; keep it, but arch-neutral.
+# Nothing else to do — configure wrote the right paths.
+"""
+
+[hooks]
+# On install, re-point /bin/passwd, /bin/login, /bin/chpasswd,
+# /bin/useradd, /bin/userdel, /bin/groupadd, /bin/groupdel at
+# shadow's binaries. jpkg already installs shadow's files to
+# /bin/ directly (the recipe configures --bindir=/bin); the only
+# work here is to clobber any toybox symlinks that would shadow
+# them. Toybox is a multicall binary, so its `/bin/passwd ->
+# toybox` symlink is what we need to break.
+post_install = """set -e
+
+# For each utility shadow provides, if the installed path is
+# shadow's own ELF and a toybox symlink of the same name used to
+# exist elsewhere, make sure /bin/X points at shadow.
+#
+# We back up any toybox symlink we replace into
+# /etc/jpkg/shadow/toybox-prev/ so post_remove can restore it.
+# That way `jpkg remove shadow` reverts to toybox behaviour.
+
+backup_dir=/etc/jpkg/shadow/toybox-prev
+mkdir -p "$backup_dir"
+
+for bin in passwd login chpasswd chage chfn chsh useradd userdel usermod \\
+           groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw \\
+           pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd \\
+           newgidmap newuidmap
+do
+    target=/bin/$bin
+    [ -e "$target" ] || continue
+
+    # If a previous install already parked a backup, don't
+    # overwrite it on re-install.
+    if [ ! -e "$backup_dir/$bin" ] && [ -L "$target" ]; then
+        link=$(readlink "$target" 2>/dev/null || true)
+        case "$link" in
+            toybox|/bin/toybox)
+                # Remember the toybox symlink so we can restore it
+                # on uninstall. Symlink backups are one-char files
+                # holding the target name.
+                printf '%s' "$link" > "$backup_dir/$bin"
+                ;;
+        esac
+    fi
+done
+
+# login.defs defaults are sane for jonerix; don't clobber if the
+# user hand-edited it.
+[ -f /etc/login.defs ] || cp /lib/shadow/login.defs /etc/login.defs 2>/dev/null || true
+
+exit 0"""
+
+post_remove = """set -e
+
+# Restore toybox symlinks we preserved in post_install, so removing
+# this jpkg cleanly reverts to the toybox multicall fallback.
+backup_dir=/etc/jpkg/shadow/toybox-prev
+if [ -d "$backup_dir" ]; then
+    for f in "$backup_dir"/*; do
+        [ -f "$f" ] || continue
+        bin=$(basename "$f")
+        link=$(cat "$f" 2>/dev/null || true)
+        [ -n "$link" ] || continue
+        # Only restore if the shadow binary has actually been removed.
+        [ -e "/bin/$bin" ] && continue
+        ln -sf "$link" "/bin/$bin" 2>/dev/null || true
+    done
+    rm -rf "$backup_dir"
+    rmdir /etc/jpkg/shadow 2>/dev/null || true
+    rmdir /etc/jpkg 2>/dev/null || true
+fi
+exit 0"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make", "jonerix-headers"]
