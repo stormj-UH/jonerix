@@ -159,6 +159,13 @@ done
 
 # /etc/login.defs: shadow ships one; keep it, but arch-neutral.
 # Nothing else to do — configure wrote the right paths.
+
+# shadow-login OpenRC service: spawns /bin/login on /dev/tty1 in
+# a loop so a fresh core install has a real HDMI console prompt.
+# post_install wires it into the `default` runlevel unless the
+# operator has created /etc/shadow/no-console (opt-out).
+install -Dm755 "$RECIPE_DIR/init.d/shadow-login" \
+    "$DESTDIR/etc/init.d/shadow-login"
 """
 
 [hooks]
@@ -200,9 +207,54 @@ if [ ! -f /etc/login.defs ] && [ -f /etc/default/useradd ]; then
     : # configure-installed
 fi
 
+# --- shadow-login OpenRC service wiring ---
+# Put /etc/init.d/shadow-login in the default runlevel so a fresh
+# core install actually hits a login prompt on HDMI. Respect
+# /etc/shadow/no-console as an opt-out marker so operators who
+# run their own getty / auto-login / kiosk loader aren't
+# surprised. Also displace any previously-enabled tty1-console
+# so two services aren't fighting over /dev/tty1 — the old name
+# gets moved aside to /etc/runlevels/default/tty1-console.pre-shadow
+# so post_remove can put it back.
+if [ ! -e /etc/shadow/no-console ] && [ -d /etc/runlevels/default ]; then
+    if [ -e /etc/runlevels/default/tty1-console ] \
+        && [ ! -e /etc/runlevels/default/tty1-console.pre-shadow ]
+    then
+        mv /etc/runlevels/default/tty1-console \
+           /etc/runlevels/default/tty1-console.pre-shadow
+    fi
+    # Stop the old service if it's live, so /dev/tty1 is free.
+    if [ -x /bin/rc-service ] \
+        && /bin/rc-service --exists tty1-console 2>/dev/null
+    then
+        /bin/rc-service tty1-console stop 2>/dev/null || true
+    fi
+    ln -sf /etc/init.d/shadow-login /etc/runlevels/default/shadow-login
+    # Start now so the install takes effect immediately without a
+    # reboot.
+    if [ -x /bin/rc-service ]; then
+        /bin/rc-service shadow-login start 2>/dev/null || true
+    fi
+fi
+
 exit 0"""
 
 post_remove = """set -e
+
+# --- shadow-login service teardown ---
+# Stop the service if it's still running, drop the runlevel
+# symlink, and restore any tty1-console symlink we moved aside
+# on install.
+if [ -x /bin/rc-service ]; then
+    /bin/rc-service shadow-login stop 2>/dev/null || true
+fi
+rm -f /etc/runlevels/default/shadow-login
+if [ -e /etc/runlevels/default/tty1-console.pre-shadow ] \
+    && [ ! -e /etc/runlevels/default/tty1-console ]
+then
+    mv /etc/runlevels/default/tty1-console.pre-shadow \
+       /etc/runlevels/default/tty1-console
+fi
 
 backup_dir=/etc/jpkg/shadow/toybox-prev
 if [ -d "$backup_dir" ]; then
