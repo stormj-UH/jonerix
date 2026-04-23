@@ -95,21 +95,24 @@ for d in usr/bin usr/sbin sbin lib64 usr/lib; do
 done
 [ -d "$DESTDIR/usr" ] && rmdir "$DESTDIR/usr" 2>/dev/null || true
 
-# Trim the binaries we don't ship in core. The toybox replacements
-# we care about are login + passwd; leaving the other shadow tools
-# available (chsh, chfn, chpasswd, useradd, userdel, usermod,
-# groupadd, groupdel, groupmod) is useful but not the point —
-# keep them so a single jpkg gives a complete user-management
-# stack instead of the toybox subset.
-#
-# Binaries intentionally kept:
-#   /bin/login, /bin/passwd, /bin/chpasswd, /bin/chage, /bin/chfn,
-#   /bin/chsh, /bin/useradd, /bin/userdel, /bin/usermod,
-#   /bin/groupadd, /bin/groupdel, /bin/groupmod, /bin/gpasswd,
-#   /bin/newgrp, /bin/newusers, /bin/nologin, /bin/vipw,
-#   /bin/pwck, /bin/grpck, /bin/pwconv, /bin/pwunconv,
-#   /bin/grpconv, /bin/grpunconv, /bin/expiry,
-#   /bin/newgidmap, /bin/newuidmap, /bin/logoutd
+# File-conflict avoidance: toybox and jonerix-util already own
+# /bin/login, /bin/passwd, /bin/useradd, /bin/userdel, /bin/chsh,
+# /bin/groupadd, /bin/groupdel. jpkg refuses to clobber files
+# owned by another installed package, so we can't ship at those
+# canonical paths directly. Rename every shadow binary to a
+# "shadow-" prefix inside the payload; the post_install hook
+# creates the user-facing /bin/passwd etc symlinks that point
+# at the shadow copy, preserving the original toybox targets in
+# /etc/jpkg/shadow/toybox-prev/ so uninstall reverts cleanly.
+for b in login passwd chpasswd chage chfn chsh chgpasswd \\
+         useradd userdel usermod groupadd groupdel groupmod \\
+         gpasswd newgrp newusers nologin vipw pwck grpck \\
+         pwconv pwunconv grpconv grpunconv expiry logoutd \\
+         newgidmap newuidmap faillog lastlog sulogin; do
+    if [ -f "$DESTDIR/bin/$b" ]; then
+        mv "$DESTDIR/bin/$b" "$DESTDIR/bin/shadow-$b"
+    fi
+done
 
 # Strip every binary we produce — static-musl links can get chunky.
 # Using for-loops instead of `find -exec` because the backslash
@@ -128,69 +131,71 @@ done
 """
 
 [hooks]
-# On install, re-point /bin/passwd, /bin/login, /bin/chpasswd,
-# /bin/useradd, /bin/userdel, /bin/groupadd, /bin/groupdel at
-# shadow's binaries. jpkg already installs shadow's files to
-# /bin/ directly (the recipe configures --bindir=/bin); the only
-# work here is to clobber any toybox symlinks that would shadow
-# them. Toybox is a multicall binary, so its `/bin/passwd ->
-# toybox` symlink is what we need to break.
+# Repoint /bin/passwd, /bin/login, /bin/chpasswd, /bin/useradd,
+# etc. at shadow's prefixed binaries. The original targets
+# (usually `toybox` for login/passwd/useradd/groupadd, or a
+# jonerix-util binary for chsh) are snapshotted to
+# /etc/jpkg/shadow/toybox-prev/ so post_remove reverts them.
 post_install = """set -e
-
-# For each utility shadow provides, if the installed path is
-# shadow's own ELF and a toybox symlink of the same name used to
-# exist elsewhere, make sure /bin/X points at shadow.
-#
-# We back up any toybox symlink we replace into
-# /etc/jpkg/shadow/toybox-prev/ so post_remove can restore it.
-# That way `jpkg remove shadow` reverts to toybox behaviour.
 
 backup_dir=/etc/jpkg/shadow/toybox-prev
 mkdir -p "$backup_dir"
 
-for bin in passwd login chpasswd chage chfn chsh useradd userdel usermod \\
-           groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw \\
-           pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd \\
-           newgidmap newuidmap
+for bin in passwd login chpasswd chage chfn chsh chgpasswd \\
+           useradd userdel usermod groupadd groupdel groupmod \\
+           gpasswd newgrp newusers nologin vipw pwck grpck \\
+           pwconv pwunconv grpconv grpunconv expiry logoutd \\
+           newgidmap newuidmap faillog lastlog sulogin
 do
-    target=/bin/$bin
-    [ -e "$target" ] || continue
+    src=/bin/shadow-$bin
+    dst=/bin/$bin
+    [ -x "$src" ] || continue
 
-    # If a previous install already parked a backup, don't
-    # overwrite it on re-install.
-    if [ ! -e "$backup_dir/$bin" ] && [ -L "$target" ]; then
-        link=$(readlink "$target" 2>/dev/null || true)
-        case "$link" in
-            toybox|/bin/toybox)
-                # Remember the toybox symlink so we can restore it
-                # on uninstall. Symlink backups are one-char files
-                # holding the target name.
-                printf '%s' "$link" > "$backup_dir/$bin"
-                ;;
-        esac
+    # Snapshot whatever is currently at $dst (first install only)
+    # so post_remove can restore it.
+    if [ -e "$dst" ] && [ ! -e "$backup_dir/$bin" ]; then
+        if [ -L "$dst" ]; then
+            link=$(readlink "$dst" 2>/dev/null || true)
+            printf 'symlink:%s' "$link" > "$backup_dir/$bin"
+        else
+            printf 'file' > "$backup_dir/$bin"
+            cp -a "$dst" "$backup_dir/$bin.bin"
+        fi
     fi
+
+    ln -sf "shadow-$bin" "$dst"
 done
 
-# login.defs defaults are sane for jonerix; don't clobber if the
-# user hand-edited it.
-[ -f /etc/login.defs ] || cp /lib/shadow/login.defs /etc/login.defs 2>/dev/null || true
+# login.defs: ship if the system doesn't already have one, but
+# never clobber the operator's edited copy.
+if [ ! -f /etc/login.defs ] && [ -f /etc/default/useradd ]; then
+    : # configure-installed
+fi
 
 exit 0"""
 
 post_remove = """set -e
 
-# Restore toybox symlinks we preserved in post_install, so removing
-# this jpkg cleanly reverts to the toybox multicall fallback.
 backup_dir=/etc/jpkg/shadow/toybox-prev
 if [ -d "$backup_dir" ]; then
     for f in "$backup_dir"/*; do
         [ -f "$f" ] || continue
         bin=$(basename "$f")
-        link=$(cat "$f" 2>/dev/null || true)
-        [ -n "$link" ] || continue
-        # Only restore if the shadow binary has actually been removed.
+        case "$bin" in *.bin) continue ;; esac
+        meta=$(cat "$f" 2>/dev/null || true)
+        # Already-restored or present — leave alone.
         [ -e "/bin/$bin" ] && continue
-        ln -sf "$link" "/bin/$bin" 2>/dev/null || true
+        case "$meta" in
+            symlink:*)
+                target=${meta#symlink:}
+                [ -n "$target" ] && ln -sf "$target" "/bin/$bin"
+                ;;
+            file)
+                if [ -f "$f.bin" ]; then
+                    cp -a "$f.bin" "/bin/$bin"
+                fi
+                ;;
+        esac
     done
     rm -rf "$backup_dir"
     rmdir /etc/jpkg/shadow 2>/dev/null || true
