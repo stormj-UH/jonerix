@@ -74,10 +74,12 @@ CFLAGS="-Os -fstack-protector-strong --rtlib=compiler-rt --unwindlib=libunwind -
 LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
 ./configure \
     --prefix=/ \
+    --exec-prefix=/ \
     --bindir=/bin \
     --sbindir=/bin \
     --libdir=/lib \
     --sysconfdir=/etc \
+    --localstatedir=/var \
     --libexecdir=/lib/shadow \
     --datarootdir=/usr/share \
     --disable-nls \
