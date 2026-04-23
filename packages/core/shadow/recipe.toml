@@ -16,7 +16,28 @@ system = "autoconf"
 # sha-crypt / yescrypt / bcrypt enabled so existing /etc/shadow
 # hashes keep verifying after the swap. Disable shared libraries
 # to avoid dragging a libshadow.so onto every runtime image.
-configure = """CFLAGS="-Os -fstack-protector-strong" \
+#
+# pkg-config stub: shadow's configure unconditionally probes
+# pkg-config to gate libbsd / libpam / cmocka detection. We've
+# turned off every one of those features, but the probe still
+# errors out if the binary is absent. jonerix doesn't yet package
+# pkgconf, so drop a minimal stub in $PATH that reports "no
+# modules found" for every query and claim to be version 99.
+configure = """mkdir -p /tmp/pkgconf-stub
+cat > /tmp/pkgconf-stub/pkg-config <<'PC'
+#!/bin/sh
+case "$1" in
+    --version) echo 99.0.0; exit 0 ;;
+    --atleast-pkgconfig-version) exit 0 ;;
+    --exists|--print-errors) exit 1 ;;
+    --cflags*|--libs*|--variable=*) exit 0 ;;
+esac
+exit 1
+PC
+chmod +x /tmp/pkgconf-stub/pkg-config
+export PATH=/tmp/pkgconf-stub:$PATH
+CFLAGS="-Os -fstack-protector-strong --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \
+LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
 ./configure \
     --prefix=/ \
     --bindir=/bin \
@@ -48,7 +69,8 @@ configure = """CFLAGS="-Os -fstack-protector-strong" \
     --without-nscd \
     --without-su \
     CC=clang"""
-build = "make -j$(nproc)"
+build = """export PATH=/tmp/pkgconf-stub:$PATH
+make -j$(nproc)"""
 install = """set -e
 make DESTDIR=$DESTDIR install
 
