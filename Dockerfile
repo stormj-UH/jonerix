@@ -82,6 +82,7 @@ RUN jpkg --root /jonerix update && \
       exproxide \
       curl dropbear openrc doas \
       snooze dhcpcd ifupdown-ng unbound \
+      shadow \
       mandoc pigz fastfetch \
       micro \
       strace zsh; \

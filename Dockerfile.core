@@ -77,6 +77,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
       openrc doas snooze tzdata \
       dropbear dhcpcd ifupdown-ng unbound openntpd \
+      shadow \
       libarchive bsdtar openrsync \
       pigz mandoc onetrueawk \
       anvil exproxide \
@@ -113,8 +114,14 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     /bin/toybox ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true && \
     /bin/toybox ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
 
-# Set SUID bits on login utilities (required for multi-user auth)
-RUN chmod 4755 /bin/su /bin/passwd /bin/login /bin/sudo 2>/dev/null || true
+# Set SUID bits on login utilities (required for multi-user auth).
+# /bin/passwd + /bin/login are symlinks into /bin/shadow-passwd and
+# /bin/shadow-login after shadow's post_install runs; chmod on the
+# symlink follows to the real file so suid lands on shadow-passwd
+# / shadow-login as needed. Leave toybox /bin/su + /bin/sudo as
+# they were for backwards compat.
+RUN chmod 4755 /bin/su /bin/sudo 2>/dev/null || true && \
+    chmod 4755 /bin/shadow-passwd /bin/shadow-login /bin/shadow-chage /bin/shadow-chsh /bin/shadow-chfn /bin/shadow-newgrp /bin/shadow-gpasswd 2>/dev/null || true
 
 # Default config
 COPY config/defaults/etc/hostname     /etc/hostname
