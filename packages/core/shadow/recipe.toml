@@ -112,11 +112,15 @@ done
 #   /bin/newgidmap, /bin/newuidmap, /bin/logoutd
 
 # Strip every binary we produce — static-musl links can get chunky.
-# Toybox find has no `-\( … -\)` grouping, so run strip in two
-# separate passes on the lib dir instead of an -o expression.
-find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
-find "$DESTDIR/lib" -name "*.a"   -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
-find "$DESTDIR/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+# Using for-loops instead of `find -exec` because the backslash
+# escaping for `\;` is flaky through the TOML-then-sh heredoc
+# delivery path jpkg uses (observed: find: -exec without \\;).
+for f in "$DESTDIR"/bin/*; do
+    [ -f "$f" ] && llvm-strip --strip-all "$f" 2>/dev/null || true
+done
+for f in "$DESTDIR"/lib/*.a "$DESTDIR"/lib/*.so*; do
+    [ -f "$f" ] && llvm-strip --strip-unneeded "$f" 2>/dev/null || true
+done
 
 # /etc/login.defs: shadow ships one; keep it, but arch-neutral.
 # Nothing else to do — configure wrote the right paths.
