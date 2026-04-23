@@ -1,0 +1,68 @@
+#!/bin/openrc-run
+# shadow-login — shadow-maint login(1) respawn loop on /dev/tty1.
+#
+# jonerix's permissive-license-only policy means we ship no
+# util-linux (GPL) and no bash/busybox — so the usual
+# `agetty /dev/tty1 ... /bin/login` dance isn't available. This
+# service fills the same role: it spawns `/bin/login` on tty1,
+# loops it forever, and never auto-logs-in as anyone. Exit or
+# logout returns to a fresh hostname+login prompt.
+#
+# Shadow's post_install enables this service in the `default`
+# runlevel (unless /etc/shadow/no-console exists). Any other
+# tty1 supervisor (rescue shells, auto-login agetty shims,
+# etc) should be disabled or this service will fight it for
+# /dev/tty1.
+#
+# Part of shadow (BSD-3-Clause jonerix core jpkg).
+
+name="shadow-login"
+description="shadow-maint login(1) respawn loop on /dev/tty1"
+
+depend() {
+    need localmount
+    after devfs
+    keyword -jail -prefix -vserver
+}
+
+start() {
+    ebegin "Spawning login on tty1"
+    # setsid + a fresh mksh detaches us from the controlling tty
+    # the OpenRC runner gave us. `stty sane` first in case an
+    # earlier shell left tty1 in raw/nonblocking mode.
+    setsid /bin/mksh -c '
+        stty -F /dev/tty1 sane 2>/dev/null
+        while :; do
+            /bin/login </dev/tty1 >/dev/tty1 2>&1
+            # login returns here on logout, auth failure
+            # exhaustion, or its internal input timeout — loop
+            # and show a fresh prompt.
+        done
+    ' </dev/null >/dev/null 2>&1 &
+    echo $! > /run/shadow-login.pid
+    eend 0
+}
+
+stop() {
+    ebegin "Stopping login on tty1"
+    if [ -f /run/shadow-login.pid ]; then
+        pid=$(cat /run/shadow-login.pid)
+        kill -TERM -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null
+        rm -f /run/shadow-login.pid
+    fi
+    # Belt-and-suspenders: whack any straggler login process
+    # whose stdin is wired to tty1.
+    pkill -f 'login .*</dev/tty1' 2>/dev/null || true
+    eend 0
+}
+
+status() {
+    if [ -f /run/shadow-login.pid ] \
+        && kill -0 "$(cat /run/shadow-login.pid 2>/dev/null)" 2>/dev/null
+    then
+        einfo "shadow-login running (pid $(cat /run/shadow-login.pid))"
+        return 0
+    fi
+    einfo "shadow-login not running"
+    return 3
+}
