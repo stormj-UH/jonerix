@@ -113,8 +113,9 @@ done
 
 # Strip every binary we produce — static-musl links can get chunky.
 # Using for-loops instead of `find -exec` because the backslash
-# escaping for `\;` is flaky through the TOML-then-sh heredoc
-# delivery path jpkg uses (observed: find: -exec without \\;).
+# escaping for -exec semicolon terminators is flaky through the
+# TOML-then-sh heredoc delivery path jpkg uses (observed find
+# reports "-exec without ;").
 for f in "$DESTDIR"/bin/*; do
     [ -f "$f" ] && llvm-strip --strip-all "$f" 2>/dev/null || true
 done
