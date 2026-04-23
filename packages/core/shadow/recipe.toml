@@ -70,6 +70,15 @@ LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
     --without-su \
     CC=clang"""
 build = """export PATH=/tmp/pkgconf-stub:$PATH
+# Force the latest jmake — 1.1.5 landed the "parser: only treat TAB-
+# prefixed lines as recipes while inside a rule's recipe block" fix
+# (commit 977491f) which is the closest thing in the changelog to
+# shadow's automake-generated Makefile line-191 failure. The
+# jonerix:builder images baked 2026-04-13 still ship jmake 1.1.4,
+# so pin up before invoking make.
+jpkg update >/dev/null 2>&1 || true
+jpkg install jmake 2>&1 | tail -3 || true
+jmake --version 2>&1 | head -1 || true
 make -j$(nproc)"""
 install = """set -e
 make DESTDIR=$DESTDIR install
