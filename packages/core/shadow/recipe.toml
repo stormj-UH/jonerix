@@ -112,9 +112,11 @@ done
 #   /bin/newgidmap, /bin/newuidmap, /bin/logoutd
 
 # Strip every binary we produce — static-musl links can get chunky.
+# Toybox find has no `-\( … -\)` grouping, so run strip in two
+# separate passes on the lib dir instead of an -o expression.
 find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
-find "$DESTDIR/lib" -type f \\( -name "*.a" -o -name "*.so*" \\) \\
-    -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+find "$DESTDIR/lib" -name "*.a"   -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+find "$DESTDIR/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
 
 # /etc/login.defs: shadow ships one; keep it, but arch-neutral.
 # Nothing else to do — configure wrote the right paths.
