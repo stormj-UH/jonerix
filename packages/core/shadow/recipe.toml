@@ -104,11 +104,8 @@ done
 # creates the user-facing /bin/passwd etc symlinks that point
 # at the shadow copy, preserving the original toybox targets in
 # /etc/jpkg/shadow/toybox-prev/ so uninstall reverts cleanly.
-for b in login passwd chpasswd chage chfn chsh chgpasswd \\
-         useradd userdel usermod groupadd groupdel groupmod \\
-         gpasswd newgrp newusers nologin vipw pwck grpck \\
-         pwconv pwunconv grpconv grpunconv expiry logoutd \\
-         newgidmap newuidmap faillog lastlog sulogin; do
+SHADOW_BINS="login passwd chpasswd chage chfn chsh chgpasswd useradd userdel usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd newgidmap newuidmap faillog lastlog sulogin"
+for b in $SHADOW_BINS; do
     if [ -f "$DESTDIR/bin/$b" ]; then
         mv "$DESTDIR/bin/$b" "$DESTDIR/bin/shadow-$b"
     fi
@@ -141,11 +138,8 @@ post_install = """set -e
 backup_dir=/etc/jpkg/shadow/toybox-prev
 mkdir -p "$backup_dir"
 
-for bin in passwd login chpasswd chage chfn chsh chgpasswd \\
-           useradd userdel usermod groupadd groupdel groupmod \\
-           gpasswd newgrp newusers nologin vipw pwck grpck \\
-           pwconv pwunconv grpconv grpunconv expiry logoutd \\
-           newgidmap newuidmap faillog lastlog sulogin
+SHADOW_BINS="passwd login chpasswd chage chfn chsh chgpasswd useradd userdel usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd newgidmap newuidmap faillog lastlog sulogin"
+for bin in $SHADOW_BINS
 do
     src=/bin/shadow-$bin
     dst=/bin/$bin
