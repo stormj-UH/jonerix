@@ -79,16 +79,24 @@ if [ -z "${JPKG_SOURCE_CACHE:-}" ] && [ -d /workspace/sources ]; then
     export JPKG_SOURCE_CACHE=/workspace/sources
 fi
 
-# /bin/expr shim: jonerix is permissive-only and toybox lacks expr;
-# many autoconf-vintage configures (libffi, python3, openntpd, sudo,
-# jq, pico, tzdata, libevent, byacc) loop forever without it. Install
-# once here so every recipe can rely on it. Source lives in scripts/
-# to avoid per-recipe duplication / heredoc hell.
-if [ ! -x /bin/expr ]; then
-    echo "== installing /bin/expr shim =="
-    clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld \
-        -o /bin/expr /workspace/scripts/expr-shim.c
-fi
+install_cached_pkg_if_available() {
+    pkg="$1"
+    cached_pkg=$(ls /var/cache/jpkg/${pkg}-*-*.jpkg 2>/dev/null | sort -V | tail -1)
+    if [ -z "$cached_pkg" ] || [ ! -f "$cached_pkg" ]; then
+        return 1
+    fi
+    echo "=== Installing cached ${pkg}: $(basename "$cached_pkg") ==="
+    hdr_len=$(od -An -v -tu4 -N4 -j8 "$cached_pkg" | tr -d ' ')
+    skip=$((12 + hdr_len))
+    tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | tar xf - -C /
+    return 0
+}
+
+have_working_expr() {
+    /bin/expr 1 + 1 >/dev/null 2>&1 &&
+    /bin/expr length expr >/dev/null 2>&1 &&
+    /bin/expr xexpr : 'x\(.*\)' >/dev/null 2>&1
+}
 
 # /bin/install GNU-compat shim: toybox install lacks -c (GNU's "copy"
 # flag, which is the default on toybox anyway — just needs to be
@@ -106,11 +114,23 @@ jpkg update
 # without it Python 3.14's make install hangs indefinitely on
 # ./Include/**/*.h lookups). The builder image may ship an older jmake;
 # force-install from the INDEX so we always have the perf fix.
-jpkg upgrade jmake 2>&1 | tail -5
+if install_cached_pkg_if_available jmake; then
+    ln -sf jmake /bin/make 2>/dev/null || true
+else
+    jpkg upgrade jmake 2>&1 | tail -5
+fi
 
 # exproxide — clean-room Rust expr(1). See aarch64 sibling.
 echo "=== Installing exproxide for /bin/expr ==="
-jpkg install --force exproxide 2>&1 | tail -5 || echo "exproxide install failed — recipe-level fallback only"
+if install_cached_pkg_if_available exproxide; then
+    ln -sf exproxide /bin/expr 2>/dev/null || true
+else
+    jpkg install --force exproxide 2>&1 | tail -5 || echo "exproxide install failed"
+fi
+if ! have_working_expr; then
+    echo "FATAL: exproxide failed the minimal autoconf expr probe set"
+    exit 1
+fi
 
 # Meson is bootstrapped from its upstream source tarball to avoid depending
 # on pip/SSL support in older builder images.

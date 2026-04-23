@@ -1,0 +1,246 @@
+[package]
+name = "shadow"
+version = "4.19.4"
+license = "BSD-3-Clause"
+# REPLACES toybox for the user-management + login surface.
+# Specifically, installing this package redirects these /bin
+# entries away from their original owners (toybox multicall
+# symlinks, plus /bin/chsh which lives in jonerix-util) to the
+# shadow-maint implementation at /bin/shadow-<name>:
+#
+#     /bin/passwd        (was: toybox)
+#     /bin/login         (was: toybox)
+#     /bin/useradd       (was: toybox)
+#     /bin/userdel       (was: toybox)
+#     /bin/usermod       (was: toybox)
+#     /bin/groupadd      (was: toybox)
+#     /bin/groupdel      (was: toybox)
+#     /bin/groupmod      (was: toybox)
+#     /bin/chsh          (was: jonerix-util)
+#     /bin/chpasswd /bin/chage /bin/chfn /bin/chgpasswd
+#     /bin/gpasswd /bin/newgrp /bin/newusers /bin/nologin
+#     /bin/vipw /bin/pwck /bin/grpck /bin/pwconv /bin/pwunconv
+#     /bin/grpconv /bin/grpunconv /bin/expiry /bin/logoutd
+#     /bin/newgidmap /bin/newuidmap /bin/faillog /bin/lastlog
+#     /bin/sulogin
+#
+# The original targets are snapshotted to
+#   /etc/jpkg/shadow/toybox-prev/
+# at post_install time. `jpkg remove shadow` restores them from
+# that snapshot via the post_remove hook so the host reverts to
+# the pre-shadow toybox + jonerix-util layout with no user-
+# visible surprise.
+#
+# Motivation: toybox passwd truncates /etc/shadow on a write
+# error, toybox has no getty at all, and the stand-in
+# /sbin/agetty is a mksh auto-login script that gives a root
+# shell without auth. shadow-maint gives us real login(1) +
+# passwd(1) + useradd(8), BSD-3-Clause, static-musl.
+description = "shadow-utils (login, passwd, user/group management) — REPLACES toybox's passwd / login / useradd / userdel / usermod / groupadd / groupdel / groupmod and jonerix-util's chsh. Originals snapshotted under /etc/jpkg/shadow/toybox-prev/ and restored on remove."
+
+[source]
+url = "https://github.com/shadow-maint/shadow/releases/download/4.19.4/shadow-4.19.4.tar.xz"
+sha256 = "ce57a313e315a0a7cb04a8f50cc20753e994e487bbe9b78a2a824ca75cb486c0"
+
+[build]
+system = "autoconf"
+# Minimal feature set: no PAM, no SELinux, no audit, no NLS, no sssd,
+# no tcb, no utmpx/wtmp via libbsd — we sync with toybox's login
+# record path (/var/log/lastlog, /var/run/utmp, /var/log/wtmp). Keep
+# sha-crypt / yescrypt / bcrypt enabled so existing /etc/shadow
+# hashes keep verifying after the swap. Disable shared libraries
+# to avoid dragging a libshadow.so onto every runtime image.
+#
+# pkg-config stub: shadow's configure unconditionally probes
+# pkg-config to gate libbsd / libpam / cmocka detection. We've
+# turned off every one of those features, but the probe still
+# errors out if the binary is absent. jonerix doesn't yet package
+# pkgconf, so drop a minimal stub in $PATH that reports "no
+# modules found" for every query and claim to be version 99.
+configure = """mkdir -p /tmp/pkgconf-stub
+cat > /tmp/pkgconf-stub/pkg-config <<'PC'
+#!/bin/sh
+case "$1" in
+    --version) echo 99.0.0; exit 0 ;;
+    --atleast-pkgconfig-version) exit 0 ;;
+    --exists|--print-errors) exit 1 ;;
+    --cflags*|--libs*|--variable=*) exit 0 ;;
+esac
+exit 1
+PC
+chmod +x /tmp/pkgconf-stub/pkg-config
+export PATH=/tmp/pkgconf-stub:$PATH
+CFLAGS="-Os -fstack-protector-strong --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld" \
+LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
+./configure \
+    --prefix=/ \
+    --bindir=/bin \
+    --sbindir=/bin \
+    --libdir=/lib \
+    --sysconfdir=/etc \
+    --libexecdir=/lib/shadow \
+    --datarootdir=/usr/share \
+    --disable-nls \
+    --disable-logind \
+    --disable-shared \
+    --enable-static \
+    --enable-shadowgrp \
+    --enable-lastlog \
+    --enable-subordinate-ids \
+    --with-sha-crypt \
+    --with-bcrypt \
+    --with-yescrypt \
+    --without-libpam \
+    --without-audit \
+    --without-selinux \
+    --without-acl \
+    --without-attr \
+    --without-skey \
+    --without-tcb \
+    --without-btrfs \
+    --without-libbsd \
+    --without-sssd \
+    --without-nscd \
+    --without-su \
+    CC=clang"""
+build = """export PATH=/tmp/pkgconf-stub:$PATH
+# Force the latest jmake — 1.1.5 landed the "parser: only treat TAB-
+# prefixed lines as recipes while inside a rule's recipe block" fix
+# (commit 977491f) which is the closest thing in the changelog to
+# shadow's automake-generated Makefile line-191 failure. The
+# jonerix:builder images baked 2026-04-13 still ship jmake 1.1.4,
+# so pin up before invoking make.
+jpkg update >/dev/null 2>&1 || true
+jpkg install jmake 2>&1 | tail -3 || true
+jmake --version 2>&1 | head -1 || true
+make -j$(nproc)"""
+install = """set -e
+make DESTDIR=$DESTDIR install
+
+# Merged-usr: collapse any /usr/* back into /* the way every other
+# jonerix recipe does.
+for d in usr/bin usr/sbin sbin lib64 usr/lib; do
+    if [ -d "$DESTDIR/$d" ]; then
+        target="$(echo "$d" | sed 's|^usr/||; s|^sbin|bin|; s|^lib64|lib|')"
+        mkdir -p "$DESTDIR/$target"
+        cp -a "$DESTDIR/$d/." "$DESTDIR/$target/"
+        rm -rf "$DESTDIR/$d"
+    fi
+done
+[ -d "$DESTDIR/usr" ] && rmdir "$DESTDIR/usr" 2>/dev/null || true
+
+# File-conflict avoidance: toybox and jonerix-util already own
+# /bin/login, /bin/passwd, /bin/useradd, /bin/userdel, /bin/chsh,
+# /bin/groupadd, /bin/groupdel. jpkg refuses to clobber files
+# owned by another installed package, so we can't ship at those
+# canonical paths directly. Rename every shadow binary to a
+# "shadow-" prefix inside the payload; the post_install hook
+# creates the user-facing /bin/passwd etc symlinks that point
+# at the shadow copy, preserving the original toybox targets in
+# /etc/jpkg/shadow/toybox-prev/ so uninstall reverts cleanly.
+SHADOW_BINS="login passwd chpasswd chage chfn chsh chgpasswd useradd userdel usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd newgidmap newuidmap faillog lastlog sulogin"
+for b in $SHADOW_BINS; do
+    if [ -f "$DESTDIR/bin/$b" ]; then
+        mv "$DESTDIR/bin/$b" "$DESTDIR/bin/shadow-$b"
+    fi
+done
+
+# Strip every binary we produce — static-musl links can get chunky.
+# Using for-loops instead of `find -exec` because the backslash
+# escaping for -exec semicolon terminators is flaky through the
+# TOML-then-sh heredoc delivery path jpkg uses (observed find
+# reports "-exec without ;").
+for f in "$DESTDIR"/bin/*; do
+    [ -f "$f" ] && llvm-strip --strip-all "$f" 2>/dev/null || true
+done
+for f in "$DESTDIR"/lib/*.a "$DESTDIR"/lib/*.so*; do
+    [ -f "$f" ] && llvm-strip --strip-unneeded "$f" 2>/dev/null || true
+done
+
+# /etc/login.defs: shadow ships one; keep it, but arch-neutral.
+# Nothing else to do — configure wrote the right paths.
+"""
+
+[hooks]
+# Repoint /bin/passwd, /bin/login, /bin/chpasswd, /bin/useradd,
+# etc. at shadow's prefixed binaries. The original targets
+# (usually `toybox` for login/passwd/useradd/groupadd, or a
+# jonerix-util binary for chsh) are snapshotted to
+# /etc/jpkg/shadow/toybox-prev/ so post_remove reverts them.
+post_install = """set -e
+
+backup_dir=/etc/jpkg/shadow/toybox-prev
+mkdir -p "$backup_dir"
+
+SHADOW_BINS="passwd login chpasswd chage chfn chsh chgpasswd useradd userdel usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd newgidmap newuidmap faillog lastlog sulogin"
+for bin in $SHADOW_BINS
+do
+    src=/bin/shadow-$bin
+    dst=/bin/$bin
+    [ -x "$src" ] || continue
+
+    # Snapshot whatever is currently at $dst (first install only)
+    # so post_remove can restore it.
+    if [ -e "$dst" ] && [ ! -e "$backup_dir/$bin" ]; then
+        if [ -L "$dst" ]; then
+            link=$(readlink "$dst" 2>/dev/null || true)
+            printf 'symlink:%s' "$link" > "$backup_dir/$bin"
+        else
+            printf 'file' > "$backup_dir/$bin"
+            cp -a "$dst" "$backup_dir/$bin.bin"
+        fi
+    fi
+
+    ln -sf "shadow-$bin" "$dst"
+done
+
+# login.defs: ship if the system doesn't already have one, but
+# never clobber the operator's edited copy.
+if [ ! -f /etc/login.defs ] && [ -f /etc/default/useradd ]; then
+    : # configure-installed
+fi
+
+exit 0"""
+
+post_remove = """set -e
+
+backup_dir=/etc/jpkg/shadow/toybox-prev
+if [ -d "$backup_dir" ]; then
+    for f in "$backup_dir"/*; do
+        [ -f "$f" ] || continue
+        bin=$(basename "$f")
+        # Skip sidecar *.bin blobs; those are consumed via their
+        # parent meta file in the 'file' case below.
+        case "$bin" in *.bin) continue ;; esac
+        meta=$(cat "$f" 2>/dev/null || true)
+        # Preserve: if something real (live file or live symlink)
+        # is already at /bin/$bin, don't overwrite. Dangling
+        # symlinks left behind by shadow's removal fail -e but
+        # pass -L — clear those before restoring.
+        if [ -e "/bin/$bin" ]; then
+            continue
+        fi
+        if [ -L "/bin/$bin" ]; then
+            rm -f "/bin/$bin"
+        fi
+        case "$meta" in
+            symlink:*)
+                target=${meta#symlink:}
+                [ -n "$target" ] && ln -sf "$target" "/bin/$bin"
+                ;;
+            file)
+                if [ -f "$f.bin" ]; then
+                    cp -a "$f.bin" "/bin/$bin"
+                fi
+                ;;
+        esac
+    done
+    rm -rf "$backup_dir"
+    rmdir /etc/jpkg/shadow 2>/dev/null || true
+    rmdir /etc/jpkg 2>/dev/null || true
+fi
+exit 0"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make", "jonerix-headers"]

@@ -10,12 +10,9 @@ sha256 = "b0dea9df23c863a7a50e825440f3ebffabd65df1497108e5d437747843895a4e"
 
 [build]
 system = "custom"
-# libffi's configure uses `expr` extensively (autoconf 2.69 vintage).
-# jonerix builder has no /bin/expr — install a minimal C shim first.
-# expr.c lives alongside this recipe to avoid shell heredocs (toybox
-# sh hangs on heredocs in some configurations).
+# libffi's configure uses `expr` extensively (autoconf 2.69 vintage),
+# so exproxide must be present for /bin/expr during the build.
 build = """set -e
-clang -Os --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld -o /bin/expr "$RECIPE_DIR/expr.c"
 GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" CFLAGS="-O2 -fomit-frame-pointer -fPIC" CC=clang ./configure --prefix=/ --libdir=/lib --includedir=/include --disable-static --disable-docs --disable-multi-os-directory
 make -j$(nproc)"""
 install = """make DESTDIR=$DESTDIR install
@@ -35,4 +32,4 @@ runtime = ["musl"]
 # trampoline support uses kernel UAPI). Ship the sabotage-linux
 # kernel headers via jonerix-headers so /include/linux/limits.h
 # exists before configure runs.
-build = ["clang", "make", "jonerix-headers"]
+build = ["clang", "make", "exproxide", "jonerix-headers"]
