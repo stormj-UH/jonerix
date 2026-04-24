@@ -38,7 +38,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 
 | Package | Folder | Version | License | Arch | Runtime deps | Build deps | Used in | Description |
 |---|---|---|---|---|---|---|---|---|
-| **`jpkg`** | `(top)` | 1.1.2 | MIT | any | `musl`, `libressl`, `zstd` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
+| **`jpkg`** | `(top)` | 1.1.3 | MIT | any | `musl`, `libressl`, `zstd` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
 | **`anvil`** | `core` | 0.2.1-r1 | MIT | any | `musl` | `rust` | `pi5-install`, `pi5-image` | Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...) |
 | **`bsdtar`** | `core` | 3.8.6-r6 | Apache-2.0 | any | `libarchive` | — | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | Compatibility package providing /bin/tar via libarchive bsdtar |
 | **`curl`** | `core` | 8.11.1-r1 | MIT | any | `musl`, `libressl`, `zlib` | `clang`, `cmake`, `samurai`, `libressl`, `zlib` | `docker:minimal`, `docker:core`, `docker:full` | Command-line tool and library for transferring data with URLs |
