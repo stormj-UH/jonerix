@@ -1,0 +1,79 @@
+[package]
+# Clean-room Rust compatibility layer for the GPL-3 GNU Readline and
+# History libraries. The package follows the oxide convention used by
+# exproxide and m4oxide: package/source name stays readlineoxide, while
+# installed ABI names are the conventional libreadline/libhistory names
+# so configure scripts and existing consumers can find them.
+name = "readlineoxide"
+version = "0.1.5"
+license = "MIT"
+description = "Clean-room Rust libreadline/libhistory compatibility layer for jonerix"
+
+[source]
+# Canonical source: Forgejo jonerik/readlineoxide on
+# castle.great-morpho.ts.net:3000. Per project policy for this package,
+# there is intentionally no GitHub mirror/upstream.
+url = "https://castle.great-morpho.ts.net:3000/jonerik/readlineoxide/archive/v0.1.5.tar.gz"
+sha256 = "62b18dd6b2c28d6adc045ac3139b79c69bb1dcd0248a9f640fd663c7a48c50fb"
+
+[build]
+system = "custom"
+build = """
+set -e
+export CARGO_HOME=/tmp/readlineoxide-cargo
+export CARGO_TARGET_DIR=/tmp/readlineoxide-target
+export CARGO_NET_OFFLINE=true
+export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
+cargo rustc --release --offline --frozen -p readlineoxide-readline -- -C link-arg=-Wl,-soname,libreadline.so.8
+cargo rustc --release --offline --frozen -p readlineoxide-history -- -C link-arg=-Wl,-soname,libhistory.so.8
+"""
+install = """
+set -e
+LIB=/tmp/readlineoxide-target/release
+
+install -Dm755 "$LIB/libreadline.so" "$DESTDIR/lib/libreadline.so.8.0"
+ln -sf libreadline.so.8.0 "$DESTDIR/lib/libreadline.so.8"
+ln -sf libreadline.so.8 "$DESTDIR/lib/libreadline.so"
+
+install -Dm755 "$LIB/libhistory.so" "$DESTDIR/lib/libhistory.so.8.0"
+ln -sf libhistory.so.8.0 "$DESTDIR/lib/libhistory.so.8"
+ln -sf libhistory.so.8 "$DESTDIR/lib/libhistory.so"
+
+for h in include/readline/*.h; do
+    install -Dm644 "$h" "$DESTDIR/include/readline/$(basename "$h")"
+done
+
+mkdir -p "$DESTDIR/lib/pkgconfig"
+cat > "$DESTDIR/lib/pkgconfig/readline.pc" <<'PC'
+prefix=/
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: readlineoxide
+Description: Clean-room libreadline compatibility layer
+Version: 0.1.5
+Libs: -L${libdir} -lreadline
+Cflags: -I${includedir}
+PC
+cat > "$DESTDIR/lib/pkgconfig/history.pc" <<'PC'
+prefix=/
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: readlineoxide-history
+Description: Clean-room libhistory compatibility layer
+Version: 0.1.5
+Libs: -L${libdir} -lhistory
+Cflags: -I${includedir}
+PC
+
+install -Dm644 LICENSE "$DESTDIR/share/licenses/readlineoxide/LICENSE"
+llvm-strip --strip-unneeded "$DESTDIR/lib/libreadline.so.8.0" 2>/dev/null || true
+llvm-strip --strip-unneeded "$DESTDIR/lib/libhistory.so.8.0" 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]
