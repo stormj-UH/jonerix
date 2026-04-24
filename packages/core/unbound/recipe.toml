@@ -1,6 +1,6 @@
 [package]
 name = "unbound"
-version = "1.22.0"
+version = "1.22.0-r1"
 license = "BSD-3-Clause"
 description = "Validating, recursive, and caching DNS resolver"
 
@@ -10,15 +10,45 @@ sha256 = "c5dd1bdef5d5685b2cedb749158dd152c52d44f65529a34ac15cd88d4b1b3d43"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --sbindir=/bin --with-ssl=/ --with-libunbound-only CC=clang"
+# --with-ssl=/ by itself can find OpenSSL 3 headers in the Alpine
+# builder's /usr/include when libressl headers sit at /include.
+# The resulting binary ends up DT_NEEDED libssl.so.3 (OpenSSL 3
+# SONAME) which jonerix does NOT ship, and run-time dies with
+# "Error relocating /bin/unbound: OPENSSL_init_crypto symbol not
+# found" (observed on jonerix-tormenta 2026-04-20). Force the
+# compile to see jonerix's libressl headers (/include) and libs
+# (/lib) first, ahead of anything Alpine has at /usr/*.
+# Post-build sanity: the linked binary must reference the libressl
+# SONAMEs (libssl.so.58 / libcrypto.so.55), NOT libssl.so.3. Fail
+# loud if autoconf somehow still ended up on OpenSSL 3.
+configure = """CFLAGS="-O2 -fomit-frame-pointer -I/include" \
+  LDFLAGS="-L/lib -Wl,-rpath,/lib" \
+  PKG_CONFIG_PATH=/lib/pkgconfig \
+  ./configure --prefix=/ --sbindir=/bin \
+    --with-ssl=/ \
+    --with-libunbound-only \
+    CC=clang"""
 build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+# SONAME sanity — DT_NEEDED must NOT include libssl.so.3 or
+# libcrypto.so.3, otherwise jonerix (shipping libressl) cannot
+# resolve them at runtime. Check every ELF we're about to ship.
+for f in "$DESTDIR/bin"/unbound* "$DESTDIR/lib"/libunbound.so*; do
+    [ -f "$f" ] || continue
+    bad=$(readelf -d "$f" 2>/dev/null | awk '/NEEDED/ && /libssl\\.so\\.3|libcrypto\\.so\\.3/ {print}')
+    if [ -n "$bad" ]; then
+        echo "unbound: $f links against OpenSSL 3 SONAMEs instead of libressl:" >&2
+        echo "$bad" >&2
+        echo "refusing to ship — rebuild with clean /include or verify libressl on builder" >&2
+        exit 1
+    fi
+done
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl", "libressl"]
-build = ["clang", "make", "jonerix-headers"]
+build = ["clang", "make", "jonerix-headers", "libressl"]

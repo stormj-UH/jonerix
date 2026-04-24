@@ -1,6 +1,6 @@
 [package]
 name = "sudo"
-version = "1.9.17p2"
+version = "1.9.17p2-r1"
 license = "ISC"
 description = "Privilege escalation utility"
 
@@ -17,6 +17,10 @@ make -j$(nproc)
 install = """set -e
 make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+# Merged-usr flatten for /sbin — sudo honors --sbindir=/bin but
+# hand-rolled install hooks / man-page dirs / visudo have been
+# observed dropping files into sbin/ on some autotools vintages.
+if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 rm -rf "$DESTDIR/share/doc" "$DESTDIR/include"
 rm -f "$DESTDIR/lib/sudo/libsudo_util.a" "$DESTDIR/lib/sudo/libsudo_util.la"

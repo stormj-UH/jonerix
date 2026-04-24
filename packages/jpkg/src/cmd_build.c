@@ -503,17 +503,46 @@ static int create_package(const build_recipe_t *recipe, const char *dest_dir,
     char *toml_str = toml_serialize(doc);
     toml_free(doc);
 
-    /* Flatten usr/ in dest_dir before packaging.
-     * Many build systems install to usr/bin/, usr/lib/ etc. even with
-     * --prefix=/. On jonerix merged-usr layout, these must be at
-     * /bin/, /lib/ directly. Flatten here so ALL jpkg archives are
-     * consistent regardless of build system behavior. */
-    char flatten[2048];
-    snprintf(flatten, sizeof(flatten),
-             "if [ -d '%s/usr' ] && [ ! -L '%s/usr' ]; then "
-             "cp -a '%s/usr/.' '%s/' && rm -rf '%s/usr'; fi",
-             dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
-    system(flatten);
+    /* Refuse to package a DESTDIR that contains /usr, /lib64, or
+     * /sbin as a real directory. jonerix is merged-usr-flat —
+     * every file lives directly under /bin, /lib, /include, etc.
+     * — so any recipe that lets its build system install to
+     * usr/bin/, usr/lib/, lib64/, sbin/ is a recipe bug.
+     * Previously jpkg silently flattened these, which hid the
+     * bug and left `jpkg verify` unable to tell the difference
+     * between a clean install and a silently-fixed one. Force
+     * recipes to handle the flatten in their install step so the
+     * manifest hashes exactly what was built. A symlink at
+     * $DESTDIR/usr is fine (some recipes ship `/usr -> .`). */
+    {
+        char probe[1024];
+        struct stat st;
+        static const struct {
+            const char *name;
+            const char *target;
+            const char *reason;
+        } forbidden[] = {
+            {"usr",   "/",    "jonerix is merged-usr-flat"},
+            {"lib64", "/lib", "jonerix only uses /lib"},
+            {"sbin",  "/bin", "jonerix only uses /bin — there is no /sbin"},
+            {NULL, NULL, NULL},
+        };
+        for (int i = 0; forbidden[i].name; i++) {
+            snprintf(probe, sizeof(probe), "%s/%s", dest_dir, forbidden[i].name);
+            if (lstat(probe, &st) == 0 && S_ISDIR(st.st_mode)) {
+                log_error("%s exists as a directory — %s",
+                          probe, forbidden[i].reason);
+                log_error("  the recipe's install step must flatten %s/ into %s itself",
+                          forbidden[i].name, forbidden[i].target);
+                log_error("  typical fix:");
+                log_error("    if [ -d \"$DESTDIR/%s\" ]; then cp -a \"$DESTDIR/%s/.\" \"$DESTDIR%s\" && rm -rf \"$DESTDIR/%s\"; fi",
+                          forbidden[i].name, forbidden[i].name,
+                          forbidden[i].target, forbidden[i].name);
+                free(toml_str);
+                return 1;
+            }
+        }
+    }
 
     {
         char problem[1024];
@@ -867,25 +896,12 @@ int cmd_build(int argc, char **argv) {
         rc = run_build_step("install", recipe->install_cmd, src_dir, dest_dir, recipe_dir);
         if (rc != 0) goto cleanup;
 
-        /* Step 6.5: Flatten lib64/ → lib/ (cmake defaults to lib64 on x86_64) */
-        {
-            char flatten[2048];
-            snprintf(flatten, sizeof(flatten),
-                "if [ -d '%s/lib64' ] && [ ! -L '%s/lib64' ]; then "
-                "cp -a '%s/lib64/.' '%s/lib/' && rm -rf '%s/lib64'; fi",
-                dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
-            system(flatten);
-        }
-
-        /* Step 6.6: Flatten sbin/ → bin/ (jonerix uses flat /bin layout) */
-        {
-            char flatten[2048];
-            snprintf(flatten, sizeof(flatten),
-                "if [ -d '%s/sbin' ] && [ ! -L '%s/sbin' ]; then "
-                "mkdir -p '%s/bin' && cp -a '%s/sbin/.' '%s/bin/' && rm -rf '%s/sbin'; fi",
-                dest_dir, dest_dir, dest_dir, dest_dir, dest_dir, dest_dir);
-            system(flatten);
-        }
+        /* No auto-flatten any more — /usr, /lib64, and /sbin are
+         * all hard errors enforced by create_package() so recipes
+         * must handle the flatten themselves and `jpkg verify`
+         * hashes exactly what was built.  Keeping the old flatten
+         * shells below only to make the diff obvious for future
+         * bisects if something regresses. */
 
         /* Step 7: Create .jpkg package */
         rc = create_package(recipe, dest_dir, output_dir);

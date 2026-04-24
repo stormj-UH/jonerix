@@ -1,6 +1,6 @@
 [package]
 name = "openntpd"
-version = "6.8p1-r3"
+version = "6.8p1-r4"
 license = "ISC"
 description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 
@@ -24,6 +24,11 @@ GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
 jmake -j$(nproc)"""
 install = """set -e
 DESTDIR=$DESTDIR jmake install
+# Merged-usr flatten: autoconf honors --sbindir=/bin but hand-
+# rolled install hooks can still drop into sbin/. Catch + fold.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 mkdir -p $DESTDIR/etc
 cat > $DESTDIR/etc/ntpd.conf <<EOF
 # /etc/ntpd.conf — jonerix default
