@@ -101,7 +101,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | Component | License | Role |
 |-----------|---------|------|
 | cmake | BSD-3-Clause | Build system generator |
-| jmake 1.0.1 | MIT | Drop-in GNU make replacement (Rust) |
+| jmake 1.1.5 | MIT | Drop-in GNU make replacement (Rust) |
 | samurai | Apache-2.0 | Ninja-compatible build tool |
 | meson | Apache-2.0 | Build system (via pip) |
 | flex | BSD-2-Clause | Lexer generator |
@@ -116,7 +116,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | LibreSSL | ISC | TLS library (OpenSSL fork) |
 | pcre2 | BSD-3-Clause | Regular expressions library |
 | nginx | BSD-2-Clause | HTTP server |
-| unbound | BSD-3-Clause | DNS resolver |
+| unbound | BSD-3-Clause | Validating, recursive, caching DNS resolver (takes over /etc/resolv.conf on install) |
 | dhcpcd | BSD-2-Clause | DHCP client |
 | ifupdown-ng | ISC | Network configuration |
 | hostapd | BSD-3-Clause | Wi-Fi access point / WPA supplicant |
@@ -150,11 +150,16 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 jpkg is a custom, MIT-licensed package manager built for jonerix. Packages are zstd-compressed tarballs signed with Ed25519.
 
 ```sh
-jpkg update                # fetch latest package index
-jpkg search fastfetch      # search available packages
-jpkg install fastfetch     # install a package
-jpkg list                  # list installed packages
+jpkg update                      # fetch latest package index
+jpkg search fastfetch            # search available packages
+jpkg install fastfetch           # install a package
+jpkg list                        # list installed packages
+jpkg local install ./pkg.jpkg    # install a .jpkg from a local file, URL, or stdin
+jpkg local build ./recipe-dir    # build a recipe.toml and either emit a .jpkg or install it
+jpkg conform 1.1.6               # pin the host to a specific jonerix release tag
 ```
+
+`jpkg local` and `jpkg conform` are external subcommands shipped inside the jpkg package (`/bin/jpkg-local`, `/bin/jpkg-conform`); jpkg's main dispatcher falls through to them via PATH.
 
 Packages are hosted on GitHub Releases and built from source in CI for both x86_64 and aarch64.
 
