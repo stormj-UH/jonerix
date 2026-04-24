@@ -293,7 +293,7 @@ jobs:
             -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
             -fstack-protector-strong \
             -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
-            -o jpkg src/*.c -lzstd -lssl -lcrypto
+            -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') -lzstd -lssl -lcrypto
           install -m 755 jpkg /usr/local/bin/jpkg
           jpkg --version || true
 
