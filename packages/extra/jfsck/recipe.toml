@@ -1,6 +1,6 @@
 [package]
 name = "jfsck"
-version = "0.1.0-r0"
+version = "0.1.0-r1"
 license = "BSD-2-Clause"
 description = "Clean-room fsck for ext4 + FAT32 (Raspberry Pi scope) derived from Ghidra binary analysis of e2fsprogs and dosfstools"
 
@@ -38,14 +38,18 @@ install = """
 set -e
 BIN=/tmp/jfsck-target/release/jfsck
 
-install -Dm755 "$BIN" "$DESTDIR/sbin/jfsck"
+# jonerix has no /sbin — everything ships under /bin per the
+# merged-usr-flat layout. Older versions of this recipe installed
+# to /sbin; flip to /bin so /bin/jfsck + /bin/fsck.ext4 + friends
+# are on $PATH alongside every other jonerix tool.
+install -Dm755 "$BIN" "$DESTDIR/bin/jfsck"
 
 # fsck driver compat: when mount(8) / systemd-fsck invokes
 # fsck.ext4, fsck.vfat, etc. it execs those exact names. jfsck's
 # argv[0] dispatcher picks the backend from the suffix, so a
 # symlink is all it takes to stand in for the util-linux callers.
 for suf in ext2 ext3 ext4 vfat fat msdos; do
-    ln -sf jfsck "$DESTDIR/sbin/fsck.$suf"
+    ln -sf jfsck "$DESTDIR/bin/fsck.$suf"
 done
 """
 
