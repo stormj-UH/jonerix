@@ -1,6 +1,6 @@
 [package]
 name = "unbound"
-version = "1.22.0-r1"
+version = "1.22.0-r2"
 license = "BSD-3-Clause"
 description = "Validating, recursive, and caching DNS resolver"
 
