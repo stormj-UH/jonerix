@@ -79,6 +79,9 @@ static void print_usage(void) {
     printf("  conform <ver>          Pin every installed package + /etc/os-release\n");
     printf("                         to a jonerix release tag (e.g. 1.1.6).\n");
     printf("                         --nopkgs : only update /etc/os-release.\n");
+    printf("  local install <src>    Install a .jpkg from a local file, URL, or stdin.\n");
+    printf("  local build <recipe>   Build a recipe.toml from a dir, URL, or stdin\n");
+    printf("                         (--build-jpkg to emit a .jpkg, else install to rootfs).\n");
     printf("\nOptions:\n");
     printf("  -v, --verbose        Increase verbosity\n");
     printf("  -q, --quiet          Suppress non-error output\n");

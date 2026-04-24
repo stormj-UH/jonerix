@@ -28,6 +28,7 @@ rule link
   description = LINK $out
 
 build src/main.o: cc src/main.c
+build src/main_local.o: cc src/main_local.c
 build src/util.o: cc src/util.c
 build src/toml.o: cc src/toml.c
 build src/pkg.o: cc src/pkg.c
@@ -56,9 +57,18 @@ build jpkg: link $
   src/cmd_build.o src/cmd_verify.o src/cmd_audit.o $
   src/cmd_keygen.o src/cmd_sign.o
 
-default jpkg
+# jpkg-local: second binary shipped in the same package. Reuses jpkg's
+# util/toml/pkg/db objects so any core fix (TOML parser tweaks, merged-usr
+# flattening, layout audit, zstd format updates) flows into jpkg-local
+# automatically. No fetch.c / repo.c / sign.c — jpkg-local only handles
+# local files, URLs fetched via curl(1), and recipes built in-tree.
+# main.c's PATH fallthrough dispatches `jpkg local <args>` to this binary.
+build jpkg-local: link $
+  src/main_local.o src/util.o src/toml.o src/pkg.o src/db.o
+
+default jpkg jpkg-local
 
 build clean: phony
 rule clean_cmd
-  command = rm -f src/*.o src/*.o.d jpkg
+  command = rm -f src/*.o src/*.o.d jpkg jpkg-local
 build _clean: clean_cmd

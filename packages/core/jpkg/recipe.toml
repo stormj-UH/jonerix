@@ -1,8 +1,15 @@
 [package]
 name = "jpkg"
-version = "1.1.1"
+version = "1.1.2"
 license = "MIT"
 description = "jonerix package manager"
+# 1.1.2: absorb jpkg-local as a second binary built from the same source
+# tree (shares util/toml/pkg/db objects). The standalone jpkg-local
+# package is retired — `jpkg local install <file.jpkg>` and
+# `jpkg local build <recipe>` now dispatch via main.c's PATH fallthrough
+# to /bin/jpkg-local shipped by this package. Replaces the old package so
+# jpkg upgrade transfers file ownership cleanly.
+replaces = ["jpkg-local"]
 
 [build]
 system = "custom"
@@ -18,6 +25,10 @@ LDFLAGS="-L/lib -Wl,-dynamic-linker=/lib/ld-musl-$(uname -m).so.1" \
 LDLIBS='-ltls -lssl -lcrypto -lzstd' \
 samu -f build.ninja"""
 install = """install -Dm755 jpkg $DESTDIR/bin/jpkg
+# External subcommand: `jpkg local ...` falls through from main.c's
+# command table to /bin/jpkg-local, which shares jpkg's util/toml/pkg/db
+# modules so core fixes propagate automatically.
+install -Dm755 jpkg-local $DESTDIR/bin/jpkg-local
 # External subcommand: `jpkg conform <version>` falls through from
 # main.c's command table to /bin/jpkg-conform (POSIX sh). Shipping
 # it in /bin/ means it's on PATH for jpkg's own jpkg-<name> dispatch.
