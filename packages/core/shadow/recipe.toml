@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4"
+version = "4.19.4-r1"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Specifically, installing this package redirects these /bin
