@@ -38,14 +38,21 @@ line=$(grep -E "/(${mod}|${modu})\.ko\.xz:" "$DEPFILE" | head -1) || exit 1
 self=$(echo "$line" | cut -d: -f1)
 deps=$(echo "$line" | cut -d: -f2)
 
-# Load dependencies first (best effort; individual failures ignored so
-# already-loaded deps or out-of-order calls don't abort the primary).
+# Load dependencies first, RECURSIVELY. depmod emits modules.dep with
+# deps listed in "this-module-depends-on" order, NOT in load order.
+# For example, 8021q's line is "8021q: garp stp llc" — but garp
+# itself depends on stp+llc, so just insmod'ing them left-to-right
+# would try garp before its own deps and the kernel would spit
+# "Unknown symbol garp_*/stp_*/llc_*" on every boot.
+#
+# Recursing through $0 lets each dep walk its own sub-deps first,
+# so the load order on a fresh boot of `modprobe 8021q` ends up
+# as llc → stp → garp → 8021q.
 for d in $deps; do
     dname=$(basename "$d" .ko.xz)
     dnameu=$(echo "$dname" | tr '-' '_')
     grep -q "^${dnameu} " /proc/modules 2>/dev/null && continue
-    xz -dc "$KDIR/$d" > "/tmp/$dname.ko" 2>/dev/null || continue
-    insmod "/tmp/$dname.ko" 2>/dev/null || true
+    "$0" "$dname" 2>/dev/null || true
 done
 
 # Load the target module.
