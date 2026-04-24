@@ -12,11 +12,13 @@
 
 **A fully self-hosting Linux distribution with zero GPL in userland.**
 
+Current release: **[v1.1.6](https://github.com/stormj-UH/jonerix/releases/tag/v1.1.6)** (`jpkg conform 1.1.6` to pin a host to this tag). See [PACKAGES.md](PACKAGES.md) for the full package inventory.
+
 ## Overview
 
-jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is not part of this distribution. This is a "Bring Your Own Kernel" (BYOK) distro. It is designed for use in containers, on WSL, or on Rasbperry Pi, but there are no limits.
+jonerix is a Linux distribution built around a simple rule: every userland component must use a permissive license such as MIT, BSD, ISC, Apache-2.0, or public domain. The Linux kernel is not part of this distribution. This is a "Bring Your Own Kernel" (BYOK) distro. It is designed for use in containers, on WSL, or on Raspberry Pi, but there are no limits.
 
-100+ packages build from source on jonerix itself. The system compiles its own compiler (Clang/LLVM), its own languages (Go from C, Rust from a bootstrap binary), and its own container runtime. No GNU toolchain, no GCC, no GPL coreutils.
+~95 packages build from source on jonerix itself. The system compiles its own compiler (Clang/LLVM), its own languages (Go from C, Rust from a bootstrap binary), and its own container runtime. No GNU toolchain, no GCC, no GPL coreutils.
 
 The point of jonerix is not moral instruction. It is not a sermon against copyleft, and it does not require anyone to agree with its premises. It is a distribution for people and organizations who want the lowest possible licensing friction in userland. If that use case does not matter to you, then jonerix is probably not for you.
 
@@ -117,9 +119,14 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | pcre2 | BSD-3-Clause | Regular expressions library |
 | nginx | BSD-2-Clause | HTTP server |
 | unbound | BSD-3-Clause | Validating, recursive, caching DNS resolver (takes over /etc/resolv.conf on install) |
+| expat | MIT | Stream-oriented XML parser (libexpat) |
 | dhcpcd | BSD-2-Clause | DHCP client |
 | ifupdown-ng | ISC | Network configuration |
 | hostapd | BSD-3-Clause | Wi-Fi access point / WPA supplicant |
+| openntpd | BSD-2-Clause | NTP client/server |
+| openrsync | ISC | rsync-protocol-27 drop-in (replaces GPL rsync) |
+| headscale | BSD-3-Clause | Self-hosted Tailscale coordination server |
+| derper | BSD-3-Clause | Tailscale DERP relay |
 
 ### Container Runtime
 
@@ -142,8 +149,9 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | bsdtar | BSD-2-Clause | Archive tool (libarchive) |
 | doas | ISC | Privilege escalation |
 | fastfetch | MIT | System information |
-| openrsync | ISC | rsync-protocol-27-compatible drop-in (replaces GPL rsync) |
-| jonerix-raspi5-fixups | MIT | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control) |
+| btop | Apache-2.0 | Terminal resource monitor |
+| tmux | ISC | Terminal multiplexer |
+| jonerix-raspi5-fixups | MIT | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control, DNS takeover opt-out, wake-on-power, cold-reboot) |
 
 ## Package Manager (jpkg)
 
