@@ -16,12 +16,7 @@ system = "custom"
 # xmlwf man page. `--without-tests` skips the cxx tests that would pull
 # a full libcxx runtime in.
 build = """set -e
-CFLAGS="-O2 -fomit-frame-pointer -fPIC" CC=clang \\
-  ./configure --prefix=/ --libdir=/lib --includedir=/include \\
-    --disable-static \\
-    --without-docbook \\
-    --without-examples \\
-    --without-tests
+CFLAGS="-O2 -fomit-frame-pointer -fPIC" CC=clang ./configure --prefix=/ --libdir=/lib --includedir=/include --disable-static --without-docbook --without-examples --without-tests
 make -j$(nproc)"""
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
