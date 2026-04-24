@@ -688,10 +688,12 @@ static tree_audit_result_t audit_layout_tree_recursive(const char *root,
                 }
             }
         } else if (S_ISREG(st.st_mode) && !audit_path_is_doc_payload(child_rel) &&
-                   /* Exempt jpkg itself: its audit code legitimately contains
-                    * the string "/lib64" as a constant for detecting OTHER
-                    * packages with that reference. */
-                   strcmp(child_rel, "bin/jpkg") != 0) {
+                   /* Exempt jpkg and jpkg-local: they share util.c which
+                    * legitimately contains the string "/lib64" as a
+                    * constant for detecting OTHER packages with that
+                    * reference. */
+                   strcmp(child_rel, "bin/jpkg") != 0 &&
+                   strcmp(child_rel, "bin/jpkg-local") != 0) {
             uint8_t head[256];
             int fd = open(child_full, O_RDONLY);
             ssize_t n = -1;
