@@ -1,6 +1,6 @@
 [package]
 name = "jpkg"
-version = "1.1.0"
+version = "1.1.1"
 license = "MIT"
 description = "jonerix package manager"
 
@@ -8,6 +8,7 @@ description = "jonerix package manager"
 system = "custom"
 # Source lives in the jonerix repo at packages/jpkg/ — copy it in.
 configure = """cp -a /workspace/packages/jpkg/src .
+cp -a /workspace/packages/jpkg/bin .
 cp /workspace/packages/jpkg/build.ninja .
 # Override -static hardcoded in build.ninja — jonerix ships only shared
 # LibreSSL/zstd, and the runtime image has them installed.
@@ -17,6 +18,10 @@ LDFLAGS="-L/lib -Wl,-dynamic-linker=/lib/ld-musl-$(uname -m).so.1" \
 LDLIBS='-ltls -lssl -lcrypto -lzstd' \
 samu -f build.ninja"""
 install = """install -Dm755 jpkg $DESTDIR/bin/jpkg
+# External subcommand: `jpkg conform <version>` falls through from
+# main.c's command table to /bin/jpkg-conform (POSIX sh). Shipping
+# it in /bin/ means it's on PATH for jpkg's own jpkg-<name> dispatch.
+install -Dm755 bin/jpkg-conform $DESTDIR/bin/jpkg-conform
 install -d $DESTDIR/etc/jpkg/keys
 install -d $DESTDIR/var/db/jpkg/installed
 install -d $DESTDIR/var/cache/jpkg"""

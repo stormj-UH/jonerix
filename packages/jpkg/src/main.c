@@ -75,6 +75,10 @@ static void print_usage(void) {
             printf("  %-22s %s\n", commands[i].name, commands[i].description);
         }
     }
+    printf("\nExternal subcommands (jpkg-<cmd>, dispatched via PATH):\n");
+    printf("  conform <ver>          Pin every installed package + /etc/os-release\n");
+    printf("                         to a jonerix release tag (e.g. 1.1.6).\n");
+    printf("                         --nopkgs : only update /etc/os-release.\n");
     printf("\nOptions:\n");
     printf("  -v, --verbose        Increase verbosity\n");
     printf("  -q, --quiet          Suppress non-error output\n");
