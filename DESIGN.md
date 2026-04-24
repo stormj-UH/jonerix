@@ -25,12 +25,11 @@ Every component running on a jonerix system is licensed under MIT, BSD, ISC, Apa
 
 ## 1. Philosophy & License Policy
 
-jonerix exists because permissive licensing matters for infrastructure. Operators should be able to inspect, modify, and redistribute every piece of their OS without copyleft obligations. The rules are simple:
+jonerix exists because permissive licensing matters for infrastructure. Operators should be able to inspect, modify, and redistribute theirI S copyleft obligations. We do not ship the Linux Kernel. The rules are simple:
 
 | Rule | Detail |
 |------|--------|
 | **Runtime** | Every binary, library, config, and script on the running system must be permissive (MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, public domain). |
-| **Kernel exception** | Linux (GPLv2) is the sole exception. It ships as a single blob under `/boot`. |
 | **Build time** | GPL tools (GCC, GNU make, bash) are permitted in Alpine build containers. They are scaffolding — they never appear in the final image. |
 | **Self-hosting** | The final system must be able to rebuild itself from source using only its own (permissive) tools. The `jonerix:builder` image proves this. |
 
