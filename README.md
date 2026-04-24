@@ -41,6 +41,7 @@ The `jonerix:builder` image installs these tools from jpkg packages. It compiles
 docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, libressl, openrc
 docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh (/bin/sh), zsh, uutils, micro, ripgrep, networking
 docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, go, nodejs, python3
+docker pull ghcr.io/stormj-uh/jonerix:router     # appliance: core + hostapd, wpa_supplicant, nloxide
 
 # Per-arch tags: -amd64 and -arm64 are also available
 docker run -it ghcr.io/stormj-uh/jonerix:core
@@ -58,6 +59,9 @@ docker build -f Dockerfile.core --tag jonerix:core .
 
 # Builder dev image (FROM core)
 docker build -f Dockerfile.builder --tag jonerix:builder .
+
+# Router appliance image (FROM core)
+docker build -f Dockerfile.router --tag jonerix:router .
 ```
 
 ## What's Inside
@@ -69,6 +73,7 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh (/bin/sh), zsh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
+| `router` | core | hostapd, wpa_supplicant, nloxide (libnl replacement); home-router / AP / gateway appliance |
 
 ### Core System
 
