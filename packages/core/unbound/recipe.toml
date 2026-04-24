@@ -1,6 +1,6 @@
 [package]
 name = "unbound"
-version = "1.22.0-r2"
+version = "1.22.0-r3"
 license = "BSD-3-Clause"
 description = "Validating, recursive, and caching DNS resolver"
 
@@ -10,44 +10,92 @@ sha256 = "c5dd1bdef5d5685b2cedb749158dd152c52d44f65529a34ac15cd88d4b1b3d43"
 
 [build]
 system = "autoconf"
-# --with-ssl=/ by itself can find OpenSSL 3 headers in the Alpine
-# builder's /usr/include when libressl headers sit at /include.
-# The resulting binary ends up DT_NEEDED libssl.so.3 (OpenSSL 3
-# SONAME) which jonerix does NOT ship, and run-time dies with
-# "Error relocating /bin/unbound: OPENSSL_init_crypto symbol not
-# found" (observed on jonerix-tormenta 2026-04-20). Force the
-# compile to see jonerix's libressl headers (/include) and libs
-# (/lib) first, ahead of anything Alpine has at /usr/*.
-# Post-build sanity: the linked binary must reference the libressl
-# SONAMEs (libssl.so.58 / libcrypto.so.55), NOT libssl.so.3. Fail
-# loud if autoconf somehow still ended up on OpenSSL 3.
-configure = """CFLAGS="-O2 -fomit-frame-pointer -I/include" \
-  LDFLAGS="-L/lib -Wl,-rpath,/lib" \
-  PKG_CONFIG_PATH=/lib/pkgconfig \
-  ./configure --prefix=/ --sbindir=/bin \
+# Background: prior unbound builds produced /bin/unbound DT_NEEDED
+# libssl.so.3 / libcrypto.so.3 (OpenSSL 3 SONAMEs) — jonerix ships
+# libressl 4.x (libssl.so.58 / libcrypto.so.55) only, so the daemon
+# died at runtime with "Error relocating /bin/unbound:
+# OPENSSL_init_crypto symbol not found". r2 papered over this with
+# --with-libunbound-only (ship the library, not the daemon) but that
+# left users with no resolver and with stale /bin/unbound from r0/r1
+# still sitting on disk (jpkg upgrade doesn't remove files the new
+# package stopped tracking). r3 rebuilds the daemon properly:
+#
+#   1. Pre-configure: verify clang's -lssl and -lcrypto resolve
+#      to jonerix's libressl, not to an OpenSSL 3 lib the builder
+#      image happens to carry. Fail LOUD if they don't.
+#   2. Compile-side: -I/include forces libressl headers ahead of
+#      anything at /usr/include.
+#   3. Link-side: -L/lib -Wl,-rpath,/lib forces /lib ahead of
+#      /usr/lib, and LIBS=-l:libssl.so.58 -l:libcrypto.so.55
+#      pins the exact SONAMEs so libtool can't accidentally pull
+#      an /usr/lib/libssl.so.3.
+#   4. Post-install sanity: scan every shipped ELF for an OpenSSL 3
+#      DT_NEEDED and refuse to produce the .jpkg if any is found.
+#      The r2 version of this check had a doubled-backslash bug
+#      (\\.so\\.3 in the TOML survived as literal backslashes into
+#      single-quoted awk, which then matched nothing) — fixed by
+#      using grep -E instead of awk for the regex.
+configure = """# Step 1 — confirm the linker sees libressl for -lssl and -lcrypto.
+# If either resolves to libssl.so.3 / libcrypto.so.3, fail BEFORE
+# autoconf can bake the wrong SONAMEs into Makefile recipes.
+for l in ssl crypto; do
+    p=$(clang -print-file-name=lib${l}.so 2>/dev/null)
+    r=$(readlink -f "$p" 2>/dev/null || echo "$p")
+    case "$r" in
+        */libssl.so.3*|*/libcrypto.so.3*)
+            echo "unbound: clang -l${l} resolves to '$r' — OpenSSL 3, not libressl" >&2
+            echo "unbound: /lib/lib${l}.so.* must outrank /usr/lib for this build" >&2
+            exit 1 ;;
+    esac
+    echo "unbound: clang -l${l} -> $r"
+done
+
+# Step 2 — configure with libressl headers + libs pinned. SSL_LIBS is
+# an unbound-specific configure variable for extra SSL link flags.
+CFLAGS="-O2 -fomit-frame-pointer -I/include" \
+LDFLAGS="-L/lib -Wl,-rpath,/lib" \
+LIBS="-l:libssl.so.58 -l:libcrypto.so.55" \
+PKG_CONFIG_PATH=/lib/pkgconfig \
+./configure --prefix=/ --sbindir=/bin \
     --with-ssl=/ \
-    --with-libunbound-only \
     CC=clang"""
 build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
-# SONAME sanity — DT_NEEDED must NOT include libssl.so.3 or
-# libcrypto.so.3, otherwise jonerix (shipping libressl) cannot
-# resolve them at runtime. Check every ELF we're about to ship.
-for f in "$DESTDIR/bin"/unbound* "$DESTDIR/lib"/libunbound.so*; do
+
+# Post-install sanity. Iterate every file we're about to ship and use
+# grep -E (not awk, whose single-quoted regex receives doubled-backslash
+# input when triple-basic TOML relays it through shell) to flag any
+# OpenSSL-3 DT_NEEDED. Any hit refuses the package — better to fail the
+# build than to ship another daemon that won't start on the target.
+failed=""
+for f in "$DESTDIR/bin"/unbound* "$DESTDIR/lib"/libunbound.so* "$DESTDIR/lib"/libunbound.a; do
     [ -f "$f" ] || continue
-    bad=$(readelf -d "$f" 2>/dev/null | awk '/NEEDED/ && /libssl\\.so\\.3|libcrypto\\.so\\.3/ {print}')
+    # Static archive has no DT_NEEDED, skip it.
+    case "$f" in *.a) continue ;; esac
+    bad=$(readelf -d "$f" 2>/dev/null | grep NEEDED | grep -E 'libssl\\.so\\.3|libcrypto\\.so\\.3' || true)
     if [ -n "$bad" ]; then
         echo "unbound: $f links against OpenSSL 3 SONAMEs instead of libressl:" >&2
         echo "$bad" >&2
-        echo "refusing to ship — rebuild with clean /include or verify libressl on builder" >&2
-        exit 1
+        failed="$failed $f"
     fi
 done
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
+if [ -n "$failed" ]; then
+    echo "unbound: refusing to ship — rebuild with clean /include and verify" >&2
+    echo "unbound: 'clang -print-file-name=libssl.so' points at libressl on the builder" >&2
+    exit 1
+fi
+
+# Strip. for-loops instead of find -exec so jpkg's triple-basic TOML
+# doesn't mangle the trailing \\; terminator.
+for f in "$DESTDIR"/bin/unbound*; do
+    [ -f "$f" ] && llvm-strip --strip-all "$f" 2>/dev/null || true
+done
+for f in "$DESTDIR"/lib/libunbound.so*; do
+    [ -f "$f" ] && llvm-strip --strip-unneeded "$f" 2>/dev/null || true
+done"""
 
 [depends]
 runtime = ["musl", "libressl", "expat"]
