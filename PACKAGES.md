@@ -7,7 +7,7 @@ Generated from tracked `packages/**/recipe.toml` — **91 recipes**. All jonerix
 - **`packages/core/`** — runtime-critical userland that every jonerix system needs.
 - **`packages/develop/`** — toolchain + compilers (clang/LLVM, rust, go, python3, perl, nodejs, jmake, cmake).
 - **`packages/extra/`** — everything else: networking daemons, container runtime, shells, editors, vendored tooling.
-- **`packages/jpkg/`** + **`packages/jpkg-local/`** — the jonerix package manager itself, built out-of-tree by the CI scripts; the parallel recipe under `core/jpkg/` is what ships the runtime binary.
+- **`packages/jpkg/`** — the jonerix package manager itself (including the `jpkg-local` and `jpkg-conform` sidecar binaries built from the same source tree), built out-of-tree by the CI scripts; the parallel recipe under `core/jpkg/` is what ships the runtime binary.
 
 ## Build targets that consume these packages
 
@@ -38,8 +38,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 
 | Package | Folder | Version | License | Arch | Runtime deps | Build deps | Used in | Description |
 |---|---|---|---|---|---|---|---|---|
-| **`jpkg`** | `(top)` | 1.0.10 | MIT | any | `musl` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager |
-| **`jpkg-local`** | `(top)` | 1.0.10 | MIT | any | `jpkg`, `zstd` | `clang`, `llvm`, `zstd` | — | jpkg subcommand for local .jpkg install and recipe builds |
+| **`jpkg`** | `(top)` | 1.1.2 | MIT | any | `musl`, `libressl`, `zstd` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
 | **`anvil`** | `core` | 0.2.1-r1 | MIT | any | `musl` | `rust` | `pi5-install`, `pi5-image` | Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...) |
 | **`bsdtar`** | `core` | 3.8.6-r6 | Apache-2.0 | any | `libarchive` | — | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | Compatibility package providing /bin/tar via libarchive bsdtar |
 | **`curl`** | `core` | 8.11.1-r1 | MIT | any | `musl`, `libressl`, `zlib` | `clang`, `cmake`, `samurai`, `libressl`, `zlib` | `docker:minimal`, `docker:core`, `docker:full` | Command-line tool and library for transferring data with URLs |
@@ -133,6 +132,5 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 ## Special-purpose / not-built-by-CI
 
 - **`linux`** (`packages/extra/linux`) — Linux kernel 6.14.2, GPL-2.0-only. Deliberately blocked by jpkg's license gate (`cmd_build.c`). Built out-of-band via `scripts/build-kernel.sh` as the sole GPL exception in the project.
-- **`jpkg`** (`packages/jpkg`) — The package manager itself. CI builds this from source in each runner (`scripts/ci-build-*.sh`) rather than pulling a prebuilt one; the parallel `packages/core/jpkg/recipe.toml` is what publishes the runtime binary into INDEX.
-- **`jpkg-local`** (`packages/jpkg-local`) — Ad-hoc `.jpkg`-file installer and recipe builder. Shares jpkg's util/toml/pkg/db modules so it tracks jpkg's version in lockstep.
+- **`jpkg`** (`packages/jpkg`) — The package manager itself. CI builds this from source in each runner (`scripts/ci-build-*.sh`) rather than pulling a prebuilt one; the parallel `packages/core/jpkg/recipe.toml` is what publishes the runtime binary into INDEX. Since 1.1.2 this package also ships `/bin/jpkg-local` (ad-hoc `.jpkg`-file installer and in-tree recipe builder, dispatched as `jpkg local ...`) and `/bin/jpkg-conform` (host version pin, dispatched as `jpkg conform ...`).
 - **`jonerix-raspi5-fixups`** — `arch = "aarch64"`; skipped by ci-build on x86_64 runners since its inline asm is Pi 5-only.

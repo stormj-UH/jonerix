@@ -1,20 +1,23 @@
 [package]
 name = "jpkg"
-version = "1.1.0"
+version = "1.1.2"
 license = "MIT"
 description = "jonerix package manager"
+# 1.1.2: absorb jpkg-local as a second binary built from shared objects
+# (util/toml/pkg/db). The sidecar jpkg-local package is gone.
+replaces = ["jpkg-local"]
 
 [source]
 # Local package — no upstream URL
 
 [build]
 system = "custom"
-configure = "cp -a $RECIPE_DIR/src . && cp $RECIPE_DIR/build.ninja ."
+configure = "cp -a $RECIPE_DIR/src . && cp -a $RECIPE_DIR/bin . && cp $RECIPE_DIR/build.ninja ."
 build = """CPPFLAGS='-DJPKG_USE_LIBRESSL -I/include' \
 LDFLAGS='-L/lib' \
 LDLIBS='-ltls -lssl -lcrypto -lzstd' \
 samu -f build.ninja"""
-install = "install -Dm755 jpkg $DESTDIR/bin/jpkg && install -d $DESTDIR/etc/jpkg/keys && install -d $DESTDIR/var/db/jpkg/installed && install -d $DESTDIR/var/cache/jpkg"
+install = "install -Dm755 jpkg $DESTDIR/bin/jpkg && install -Dm755 jpkg-local $DESTDIR/bin/jpkg-local && install -Dm755 bin/jpkg-conform $DESTDIR/bin/jpkg-conform && install -d $DESTDIR/etc/jpkg/keys && install -d $DESTDIR/var/db/jpkg/installed && install -d $DESTDIR/var/cache/jpkg"
 
 [depends]
 runtime = ["musl"]
