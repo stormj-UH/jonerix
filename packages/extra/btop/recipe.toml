@@ -1,6 +1,6 @@
 [package]
 name = "btop"
-version = "1.4.5-r2"
+version = "1.4.5-r3"
 license = "Apache-2.0"
 description = "Terminal resource monitor with CPU, memory, disk, network, and process views"
 
@@ -16,7 +16,15 @@ system = "cmake"
 # the Pi 5). Done as a Python text substitution instead of a patch(1)
 # hunk because the CI builder's toybox patch 0.8.11 rejects hunks with
 # heavy context re-indentation. See cpuname-patch.py for the full story.
-configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBTOP_GPU=OFF"
+#
+# CMAKE_CXX_STANDARD=20 must be set at the command line (not just via
+# the target property the upstream CMakeLists sets later). btop's
+# CMakeLists.txt does a `check_include_file_cxx(ranges ...)` probe BEFORE
+# it applies its own CXX_STANDARD target property, and CMake's
+# try_compile uses the compiler default (clang 21 still defaults to
+# gnu++17). Without this override, the check fails with "The compiler
+# doesn't support <ranges>" even though libcxx definitely has it.
+configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBTOP_GPU=OFF"
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR cmake --install build
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
