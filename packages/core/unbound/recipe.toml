@@ -50,5 +50,5 @@ find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || tru
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "libressl"]
-build = ["clang", "make", "jonerix-headers", "libressl"]
+runtime = ["musl", "libressl", "expat"]
+build = ["clang", "make", "jonerix-headers", "libressl", "expat"]
