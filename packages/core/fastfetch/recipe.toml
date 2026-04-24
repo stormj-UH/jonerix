@@ -1,6 +1,6 @@
 [package]
 name = "fastfetch"
-version = "2.36.1"
+version = "2.36.1-r1"
 license = "MIT"
 description = "Feature-rich system information tool"
 
@@ -10,7 +10,7 @@ sha256 = "490d5b971dd7fac4c31018354904fdd5e2c409924ba868157bda3bfe1fb5c485"
 
 [build]
 system = "cmake"
-configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DFASTFETCH_BUILD_TESTS=OFF"
+configure = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DFASTFETCH_BUILD_TESTS=OFF"
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

@@ -1,6 +1,6 @@
 [package]
 name = "btop"
-version = "1.4.5-r1"
+version = "1.4.5-r2"
 license = "Apache-2.0"
 description = "Terminal resource monitor with CPU, memory, disk, network, and process views"
 
@@ -16,7 +16,7 @@ system = "cmake"
 # the Pi 5). Done as a Python text substitution instead of a patch(1)
 # hunk because the CI builder's toybox patch 0.8.11 rejects hunks with
 # heavy context re-indentation. See cpuname-patch.py for the full story.
-configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DBTOP_GPU=OFF"
+configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBTOP_GPU=OFF"
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR cmake --install build
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
