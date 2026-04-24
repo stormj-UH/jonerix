@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.2"
+version = "1.6.3"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor, tty1 HDMI console) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -91,6 +91,17 @@ mksh -n $DESTDIR/etc/init.d/tty1-console
 # with a snooze-cron entry that runs it daily.
 install -Dm755 bin/pi5-rtc-battery-check $DESTDIR/usr/local/bin/pi5-rtc-battery-check
 install -Dm644 cron.d/pi5-rtc-battery     $DESTDIR/etc/cron.d/pi5-rtc-battery
+
+# jonerix is merged-usr-flat: /usr is a runtime symlink to /. jpkg >= 1.1.0
+# refuses to silently flatten a DESTDIR/usr/ tree (layout bugs used to
+# slip through), so do the flatten ourselves. After this, $DESTDIR/usr/
+# is gone and files previously at $DESTDIR/usr/local/bin/* now live at
+# $DESTDIR/local/bin/* — which the /usr → / runtime symlink resolves
+# back to /usr/local/bin/* on the installed system.
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
 """
 install = ""
 
