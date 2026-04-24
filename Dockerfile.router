@@ -44,8 +44,19 @@ RUN jpkg update && \
     sh /usr/local/sbin/image-slim && \
     rm /usr/local/sbin/image-slim
 
-# Unbound: recursive DNS resolver with DNSSEC
+# Unbound: recursive DNS resolver with DNSSEC.
+#
+# The unbound jpkg's post_install does the heavy lifting — creates the
+# unbound user, seeds /etc/unbound/unbound.conf.default, adds
+# `nohook resolv.conf` to dhcpcd.conf, points /etc/resolv.conf at
+# 127.0.0.1, and enables the OpenRC service in the `default`
+# runlevel. We layer on top of that with the router-specific config
+# (opens :53 on 0.0.0.0 and adds LAN access-control), and re-assert
+# the rc-update in case a future :core grows an /etc/unbound/no-takeover
+# sentinel and the unbound post_install short-circuited on this layer.
 COPY config/router/etc/unbound/unbound.conf /etc/unbound/unbound.conf
+RUN rm -f /etc/unbound/no-takeover && \
+    rc-update add unbound default 2>/dev/null || true
 
 # Default network interfaces
 COPY config/router/etc/network/interfaces /etc/network/interfaces

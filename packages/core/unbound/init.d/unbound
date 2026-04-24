@@ -1,0 +1,58 @@
+#!/bin/openrc-run
+# unbound — validating recursive DNSSEC resolver (BSD-3-Clause).
+# Part of the jonerix core unbound jpkg.
+
+name="unbound"
+description="Validating recursive caching DNS resolver"
+
+: "${UNBOUND_CONF:=/etc/unbound/unbound.conf}"
+: "${UNBOUND_PIDFILE:=/run/unbound.pid}"
+
+command="/bin/unbound"
+command_args="-c ${UNBOUND_CONF}"
+pidfile="${UNBOUND_PIDFILE}"
+command_background="no"
+
+depend() {
+    # unbound.conf's 'interface:' directive means we need the link up
+    # before starting. Order after dhcpcd so /etc/resolv.conf has
+    # already been reconciled by the unbound post_install edit (and
+    # by any downstream dhcpcd nohook directive).
+    need net
+    after dhcpcd
+    provide dns
+    keyword -jail -prefix
+}
+
+start_pre() {
+    # unbound's smallapp code path opens the pidfile as its dedicated
+    # 'unbound' user, so both the file and its parent dir have to be
+    # writable by that uid. Do this every start so a missing /run
+    # after a tmpfs remount heals itself.
+    checkpath -d -m 0755 -o unbound:unbound "$(dirname "${UNBOUND_PIDFILE}")" \
+        2>/dev/null || true
+    # Fetch (or refresh) the DNSSEC root anchor. Best-effort: if the
+    # network is still coming up we just log and continue; unbound will
+    # fall back to the shipped root.key.
+    if [ -x /bin/unbound-anchor ]; then
+        /bin/unbound-anchor -a /etc/unbound/root.key 2>/dev/null || true
+    fi
+}
+
+start_post() {
+    # Confirm the socket is actually bound. A config error that passes
+    # syntax but fails at bind time (e.g. port 53 already in use) is
+    # otherwise silent because unbound forks off.
+    for _ in 1 2 3 4 5; do
+        if [ -f "${UNBOUND_PIDFILE}" ]; then return 0; fi
+        sleep 1
+    done
+    eerror "unbound started but did not write ${UNBOUND_PIDFILE}"
+    return 1
+}
+
+reload() {
+    ebegin "Reloading unbound configuration"
+    start-stop-daemon --signal HUP --pidfile "${pidfile}"
+    eend $?
+}
