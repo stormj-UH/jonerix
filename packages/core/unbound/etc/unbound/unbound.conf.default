@@ -1,0 +1,43 @@
+# jonerix default unbound.conf
+#
+# Caching DNSSEC-validating recursive resolver, bound to loopback only.
+# Suitable for a single host — every local query goes through unbound.
+# For a LAN/router role, overwrite this with a config that opens
+# `interface: 0.0.0.0` and adds access-control lines (see
+# Dockerfile.router for the router profile).
+#
+# Shipped by: unbound jpkg (unbound-maint, BSD-3-Clause).
+
+server:
+    # Loopback only — this profile resolves for the host it runs on.
+    interface: 127.0.0.1
+    interface: ::1
+    port: 53
+
+    # Drop to the unbound user the package's post_install creates.
+    username: "unbound"
+
+    # Quiet by default. Bump to 2+ for query-level debugging.
+    verbosity: 1
+    log-queries: no
+    hide-identity: yes
+    hide-version: yes
+
+    # DNSSEC hardening — the whole point of running unbound vs. the
+    # router's stub forwarder.
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    harden-referral-path: yes
+
+    # Modest cache sizing; appropriate for a single-host resolver on
+    # an SBC. Router profile should raise these.
+    num-threads: 1
+    msg-cache-size: 4m
+    rrset-cache-size: 8m
+    cache-min-ttl: 300
+    cache-max-ttl: 86400
+    prefetch: yes
+
+    # DNSSEC trust anchor — auto-refreshed by start_pre in the init.d
+    # script and by unbound itself via RFC5011.
+    auto-trust-anchor-file: "/etc/unbound/root.key"
