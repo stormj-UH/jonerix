@@ -1,0 +1,114 @@
+name: Regenerate tagged-release INDEX
+
+# One-shot workflow to rebuild INDEX.zst + INDEX.zst.sig for a frozen
+# jonerix release tag (e.g. v1.1.6) after its asset list has been edited
+# (package upgrade, superseded-asset deletion, etc). The normal
+# publish-packages pipeline only touches the rolling `packages` release;
+# tagged releases are immutable snapshots that have to be regenerated
+# out-of-band when their asset list changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to regenerate INDEX for (e.g. v1.1.6)'
+        required: true
+        type: string
+
+concurrency:
+  group: regen-tag-index-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  regen:
+    name: Regenerate INDEX for ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:3.22
+    permissions:
+      contents: write
+    steps:
+      - name: Install tools
+        run: apk add --no-cache git github-cli zstd coreutils clang lld musl-dev zstd-dev openssl-dev
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Download all packages from ${{ inputs.tag }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /var/cache/jpkg
+          gh release download "${{ inputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.jpkg" \
+            --dir /var/cache/jpkg
+          echo "Downloaded packages:"
+          ls -lh /var/cache/jpkg/*.jpkg | wc -l
+
+      - name: Regenerate INDEX.zst
+        env:
+          PKG_DIR: /var/cache/jpkg
+          OUT_INDEX: /var/cache/jpkg/INDEX
+          STALE_LIST: /var/cache/jpkg/.stale-assets
+          RECIPES_ROOT: ${{ github.workspace }}/packages
+        run: |
+          set -e
+          "$GITHUB_WORKSPACE/scripts/gen-index.sh"
+          echo "INDEX preview (first 40 lines):"
+          head -40 "$OUT_INDEX"
+          INDEX_ZST=/var/cache/jpkg/INDEX.zst
+          zstd -19 -f -o "$INDEX_ZST" "$OUT_INDEX"
+          echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
+
+      - name: Delete stale (superseded) release assets
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STALE_LIST: /var/cache/jpkg/.stale-assets
+        run: |
+          if [ ! -s "$STALE_LIST" ]; then
+            echo "No stale assets to delete."
+            exit 0
+          fi
+          while read -r asset; do
+            [ -n "$asset" ] || continue
+            echo "Deleting stale asset from ${{ inputs.tag }}: $asset"
+            gh release delete-asset "${{ inputs.tag }}" "$asset" --yes --repo "$GITHUB_REPOSITORY" || true
+          done < "$STALE_LIST"
+
+      - name: Build jpkg from source for signing
+        run: |
+          cd "$GITHUB_WORKSPACE/packages/jpkg"
+          clang -std=c11 -Os -fuse-ld=lld \
+            -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
+            -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
+            -fstack-protector-strong \
+            -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
+            -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') -lzstd -lssl -lcrypto
+          install -m 755 jpkg /usr/local/bin/jpkg
+          jpkg --version || true
+
+      - name: Sign INDEX.zst
+        env:
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
+        run: |
+          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > /tmp/jpkg-sign.sec
+          chmod 600 /tmp/jpkg-sign.sec
+          jpkg sign /var/cache/jpkg/INDEX.zst --key /tmp/jpkg-sign.sec
+          rm -f /tmp/jpkg-sign.sec
+          echo "INDEX.zst.sig: $(wc -c < /var/cache/jpkg/INDEX.zst.sig) bytes"
+
+      - name: Upload INDEX.zst and signature to ${{ inputs.tag }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ inputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            /var/cache/jpkg/INDEX.zst \
+            /var/cache/jpkg/INDEX.zst.sig
+          echo "INDEX.zst and INDEX.zst.sig uploaded to ${{ inputs.tag }}."
