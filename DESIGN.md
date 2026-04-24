@@ -9,28 +9,26 @@ Every component running on a jonerix system is licensed under MIT, BSD, ISC, Apa
 ## Table of Contents
 
 1. [Philosophy](#1-philosophy--license-policy)
-2. [Bootstrap Strategy](#2-multi-stage-bootstrap)
-3. [Core Stack](#3-core-component-stack)
-4. [Package Manager (jpkg)](#4-package-manager-jpkg)
-5. [Filesystem Layout](#5-filesystem-layout)
-6. [Boot Sequence](#6-boot-sequence)
-7. [Networking](#7-networking)
-8. [Security Hardening](#8-security-hardening)
-9. [Container & Cloud](#9-container--cloud)
-10. [Repository Structure](#10-repository-structure)
-11. [Build Recipes](#11-build-recipe-format)
-12. [Open Questions](#12-open-questions--future-work)
+2. [Core Stack](#2-core-component-stack)
+3. [Package Manager (jpkg)](#3-package-manager-jpkg)
+4. [Filesystem Layout](#4-filesystem-layout)
+5. [Boot Sequence](#5-boot-sequence)
+6. [Networking](#6-networking)
+7. [Security Hardening](#7-security-hardening)
+8. [Container & Cloud](#8-container--cloud)
+9. [Repository Structure](#9-repository-structure)
+10. [Build Recipes](#10-build-recipe-format)
+11. [Open Questions](#11-open-questions--future-work)
 
 ---
 
 ## 1. Philosophy & License Policy
 
-jonerix exists because permissive licensing matters for infrastructure. Operators should be able to inspect, modify, and redistribute theirI S copyleft obligations. We do not ship the Linux Kernel. The rules are simple:
+jonerix exists because permissive licensing matters for infrastructure. Operators should be able to inspect, modify, and redistribute their OS without any copyleft obligations. We do not ship the Linux Kernel. The rules are simple:
 
 | Rule | Detail |
 |------|--------|
 | **Runtime** | Every binary, library, config, and script on the running system must be permissive (MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, public domain). |
-| **Build time** | GPL tools (GCC, GNU make, bash) are permitted in Alpine build containers. They are scaffolding — they never appear in the final image. |
 | **Self-hosting** | The final system must be able to rebuild itself from source using only its own (permissive) tools. The `jonerix:builder` image proves this. |
 
 ### Why not just use a BSD?
@@ -42,19 +40,6 @@ FreeBSD/OpenBSD are excellent. jonerix targets a different niche:
 - **Familiarity**: Linux syscall ABI, `/proc`, `/sys`, OCI compatibility — no porting friction for server workloads.
 
 ---
-
-## 2. Multi-Stage Bootstrap
-
-jonerix is bootstrapped from Alpine Linux using jpkg (the custom package manager) and per-package `recipe.toml` build recipes. Alpine is used only as a build host — nothing from it enters the final image.
-
-```
- Alpine build host               jpkg packages                        Final rootfs
-┌──────────────────┐          ┌─────────────────────┐            ┌──────────────────┐
-│ Alpine + clang   │──build──▶│ .jpkg archives      │──install──▶│ Pure permissive  │
-│ jpkg, build deps │          │ both arches, signed │            │ system. No GPL.  │
-└──────────────────┘          └─────────────────────┘            └──────────────────┘
-     GPL is OK                  from-source builds                   no GPL at all
-```
 
 ### Image Chain
 
@@ -74,14 +59,14 @@ minimal -> core -> builder   (compilers + dev tools)
 
 ### Build Pipeline
 
-1. **jpkg** is built from C source in an Alpine container (the only GPL build-time dependency)
+1. **jpkg** is built from C source in an jonerix:builder container
 2. **Packages** are built from source using `scripts/build-all.sh` and per-package `recipe.toml` recipes in `packages/{core,develop,extra}/`
 3. **Images** are assembled using Dockerfiles that install packages via `jpkg install`
 4. **CI** builds and publishes all images and packages for both x86_64 and aarch64
 
 ### From-Source Builds
 
-All 60+ packages build from source on jonerix itself (both x86_64 and aarch64):
+All packages build from source on jonerix itself (both x86_64 and aarch64):
 
 - **C/C++**: musl, toybox, LibreSSL, curl, dropbear, OpenRC, ncurses, etc.
 - **LLVM/Clang/LLD**: Full compiler toolchain from source
@@ -102,7 +87,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 
 ---
 
-## 3. Core Component Stack
+## 2. Core Component Stack
 
 | Role | Component | License | Replaces |
 |------|-----------|---------|----------|
@@ -110,7 +95,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | C library | musl | MIT | glibc (LGPL) |
 | Compiler | LLVM/Clang + lld | Apache-2.0 w/ LLVM exception | GCC (GPL) |
 | Coreutils | toybox + uutils | 0BSD / MIT | BusyBox (GPL), GNU coreutils (GPL) |
-| Shell | mksh | MirOS (ISC-like) | bash (GPL) |
+| Shell | zsh | BSD | bash (GPL) |
 | Init system | OpenRC | BSD-2-Clause | systemd (LGPL) |
 | Privilege escalation | doas | ISC | sudo |
 | TLS library | LibreSSL | ISC | OpenSSL (Apache-2.0) |
@@ -143,7 +128,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 
 **GNU make**: Replaced by `jmake` (MIT, clean-room Rust implementation) and `samurai` (Apache-2.0, ninja-compatible) for cmake projects. jmake is a drop-in replacement that handles all GNU make features.
 
-**bash**: mksh (MirOS) is the runtime shell. It is POSIX-compliant and handles all shell scripting needs. Bash is only used at build time inside Alpine containers for projects that require it (e.g., toybox's genconfig.sh).
+**bash**: zsh is used as the default shell in all non-minimal builds. A bash clone is forthcoming.
 
 **gzip**: The gzip *format* is open. `pigz` (zlib license) handles `.gz` files. `zstd` is the preferred compression.
 
@@ -166,7 +151,7 @@ When portability and pragmatism collide, portability wins unless there's a writt
 
 ---
 
-## 4. Package Manager: jpkg
+## 3. Package Manager: jpkg
 
 `jpkg` is a custom, MIT-licensed package manager purpose-built for jonerix. It is intentionally minimal.
 
@@ -248,9 +233,9 @@ Written in C (~5000 lines), built with `samu` (ninja). Linked statically against
 
 ---
 
-## 5. Filesystem Layout
+## 4. Filesystem Layout
 
-Merged `/usr` — all binaries live in `/bin`, all libraries in `/lib`. Symlinks for compatibility:
+Merged `/usr` — all binaries live in `/bin`, all libraries in `/lib`. It's 2026. What are we doing? Symlinks for compatibility:
 
 ```
 /
@@ -285,7 +270,7 @@ Merged `/usr` — all binaries live in `/bin`, all libraries in `/lib`. Symlinks
 
 ---
 
-## 6. Boot Sequence
+## 5. Boot Sequence
 
 ### UEFI (preferred, no GPL bootloader needed)
 
@@ -309,14 +294,9 @@ UEFI firmware
   → getty spawns on tty1-tty3
   → User logs in → mksh
 ```
-
-### BIOS Legacy (fallback)
-
-For BIOS systems, syslinux (GPL) is used on the **boot media only** — it is not installed to the root filesystem. Once the kernel is loaded, syslinux is no longer running. This is analogous to how the UEFI firmware itself is proprietary but doesn't affect the OS license.
-
 ---
 
-## 7. Networking
+## 6. Networking
 
 | Function | Tool | License |
 |----------|------|---------|
@@ -335,13 +315,14 @@ For BIOS systems, syslinux (GPL) is used on the **boot media only** — it is no
 The `jonerix:router` image extends core with networking packages and ships default configs:
 
 - **Unbound**: recursive DNS with DNSSEC, listens on LAN, rebind protection
+- **nloxied** Rust-based replacement for libnl
 - **Hostapd**: WiFi access point (WPA2, disabled by default — user must configure SSID/passphrase)
 - **Network interfaces**: WAN (eth0, DHCP) + LAN (eth1, static 192.168.1.1/24)
 - **Sysctl hardening**: IP forwarding enabled, SYN cookies, ICMP redirect rejection, reverse path filtering
-- 
+- **Stormwall**: A drop-in replacement for nftables. 
 ---
 
-## 8. Security Hardening
+## 7. Security Hardening
 
 ### Compile-Time Defaults
 
@@ -363,9 +344,13 @@ All packages are built with:
 - **Kernel hardening**: `kernel.kptr_restrict=2`, `kernel.dmesg_restrict=1`, `kernel.unprivileged_bpf_disabled=1`.
 - **Router sysctl**: SYN cookies, ICMP redirect rejection, reverse path filtering, no source routing.
 
+### Rust
+
+New code where feasible is written in Rust. All uses of "unsafe" are audited.
+
 ---
 
-## 9. Container & Cloud
+## 8. Container & Cloud
 
 ### Image Chain
 
@@ -421,7 +406,7 @@ Package builds (`publish-packages.yml`) compile recipes inside `jonerix:all` con
 
 ---
 
-## 10. Repository Structure
+## 9. Repository Structure
 
 ```
 jonerix/
@@ -505,7 +490,7 @@ jonerix/
 
 ---
 
-## 11. Build Recipe Format
+## 10. Build Recipe Format
 
 Each package has a `recipe.toml` in `packages/{core,develop,extra}/`. Recipes contain metadata, source URL, build instructions, and dependencies.
 
@@ -548,7 +533,7 @@ build = ["clang"]
 
 ---
 
-## 12. Open Questions & Future Work
+## 11. Open Questions & Future Work
 
 ### Completed
 
@@ -561,22 +546,7 @@ build = ["clang"]
 - [x] Multi-user mode (getty, system accounts, SUID, securetty)
 - [x] License enforcement in jpkg (allowlist + SPDX AND/OR parsing)
 - [x] Router image with unbound DNS, hostapd, sysctl hardening
-
-### In Progress
-
-- [ ] Build Ruby 3.4.3 jpkg (license unblocked, needs GNU make in Alpine)
-- [ ] Build remaining x86_64 packages (btop, sqlite, unzip)
-- [ ] Linux kernel recipe + custom build
-- [ ] Bootloader for bare metal (EFISTUB + fallback)
-
-### Future
-
-- [ ] Write `cloud-init-lite` — metadata-driven instance setup (~500 lines of sh)
-- [ ] **Desktop variant** — Wayland (MIT) + wlroots (MIT) + foot terminal (MIT) + Sway (MIT). All permissive.
-- [ ] **Raspberry Pi** support (device tree, kernel config)
-- [ ] **Java bootstrap** chain
-- [ ] **Secure Boot** — Sign the EFISTUB kernel with a custom MOK key. No GPL bootloader needed.
-- [ ] **Reproducible builds** — Deterministic timestamps, sorted tar entries, fixed locale.
+- [x] Raspi support 
 
 ### Known Compromises
 
