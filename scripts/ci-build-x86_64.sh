@@ -242,7 +242,7 @@ install_target_build_deps() {
         # python3 `lzma.h` reproducer and rationale.
         case "$dep" in
             xz|bzip2|zstd|zlib|lz4|ncurses|pcre2|libffi|sqlite|\
-            libressl|libarchive|libevent|libcxx|nloxide|curl|\
+            libressl|libarchive|libevent|libcxx|nloxide|curl|expat|\
             jonerix-headers)
                 is_library_pkg=1
                 ;;

@@ -43,6 +43,7 @@ zlib
 xz
 zstd
 libressl
+expat
 dropbear
 openrc
 flex
