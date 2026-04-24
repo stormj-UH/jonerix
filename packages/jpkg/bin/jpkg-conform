@@ -1,0 +1,303 @@
+#!/bin/sh
+# jpkg-conform <release-version> [--nopkgs]
+#
+# Bring this host into conformance with a jonerix release tag.
+#
+# Given an x.y.z version (e.g. 1.1.6), this reconfigures jpkg's mirror
+# to point at that tag's GitHub release, runs `jpkg update` to fetch
+# the pinned INDEX.zst, and for every package that is installed locally
+# AND present in the release it issues `jpkg install --force <pkg>` —
+# which upgrades or downgrades the package to the exact version the
+# release pinned. Then it restores the mirror config, refreshes the
+# INDEX, and writes the matching /etc/os-release.
+#
+# Packages installed locally but not in the release are left alone.
+# Packages in the release but not installed are NOT auto-installed.
+#
+# --nopkgs       Skip the mirror-swap + package conformance; only
+#                install the matching /etc/os-release.
+#
+# Invoked as either `jpkg conform <ver>` (via jpkg's fallthrough to
+# jpkg-<name> external subcommands, see main.c) or directly as
+# `jpkg-conform <ver>`. POSIX sh; no bashisms, no GNU-isms.
+#
+# Part of jpkg (MIT, jonerix core jpkg).
+
+set -eu
+
+REPO="stormj-UH/jonerix"
+RELEASE_BASE="https://github.com/${REPO}/releases/download"
+RAW_BASE="https://raw.githubusercontent.com/${REPO}"
+
+# ---------------- argument parsing ----------------
+
+usage() {
+    cat <<EOF
+Usage: jpkg conform <release-version> [--nopkgs]
+
+Bring installed packages and /etc/os-release into line with a pinned
+jonerix release (e.g. 1.1.6 -> the v1.1.6 GitHub release).
+
+  <release-version>   x.y.z or vx.y.z (the leading 'v' is optional)
+
+Options:
+  --nopkgs            Update /etc/os-release only; leave packages alone.
+  -h, --help          Show this help.
+EOF
+}
+
+VERSION=""
+NOPKGS=0
+for arg in "$@"; do
+    case "$arg" in
+        --nopkgs) NOPKGS=1 ;;
+        -h|--help) usage; exit 0 ;;
+        -*)
+            printf 'jpkg-conform: unknown option: %s\n' "$arg" >&2
+            usage >&2
+            exit 2 ;;
+        *)
+            if [ -n "$VERSION" ]; then
+                printf 'jpkg-conform: unexpected extra argument: %s\n' "$arg" >&2
+                exit 2
+            fi
+            VERSION="$arg"
+            ;;
+    esac
+done
+
+if [ -z "$VERSION" ]; then
+    usage >&2
+    exit 2
+fi
+
+# Normalise "1.1.6" / "v1.1.6" -> BARE=1.1.6, TAG=v1.1.6.
+BARE="${VERSION#v}"
+TAG="v${BARE}"
+
+# Basic shape check (x.y.z with numeric components). Accept -rN tails
+# even though the distro version itself should never have -r, since
+# future schemes might.
+case "$BARE" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *)
+        printf 'jpkg-conform: version must be x.y.z, got: %s\n' "$VERSION" >&2
+        exit 2 ;;
+esac
+
+# ---------------- helpers ----------------
+
+# Resolve the rootfs for edits. We DON'T honour JPKG_ROOT here — conform
+# is always acting on the live host. Cross-root conforms can be done
+# with `jpkg -r /mnt conform ...` via main.c's --root handling once the
+# built-in command lands; until then, this script is host-only.
+ROOTFS=""
+
+jpkg_cache="${ROOTFS}/var/cache/jpkg"
+jpkg_conf="${ROOTFS}/etc/jpkg/repos.conf"
+os_release="${ROOTFS}/etc/os-release"
+db_installed="${ROOTFS}/var/db/jpkg/installed"
+
+TMPDIR=$(mktemp -d /tmp/jpkg-conform.XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+# Pick a downloader. curl is in core; wget generally isn't.
+if command -v curl >/dev/null 2>&1; then
+    fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
+else
+    printf 'jpkg-conform: curl not found — cannot fetch release assets\n' >&2
+    exit 1
+fi
+
+# Decide the arch label the release uses. jpkg's INDEX has sections
+# like [name-<arch>] with arch in {aarch64, x86_64}.
+case "$(uname -m)" in
+    aarch64|arm64)    ARCH=aarch64 ;;
+    x86_64|amd64)     ARCH=x86_64 ;;
+    *)
+        printf 'jpkg-conform: unsupported arch: %s\n' "$(uname -m)" >&2
+        exit 1 ;;
+esac
+
+# ---------------- step 1: fetch + install /etc/os-release ----------------
+#
+# Always done, regardless of --nopkgs. Primary source: the os-release
+# file that was committed at the release tag. Fallback: synthesise a
+# minimal one from the version string. Either way, we keep a backup of
+# the pre-existing file at /etc/os-release.pre-conform.<ver>.
+
+osr_src="$TMPDIR/os-release"
+osr_url="${RAW_BASE}/${TAG}/config/defaults/etc/os-release"
+
+if fetch "$osr_url" "$osr_src" 2>/dev/null; then
+    printf 'jpkg-conform: fetched os-release for %s from git tag\n' "$TAG"
+else
+    printf 'jpkg-conform: git tag fetch failed; synthesising os-release\n' >&2
+    cat > "$osr_src" <<EOF
+NAME="jonerix"
+ID=jonerix
+VERSION_ID=${BARE}
+PRETTY_NAME="jonerix ${BARE}"
+HOME_URL="https://github.com/${REPO}"
+BUG_REPORT_URL="https://github.com/${REPO}/issues"
+EOF
+fi
+
+if [ -f "$os_release" ]; then
+    cp "$os_release" "${os_release}.pre-conform.${BARE}" 2>/dev/null || true
+fi
+install -Dm644 "$osr_src" "$os_release"
+printf 'jpkg-conform: installed %s\n' "$os_release"
+
+# ---------------- short-circuit for --nopkgs ----------------
+
+if [ "$NOPKGS" -eq 1 ]; then
+    printf 'jpkg-conform: --nopkgs set; package conformance skipped\n'
+    exit 0
+fi
+
+# ---------------- step 2: swap the mirror to the release ----------------
+#
+# Point jpkg at the release URL, refresh the index so we see the pinned
+# versions, and remember to put the old config back on exit whether
+# conform succeeds or fails.
+
+orig_conf=""
+if [ -f "$jpkg_conf" ]; then
+    orig_conf="${jpkg_conf}.pre-conform.$$"
+    cp "$jpkg_conf" "$orig_conf"
+fi
+restore_conf() {
+    if [ -n "$orig_conf" ] && [ -f "$orig_conf" ]; then
+        mv "$orig_conf" "$jpkg_conf"
+    else
+        rm -f "$jpkg_conf"
+    fi
+    # Refresh the index against the restored mirror so subsequent
+    # jpkg commands on this host don't keep seeing the release-pinned
+    # INDEX. We swallow failures — the conform itself may have
+    # succeeded even if the final update hits a transient network
+    # hiccup; the user can always `jpkg update` manually.
+    jpkg update >/dev/null 2>&1 || true
+}
+trap 'rm -rf "$TMPDIR"; restore_conf' EXIT
+
+mkdir -p "$(dirname "$jpkg_conf")"
+cat > "$jpkg_conf" <<EOF
+# temporary jpkg mirror config written by jpkg-conform for ${TAG}
+# on $(date -u +%Y-%m-%dT%H:%M:%SZ). The original is at:
+#   ${orig_conf:-<none - jpkg was using its built-in default>}
+# jpkg-conform restores it on exit.
+[repo]
+url = "${RELEASE_BASE}/${TAG}"
+EOF
+
+# Clear any stale INDEX cache pointing at the prior mirror.
+rm -f "${jpkg_cache}/INDEX" "${jpkg_cache}/INDEX.zst" \
+      "${jpkg_cache}/INDEX.zst.sig"
+
+printf 'jpkg-conform: pointing jpkg at %s/%s\n' "$RELEASE_BASE" "$TAG"
+jpkg update
+
+# ---------------- step 3: parse INDEX, find installed drift ----------------
+
+index_file="${jpkg_cache}/INDEX"
+if [ ! -s "$index_file" ]; then
+    # Some jpkg builds only cache INDEX.zst; decompress on demand.
+    if [ -s "${jpkg_cache}/INDEX.zst" ]; then
+        zstd -qdc "${jpkg_cache}/INDEX.zst" > "$index_file"
+    else
+        printf 'jpkg-conform: no INDEX found after update\n' >&2
+        exit 1
+    fi
+fi
+
+# Walk [name-arch] sections and emit "name\tversion" for our arch.
+pinned_list="$TMPDIR/pinned.tsv"
+awk -v arch="$ARCH" '
+    function flush() {
+        if (pkg != "" && ver != "") {
+            printf "%s\t%s\n", pkg, ver;
+        }
+        pkg = ""; ver = "";
+    }
+    /^\[[^]]+\]$/ {
+        flush();
+        line = $0;
+        sub(/^\[/, "", line); sub(/\]$/, "", line);
+        # Section name is "<pkgname>-<arch>". The pkg name itself may
+        # contain dashes (jonerix-raspi5-fixups, llvm-all), so split on
+        # the LAST dash only.
+        n = length(line);
+        p = 0;
+        for (i = n; i > 0; i--) {
+            if (substr(line, i, 1) == "-") { p = i; break; }
+        }
+        if (p == 0) next;
+        sec_arch = substr(line, p + 1);
+        if (sec_arch != arch) next;
+        pkg = substr(line, 1, p - 1);
+        next;
+    }
+    /^version[[:space:]]*=/ {
+        if (pkg == "") next;
+        sub(/^version[[:space:]]*=[[:space:]]*"/, "");
+        sub(/".*$/, "");
+        ver = $0;
+    }
+    END { flush(); }
+' "$index_file" > "$pinned_list"
+
+pinned_count=$(wc -l < "$pinned_list")
+printf 'jpkg-conform: %d package(s) pinned for %s in %s INDEX\n' \
+    "$pinned_count" "$ARCH" "$TAG"
+
+# ---------------- step 4: compare to installed and conform ----------------
+
+drift=0
+fixed=0
+failed=0
+
+# Read-from-file pattern keeps us portable across mksh/busybox/toybox —
+# `while read; do ...; done < file` avoids the subshell trap that bites
+# `cmd | while read`.
+while IFS="	" read -r pkg pinned_ver; do
+    [ -n "$pkg" ] || continue
+
+    # Is this package installed? db layout: /var/db/jpkg/installed/<pkg>/
+    # with per-package files. Simpler than parsing: shell out to jpkg info
+    # and grep. That survives any future DB-format change.
+    installed_ver=$(jpkg info "$pkg" 2>/dev/null \
+        | awk -F': +' '/^Version:/ { print $2; exit }')
+    if [ -z "$installed_ver" ]; then
+        continue
+    fi
+    if [ "$installed_ver" = "$pinned_ver" ]; then
+        continue
+    fi
+
+    drift=$((drift + 1))
+    printf 'jpkg-conform: drift: %s installed=%s pinned=%s\n' \
+        "$pkg" "$installed_ver" "$pinned_ver"
+    if jpkg install --force "$pkg"; then
+        fixed=$((fixed + 1))
+    else
+        failed=$((failed + 1))
+        printf 'jpkg-conform: WARN: conforming %s failed — continuing\n' \
+            "$pkg" >&2
+    fi
+done < "$pinned_list"
+
+# ---------------- step 5: summary ----------------
+
+printf '\n'
+printf 'jpkg-conform: summary for %s (%s)\n' "$TAG" "$ARCH"
+printf '  pinned in release : %s\n' "$pinned_count"
+printf '  drift from pinned : %s\n' "$drift"
+printf '  conformed         : %s\n' "$fixed"
+printf '  failed            : %s\n' "$failed"
+
+if [ "$failed" -gt 0 ]; then
+    exit 1
+fi
+exit 0
