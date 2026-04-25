@@ -26,7 +26,10 @@ ARCH="${ARCH:-$(uname -m)}"
 # Heavy packages whose build dominates wall time. Filter applied as substring
 # match against the recipe directory name. `cmake` is included because it
 # pulls in a lot of compile time; trim if you ever want a tighter set.
-HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake"
+# `python3` and `ruby` and `perl` are slow interpreter builds — added because
+# we mostly want this CI to validate the lightweight package set, not the
+# language-runtime tail (which is exercised by publish-packages.yml anyway).
+HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl"
 
 OUT=/out
 mkdir -p "$OUT/build-log" "$OUT/install-log" "$OUT/jpkgs" "$OUT/rootfs"
