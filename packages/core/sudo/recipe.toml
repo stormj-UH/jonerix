@@ -1,6 +1,6 @@
 [package]
 name = "sudo"
-version = "1.9.17p2-r1"
+version = "1.9.17p2-r2"
 license = "ISC"
 description = "Privilege escalation utility"
 
@@ -26,25 +26,34 @@ rm -rf "$DESTDIR/share/doc" "$DESTDIR/include"
 rm -f "$DESTDIR/lib/sudo/libsudo_util.a" "$DESTDIR/lib/sudo/libsudo_util.la"
 find $DESTDIR/lib -name "*.la" -delete
 
-# Strip /lib64 references from ALL files (RPATH, DT_NEEDED, embedded
-# strings — anywhere it appears). Null-pad /lib64 -> /lib\0\0 (same length,
-# terminates string early). Safe: jonerix has no /lib64, so the padded
-# path dereferences to /lib. Run on everything because /lib64 can appear
-# in strings, symbol names, debug info, etc — not just RPATH.
-for f in $(find $DESTDIR -type f); do
-    if grep -l "/lib64" "$f" >/dev/null 2>&1; then
-        matches=$(strings "$f" 2>/dev/null | grep "/lib64" | head -2 | tr '\\n' '|')
-        python3 -c "
+# Strip /lib64 references from ELF files only (RPATH, DT_NEEDED,
+# embedded strings — anywhere it appears in the binary). Null-pad
+# /lib64 -> /lib\0\0 (same length, terminates string early). Safe:
+# jonerix has no /lib64, so the padded path dereferences to /lib.
+#
+# IMPORTANT: only patch ELF files. The previous version walked every
+# file in DESTDIR including man pages, which corrupted them when they
+# legitimately mentioned /lib64 in prose. ELF magic = \x7fELF in first
+# 4 bytes; cheaper than spawning python for every text file.
+ELF_LIST=$(mktemp)
+find "$DESTDIR" -type f -exec sh -c '
+    head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d " " | grep -q "^7f454c46" && printf "%s\n" "$1"
+' _ {} \; > "$ELF_LIST" 2>/dev/null || true
+if [ -s "$ELF_LIST" ]; then
+    python3 - "$ELF_LIST" <<'PYEOF' || true
 import sys
-p = sys.argv[1]
-with open(p,'rb') as f: d = f.read()
-n = d.count(b'/lib64')
-d = d.replace(b'/lib64', b'/lib\\x00\\x00')
-with open(p,'wb') as f: f.write(d)
-print(f'sudo lib64-fix: {p} replaced {n} refs (saw: $matches)')
-" "$f" 2>&1 || true
-    fi
-done
+with open(sys.argv[1]) as f:
+    files = [ln.rstrip("\n") for ln in f if ln.strip()]
+for p in files:
+    with open(p, "rb") as fh: d = fh.read()
+    n = d.count(b"/lib64")
+    if not n: continue
+    d = d.replace(b"/lib64", b"/lib\x00\x00")
+    with open(p, "wb") as fh: fh.write(d)
+    print(f"sudo lib64-fix: {p} replaced {n} refs")
+PYEOF
+fi
+rm -f "$ELF_LIST"
 
 chmod 4755 $DESTDIR/bin/sudo
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true

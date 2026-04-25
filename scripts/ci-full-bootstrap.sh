@@ -116,14 +116,31 @@ for name in $(cat "$ORDER_FILE"); do
     # actions/cache step) to avoid re-downloading sources on every run.
     # Currently every build fetches from the upstream URL; not a correctness
     # bug but adds significant latency and network dependency.
-    if jpkg build "$recipe_dir" --output "$OUT/jpkgs" >"$log" 2>&1; then
+    #
+    # Per-package timeout: 20 min covers everything except the heavies
+    # (which are skipped when SKIP_HEAVIES=true). Without this, a single
+    # hung configure / interactive prompt / recursive-make deadlock would
+    # stall the entire bootstrap until the 6h workflow timeout.
+    # `timeout` returns 124 on TERM, 137 on KILL — both treated as failure.
+    pkg_start=$(date +%s)
+    if timeout --kill-after=30 1200 jpkg build "$recipe_dir" \
+            --output "$OUT/jpkgs" >"$log" 2>&1; then
         version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
             "$recipe_dir/recipe.toml")
         printf '%s\t%s\n' "$name" "$version" >> "$OUT/built-packages.txt"
         build_count=$((build_count + 1))
+        pkg_elapsed=$(( $(date +%s) - pkg_start ))
+        echo ">>> built $name in ${pkg_elapsed}s"
     else
-        echo "FAIL: $name (see build-log/${name}.log)" >&2
-        printf '%s\n' "$name" >> "$OUT/failed-packages.txt"
+        rc=$?
+        pkg_elapsed=$(( $(date +%s) - pkg_start ))
+        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "TIMEOUT: $name killed after ${pkg_elapsed}s (20 min cap)" >&2
+            printf '%s\ttimeout\n' "$name" >> "$OUT/failed-packages.txt"
+        else
+            echo "FAIL: $name (rc=$rc, ${pkg_elapsed}s, see build-log/${name}.log)" >&2
+            printf '%s\trc=%s\n' "$name" "$rc" >> "$OUT/failed-packages.txt"
+        fi
         fail_count=$((fail_count + 1))
         if [ "$STOP_ON_FAIL" = "true" ]; then
             echo "STOP_ON_FAIL=true — aborting after $name" >&2
