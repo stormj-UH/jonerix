@@ -14,7 +14,13 @@ sha256 = "9b8d1ecedd5b5e81fbf1918e876752a7dd948e05c1a0dba10ab863842d45acd5"
 [build]
 system = "autoconf"
 configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --infodir=/share/info --with-tcsetpgrp --enable-multibyte --enable-unicode9 --disable-gdbm --without-tcl CC=clang"
-build = "make -j$(nproc)"
+# Two-pass build. zsh's Makefile generates Src/modules.stamp via a
+# non-PHONY side-effect rule in mkmakemod.sh; under `make -j$(nproc)`
+# the bltinmods.list target races its own dependency and fails with
+# "No rule to make target 'modules.stamp', needed by 'bltinmods.list'"
+# (reproduced 2026-04-25 on aarch64 builder). Running one serial pass
+# first seeds the stamp, then we unleash the rest in parallel.
+build = "make modobjs && make -j$(nproc)"
 install = """
 make DESTDIR=$DESTDIR install
 install -Dm644 "$RECIPE_DIR/zshrc" "$DESTDIR/etc/zshrc"
