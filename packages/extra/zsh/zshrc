@@ -5,6 +5,12 @@ typeset -gU fpath
 [ -n "${LANG-}" ] || export LANG=C.UTF-8
 [ -n "${LC_CTYPE-}" ] || export LC_CTYPE=$LANG
 
+# /etc/profile-style fallback: a missing TERM (e.g. when the env was
+# stripped by `login` without `-p`) leaves ncurses in dumb mode and
+# zsh's Backspace bindings break. Default to "linux" for tty1-class
+# consoles, otherwise keep whatever was forwarded.
+[ -n "${TERM-}" ] || export TERM=linux
+
 [ -d /share/zsh/$ZSH_VERSION/functions ] && fpath=(/share/zsh/$ZSH_VERSION/functions $fpath)
 [ -d /share/zsh/site-functions ] && fpath=(/share/zsh/site-functions $fpath)
 
@@ -12,6 +18,22 @@ autoload -Uz compinit
 # On jonerix/musl, compinit's dumpfile path can wedge in ppoll(NULL, 0, ...).
 # Keep completions enabled, but skip .zcompdump read/write entirely.
 compinit -D -i
+
+# Make sure Backspace + Delete work on every terminal we ship with.
+# On a Linux VC (TERM=linux) the kernel emits DEL (\x7f) for Backspace,
+# but `bindkey -e` only binds it when emacs mode is the active keymap
+# at zle startup. Force emacs mode + explicit binds so the HDMI console
+# behaves the same as an SSH session.
+bindkey -e
+bindkey '^?'    backward-delete-char   # Backspace
+bindkey '^H'    backward-delete-char   # some serial paths
+bindkey '^[[3~' delete-char            # Forward Delete
+bindkey '^[[1~' beginning-of-line      # Home
+bindkey '^[[H'  beginning-of-line
+bindkey '^[[4~' end-of-line            # End
+bindkey '^[[F'  end-of-line
+bindkey '^[[A'  up-line-or-history     # Up
+bindkey '^[[B'  down-line-or-history   # Down
 
 HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
 HISTSIZE=1000
@@ -21,4 +43,19 @@ setopt HIST_IGNORE_DUPS
 setopt HIST_IGNORE_SPACE
 setopt INTERACTIVE_COMMENTS
 
-PROMPT='%F{19}[%F{250}%m%F{19} %F{250}%D{%H:%M:%S}%F{19} %F{250}%/%F{19}]%f %(!.#.$) '
+# Prompt: pick a colour palette appropriate to the terminal. The
+# Linux VC (TERM=linux) advertises 8 colours; xterm-256color and
+# friends advertise 256. The previous static prompt used %F{19} /
+# %F{250} which renders as "no colour" on an 8-colour terminal —
+# the user sees a monochrome prompt and assumes zsh is broken.
+# Use `tput colors` (via terminfo) to gate the high-colour palette,
+# falling back to ANSI 0-7 names which every TERM understands.
+if [[ ${TERM} == dumb ]]; then
+    PROMPT='[%m %/]%(!.#.$) '
+elif (( ${$(tput colors 2>/dev/null):-0} >= 256 )); then
+    PROMPT='%F{19}[%F{250}%m%F{19} %F{250}%D{%H:%M:%S}%F{19} %F{250}%/%F{19}]%f %(!.#.$) '
+else
+    # 8/16-colour fallback. blue brackets, white machine/path, no
+    # high-256 indices that fail to render on the Linux VC.
+    PROMPT='%F{blue}[%F{white}%m%F{blue} %F{white}%D{%H:%M:%S}%F{blue} %F{white}%/%F{blue}]%f %(!.#.$) '
+fi
