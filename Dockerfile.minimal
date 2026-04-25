@@ -29,7 +29,7 @@ RUN cd /build/jpkg && \
       -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
       -fstack-protector-strong \
       -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
-      -o jpkg src/*.c \
+      -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') \
       -ltls -lssl -lcrypto -lzstd && \
     llvm-strip jpkg
 

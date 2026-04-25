@@ -35,7 +35,7 @@ RUN cd /build/jpkg && \
       -fstack-protector-strong \
       -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
       -I/usr/include \
-      -o jpkg src/*.c \
+      -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') \
       -L/usr/lib -ltls -lssl -lcrypto -lzstd -static && \
     strip jpkg
 
