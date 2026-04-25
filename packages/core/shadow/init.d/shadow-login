@@ -1,51 +1,38 @@
 #!/bin/openrc-run
-# shadow-login — supervise-daemon respawned /bin/login on /dev/tty1.
+# shadow-login — supervise-daemon-respawned shadow-getty on /dev/tty1.
 #
-# jonerix's permissive-license-only policy means we ship no util-linux
-# (GPL) and no busybox — so the usual `agetty /dev/tty1 ... /bin/login`
-# dance isn't available. This service fills that role using ONLY tools
-# we already have:
+# Prior versions tried a shell wrapper (mksh + stty + setsid) between
+# OpenRC and /bin/login. That path had a handful of failure modes on
+# jonerix specifically — toybox stty refuses individual knobs on some
+# kernel virtual-console states, setsid without -c can't claim a ctty,
+# and a pipe-stdin from supervise-daemon made /bin/login see EOF and
+# exit immediately, causing a once-per-second respawn loop.
 #
-#   - supervise-daemon (OpenRC) handles respawn supervision. One child,
-#     restarted exactly once when it exits, never two simultaneously.
-#   - login-tty1 (a one-shot mksh wrapper installed alongside this
-#     service in /lib/shadow/) sets up TERM and the line discipline,
-#     then exec's a single /bin/login on tty1.
-#
-# Why a wrapper plus supervise-daemon instead of a `while` loop in
-# mksh: the previous shadow-login init.d ran `while :; do /bin/login;
-# done` inside one mksh, which made it impossible to stop cleanly.
-# Restarting the service spawned a SECOND mksh + login pair while the
-# original kept running (SIGTERM didn't propagate through the loop), and
-# both children read /dev/tty1, splitting the user's keystrokes between
-# them — login(1) saw garbled passwords + timed out at 60s and the
-# user couldn't log in. Reproduced 2026-04-24 on jonerix-tormenta.
-# Letting OpenRC own the respawn fixes that: only one login(1) is alive
-# at a time, and `rc-service shadow-login stop` actually stops it.
+# shadow-getty (a ~100-line C helper shipped by this package) does the
+# whole getty dance directly: setsid → open /dev/ttyN → TIOCSCTTY →
+# dup2 0/1/2 → tcsetattr → execl /bin/login -p. No shell layer means
+# no ambiguity; supervise-daemon just respawns the single C process
+# when login(1) returns.
 #
 # Part of shadow (BSD-3-Clause jonerix core jpkg).
 
 name="shadow-login"
-description="shadow-utils login(1) on /dev/tty1, respawned by supervise-daemon"
+description="shadow-utils login(1) on /dev/tty1 via shadow-getty"
 
 supervisor="supervise-daemon"
 
-# /lib/shadow/login-tty1 is the wrapper — it redirects fd 0/1/2 to
-# tty1, sets TERM=linux, fixes the erase character, then exec()s
-# /bin/login -p so the env we just set survives into the user's
-# shell. The wrapper exits when login exits; supervise-daemon
-# starts a new one.
-command="/lib/shadow/login-tty1"
-command_args=""
+command="/bin/shadow-getty"
+command_args="/dev/tty1"
 
-# Keep restart cadence sane: 1s delay, no upper retry limit. With the
-# old while-loop, a misbehaving /bin/login could tight-loop and burn
-# CPU; this caps the rate. respawn_max=0 means "never give up".
+# Respawn cadence — 1s delay, no retry cap. If shadow-getty or login
+# were misbehaving (e.g. the wrapper days), a tight loop would wedge
+# the tty; that can't happen now that the helper doesn't return
+# until login itself returns.
 respawn_delay=1
 respawn_max=0
 
-# Logs from the wrapper (e.g. "tty1 not a tty") — supervise-daemon
-# captures only stderr separately; merge into the main log.
+# supervise-daemon captures child stderr by default; aim both at the
+# same log so one glance shows everything.
 output_log="/var/log/shadow-login.log"
 error_log="/var/log/shadow-login.log"
 
