@@ -1,0 +1,153 @@
+name: Full from-source bootstrap test
+
+# Manually-triggered, end-to-end validation that:
+#   1. Pulls the latest jonerix:builder image
+#   2. Inside that builder, builds every package recipe in the repo from source
+#      (with an optional skip-heavies switch — rust/llvm/nodejs/go/cmake)
+#   3. Assembles a fresh jonerix:minimal rootfs from the just-built jpkgs
+#   4. Installs every just-built jpkg into that rootfs
+#   5. "Boots" the rootfs (docker run) and runs `--version` (or equivalent) on
+#      every shipped /bin binary
+#   6. Runs aarch64 and x86_64 in parallel
+#   7. Uploads a markdown report + per-package logs as a workflow artifact
+#
+# Concurrency: each invocation gets its own group (keyed on run_id) so this
+# workflow is intentionally independent of every other CI pipeline (publish-
+# packages, container images, regen-tag-index, etc). Run it as often as you
+# like in parallel.
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_heavies:
+        description: 'Skip rust, llvm, nodejs, go, cmake (saves ~90 min of build time)'
+        type: boolean
+        default: true
+      stop_on_first_failure:
+        description: 'Stop when any package fails to build (default: keep going so the report shows ALL failures)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: full-bootstrap-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: ${{ matrix.arch }} from-source bootstrap
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            builder_tag: builder-amd64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            builder_tag: builder-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull jonerix:builder for ${{ matrix.arch }}
+        run: |
+          docker pull ghcr.io/stormj-uh/jonerix:${{ matrix.builder_tag }}
+          docker images ghcr.io/stormj-uh/jonerix:${{ matrix.builder_tag }}
+
+      - name: Run from-source bootstrap inside the builder
+        env:
+          SKIP_HEAVIES: ${{ inputs.skip_heavies }}
+          STOP_ON_FAIL: ${{ inputs.stop_on_first_failure }}
+          BUILDER_IMAGE: ghcr.io/stormj-uh/jonerix:${{ matrix.builder_tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p out
+          docker run --rm --privileged \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$GITHUB_WORKSPACE/out:/out" \
+            -e SKIP_HEAVIES \
+            -e STOP_ON_FAIL \
+            -e ARCH \
+            -w /workspace \
+            "$BUILDER_IMAGE" \
+            /bin/sh /workspace/scripts/ci-full-bootstrap.sh
+
+      - name: Smoke-test the assembled rootfs
+        if: always()
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          # The previous step left a rootfs tarball at out/rootfs.tar plus a
+          # list of /bin binaries shipped by all installed packages at
+          # out/binaries.txt. We run a fresh container against the rootfs
+          # and exec every binary with the right version flag.
+          if [ ! -f out/rootfs.tar ]; then
+            echo "no rootfs.tar produced — bootstrap step failed before install"
+            exit 1
+          fi
+          docker import out/rootfs.tar "jonerix-bootstrap-test:$ARCH"
+          /bin/sh scripts/ci-full-bootstrap-smoke.sh "jonerix-bootstrap-test:$ARCH"
+
+      - name: Upload bootstrap artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-bootstrap-${{ matrix.arch }}
+          path: |
+            out/report.md
+            out/build-log/
+            out/install-log/
+            out/smoke-log/
+            out/binaries.txt
+            out/built-packages.txt
+            out/skipped-packages.txt
+            out/failed-packages.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Append report to workflow summary
+        if: always()
+        run: |
+          if [ -f out/report.md ]; then
+            cat out/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ${{ matrix.arch }} bootstrap — no report produced" >> "$GITHUB_STEP_SUMMARY"
+            echo '(the in-container script did not reach the report stage)' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Roll up both arches into one final summary so the user sees a single pass/
+  # fail at the workflow level. Doesn't gate anything; just aggregates.
+  summary:
+    name: Combined report
+    runs-on: ubuntu-latest
+    needs: bootstrap
+    if: always()
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Combined summary
+        run: |
+          {
+            echo '# Combined bootstrap report'
+            echo
+            for arch in x86_64 aarch64; do
+              dir="artifacts/full-bootstrap-${arch}"
+              if [ -d "$dir" ] && [ -f "$dir/report.md" ]; then
+                echo "## ${arch}"
+                cat "$dir/report.md"
+                echo
+              else
+                echo "## ${arch} — no report"
+                echo
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
