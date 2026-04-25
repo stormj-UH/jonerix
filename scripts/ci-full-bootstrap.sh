@@ -63,6 +63,11 @@ awk '
 # -exec sh -c per package (O(n^2) shell forks). Each line is "<name>\t<dir>".
 RECIPE_MAP="$OUT/recipe-map.tsv"
 : > "$RECIPE_MAP"
+# REVIEW: packages/jpkg/recipe.toml and packages/core/jpkg/recipe.toml both
+# declare name = "jpkg".  The glob below adds both to the map; the awk lookup
+# in the build loop returns whichever line appears first (i.e. glob order).
+# One of the two entries will be silently ignored.  Long-term fix: ensure only
+# one canonical location for each package, or deduplicate the map by name.
 for r in /workspace/packages/*/*/recipe.toml /workspace/packages/*/recipe.toml; do
     [ -f "$r" ] || continue
     name=$(package_name "$r")
@@ -72,11 +77,15 @@ done
 
 # Append every recipe NOT already in the build order so we cover the tail.
 # build-order.txt covers ~46 packages; the repo has ~95 recipes total.
-TRACKED=$(cat "$ORDER_FILE")
+#
+# NOTE: TRACKED was previously built with `TRACKED=$(cat "$ORDER_FILE")` and
+# tested via `case " $TRACKED " in *" $name "*) ...`.  That pattern never
+# matched interior lines of the multi-line string (each name is delimited by
+# \n, not a space), so every package in build-order.txt was re-appended,
+# causing each package to be built twice.  Use grep -qxF against the file
+# directly — one syscall, no newline quoting issues.
 while IFS=$(printf '\t') read -r name _; do
-    case " $TRACKED " in
-        *" $name "*) continue ;;
-    esac
+    grep -qxF "$name" "$ORDER_FILE" && continue
     echo "$name" >> "$ORDER_FILE"
 done < "$RECIPE_MAP"
 
@@ -102,6 +111,11 @@ for name in $(cat "$ORDER_FILE"); do
 
     log="$OUT/build-log/${name}.log"
     echo ">>> building $name from $recipe_dir"
+    # REVIEW: if jpkg build honours a JPKG_SOURCE_CACHE env var for a
+    # pre-populated tarball cache, set it here (e.g. via the workflow's
+    # actions/cache step) to avoid re-downloading sources on every run.
+    # Currently every build fetches from the upstream URL; not a correctness
+    # bug but adds significant latency and network dependency.
     if jpkg build "$recipe_dir" --output "$OUT/jpkgs" >"$log" 2>&1; then
         version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
             "$recipe_dir/recipe.toml")
@@ -156,12 +170,19 @@ STALE_LIST=/dev/null \
 zstd -19 -f -o "$OUT/jpkgs/INDEX.zst" "$OUT/jpkgs/INDEX"
 
 # Step C.1 — install the minimal-image set first.
+#
+# IMPORTANT: call jpkg-local directly, not `jpkg --root $ROOTFS local install`.
+# jpkg(1) parses --root before dispatching `local` as an external subcommand via
+# execvp("jpkg-local", ...).  execvp replaces the process image, so the --root
+# value that was stored in g_rootfs is lost — jpkg-local never receives it and
+# installs files into the builder's own / instead of $ROOTFS.  Calling jpkg-local
+# with an explicit --root argument bypasses the dispatch and is the correct form.
 MINIMAL_PKGS="musl zlib toybox dropbear openrc libressl curl zstd jpkg"
 echo ">>> installing minimal package set into $ROOTFS"
 for pkg in $MINIMAL_PKGS; do
     j=$(ls "$OUT/jpkgs/${pkg}-"*-"${ARCH}.jpkg" 2>/dev/null | head -1)
     [ -n "$j" ] || continue
-    jpkg --root "$ROOTFS" local install "$j" \
+    jpkg-local install --root "$ROOTFS" "$j" \
         >> "$OUT/install-log/install.log" 2>&1 || true
 done
 
@@ -175,12 +196,15 @@ while IFS=$(printf '\t') read -r name version; do
     esac
     j=$(ls "$OUT/jpkgs/${name}-${version}-${ARCH}.jpkg" 2>/dev/null | head -1)
     [ -n "$j" ] || continue
-    jpkg --root "$ROOTFS" local install "$j" \
+    jpkg-local install --root "$ROOTFS" "$j" \
         >> "$OUT/install-log/install.log" 2>&1 || true
 done < "$OUT/built-packages.txt"
 
 # --- step D: enumerate every shipped /bin binary --------------------------
-( cd "$ROOTFS" && find bin/ -maxdepth 1 -type f -o -type l 2>/dev/null \
+# Parentheses are required: without them, POSIX operator precedence binds
+# -maxdepth 1 only to the -type f branch, leaving -type l unconstrained and
+# potentially matching symlinks deeper than bin/.
+( cd "$ROOTFS" && find bin/ -maxdepth 1 \( -type f -o -type l \) 2>/dev/null \
     | sort -u ) > "$OUT/binaries.txt"
 
 # --- step E: tar up the rootfs for the smoke-test step --------------------
