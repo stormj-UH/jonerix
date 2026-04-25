@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r2"
+version = "4.19.4-r3"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Specifically, installing this package redirects these /bin
@@ -162,17 +162,24 @@ done
 # /etc/login.defs: shadow ships one; keep it, but arch-neutral.
 # Nothing else to do — configure wrote the right paths.
 
-# shadow-login OpenRC service + login-tty1 wrapper. The service uses
-# supervise-daemon to respawn a single /bin/login on /dev/tty1; the
-# wrapper sets TERM=linux + stty sane/erase before exec()ing login.
-# See the wrapper's header for the rationale (avoids the dual-mksh
-# race the older `while :; do login; done` design hit). post_install
-# wires shadow-login into the `default` runlevel unless the operator
-# has created /etc/shadow/no-console (opt-out).
+# shadow-getty: a ~100-line C helper that does the full agetty dance
+# (setsid → open tty → TIOCSCTTY → dup2 0/1/2 → tcsetattr → execl
+# /bin/login -p) without touching a shell, because toybox stty / mksh
+# / setsid variants on jonerix produced a respawn-storm and 60s login
+# timeout when wired together. Compile with compiler-rt + libunwind
+# so we don't require libgcc.a on the builder.
+clang -O2 -Wall -Wextra \
+    --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld \
+    -o "$DESTDIR/../shadow-getty" "$RECIPE_DIR/src/shadow-getty.c"
+install -Dm755 "$DESTDIR/../shadow-getty" "$DESTDIR/bin/shadow-getty"
+llvm-strip --strip-all "$DESTDIR/bin/shadow-getty" 2>/dev/null || true
+
+# shadow-login OpenRC service: supervise-daemon respawns shadow-getty
+# on /dev/tty1. post_install wires the service into the `default`
+# runlevel unless the operator has created /etc/shadow/no-console
+# (opt-out).
 install -Dm755 "$RECIPE_DIR/init.d/shadow-login" \
     "$DESTDIR/etc/init.d/shadow-login"
-install -Dm755 "$RECIPE_DIR/lib/shadow/login-tty1" \
-    "$DESTDIR/lib/shadow/login-tty1"
 """
 
 [hooks]
