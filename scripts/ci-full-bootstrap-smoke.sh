@@ -22,6 +22,14 @@ fi
 # Generate one-line probes for each binary. The probe tries the most common
 # version flags in order: --version, -V, -v, version. First non-error
 # response wins; otherwise the binary is marked NO-FLAG.
+# REVIEW: binaries that open a TUI even with a flag argument (e.g. tmux,
+# vim, nano) will be killed by the 5-second timeout, but any partial escape-
+# sequence output they emitted before dying may not match the case filter and
+# would be classified OK with the flag that triggered them.  This is a false
+# positive in the smoke results (the binary "answered", just not usefully).
+# It is not a test failure — the binary ran and exited — but the "first line
+# of output" column in the report will contain garbled terminal codes.
+# Consider adding *$'\033'* (ESC) to the case filter to catch raw TUI output.
 PROBE='for b in $(cat /tmp/binaries.txt); do
     name=$(basename "$b")
     [ -x "/$b" ] || continue
