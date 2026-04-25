@@ -17,12 +17,12 @@ sha256 = "77ae1665a337f1c48c61d6b961db3e52119b38e58884d1c89684af31f87bc506"
 system = "custom"
 configure = ""
 build = """CC=clang LDFLAGS="--rtlib=compiler-rt -fuse-ld=lld" /bin/sh Build.sh -r"""
-install = """mkdir -p $DESTDIR/bin $DESTDIR/share/man/man1 $DESTDIR/etc/skel $DESTDIR/usr/share/mksh/skel
+install = """mkdir -p $DESTDIR/bin $DESTDIR/share/man/man1 $DESTDIR/etc/skel $DESTDIR/share/mksh/skel
 install -m 755 mksh $DESTDIR/bin/mksh
 install -m 644 mksh.1 $DESTDIR/share/man/man1/mksh.1
 install -m 644 lksh.1 $DESTDIR/share/man/man1/lksh.1
 install -m 644 $RECIPE_DIR/dot.mkshrc $DESTDIR/etc/skel/.mkshrc
-install -m 644 $RECIPE_DIR/dot.mkshrc $DESTDIR/usr/share/mksh/skel/.mkshrc
+install -m 644 $RECIPE_DIR/dot.mkshrc $DESTDIR/share/mksh/skel/.mkshrc
 ln -sf mksh $DESTDIR/bin/sh
 llvm-strip --strip-all $DESTDIR/bin/mksh 2>/dev/null || true"""
 
@@ -30,7 +30,7 @@ llvm-strip --strip-all $DESTDIR/bin/mksh 2>/dev/null || true"""
 post_install = """seed_mkshrc() {
     home=$1
     owner=$2
-    src=/usr/share/mksh/skel/.mkshrc
+    src=/share/mksh/skel/.mkshrc
     dest=$home/.mkshrc
     [ -r "$src" ] || return 0
 
