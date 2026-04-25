@@ -123,7 +123,9 @@ for name in $(cat "$ORDER_FILE"); do
     # stall the entire bootstrap until the 6h workflow timeout.
     # `timeout` returns 124 on TERM, 137 on KILL — both treated as failure.
     pkg_start=$(date +%s)
-    if timeout --kill-after=30 1200 jpkg build "$recipe_dir" \
+    # toybox timeout uses short flags only: -k DURATION instead of GNU's
+    # --kill-after=DURATION. Confirmed in builder via `timeout --help`.
+    if timeout -k 30 1200 jpkg build "$recipe_dir" \
             --output "$OUT/jpkgs" >"$log" 2>&1; then
         version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
             "$recipe_dir/recipe.toml")
