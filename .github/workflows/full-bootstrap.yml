@@ -70,7 +70,11 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p out
+          # Override the builder's ENTRYPOINT (zsh -l) — the entrypoint
+          # otherwise wraps our positional args as if they were a script
+          # path, which makes zsh try to read /bin/sh (mksh ELF) as text.
           docker run --rm --privileged \
+            --entrypoint /bin/sh \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "$GITHUB_WORKSPACE/out:/out" \
             -e SKIP_HEAVIES \
@@ -78,7 +82,7 @@ jobs:
             -e ARCH \
             -w /workspace \
             "$BUILDER_IMAGE" \
-            /bin/sh /workspace/scripts/ci-full-bootstrap.sh
+            /workspace/scripts/ci-full-bootstrap.sh
 
       - name: Smoke-test the assembled rootfs
         if: always()
