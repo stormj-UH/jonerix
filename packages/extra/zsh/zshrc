@@ -1,7 +1,5 @@
 # /etc/zshrc — jonerix system-wide zsh interactive config
 
-typeset -gU fpath
-
 [ -n "${LANG-}" ] || export LANG=C.UTF-8
 [ -n "${LC_CTYPE-}" ] || export LC_CTYPE=$LANG
 
@@ -11,13 +9,11 @@ typeset -gU fpath
 # consoles, otherwise keep whatever was forwarded.
 [ -n "${TERM-}" ] || export TERM=linux
 
-[ -d /share/zsh/$ZSH_VERSION/functions ] && fpath=(/share/zsh/$ZSH_VERSION/functions $fpath)
-[ -d /share/zsh/site-functions ] && fpath=(/share/zsh/site-functions $fpath)
-
-autoload -Uz compinit
-# On jonerix/musl, compinit's dumpfile path can wedge in ppoll(NULL, 0, ...).
-# Keep completions enabled, but skip .zcompdump read/write entirely.
-compinit -D -i
+# NOTE: compinit is intentionally NOT called here. On jonerix/musl,
+# compinit's dumpfile path wedges in ppoll(NULL, 0, ...). Reproducible
+# 2026-04-24 by sourcing /etc/zshrc with TERM=linux — zsh hangs
+# entirely. Re-enable when the upstream musl/zsh interaction is
+# fixed; until then, completion is opt-in via the user's own .zshrc.
 
 # Make sure Backspace + Delete work on every terminal we ship with.
 # On a Linux VC (TERM=linux) the kernel emits DEL (\x7f) for Backspace,
@@ -43,19 +39,19 @@ setopt HIST_IGNORE_DUPS
 setopt HIST_IGNORE_SPACE
 setopt INTERACTIVE_COMMENTS
 
-# Prompt: pick a colour palette appropriate to the terminal. The
-# Linux VC (TERM=linux) advertises 8 colours; xterm-256color and
-# friends advertise 256. The previous static prompt used %F{19} /
-# %F{250} which renders as "no colour" on an 8-colour terminal —
-# the user sees a monochrome prompt and assumes zsh is broken.
-# Use `tput colors` (via terminfo) to gate the high-colour palette,
-# falling back to ANSI 0-7 names which every TERM understands.
-if [[ ${TERM} == dumb ]]; then
-    PROMPT='[%m %/]%(!.#.$) '
-elif (( ${$(tput colors 2>/dev/null):-0} >= 256 )); then
-    PROMPT='%F{19}[%F{250}%m%F{19} %F{250}%D{%H:%M:%S}%F{19} %F{250}%/%F{19}]%f %(!.#.$) '
-else
-    # 8/16-colour fallback. blue brackets, white machine/path, no
-    # high-256 indices that fail to render on the Linux VC.
-    PROMPT='%F{blue}[%F{white}%m%F{blue} %F{white}%D{%H:%M:%S}%F{blue} %F{white}%/%F{blue}]%f %(!.#.$) '
-fi
+# Prompt:
+#   [user@host HH:MM:SS cwd] %     (non-root)
+#   [user@host HH:MM:SS cwd] #     (root)
+#
+# Brackets are blue, everything inside (and the trailing sigil) is white.
+# `%~` shows $HOME as `~`. `%%` is the escape for a literal `%` since
+# bare `%` is zsh's prompt-syntax marker. `%(!.#.%%)` selects `#` for
+# root (uid 0 == privileged) and `%` for everyone else. `%f` resets
+# colour back to default.
+#
+# %F{blue}/%F{white} are named colours that render on every terminal
+# advertising >= 8 colours, including the Linux VC. We deliberately
+# do NOT branch on `tput colors` here — both 8-colour and 256-colour
+# terminals see the same palette, no surprise differences across
+# HDMI / SSH / xterm sessions.
+PROMPT='%F{blue}[%F{white}%n@%m %D{%H:%M:%S} %~%F{blue}]%F{white} %(!.#.%%)%f '
