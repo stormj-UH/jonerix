@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r1"
+version = "4.19.4-r2"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Specifically, installing this package redirects these /bin
@@ -162,12 +162,17 @@ done
 # /etc/login.defs: shadow ships one; keep it, but arch-neutral.
 # Nothing else to do — configure wrote the right paths.
 
-# shadow-login OpenRC service: spawns /bin/login on /dev/tty1 in
-# a loop so a fresh core install has a real HDMI console prompt.
-# post_install wires it into the `default` runlevel unless the
-# operator has created /etc/shadow/no-console (opt-out).
+# shadow-login OpenRC service + login-tty1 wrapper. The service uses
+# supervise-daemon to respawn a single /bin/login on /dev/tty1; the
+# wrapper sets TERM=linux + stty sane/erase before exec()ing login.
+# See the wrapper's header for the rationale (avoids the dual-mksh
+# race the older `while :; do login; done` design hit). post_install
+# wires shadow-login into the `default` runlevel unless the operator
+# has created /etc/shadow/no-console (opt-out).
 install -Dm755 "$RECIPE_DIR/init.d/shadow-login" \
     "$DESTDIR/etc/init.d/shadow-login"
+install -Dm755 "$RECIPE_DIR/lib/shadow/login-tty1" \
+    "$DESTDIR/lib/shadow/login-tty1"
 """
 
 [hooks]
