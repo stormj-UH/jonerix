@@ -59,18 +59,26 @@ awk '
     { print }
 ' /workspace/scripts/build-order.txt > "$ORDER_FILE"
 
-# Append every recipe NOT already in the build order so we cover the tail.
-# build-order.txt covers ~46 packages; the repo has ~95 recipes total.
-TRACKED=$(cat "$ORDER_FILE")
+# Pre-build a name -> recipe.toml dir map once. Avoids running a find with
+# -exec sh -c per package (O(n^2) shell forks). Each line is "<name>\t<dir>".
+RECIPE_MAP="$OUT/recipe-map.tsv"
+: > "$RECIPE_MAP"
 for r in /workspace/packages/*/*/recipe.toml /workspace/packages/*/recipe.toml; do
     [ -f "$r" ] || continue
     name=$(package_name "$r")
     [ -n "$name" ] || continue
+    printf '%s\t%s\n' "$name" "$(dirname "$r")" >> "$RECIPE_MAP"
+done
+
+# Append every recipe NOT already in the build order so we cover the tail.
+# build-order.txt covers ~46 packages; the repo has ~95 recipes total.
+TRACKED=$(cat "$ORDER_FILE")
+while IFS=$(printf '\t') read -r name _; do
     case " $TRACKED " in
         *" $name "*) continue ;;
     esac
     echo "$name" >> "$ORDER_FILE"
-done
+done < "$RECIPE_MAP"
 
 # --- step B: walk the order, build each package ---------------------------
 build_count=0
@@ -78,11 +86,9 @@ fail_count=0
 skip_count=0
 
 for name in $(cat "$ORDER_FILE"); do
-    # Locate the recipe.
-    recipe_dir=$(find /workspace/packages -maxdepth 3 -name recipe.toml \
-        -exec sh -c 'awk -F\" "/^name *= *\"/ {print \$2; exit}" "$1" \
-            | grep -qx "$2" && dirname "$1"' _ {} "$name" \; 2>/dev/null \
-        | head -1)
+    # Look up the recipe in the pre-built map (one tab-separated line each).
+    recipe_dir=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' \
+        "$RECIPE_MAP")
     if [ -z "$recipe_dir" ]; then
         echo "WARN: no recipe found for $name" >&2
         continue
@@ -96,7 +102,7 @@ for name in $(cat "$ORDER_FILE"); do
 
     log="$OUT/build-log/${name}.log"
     echo ">>> building $name from $recipe_dir"
-    if jpkg build "$recipe_dir" --output-dir "$OUT/jpkgs" >"$log" 2>&1; then
+    if jpkg build "$recipe_dir" --output "$OUT/jpkgs" >"$log" 2>&1; then
         version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
             "$recipe_dir/recipe.toml")
         printf '%s\t%s\n' "$name" "$version" >> "$OUT/built-packages.txt"
