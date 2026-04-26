@@ -188,6 +188,15 @@ def parse_args() -> argparse.Namespace:
             " licenses non-interactively. Required for unattended CI."
         ),
     )
+    ap.add_argument(
+        "--release-tag", default="",
+        help=(
+            "GitHub release tag the netboot payload pins to (e.g. v1.1.6)."
+            " The booted Pi runs `jpkg conform <ver>` against this tag if"
+            " the rootfs is later configured for it. Default: read"
+            " VERSION_ID from config/defaults/etc/os-release."
+        ),
+    )
     return ap.parse_args()
 
 
@@ -414,11 +423,34 @@ def copy_boot_tree(boot: pathlib.Path, dest: pathlib.Path) -> None:
                     shutil.copy2(src, dst)
 
 
+def _resolve_release_tag(tag: str) -> str:
+    """Default --release-tag to v<VERSION_ID> from os-release if unset.
+
+    Reads `config/defaults/etc/os-release` relative to the repo root
+    (this file lives at image/pi5/network-boot.py, so two parents up).
+    Mirrors build-image.py's _default_release_tag logic for symmetry.
+    """
+    if tag:
+        return tag
+    try:
+        repo_root = pathlib.Path(__file__).resolve().parents[2]
+        osr = (repo_root / "config" / "defaults" / "etc" / "os-release").read_text()
+        for line in osr.splitlines():
+            if line.startswith("VERSION_ID="):
+                return "v" + line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return "packages"  # rolling fallback
+
+
 def main() -> None:
     args = parse_args()
 
     if args.serial and args.serial != "any" and not valid_serial(args.serial):
         die(f"--serial must be 16 hex chars or 'any' (got {args.serial!r})")
+
+    args.release_tag = _resolve_release_tag(args.release_tag)
+    info(f"Pinning netboot payload to jonerix release: {args.release_tag}")
 
     out = pathlib.Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -459,6 +491,7 @@ def main() -> None:
             "serial": args.serial,
             "hostname": args.hostname,
             "root_source": args.root_source,
+            "release_tag": args.release_tag,
         }, indent=2) + "\n")
 
     info(f"Done — payload at {out}")

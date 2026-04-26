@@ -1,0 +1,350 @@
+#!/bin/sh
+# jonerix-pi5-netboot.sh — boot a Raspberry Pi 5 over the network from
+# this Mac or Linux host. Downloads the latest netboot payload + rootfs
+# from the jonerix release matching the source tree's VERSION_ID
+# (default: v1.1.6 → "CONFORMable" set), starts a TFTP server on :69 and
+# an HTTP server on :8080 pointing at them, and prints the exact Pi 5
+# bootloader settings the user needs.
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5-netboot.sh \
+#     | sudo sh
+#
+# Or with a fixed release pin and a specific network interface:
+#   curl -fsSL .../jonerix-pi5-netboot.sh | sudo sh -s -- \
+#     --release-tag v1.1.6 --bind 192.168.1.42
+#
+# Why root: TFTP listens on port 69 (privileged). HTTP defaults to 8080
+# (unprivileged) so the same script works on hosts where you'd rather
+# not bind low ports for HTTP.
+#
+# Cross-platform: tested on macOS 14 (Sonoma) and Ubuntu 24.04. Uses
+# only python3 from the OS — no Homebrew or apt dependencies.
+#
+# POSIX shell only (dash/ash/sh tested). Part of jonerix — MIT License.
+
+set -eu
+
+BRANCH="${BRANCH:-main}"
+GH_RAW="https://raw.githubusercontent.com/stormj-UH/jonerix/${BRANCH}"
+RELEASE_TAG="${RELEASE_TAG:-}"
+BIND_IP="${BIND_IP:-}"
+TFTP_PORT="${TFTP_PORT:-69}"
+HTTP_PORT="${HTTP_PORT:-8080}"
+CACHE_DIR="${CACHE_DIR:-${HOME}/.cache/jonerix-pi5-netboot}"
+
+banner() {
+    cat <<'EOF'
+================================================================================
+    _                       _
+   (_) ___  _ __   ___ _ __(_)_  __
+   | |/ _ \| '_ \ / _ \ '__| \ \/ /
+   | | (_) | | | |  __/ |  | |>  <
+  _/ |\___/|_| |_|\___|_|  |_/_/\_\   raspberry pi 5 netboot server
+ |__/
+================================================================================
+EOF
+}
+
+msg()  { printf '==> %s\n' "$*"; }
+warn() { printf '!!  %s\n' "$*" >&2; }
+die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    banner
+    cat <<EOF
+
+usage: jonerix-pi5-netboot.sh [options]
+
+Starts a TFTP server (port ${TFTP_PORT}) and an HTTP rootfs server (port ${HTTP_PORT})
+on this host. Point a Raspberry Pi 5's TFTP_PREFIX (or your DHCP
+server's option 66/67) at this machine and the Pi will netboot a
+permissive-licensed jonerix userland.
+
+Options:
+  --release-tag TAG    Pin to a specific jonerix release (e.g. v1.1.6).
+                       Default: VERSION_ID from the BRANCH's os-release.
+                       Pass 'packages' to use the rolling mirror.
+  --bind IP            IP to bind both servers to (default: 0.0.0.0,
+                       printed addresses use the first non-loopback
+                       interface).
+  --tftp-port N        TFTP port (default 69; needs root).
+  --http-port N        HTTP rootfs port (default 8080).
+  --cache DIR          Cache dir for downloaded payloads
+                       (default ${CACHE_DIR}).
+  -h, --help           Show this help.
+
+Pi 5 bootloader configuration (one-time, on the Pi side):
+
+  # via raspi-config nonint:
+  raspi-config nonint do_boot_order 0xf124   # USB → SD → NETWORK
+  # or via rpi-eeprom-config edit:
+  TFTP_PREFIX=2
+  TFTP_IP=<this-host-ip>
+  BOOT_ORDER=0xf124
+
+EOF
+}
+
+# ── Argument parsing ─────────────────────────────────────────────────
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --release-tag) RELEASE_TAG="${2:-}"; shift 2 ;;
+        --bind)        BIND_IP="${2:-}"; shift 2 ;;
+        --tftp-port)   TFTP_PORT="${2:-}"; shift 2 ;;
+        --http-port)   HTTP_PORT="${2:-}"; shift 2 ;;
+        --cache)       CACHE_DIR="${2:-}"; shift 2 ;;
+        --branch)      BRANCH="${2:-}"; GH_RAW="https://raw.githubusercontent.com/stormj-UH/jonerix/${BRANCH}"; shift 2 ;;
+        -h|--help)     usage; exit 0 ;;
+        *) die "unknown arg: $1" ;;
+    esac
+done
+
+# ── Sanity ───────────────────────────────────────────────────────────
+banner
+
+case "$(uname -s)" in
+    Linux|Darwin) ;;
+    *) die "unsupported OS: $(uname -s) (Linux or macOS only)" ;;
+esac
+
+if [ "$TFTP_PORT" -lt 1024 ] && [ "$(id -u)" -ne 0 ]; then
+    die "TFTP port ${TFTP_PORT} is privileged — re-run with sudo or pass --tftp-port 6969"
+fi
+
+for t in curl python3; do
+    command -v "$t" >/dev/null 2>&1 || die "missing required tool: $t"
+done
+
+# ── Resolve --release-tag from os-release if unset ───────────────────
+if [ -z "$RELEASE_TAG" ]; then
+    _osr=$(curl -fsSL "${GH_RAW}/config/defaults/etc/os-release" 2>/dev/null \
+        | awk -F= '/^VERSION_ID=/ { gsub(/"/,"",$2); print $2 }')
+    if [ -n "$_osr" ]; then
+        RELEASE_TAG="v${_osr}"
+        msg "Resolved release tag: ${RELEASE_TAG} (from BRANCH=${BRANCH} os-release)"
+    else
+        RELEASE_TAG="packages"
+        warn "could not fetch ${GH_RAW}/config/defaults/etc/os-release; using rolling 'packages' mirror"
+    fi
+fi
+RELEASE_BASE="https://github.com/stormj-UH/jonerix/releases/download/${RELEASE_TAG}"
+
+# ── Detect bind IP ───────────────────────────────────────────────────
+if [ -z "$BIND_IP" ]; then
+    case "$(uname -s)" in
+        Darwin)
+            BIND_IP=$(ifconfig 2>/dev/null \
+                | awk '/^en[0-9]+:/{ifc=$1; next} ifc && /inet [0-9]/{print $2; exit}' \
+                || true)
+            ;;
+        Linux)
+            BIND_IP=$(ip -o -4 addr 2>/dev/null \
+                | awk '$2!="lo"{split($4,a,"/"); print a[1]; exit}' \
+                || true)
+            ;;
+    esac
+    BIND_IP="${BIND_IP:-0.0.0.0}"
+fi
+
+# ── Fetch payload(s) ─────────────────────────────────────────────────
+mkdir -p "$CACHE_DIR"
+TFTP_TGZ="${CACHE_DIR}/jonerix-pi5-netboot.tar.gz"
+ROOTFS_TZST="${CACHE_DIR}/jonerix-pi5-rootfs.tar.zst"
+
+# The CI workflow Publish Pi 5 netboot payload publishes to the rolling
+# `pi5-netboot` release tag. Per-version pinning is via the matching
+# v* tag where available; fall back to pi5-netboot for older trees
+# that haven't shipped the per-version artifact yet.
+fetch_one() {
+    _name="$1"; _dest="$2"
+    for _src in \
+        "${RELEASE_BASE}/${_name}" \
+        "https://github.com/stormj-UH/jonerix/releases/download/pi5-netboot/${_name}"; do
+        msg "GET ${_src}"
+        if curl -fsSL --retry 3 -o "$_dest" "$_src"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [ ! -s "$TFTP_TGZ" ]; then
+    fetch_one "jonerix-pi5-netboot.tar.gz" "$TFTP_TGZ" \
+        || die "could not fetch netboot tarball from ${RELEASE_BASE} or pi5-netboot"
+else
+    msg "Cached netboot tarball at ${TFTP_TGZ}"
+fi
+
+# Rootfs is optional for now — older releases didn't ship it. The
+# script keeps going either way; a missing rootfs just means the Pi
+# will look for HTTP rootfs and find a 404 until you provide one.
+if [ ! -s "$ROOTFS_TZST" ]; then
+    if fetch_one "jonerix-pi5-rootfs.tar.zst" "$ROOTFS_TZST" 2>/dev/null; then
+        msg "Pinned rootfs from ${RELEASE_TAG}: ${ROOTFS_TZST}"
+    else
+        warn "No rootfs.tar.zst at ${RELEASE_BASE} — HTTP server will only serve TFTP-tree files"
+    fi
+fi
+
+# ── Stage TFTP tree ──────────────────────────────────────────────────
+TFTP_DIR="${CACHE_DIR}/tftp"
+rm -rf "$TFTP_DIR"
+mkdir -p "$TFTP_DIR"
+msg "Extracting TFTP tree to ${TFTP_DIR}"
+( cd "$TFTP_DIR" && tar xzf "$TFTP_TGZ" --strip-components=1 ) \
+    || die "failed to extract ${TFTP_TGZ}"
+
+# ── Stage rootfs (best-effort) ───────────────────────────────────────
+HTTP_ROOT="${CACHE_DIR}/http-root"
+rm -rf "$HTTP_ROOT"
+mkdir -p "$HTTP_ROOT"
+# Always copy the TFTP tree into the HTTP root too — initramfs scripts
+# often want to fetch kernel + dtb over HTTP rather than TFTP.
+cp -R "$TFTP_DIR/." "$HTTP_ROOT/"
+if [ -s "$ROOTFS_TZST" ]; then
+    cp "$ROOTFS_TZST" "$HTTP_ROOT/jonerix-pi5-rootfs.tar.zst"
+fi
+
+# ── Run servers ──────────────────────────────────────────────────────
+msg "Starting servers"
+msg "  TFTP: tftp://${BIND_IP}:${TFTP_PORT}/  (root: ${TFTP_DIR})"
+msg "  HTTP: http://${BIND_IP}:${HTTP_PORT}/  (root: ${HTTP_ROOT})"
+echo
+cat <<EOF
+On the Pi 5, set the bootloader to netboot pointed at this host:
+
+  sudo rpi-eeprom-config --edit
+  # ...add or change:
+  BOOT_ORDER=0xf124
+  TFTP_IP=${BIND_IP}
+  TFTP_PREFIX=2
+
+Or, pre-image an SD card with raspi-config nonint:
+
+  sudo raspi-config nonint do_boot_order 0xf124
+
+Once the Pi reboots it will TFTP the kernel + DTBs from this server,
+fetch the rootfs over HTTP, and come up at jonerix ${RELEASE_TAG}.
+
+Press Ctrl-C to stop both servers.
+
+EOF
+
+# Use python3 for both because it's universally available on macOS +
+# Linux. The TFTP server is a ~80-line read-only RFC-1350 implementation
+# embedded below; the HTTP server is stdlib http.server.
+
+# ── HTTP server (background) ─────────────────────────────────────────
+python3 -m http.server --bind "$BIND_IP" --directory "$HTTP_ROOT" "$HTTP_PORT" &
+HTTP_PID=$!
+trap 'kill "$HTTP_PID" 2>/dev/null || true' EXIT INT TERM
+
+# ── TFTP server (foreground) ─────────────────────────────────────────
+export TFTPD_DIR="$TFTP_DIR"
+export TFTPD_HOST="$BIND_IP"
+export TFTPD_PORT="$TFTP_PORT"
+exec python3 -c '
+import os, sys, socket, struct, pathlib
+TFTPD_DIR = pathlib.Path(os.environ["TFTPD_DIR"]).resolve()
+HOST = os.environ["TFTPD_HOST"]
+PORT = int(os.environ["TFTPD_PORT"])
+
+OP_RRQ, OP_DATA, OP_ACK, OP_ERR = 1, 3, 4, 5
+BLOCK_SIZE_DEFAULT = 512
+
+def send_err(sock, peer, code, msg):
+    sock.sendto(struct.pack("!HH", OP_ERR, code) + msg.encode() + b"\0", peer)
+
+def serve_one(sock, peer, data):
+    if struct.unpack("!H", data[:2])[0] != OP_RRQ:
+        send_err(sock, peer, 4, "only read requests supported")
+        return
+    parts = data[2:].split(b"\0")
+    if len(parts) < 2:
+        send_err(sock, peer, 0, "malformed RRQ")
+        return
+    fname = parts[0].decode("ascii", errors="replace").lstrip("/")
+    mode  = parts[1].decode("ascii", errors="replace").lower()
+    options = {}
+    it = iter(parts[2:-1])
+    for k in it:
+        try:
+            v = next(it)
+        except StopIteration:
+            break
+        options[k.decode().lower()] = v.decode()
+    block_size = int(options.get("blksize", BLOCK_SIZE_DEFAULT))
+    block_size = max(8, min(65464, block_size))
+
+    target = (TFTPD_DIR / fname).resolve()
+    try:
+        target.relative_to(TFTPD_DIR)
+    except ValueError:
+        send_err(sock, peer, 2, "path traversal blocked")
+        return
+    if not target.is_file():
+        sys.stderr.write(f"[tftp] miss: {fname}\n")
+        send_err(sock, peer, 1, "file not found")
+        return
+    sys.stderr.write(f"[tftp] serve: {fname} ({target.stat().st_size} bytes) -> {peer[0]}\n")
+
+    # OACK if the client requested options.
+    if options:
+        oack_pairs = []
+        for k, v in options.items():
+            if k == "blksize":
+                oack_pairs.append((b"blksize", str(block_size).encode()))
+            elif k == "tsize":
+                oack_pairs.append((b"tsize", str(target.stat().st_size).encode()))
+        if oack_pairs:
+            payload = b""
+            for k, v in oack_pairs:
+                payload += k + b"\0" + v + b"\0"
+            sock.sendto(struct.pack("!H", 6) + payload, peer)  # OACK = 6
+            sock.settimeout(5)
+            try:
+                ack, _ = sock.recvfrom(4)
+            except socket.timeout:
+                return
+
+    with open(target, "rb") as f:
+        block = 0
+        while True:
+            chunk = f.read(block_size)
+            block = (block + 1) & 0xFFFF
+            sock.sendto(struct.pack("!HH", OP_DATA, block) + chunk, peer)
+            sock.settimeout(5)
+            for _retry in range(3):
+                try:
+                    ack, _ = sock.recvfrom(4)
+                    if struct.unpack("!HH", ack[:4]) == (OP_ACK, block):
+                        break
+                except socket.timeout:
+                    sock.sendto(struct.pack("!HH", OP_DATA, block) + chunk, peer)
+            if len(chunk) < block_size:
+                return
+
+main_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+main_sock.bind((HOST, PORT))
+sys.stderr.write(f"[tftp] listening on {HOST}:{PORT} root={TFTPD_DIR}\n")
+while True:
+    data, peer = main_sock.recvfrom(65535)
+    # Spawn a per-transfer ephemeral socket so the main one stays
+    # ready for the next RRQ while the previous transfer runs.
+    pid = os.fork()
+    if pid == 0:
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        client_sock.bind((HOST, 0))
+        try:
+            serve_one(client_sock, peer, data)
+        finally:
+            client_sock.close()
+            os._exit(0)
+    else:
+        try:
+            os.waitpid(-1, os.WNOHANG)  # reap finished children
+        except ChildProcessError:
+            pass
+'
+# (unreachable; exec replaces the shell)
