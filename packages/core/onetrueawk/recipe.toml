@@ -1,6 +1,6 @@
 [package]
 name = "onetrueawk"
-version = "20240728"
+version = "20240728-r1"
 license = "MIT"
 description = "Brian Kernighan's one true awk"
 
@@ -25,7 +25,7 @@ install -m 644 awk.1 $DESTDIR/share/man/man1/awk.1
 llvm-strip --strip-all $DESTDIR/bin/awk 2>/dev/null || true"""
 
 [hooks]
-post_remove = '[ ! -e /bin/awk ] && [ -x /bin/toybox ] && ln -sf toybox /bin/awk'
+post_remove = "[ ! -e /bin/awk ] && [ -x /bin/toybox ] && ln -sf toybox /bin/awk"
 
 [depends]
 runtime = ["musl"]
