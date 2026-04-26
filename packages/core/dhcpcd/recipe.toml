@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r4"
+version = "10.1.0-r5"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -49,7 +49,7 @@ export TAILQ_FOREACH_SAFE=no TAILQ_CONCAT=no TAILQ_FOREACH=no
 # definitions, "here-string" variants) that toybox sh can't
 # parse — line 63 trips "syntax error ... newline" — so invoke
 # mksh explicitly. mksh is a runtime dep on every jonerix box.
-CC="$CC_CMD" CFLAGS="-O2 -fomit-frame-pointer" \
+CC="$CC_CMD" CFLAGS="-O2 -fomit-frame-pointer -I/include" \
   mksh ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib/dhcpcd
 grep -E 'queue|HAVE_SYS' config.h"""
 build = """CFG_FILE=$(ls /etc/clang/*.cfg 2>/dev/null | head -1)
