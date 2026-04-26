@@ -1,6 +1,6 @@
 [package]
 name = "runc"
-version = "1.4.1"
+version = "1.4.1-r1"
 license = "Apache-2.0"
 description = "OCI container runtime"
 
@@ -14,7 +14,7 @@ build = """set -e
 go mod download
 # Build statically without GNU make — replaces 'make static'
 CGO_ENABLED=1 go build -trimpath \
-  -tags "seccomp netgo osusergo static_build" \
+  -tags "netgo osusergo static_build" \
   -ldflags "-s -w -extldflags '-static'" \
   -o runc .
 """
