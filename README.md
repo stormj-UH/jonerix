@@ -140,7 +140,7 @@ flag set.
 | Component | License | Role |
 |-----------|---------|------|
 | cmake | BSD-3-Clause | Build system generator |
-| jmake 1.1.5 | MIT | Drop-in GNU make replacement (Rust) |
+| jmake | MIT | Drop-in GNU make replacement (Rust). See [Rust drop-in replacements](#rust-drop-in-replacements) |
 | samurai | Apache-2.0 | Ninja-compatible build tool |
 | meson | Apache-2.0 | Build system (via pip) |
 | flex | BSD-2-Clause | Lexer generator |
@@ -189,6 +189,80 @@ flag set.
 | btop | Apache-2.0 | Terminal resource monitor |
 | tmux | ISC | Terminal multiplexer |
 | jonerix-raspi5-fixups | MIT | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control, DNS takeover opt-out, wake-on-power, cold-reboot) |
+
+## Rust drop-in replacements
+
+jonerix's permissive-license-only rule removes most of the traditional
+Linux userland: bash (GPL-3), GNU coreutils (GPL-3), GNU make (GPL-3),
+e2fsprogs (LGPL-2 / GPL-2), util-linux (mixed GPL / LGPL), nftables
+(GPL-2), libnl (LGPL-2.1), m4 (GPL-3), readline (GPL-3), and so on.
+Where a permissive equivalent already exists (toybox for the BSD
+coreutils surface, openrsync for rsync, mksh for the POSIX shell) jonerix
+uses it. Where none exists, jonerix grows its own — almost always in
+Rust, almost always clean-room.
+
+The clean-room rule is taken seriously. Most of these tools are
+written from upstream documentation, POSIX text, IETF RFCs, kernel
+UAPI headers, and differential test corpora — no GPL or LGPL source
+is consulted. A few (`jfsck`, `nloxide`) are explicitly derived from
+Ghidra binary analysis of the original tools' compiled artifacts; the
+Ghidra session notes are pinned alongside the source so the
+provenance is auditable. Each replacement carries its own conformance
+suite that diffs its output against the original GPL tool byte-for-byte
+on a corpus of real-world inputs (e.g. `jmake`'s `JMAKE_TEST_MODE=1`
+gate runs the bash 5.3 test suite and the `musl`/`expat`/`dropbear`/
+`toybox` build trees against GNU make 4.4.1).
+
+### In-house
+
+These are written and maintained inside the jonerix project. Canonical
+sources live on the Forgejo at `castle.great-morpho.ts.net:3000` and
+mirror to `stormj-UH/<name>` on GitHub for CI.
+
+| Replaces | Package | License | Notes |
+|----------|---------|---------|-------|
+| GNU bash 5.3 | `brash` | MIT | Full bash surface — `[[ ]]`, regex match, indexed and associative arrays, `${var:offset:len}`, here-docs, command/arithmetic/process substitution, traps, history, `printf`/`test`/`read`/`declare`/`mapfile`/`compgen`. Byte-equivalent to bash 5.3 across the upstream test suite plus 1100+ realworld / dash-POSIX / mksh / shellcheck / shfmt corpora. Installs `/bin/brash` and a `/bin/bash` symlink — `/bin/sh` stays mksh. |
+| GNU make 4.4.1 | `jmake` | MIT | Recursive-descent parser, second-expansion (`$$`), pattern rules, target-specific variables, grouped targets (`&:`), `.NOTPARALLEL`, `.WAIT`, double-colon, `--shuffle`, parallel scheduler with `.WAIT` ordering. `JMAKE_TEST_MODE=1` flips error-prefix and `--version` output to GNU make's exact bytes for differential testing. Recent fix (1.1.14): MAKEFLAGS now backslash-escapes spaces inside variable values so a child process doesn't tokenise `CFLAGS=-Wall -O2` and reinterpret the trailing `-O2` as `--output-sync`. |
+| GNU m4 | `m4oxide` | MIT | Build-time only. Used by autoconf-generated `./configure` scripts (e.g. flex). Implements the GNU m4 surface used by autoconf macros — `divert`, `dnl`, `define`, `pushdef`/`popdef`, `m4exit`, frozen-state files. |
+| POSIX `expr(1)` | `exproxide` | MIT | Tiny but load-bearing — autoconf scripts call `expr` on every configure step. POSIX-strict integer / string / regex semantics. |
+| GNU libreadline / libhistory | `readlineoxide` | MIT | Drop-in shared library at `/lib/libreadline.so` and `/lib/libhistory.so`. Programs linked against readline (e.g. anvil's `debugfs`) get line editing, history, and Emacs/vi keybindings without pulling in GPL-3. |
+| `nft` CLI / nftables userland | `stormwall` | MIT | Reads and emits the upstream `nft` ruleset DSL. Covers `dynset`, ct helpers, flowtables, `jhash`/`symhash`/`numgen`, `dup`/`fwd`/`synproxy`, NAT random/persistent, socket/cgroup/cpu/rt classid expressions, and an `nft -i` REPL. Installs `/bin/stormwall` and a `/bin/nft` symlink. |
+| libnl-3 / libnl-genl-3 | `nloxide` | BSD-2-Clause | Netlink message construction + Generic Netlink for hostapd / wpa_supplicant. Derived from Ghidra binary analysis of the libnl shared objects — no LGPL source consulted. |
+| e2fsprogs (mkfs.ext4, e2fsck, tune2fs, debugfs, resize2fs, dumpe2fs, ...) | `anvil` | MIT | Full ext2/3/4 userland in pure Rust. Group descriptors, extent trees, journal replay, htree dirs, large-EA, encrypted-name handling. Replaces toybox's `blkid`, `chattr`, `lsattr` via `replaces = ["toybox"]` so jpkg transfers ownership cleanly. |
+| util-linux (lscpu, hwclock, ionice, nsenter, chsh) | `jonerix-util` | MIT | Surface-equivalent for the util-linux subset jonerix actually uses. `chsh` only allows shells listed in `/etc/shells`; `nsenter` covers the namespace flags container runtimes need; `hwclock` talks to `/dev/rtc0` directly. |
+| e2fsck + fsck.fat (rescue scope) | `jfsck` | BSD-2-Clause | Scoped to Pi 5 boot recovery — ext4 journal replay + FAT32 boot-partition repair. Derived from Ghidra binary analysis of e2fsprogs and dosfstools. |
+| lsusb | `lsusb-rs` | MIT | Pure-sysfs lsusb (no libusb dependency). Reads `/sys/bus/usb/devices/*` and the bundled USB IDs database. |
+
+### Third-party
+
+These are upstream Rust projects we ship as-is from their canonical
+sources, vetted for license compatibility:
+
+| Replaces | Project | License | Notes |
+|----------|---------|---------|-------|
+| GNU coreutils (sort, wc, tr, cut, head, tail, ...70+ tools) | `uutils` | MIT | Replaces toybox multicall symlinks for the commands uutils provides; `replaces = ["toybox"]` lets jpkg flip the `/bin/<cmd>` symlinks and `post_remove` hands them back if uutils is uninstalled. |
+| git | `gitoxide` | MIT or Apache-2.0 | `gix` and `ein` binaries. Read-mostly client — fast `clone`, `fetch`, `log`, blame; not a full server-side replacement. |
+| grep | `ripgrep` | MIT | Default `/bin/rg`. Faster than GNU grep on the kinds of trees jonerix CI walks (recipe corpus, build logs). |
+
+### Relationship to toybox and mksh
+
+These Rust tools coexist with toybox (BSD-licensed coreutils-of-the-week
+multicall) and mksh (the POSIX `/bin/sh`). The split is deliberate:
+
+- **toybox + mksh** are the static-linked, syscall-light, always-present
+  base layer — what's in `Dockerfile.minimal`, what survives a damaged
+  rootfs, what runs the early-boot OpenRC scripts.
+- **The Rust replacements** are larger binaries with richer feature
+  coverage. They take over `/bin/<name>` paths via jpkg's `replaces` /
+  `post_install` / `post_remove` mechanism so toybox and mksh remain
+  available as fallbacks and as the second-pass providers if a Rust
+  package is uninstalled.
+
+The same `replaces` ownership flip is what lets brash provide
+`/bin/bash` without ever touching `/bin/sh` — bash-isms route through
+brash, POSIX scripts route through mksh, and uninstalling brash leaves
+a `/bin/bash → mksh` (or `→ toybox`) symlink behind so `#!/bin/bash`
+scripts don't fall over with "exec format error".
 
 ## Package Manager (jpkg)
 
