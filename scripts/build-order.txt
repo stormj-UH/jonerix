@@ -91,3 +91,5 @@ uutils
 ripgrep
 jfsck
 anvil
+# Tier 11: prebuilt SDK repackages (Microsoft-hosted upstream binaries)
+dotnet
