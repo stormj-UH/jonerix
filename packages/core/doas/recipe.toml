@@ -1,6 +1,6 @@
 [package]
 name = "doas"
-version = "6.8.2"
+version = "6.8.2-r1"
 license = "ISC"
 description = "Lightweight privilege escalation tool (OpenDoas)"
 
@@ -10,7 +10,7 @@ sha256 = "4e98828056d6266bd8f2c93e6ecf12a63a71dbfd70a5ea99ccd4ab6d0745adf0"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin CC=clang"
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" CC=clang ./configure --prefix=/ --bindir=/bin"
 build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
