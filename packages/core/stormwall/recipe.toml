@@ -1,20 +1,22 @@
 [package]
 name = "stormwall"
-version = "0.1.1"
+version = "0.1.2"
 license = "MIT"
 description = "Drop-in replacement for the nft CLI"
 
 [source]
 # Canonical source of truth is the Forgejo repo jonerik/stormwall on
 # castle.great-morpho.ts.net:3000 at commit
-# 92b00796ec9ea0eb9407b8700480463a2909d4b7 (version bump to 0.1.1).
+# 56a8cde414aa9ff64f8d89e3dab9f097f924bd79 (0.1.2 — adds dynset, ct
+# helper, flowtables, jhash/symhash/numgen, dup/fwd/synproxy, NAT
+# random/persistent flags, socket/cgroup/cpu/rt classid, nft -i REPL).
 # That host sits behind Tailscale and GitHub's runners cannot reach it,
 # so the tarball is mirrored to a jonerix GH release for CI to fetch.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/stormwall/archive/92b00796ec9ea0eb9407b8700480463a2909d4b7.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v0.1.1/stormwall-0.1.1.tar.gz"
-sha256 = "38eb9e0ff2727fd1c98c00173606166d35d4e85f5fd4af217414d84b607098b2"
+#   https://castle.great-morpho.ts.net:3000/jonerik/stormwall/archive/56a8cde.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v0.1.2/stormwall-0.1.2.tar.gz"
+sha256 = "17a3f13e5ff9c71512d39f1a3cf9c9af9c8c9bd0e456ae58bc7df6f3ff5bfa5d"
 
 [build]
 system = "custom"
