@@ -47,6 +47,19 @@ install -Dm755 bin/adduser-safe $DESTDIR/bin/adduser-safe
 install -Dm755 bin/modprobe-shim   $DESTDIR/usr/local/bin/modprobe-shim
 install -Dm755 init.d/pi5-wifi     $DESTDIR/etc/init.d/pi5-wifi
 
+# Onboard WiFi user setup. pi5-wifi-connect is an interactive helper:
+# `sudo pi5-wifi-connect` lists nearby SSIDs, prompts the user for
+# theirs + a passphrase (without echo), writes the network block to
+# /etc/wpa_supplicant/wpa_supplicant-wlan0.conf via wpa_passphrase,
+# and starts the wpa_supplicant_wlan0 OpenRC service.
+#
+# wpa_supplicant_wlan0 (init.d): no-op when the config file isn't
+# there; runs wpa_supplicant -B against the user-written config when
+# it is. dhcpcd's default metric weighting keeps eth0 as the primary
+# uplink while it has carrier and falls over to wlan0 automatically.
+install -Dm755 bin/pi5-wifi-connect $DESTDIR/usr/local/bin/pi5-wifi-connect
+install -Dm755 init.d/wpa_supplicant_wlan0 $DESTDIR/etc/init.d/wpa_supplicant_wlan0
+
 # pi5-fw: direct /dev/vcio tool (stand-in for vcgencmd +
 # rpi-eeprom-config reads). Static-musl, zero deps.
 rustc -O \

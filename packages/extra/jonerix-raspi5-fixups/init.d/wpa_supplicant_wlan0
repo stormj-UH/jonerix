@@ -1,0 +1,53 @@
+#!/sbin/openrc-run
+# wpa_supplicant_wlan0 — bring up wpa_supplicant on the Pi 5 onboard
+# WiFi if /etc/wpa_supplicant/wpa_supplicant-wlan0.conf exists.
+#
+# This is a no-SSID-baked-in service. Users run pi5-wifi-connect to
+# write their network block into the config, then this service starts
+# wpa_supplicant against it. dhcpcd handles DHCP + default-route
+# metric (it gives wired interfaces a lower metric, so eth0 wins
+# while it has carrier and wlan0 takes over when eth0 drops).
+#
+# Part of jonerix-raspi5-fixups.
+
+CONF="/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
+PIDFILE="/run/wpa_supplicant_wlan0.pid"
+
+name="wpa_supplicant_wlan0"
+description="WPA supplicant on wlan0 (jonerix-raspi5-fixups)"
+
+depend() {
+    need pi5-wifi
+    after net
+    before tailscaled tailscale-up sshd
+    keyword -jail -prefix
+}
+
+start() {
+    if [ ! -f "$CONF" ]; then
+        einfo "no $CONF — skipping wpa_supplicant on wlan0"
+        einfo "  run \`pi5-wifi-connect\` to add a network"
+        return 0
+    fi
+    ebegin "Starting wpa_supplicant on wlan0"
+    /bin/wpa_supplicant -B -i wlan0 -D nl80211 -c "$CONF" -P "$PIDFILE"
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping wpa_supplicant on wlan0"
+    if [ -f "$PIDFILE" ]; then
+        pid=$(cat "$PIDFILE")
+        kill -TERM "$pid" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    eend 0
+}
+
+reload() {
+    ebegin "Reloading wpa_supplicant on wlan0"
+    if [ -f "$PIDFILE" ]; then
+        kill -HUP "$(cat "$PIDFILE")" 2>/dev/null
+    fi
+    eend 0
+}
