@@ -544,8 +544,30 @@ int fetch_to_buffer(const char *url, fetch_buf_t *buf) {
 }
 
 int fetch_to_file(const char *url, const char *path) {
+    /* Retry on transient failures. GitHub releases CDN serves the
+     * occasional HTTP 502 / 504 / TLS handshake failure under load (we
+     * saw both in container-images runs that pulled musl/gitoxide jpkgs
+     * at minute marks coinciding with GHA build storms). The current
+     * fetch_to_buffer() path returns a single int -1 for both transient
+     * and permanent failures, so we retry on any -1 with a short backoff.
+     * Permanent failures (404, malformed URL) cost one extra round-trip
+     * each -- acceptable. Three attempts with 2s/5s waits cover real
+     * transient outages without dragging out a permanent miss. */
+    const int max_attempts = 3;
+    const unsigned int backoff_secs[] = {2, 5};
     fetch_buf_t buf;
-    int rc = fetch_to_buffer(url, &buf);
+    int rc = -1;
+
+    for (int attempt = 1; attempt <= max_attempts; attempt++) {
+        rc = fetch_to_buffer(url, &buf);
+        if (rc == 0) break;
+        if (attempt < max_attempts) {
+            unsigned int wait = backoff_secs[attempt - 1];
+            log_warn("fetch attempt %d/%d failed for %s — retrying in %us",
+                     attempt, max_attempts, url, wait);
+            sleep(wait);
+        }
+    }
     if (rc != 0) return -1;
 
     rc = file_write(path, buf.data, buf.len);
