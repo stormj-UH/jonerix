@@ -31,7 +31,14 @@ RUN cd /build/jpkg && \
       -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
       -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') \
       -ltls -lssl -lcrypto -lzstd && \
-    llvm-strip jpkg
+    clang -std=c11 -Os -fuse-ld=lld \
+      -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
+      -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
+      -fstack-protector-strong \
+      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
+      -o jpkg-local $(ls src/*.c | grep -v '/main\.c$') \
+      -ltls -lssl -lcrypto -lzstd && \
+    llvm-strip jpkg jpkg-local
 
 # ============================================================
 # Stage 1: Download + install packages using existing jonerix
@@ -67,6 +74,10 @@ RUN printf '[repo]\nurl = "https://github.com/stormj-UH/jonerix/releases/downloa
 
 # Use freshly built jpkg — the BUILDER image's jpkg may have bugs.
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
+# Sidecar jpkg-local binary — same source tree, separate main_local.c.
+# Required for `jpkg local install <file.jpkg>` and `jpkg local build <recipe>`.
+# main.c dispatches `jpkg local <subcmd>` to /bin/jpkg-local via execvp.
+COPY --from=jpkg-builder /build/jpkg/jpkg-local /bin/jpkg-local
 # Copy shared libraries that the dynamically-linked jpkg needs at run time.
 # These live in the builder image (libressl + zstd installed via jpkg into /lib).
 COPY --from=jpkg-builder /lib/libtls.so.31     /lib/libtls.so.31
@@ -124,8 +135,11 @@ FROM scratch
 
 COPY --from=rootfs /jonerix/ /
 
-# Freshly built jpkg binary (dynamically linked against musl/libressl/zstd)
+# Freshly built jpkg + jpkg-local sidecar binary (dynamically linked
+# against musl/libressl/zstd). main.c dispatches `jpkg local <subcmd>`
+# to /bin/jpkg-local via execvp; the binary must be present.
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
+COPY --from=jpkg-builder /build/jpkg/jpkg-local /bin/jpkg-local
 
 ENV PATH=/bin
 ENV HOME=/root
