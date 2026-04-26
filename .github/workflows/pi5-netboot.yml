@@ -95,6 +95,31 @@ jobs:
           sha256sum jonerix-pi5-netboot.tar.gz > SHA256SUMS
           ls -lh jonerix-pi5-netboot.tar.gz SHA256SUMS
 
+      # ── Live-installer rootfs ───────────────────────────────────────────
+      # Built when jpkg + the jonerix:builder container are available.
+      # Output: jonerix-pi5-netboot-rootfs.tar.zst — the rootfs the
+      # PXE-booted Pi mounts on tmpfs and runs the menu from. Mode A
+      # of the menu calls pi5-install.sh which lands the same package
+      # set as a build-image.py-built jonerix-pi5.img.
+      - name: Build live-installer rootfs (jonerix:builder)
+        if: success()
+        env:
+          BUILDER_IMAGE: ghcr.io/stormj-uh/jonerix:builder-arm64
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          docker login ghcr.io -u "$GITHUB_ACTOR" -p "$GH_TOKEN" 2>/dev/null || true
+          mkdir -p out/rootfs-stage
+          docker run --rm --privileged \
+            --platform linux/arm64 \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$BUILDER_IMAGE" \
+            python3 image/pi5/build-netboot-rootfs.py \
+              --output out/jonerix-pi5-netboot-rootfs.tar.zst
+          ls -lh out/jonerix-pi5-netboot-rootfs.tar.zst
+          ( cd out && sha256sum jonerix-pi5-netboot-rootfs.tar.zst >> SHA256SUMS )
+
       # ── Always publish to the rolling `pi5-netboot` release ────────────
       # Mirrors how `packages` is the rolling release for jpkg artifacts:
       # `jonerix-pi5-netboot.sh` (and any other tooling) always knows
@@ -118,6 +143,7 @@ jobs:
           fi
           gh release upload "$TAG" --repo "$GH_REPO" --clobber \
             out/jonerix-pi5-netboot.tar.gz \
+            out/jonerix-pi5-netboot-rootfs.tar.zst \
             out/SHA256SUMS
 
       # ── Versioned `v*` release: attach if it exists ─────────────────────
@@ -160,6 +186,7 @@ jobs:
           fi
           gh release upload "$TAG" --repo "$GH_REPO" --clobber \
             out/jonerix-pi5-netboot.tar.gz \
+            out/jonerix-pi5-netboot-rootfs.tar.zst \
             out/SHA256SUMS
 
       # ── Manual dispatch / main push: workflow artifact ──────────────────
@@ -170,6 +197,7 @@ jobs:
           name: jonerix-pi5-netboot
           path: |
             out/jonerix-pi5-netboot.tar.gz
+            out/jonerix-pi5-netboot-rootfs.tar.zst
             out/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
