@@ -101,6 +101,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`cni-plugins`** | `extra` | 1.9.1 | Apache-2.0 | any | `musl` | `go` | — | CNI network plugins for container networking |
 | **`containerd`** | `extra` | 2.2.2 | Apache-2.0 | any | `musl` | `go` | — | Industry-standard container runtime |
 | **`derper`** | `extra` | 1.96.5 | BSD-3-Clause | any | `musl` | `go` | — | Tailscale DERP relay server |
+| **`dotnet`** | `extra` | 10.0.203 | MIT | x86_64, aarch64 | `musl`, `zlib`, `gnu-compat-symlinks` | `python3` | — | .NET 10 SDK + runtime, repackaged from Microsoft's MIT-licensed linux-musl tarballs |
 | **`headscale`** | `extra` | 0.28.0 | BSD-3-Clause | any | `musl` | `go` | — | Open-source self-hosted Tailscale control server |
 | **`hostapd`** | `extra` | 2.11-r1 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | `docker:router` | IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator |
 | **`jfsck`** | `extra` | 0.1.0-r0 | BSD-2-Clause | any | — | `rust` | — | Clean-room fsck for ext4 + FAT32 (Raspberry Pi scope) derived from Ghidra binary analysis of e2fsprogs and … |
