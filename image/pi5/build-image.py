@@ -39,36 +39,54 @@ DEFAULT_BOOT_MB = 256  # Standard Pi SD layout; matches docs/plans/raspberry-pi.
 # client, SSH, and the raspi5 fixups. The full 46-package set is overkill for
 # the default SD image -- users can opt into more via --packages.
 DEFAULT_PACKAGES = [
+    # ── Minimal boot userland ─────────────────────────────────────────
     "musl",
     "toybox",
-    "mksh",  # not always present; dropped quietly if jpkg can't find it
-    "openrc",
-    "dhcpcd",
-    "dropbear",
+    "mksh",       # /bin/sh
+    "openrc",     # init system
+    "dhcpcd",     # DHCP client
     "ifupdown-ng",
+    "dropbear",   # SSH server
     "bsdtar",
+    "openntpd",   # NTP client (no GPL coreutils)
+    "sudo",
+    "python3",    # raspi-config nonint shells out to it; cheap to include
     # anvil: MIT clean-room ext2/3/4 + FAT12/16/32 userland
     # (mkfs.ext4, mkfs.vfat, e2fsck, tune2fs, debugfs, resize2fs,
     # dumpe2fs, e2image, e2label, e2freefrag, e4defrag, logsave,
     # findfs, filefrag, blkid, chattr, lsattr, mklost+found).
-    # Default-include: every Pi 5 image needs at least fsck on
-    # first mount, and without anvil the permissive policy has no
-    # answer (e2fsprogs/dosfstools are GPL-2/GPL-3).
     "anvil",
     # raspi-config: MIT-licensed Raspberry Pi configuration tool vendored
-    # from RPi-Distro/raspi-config@08a52319 (trixie branch). The full
-    # interactive menu system needs whiptail + parted (both GPL, not in
-    # jonerix), but the `raspi-config nonint <cmd>` subcommands cover the
-    # practical provisioning path (do_ssh, do_hostname, do_wifi_country,
-    # do_boot_behaviour, do_boot_wait, ...) using only tools we already
-    # ship. Fine to default-include — the package is ~40 KB of shell.
+    # from RPi-Distro/raspi-config@08a52319 (trixie branch). nonint
+    # subcommands work without whiptail + parted.
     "raspi-config",
+
+    # ── Login chain ───────────────────────────────────────────────────
+    # shadow: real /bin/login with shadow-getty supervised on tty1 by
+    # OpenRC. Replaces toybox's truncation-bug-prone /bin/login + passwd.
+    # Without this, the Pi boots to a tty1 with no usable login prompt.
+    "shadow",
+
+    # ── Network tooling ───────────────────────────────────────────────
+    # iproute-go: u-root's ip(8) replacement. toybox's ip applet can't
+    # enumerate TUN devices (e.g. tailscale0) and prints "Invalid link"
+    # for the whole `ip` invocation. iproute-go's recipe
+    # `replaces=["toybox"]` claims /bin/ip via the package transition.
+    "iproute-go",
+
+    # ── Interactive niceties (parity with running jonerix-tormenta) ───
+    # These bloat the image by ~25 MB total but make the resulting host
+    # feel like a usable workstation rather than an embedded appliance.
+    # Strip them via `--packages "..."` if you want a leaner image.
+    "zsh",        # interactive shell w/ prompt
+    "gitoxide",   # git in pure Rust (no GPL git userland)
+    "ripgrep",    # fast recursive grep
+    "micro",      # text editor (mit, single Go binary)
+    "fastfetch",  # system-info banner; pleasant on first login
+
     # Intentionally NOT in the default set: ca-certificates.
     # jonerix doesn't yet ship a ca-certificates jpkg; the WSL rootfs
     # curl's the Mozilla bundle from curl.se at build time instead.
-    # Users who explicitly need certs here can either pass --packages
-    # ca-certificates once a recipe lands, or curl the bundle into
-    # the image's /etc/ssl/certs/ca-certificates.crt themselves.
 ]
 
 # Always present, regardless of --packages. These are load-bearing for Pi 5.
