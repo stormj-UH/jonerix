@@ -79,7 +79,7 @@ jobs:
           # build-info.json records exactly the jonerix release this
           # tree corresponds to. Downstream tooling (jonerix-pi5-netboot.sh)
           # uses this to decide which `jpkg conform <ver>` post-boot
-          # makes the netbooted Pi a deterministic match for the v1.1.6
+          # makes the netbooted Pi a deterministic match for the v1.1.7
           # package set.
           VER=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' \
                 config/defaults/etc/os-release)
@@ -130,7 +130,7 @@ jobs:
       # `jonerix-pi5-netboot.sh` (and any other tooling) always knows
       # where to fetch from without chasing tag names. The matching
       # versioned `v*` release also gets the artifact below if it
-      # already exists (i.e. the v1.1.6 release is "complete" with both
+      # already exists (i.e. the v1.1.7 release is "complete" with both
       # jpkg packages AND a netboot payload pinned to the same set).
       - name: Publish to rolling `pi5-netboot` release
         if: success()
@@ -152,8 +152,8 @@ jobs:
             out/SHA256SUMS
 
       # ── Versioned `v*` release: attach if it exists ─────────────────────
-      # When `config/defaults/etc/os-release` is at version 1.1.6 and the
-      # `v1.1.6` release exists (created by the package-set release flow),
+      # When `config/defaults/etc/os-release` is at version 1.1.7 and the
+      # `v1.1.7` release exists (created by the package-set release flow),
       # mirror the netboot tarball there too so a single release tag has
       # everything needed for a fully reproducible install + netboot.
       - name: Attach to matching versioned release (if present)

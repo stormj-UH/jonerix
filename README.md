@@ -12,7 +12,7 @@
 
 **A fully self-hosting Linux distribution with zero GPL in userland.**
 
-Current release: **[v1.1.6](https://github.com/stormj-UH/jonerix/releases/tag/v1.1.6)** (`jpkg conform 1.1.6` to pin a host to this tag). See [PACKAGES.md](PACKAGES.md) for the full package inventory.
+Current release: **[v1.1.7](https://github.com/stormj-UH/jonerix/releases/tag/v1.1.7)** (`jpkg conform 1.1.7` to pin a host to this tag). See [PACKAGES.md](PACKAGES.md) for the full package inventory.
 
 ## Overview
 
@@ -80,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jone
 
 # Pin to a specific jonerix release for a reproducible package set:
 curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
-  | sudo sh -s -- -d /dev/sdX --release-tag v1.1.6
+  | sudo sh -s -- -d /dev/sdX --release-tag v1.1.7
 
 # Complete an install on a USB you already dd'd a CI jonerix-pi5.img to
 # (the CI image deliberately ships without firmware):
@@ -201,7 +201,7 @@ jpkg install fastfetch           # install a package
 jpkg list                        # list installed packages
 jpkg local install ./pkg.jpkg    # install a .jpkg from a local file, URL, or stdin
 jpkg local build ./recipe-dir    # build a recipe.toml and either emit a .jpkg or install it
-jpkg conform 1.1.6               # pin the host to a specific jonerix release tag
+jpkg conform 1.1.7               # pin the host to a specific jonerix release tag
 ```
 
 `jpkg local` and `jpkg conform` are external subcommands shipped inside the jpkg package (`/bin/jpkg-local`, `/bin/jpkg-conform`); jpkg's main dispatcher falls through to them via PATH.
@@ -519,7 +519,7 @@ but leave the `*.pre-pi5-fixups` backups untouched.
 ```
                                     root@jonerix-tormenta
    _                       _        ---------------------
-  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.1.6 aarch64
+  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.1.7 aarch64
   | |/ _ \| '_ \ / _ \ '__| \ \/ /  Kernel -> Linux 6.18.22-v8-16k+
   | | (_) | | | |  __/ |  | |>  <   Uptime -> 16 hours, 28 mins
  _/ |\___/|_| |_|\___|_|  |_/_/\_\  Packages -> 44 (jpkg)
