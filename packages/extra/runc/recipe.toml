@@ -1,6 +1,6 @@
 [package]
 name = "runc"
-version = "1.4.1-r2"
+version = "1.4.1-r3"
 license = "Apache-2.0"
 description = "OCI container runtime"
 
@@ -27,7 +27,7 @@ install = """install -Dm755 runc $DESTDIR/bin/runc
 ELF_LIST=$(mktemp)
 find "$DESTDIR" -type f -exec sh -c '
     head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d " " | grep -q "^7f454c46" && printf "%s\\n" "$1"
-' _ {} \\; > "$ELF_LIST" 2>/dev/null || true
+' _ {} ';' > "$ELF_LIST" 2>/dev/null || true
 if [ -s "$ELF_LIST" ]; then
     python3 - "$ELF_LIST" <<'PYEOF' || true
 import sys
