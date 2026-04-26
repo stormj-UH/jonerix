@@ -120,12 +120,28 @@ jobs:
           # shell, which tries to execute the first arg as a script
           # file. Override to /bin/sh -c so the python3 invocation
           # survives the shell.
+          # Probe whether the source-tree's v$VERSION_ID release has a
+          # signed INDEX.zst; if not, fall back to the rolling
+          # `packages` mirror so the rootfs build doesn't 404. This
+          # matters during dev/iteration where the version was bumped
+          # but no full package set has been re-released yet.
+          VER=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' \
+                config/defaults/etc/os-release)
+          REL_TAG="v${VER}"
+          if ! curl -fsSL --head -o /dev/null \
+                "https://github.com/stormj-UH/jonerix/releases/download/${REL_TAG}/INDEX.zst" \
+                2>/dev/null; then
+            echo "release ${REL_TAG} has no packages — falling back to rolling 'packages'"
+            REL_TAG="packages"
+          fi
           docker run --rm --privileged \
             --entrypoint /bin/sh \
             -v "$PWD:/workspace" \
             -w /workspace \
             "$BUILDER_IMAGE" \
-            -c 'python3 image/pi5/build-netboot-rootfs.py --output out/jonerix-pi5-netboot-rootfs.tar.zst'
+            -c "python3 image/pi5/build-netboot-rootfs.py \
+                  --release-tag ${REL_TAG} \
+                  --output out/jonerix-pi5-netboot-rootfs.tar.zst"
           ls -lh out/jonerix-pi5-netboot-rootfs.tar.zst
           ( cd out && sha256sum jonerix-pi5-netboot-rootfs.tar.zst >> SHA256SUMS )
 
