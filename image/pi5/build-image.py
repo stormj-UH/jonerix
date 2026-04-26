@@ -1107,14 +1107,39 @@ def build(args: argparse.Namespace) -> int:
                 # rootfs skeleton exists.
                 fetch_ca_bundle(mnt_root)
 
-                # Pi 5 firmware into boot partition.
+                # Pi 5 firmware: NOT included by default. The
+                # raspberrypi/firmware tarball is non-permissive
+                # (Broadcom Redistributable + GPLv2 kernel). jonerix's
+                # userland-only policy means we ship a "userland blob"
+                # image: rootfs + jonerix-authored boot config files
+                # only. The user runs `pi5-install.sh --firmware-only
+                # -d /dev/sdX` after dd'ing this image; that script
+                # downloads the firmware tarball from raspberrypi/
+                # firmware and lays kernel_2712.img / DTBs / start4.elf
+                # / fixup4.dat into /boot.
+                #
+                # Override with --firmware-dir LOCAL to bake a pre-
+                # extracted firmware tree into the image (useful for
+                # offline / air-gapped installs).
                 if args.firmware_dir:
                     copy_local_firmware(Path(args.firmware_dir), mnt_boot)
+                    log("firmware: included from --firmware-dir (override)")
                 else:
-                    cache = Path(args.firmware_cache) if args.firmware_cache \
-                        else Path.home() / ".cache" / "jonerix-pi5-firmware.tar.gz"
-                    fetch_firmware(cache)
-                    extract_firmware_to_boot(cache, mnt_boot)
+                    log("firmware: NOT included (run pi5-install.sh "
+                        "--firmware-only after dd'ing this image)")
+                    # Drop a marker in /boot so the user gets a clear
+                    # error message at first boot if they forget to
+                    # complete the install.
+                    (mnt_boot / "FIRMWARE_MISSING").write_text(
+                        "This jonerix-pi5.img was built without the\n"
+                        "raspberrypi/firmware payload. To complete the\n"
+                        "install:\n"
+                        "\n"
+                        "  sudo pi5-install.sh --firmware-only -d /dev/sdX\n"
+                        "\n"
+                        "(or `--firmware-dir LOCAL` at build time if you\n"
+                        "want a self-contained image).\n"
+                    )
 
                 # config.txt + cmdline.txt in the boot partition.
                 write_boot_config(mnt_boot)

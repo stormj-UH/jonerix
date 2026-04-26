@@ -17,6 +17,12 @@
 #                        partition).
 #   --no-userland        Don't install the jonerix userland; stop
 #                        after the boot partition is populated.
+#   --firmware-only      For users who dd'd a CI jonerix-pi5.img to
+#                        a USB and need the (deliberately omitted)
+#                        raspberrypi/firmware kernel + Broadcom blobs.
+#                        Skips partition / format / userland install,
+#                        and only downloads + extracts firmware to
+#                        the existing FAT32 boot partition.
 #   --branch NAME        Git branch of jonerix repo to pull recipes
 #                        and helpers from. Default: main.
 #   --release-tag TAG    GitHub release tag whose pinned package set
@@ -66,6 +72,11 @@ ASSUME_YES=0
 TARGET=""
 DO_FIRMWARE=1
 DO_USERLAND=1
+FIRMWARE_ONLY=0     # --firmware-only: skip partition/format/userland,
+                    # just download + lay down raspberrypi firmware
+                    # into the existing vfat boot partition. For users
+                    # who dd'd a CI jonerix-pi5.img and need to fill
+                    # in the (deliberately omitted) Broadcom blobs.
 
 # Minimal package set for a bootable headless Pi 5. Anything else is
 # additive — you can `jpkg -r /mnt/usb-root add <pkg>` after boot.
@@ -160,6 +171,17 @@ while [ $# -gt 0 ]; do
         -d|--device) TARGET="${2:-}"; shift ;;
         --no-firmware) DO_FIRMWARE=0 ;;
         --no-userland) DO_USERLAND=0 ;;
+        --firmware-only)
+            # Used after dd'ing a CI jonerix-pi5.img to a USB drive:
+            # the rootfs + jonerix boot config are already in place;
+            # we just need to download the raspberrypi/firmware
+            # tarball and lay kernel_2712.img / DTBs / start4.elf /
+            # fixup4.dat into the existing vfat boot partition. No
+            # partitioning, no formatting, no userland install.
+            FIRMWARE_ONLY=1
+            DO_FIRMWARE=1
+            DO_USERLAND=0
+            ;;
         --branch) BRANCH="${2:-main}"; GH_RAW="https://raw.githubusercontent.com/stormj-UH/jonerix/${BRANCH}"; shift ;;
         --release-tag) RELEASE_TAG="${2:-}"; shift ;;
         -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
@@ -253,7 +275,11 @@ case "$_root_dev" in
 esac
 
 msg "Target device: $TARGET"
-msg "Everything on $TARGET will be overwritten."
+if [ "$FIRMWARE_ONLY" = 1 ]; then
+    msg "--firmware-only: existing data on $TARGET will be preserved."
+else
+    msg "Everything on $TARGET will be overwritten."
+fi
 if [ "$(ask 'Proceed?' n)" != y ]; then
     die "aborted"
 fi
