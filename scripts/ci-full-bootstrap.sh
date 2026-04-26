@@ -62,6 +62,81 @@ package_name() {
     awk -F'"' '/^name *= *"/ {print $2; exit}' "$1"
 }
 
+# --- helper: extract a .jpkg directly into / -----------------------------
+# jpkg format: 8B magic + 4B LE header_len + TOML metadata + zstd-tar payload.
+# Bypasses jpkg's database AND post_install hooks. Safe for library deps
+# (libressl, libevent, pcre2, nloxide, jonerix-headers etc.) because they
+# ship /lib + /include only — no /bin symlink farm to corrupt the live
+# builder. NOT used for multicall packages (toybox/mksh/openrc) — those
+# never appear in [depends].build for the recipes we build here.
+install_local_jpkg() {
+    f="$1"
+    hdr_len=$(od -An -v -tu4 -N4 -j8 "$f" | tr -d ' ')
+    skip=$((12 + hdr_len))
+    tail -c +$((skip + 1)) "$f" | zstd -dc | tar xf - -C /
+}
+
+# --- helper: install a recipe's [depends].build into the live / ----------
+# Mirrors scripts/ci-build-x86_64.sh's install_target_build_deps. For each
+# dep, prefer a freshly-built jpkg in $OUT/jpkgs/ (raw extract, no hooks)
+# over `jpkg install` from the rolling release. Library packages are
+# ALWAYS installed even if a binary of the same name is on PATH because
+# their headers may not be on the builder. Tool packages (clang, byacc)
+# skip the install if a binary is already on PATH.
+install_target_build_deps() {
+    _rdir="$1"
+    _deps_line=$(awk '
+        $0 == "[depends]" { in_dep = 1; next }
+        /^\[/ { if (in_dep) exit }
+        in_dep && $1 == "build" { print; exit }
+    ' "$_rdir/recipe.toml")
+    [ -z "$_deps_line" ] && return 0
+    _deps=$(printf '%s\n' "$_deps_line" \
+        | sed -E 's/.*\[(.*)\].*/\1/' \
+        | sed 's/"//g' \
+        | sed 's/,/ /g')
+    for _dep in $_deps; do
+        [ -n "$_dep" ] || continue
+        # Library packages — always install even if a namesake binary
+        # is on PATH, because their headers may be missing.
+        case "$_dep" in
+            xz|bzip2|zstd|zlib|lz4|ncurses|pcre2|libffi|sqlite|\
+            libressl|libarchive|libevent|libcxx|nloxide|curl|expat|\
+            jonerix-headers)
+                _is_lib=1 ;;
+            *)
+                _is_lib=0 ;;
+        esac
+        if [ "$_is_lib" = 0 ] && command -v "$_dep" >/dev/null 2>&1; then
+            continue
+        fi
+        # Map binary names to package names (clang -> llvm, make -> jmake).
+        _dep_pkg="$_dep"
+        case "$_dep" in
+            clang|clang++|ld.lld|llvm-ar|llvm-ranlib|llvm-nm|llvm-strip)
+                _dep_pkg=llvm ;;
+            make)
+                _dep_pkg=jmake ;;
+            python)
+                _dep_pkg=python3 ;;
+            rust)
+                command -v cargo >/dev/null 2>&1 && continue ;;
+        esac
+        # Prefer a just-built local jpkg over `jpkg install` over network.
+        _local=$(ls "$OUT/jpkgs/${_dep_pkg}-"*-"${ARCH}.jpkg" 2>/dev/null \
+            | sort -V | tail -1)
+        if [ -n "$_local" ] && [ -f "$_local" ]; then
+            echo "  dep: ${_dep_pkg} (local $(basename "$_local"))"
+            install_local_jpkg "$_local" 2>/dev/null || \
+                echo "    WARN: extract failed for ${_dep_pkg}" >&2
+        else
+            echo "  dep: ${_dep_pkg} (jpkg install)"
+            jpkg install --force "$_dep_pkg" >/dev/null 2>&1 || \
+                echo "    WARN: jpkg install failed for ${_dep_pkg}" >&2
+        fi
+    done
+}
+
 # --- step A: figure out the build order -----------------------------------
 # scripts/build-order.txt has the canonical dependency-respecting order.
 # Filter blanks/comments and (optionally) heavies.
@@ -124,6 +199,14 @@ for name in $(cat "$ORDER_FILE"); do
 
     log="$OUT/build-log/${name}.log"
     echo ">>> building $name from $recipe_dir"
+    # Install declared build deps before invoking jpkg build. Without this
+    # step, recipes that declare e.g. `build = ["jonerix-headers", "libressl"]`
+    # only get a `not found via jpkg` warning and hit "header not found"
+    # at compile time. The function uses raw zstd+tar extract for library
+    # deps (no install hooks → no /bin/sh corruption) and falls back to
+    # `jpkg install` from the rolling release for anything not yet built
+    # in this run.
+    install_target_build_deps "$recipe_dir" >> "$log" 2>&1
     # REVIEW: if jpkg build honours a JPKG_SOURCE_CACHE env var for a
     # pre-populated tarball cache, set it here (e.g. via the workflow's
     # actions/cache step) to avoid re-downloading sources on every run.
