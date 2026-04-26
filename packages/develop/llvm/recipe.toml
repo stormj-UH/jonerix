@@ -1,8 +1,8 @@
 [package]
 name = "llvm"
-version = "21.1.2-r1"
+version = "21.1.2-r2"
 license = "Apache-2.0"
-description = "Slim LLVM toolchain (toolchain-only: clang, lld, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc). See llvm-all for the full 80+ tool set."
+description = "Slim LLVM toolchain (toolchain-only: clang, lld, lldb, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc). See llvm-all for the full 80+ tool set."
 
 [source]
 url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
@@ -77,7 +77,14 @@ DESTDIR="" cmake --install /tmp/llvm-builtins-bootstrap
 mkdir -p build
 cmake -S llvm -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_ENABLE_PROJECTS="clang;lld" \
+    -DLLVM_ENABLE_PROJECTS="clang;lld;lldb" \
+    -DLLDB_ENABLE_PYTHON=OFF \
+    -DLLDB_ENABLE_CURSES=OFF \
+    -DLLDB_ENABLE_LIBEDIT=OFF \
+    -DLLDB_ENABLE_LUA=OFF \
+    -DLLDB_ENABLE_LZMA=OFF \
+    -DLLDB_INCLUDE_TESTS=OFF \
+    -DLLDB_BUILD_FRAMEWORK=OFF \
     -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
@@ -198,10 +205,13 @@ cat > "$DESTDIR/etc/clang/$LLVM_TRIPLE.cfg" << 'CLANGCFG'
 CLANGCFG
 
 # --- Step 8: Strip and clean up ---
-# Remove static libs (dev-only, ~400MB uncompressed) and headers
+# Remove static libs (dev-only, ~400MB uncompressed) and headers.
+# liblldb*.a covers the lldb internal archives produced when lldb is in
+# LLVM_ENABLE_PROJECTS; liblldb.so is preserved by the *.so* copy above.
 find "$DESTDIR/lib" -maxdepth 1 -name 'libLLVM*.a' -delete 2>/dev/null || true
 find "$DESTDIR/lib" -maxdepth 1 -name 'libclang*.a' -delete 2>/dev/null || true
 find "$DESTDIR/lib" -maxdepth 1 -name 'liblld*.a'   -delete 2>/dev/null || true
+find "$DESTDIR/lib" -maxdepth 1 -name 'liblldb*.a'  -delete 2>/dev/null || true
 rm -rf "$DESTDIR/include"
 
 # Strip debug info to reduce package size
