@@ -16,7 +16,7 @@ description = "Drop-in replacement for the nft CLI"
 # Forgejo URL (primary, reachable from inside the jonerix network):
 #   https://castle.great-morpho.ts.net:3000/jonerik/stormwall/archive/56a8cde.tar.gz
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v0.1.2/stormwall-0.1.2.tar.gz"
-sha256 = "17a3f13e5ff9c71512d39f1a3cf9c9af9c8c9bd0e456ae58bc7df6f3ff5bfa5d"
+sha256 = "ca79a1019267e2ec6a1fc7fb1961cba6e72c3d57f9ee38cffbf064f302b58bf0"
 
 [build]
 system = "custom"
