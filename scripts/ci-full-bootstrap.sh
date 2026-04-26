@@ -23,6 +23,16 @@ SKIP_HEAVIES="${SKIP_HEAVIES:-true}"
 STOP_ON_FAIL="${STOP_ON_FAIL:-false}"
 ARCH="${ARCH:-$(uname -m)}"
 
+# Point jpkg at the vendored source cache. /workspace/sources/ contains
+# pre-fetched tarballs for ~88 packages (musl, micro, ifupdown-ng, etc).
+# Without this, jpkg falls through to network downloads which fail or
+# stall on slow upstreams (musl.libc.org timed out at 134s in earlier
+# CI runs). Same pattern as scripts/ci-build-{x86_64,aarch64}.sh.
+if [ -z "${JPKG_SOURCE_CACHE:-}" ] && [ -d /workspace/sources ]; then
+    export JPKG_SOURCE_CACHE=/workspace/sources
+    echo ">>> JPKG_SOURCE_CACHE=$JPKG_SOURCE_CACHE ($(ls /workspace/sources | wc -l) tarballs)"
+fi
+
 # Heavy packages whose build dominates wall time. Filter applied as substring
 # match against the recipe directory name. `cmake` is included because it
 # pulls in a lot of compile time; trim if you ever want a tighter set.
