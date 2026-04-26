@@ -1,6 +1,6 @@
 [package]
 name = "nginx"
-version = "1.28.3-r2"
+version = "1.28.3-r3"
 license = "BSD-2-Clause"
 description = "High-performance HTTP server and reverse proxy"
 
@@ -18,13 +18,11 @@ configure = """cat > /tmp/clang-jonerix << 'WRAPPER'
 exec clang --rtlib=compiler-rt -fuse-ld=lld -Wno-unused-command-line-argument "$@"
 WRAPPER
 chmod +x /tmp/clang-jonerix
-# Strip trailing slash so paths like "${prefix}/lib" don't become "//lib"
-# (nginx configure rejects //lib as an invalid --with-ld-opt value).
-PCRE2_PREFIX="${JPKG_PCRE2_PREFIX:-/}"
-PCRE2_PREFIX="${PCRE2_PREFIX%/}"
-OPENSSL_PREFIX="${JPKG_LIBRESSL_PREFIX:-/}"
-OPENSSL_PREFIX="${OPENSSL_PREFIX%/}"
-export LD_LIBRARY_PATH="${PCRE2_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# jonerix ships libressl as a shared library only (.so, no .a).
+# nginx's configure runs a link test with --with-ld-opt; using -Wl,-Bstatic
+# with a shared-only libssl fails that test and aborts configure.  Link
+# dynamically throughout (-lssl -lcrypto -lpcre2-8 -lz).
+# All jonerix libraries live under /; no prefix variables needed.
 ./configure \
   --prefix=/etc/nginx \
   --sbin-path=/bin/nginx \
@@ -41,8 +39,8 @@ export LD_LIBRARY_PATH="${PCRE2_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
   --with-http_stub_status_module \
   --with-threads \
   --with-cc=/tmp/clang-jonerix \
-  --with-cc-opt="-I$PCRE2_PREFIX/include -I$OPENSSL_PREFIX/include -Os -Wno-error" \
-  --with-ld-opt="-L$PCRE2_PREFIX/lib -L$OPENSSL_PREFIX/lib -L/lib -Wl,-Bstatic -lssl -lcrypto -Wl,-Bdynamic -lpcre2-8 -lz"
+  --with-cc-opt="-I/include -Os -Wno-error" \
+  --with-ld-opt="-L/lib -lssl -lcrypto -lpcre2-8 -lz"
 """
 build = "make -r -j$(nproc)"
 install = """install -Dm755 objs/nginx "$DESTDIR/bin/nginx"
