@@ -1,6 +1,6 @@
 [package]
 name = "flex"
-version = "2.6.4-r1"
+version = "2.6.4-r2"
 license = "BSD-2-Clause"
 description = "Fast lexical analyzer generator"
 
@@ -10,16 +10,32 @@ sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995"
 
 [build]
 system = "autoconf"
-configure = """# m4oxide does not accept -P; create a wrapper that strips the flag so
-# flex's configure probe and build-time m4 invocations both succeed.
+configure = """# m4oxide does not accept -P; create a wrapper that drops the -P flag
+# so flex's configure probe and build-time m4 invocations both succeed.
+# The wrapper finds the real m4 at runtime (walking PATH, skipping our
+# own wrapper dir), so it works in the Alpine builder (GNU m4) and on
+# a fully-bootstrapped jonerix system (m4oxide at /bin/m4).
 mkdir -p _m4wrap
 cat > _m4wrap/m4 <<'M4WRAP'
 #!/bin/sh
-args=''
+# Drop -P from the argument list (m4oxide rejects it; GNU m4 accepts it).
+args=
 for a in "$@"; do
   [ "$a" = "-P" ] || args="$args '$a'"
 done
-eval exec m4oxide $args
+# Find the real m4 by searching PATH components, skipping our wrapper dir.
+MYDIR=$(cd "$(dirname "$0")" && pwd)
+REAL_M4=
+OIFS="$IFS"
+IFS=:
+for d in $PATH; do
+  IFS="$OIFS"
+  [ "$d" = "$MYDIR" ] && continue
+  [ -x "$d/m4" ] && REAL_M4="$d/m4" && break
+done
+IFS="$OIFS"
+[ -n "$REAL_M4" ] || { printf 'm4 wrapper: no real m4 found in PATH\\n' >&2; exit 1; }
+eval exec "$REAL_M4" $args
 M4WRAP
 chmod 755 _m4wrap/m4
 PATH="$(pwd)/_m4wrap:$PATH" CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin CC=clang"""
