@@ -35,6 +35,10 @@ CACHE_DIR="${CACHE_DIR:-${HOME}/.cache/jonerix-pi5-netboot}"
 FIRMWARE_TAG="${FIRMWARE_TAG:-stable}"
 FIRMWARE_URL="https://github.com/raspberrypi/firmware/archive/refs/heads/${FIRMWARE_TAG}.tar.gz"
 ACCEPT_LICENSES="${ACCEPT_LICENSES:-0}"
+# Mode B scratch tmpfs size (passed to the Pi via kernel cmdline as
+# jonerix.state_size=). Anything Linux's tmpfs `size=` accepts: 256M,
+# 1G, 2048k, 50% (percent of RAM), etc.
+STATE_SIZE="${STATE_SIZE:-512M}"
 
 banner() {
     cat <<'EOF'
@@ -78,6 +82,10 @@ Options:
   --accept-licenses     Skip the interactive GPL-2.0 + Broadcom
                         Redistributable license prompt and accept
                         non-interactively. Required for unattended use.
+  --state-size SIZE     Mode-B scratch tmpfs at /var/state on the Pi
+                        (default ${STATE_SIZE}). Accepts anything Linux's
+                        tmpfs size= takes: 256M, 1G, 2048k, 50% (% of
+                        RAM). Written to cmdline.txt as jonerix.state_size=.
   --cache DIR           Cache dir for downloaded payloads
                         (default ${CACHE_DIR}).
   -h, --help            Show this help.
@@ -108,6 +116,7 @@ while [ $# -gt 0 ]; do
             FIRMWARE_URL="https://github.com/raspberrypi/firmware/archive/refs/heads/${FIRMWARE_TAG}.tar.gz"
             shift 2 ;;
         --accept-licenses) ACCEPT_LICENSES=1; shift ;;
+        --state-size) STATE_SIZE="${2:-512M}"; shift 2 ;;
         -h|--help)     usage; exit 0 ;;
         *) die "unknown arg: $1" ;;
     esac
@@ -163,7 +172,6 @@ fi
 # ── Fetch payload(s) ─────────────────────────────────────────────────
 mkdir -p "$CACHE_DIR"
 TFTP_TGZ="${CACHE_DIR}/jonerix-pi5-netboot.tar.gz"
-ROOTFS_TZST="${CACHE_DIR}/jonerix-pi5-rootfs.tar.zst"
 
 # The CI workflow Publish Pi 5 netboot payload publishes to the rolling
 # `pi5-netboot` release tag. Per-version pinning is via the matching
@@ -189,16 +197,7 @@ else
     msg "Cached netboot tarball at ${TFTP_TGZ}"
 fi
 
-# Rootfs is optional for now — older releases didn't ship it. The
-# script keeps going either way; a missing rootfs just means the Pi
-# will look for HTTP rootfs and find a 404 until you provide one.
-if [ ! -s "$ROOTFS_TZST" ]; then
-    if fetch_one "jonerix-pi5-rootfs.tar.zst" "$ROOTFS_TZST" 2>/dev/null; then
-        msg "Pinned rootfs from ${RELEASE_TAG}: ${ROOTFS_TZST}"
-    else
-        warn "No rootfs.tar.zst at ${RELEASE_BASE} — HTTP server will only serve TFTP-tree files"
-    fi
-fi
+# (Live-installer rootfs is fetched later, after firmware staging.)
 
 # ── Stage TFTP tree ──────────────────────────────────────────────────
 TFTP_DIR="${CACHE_DIR}/tftp"
@@ -289,6 +288,35 @@ LICENSE_NOTICE
     msg "Firmware staged into TFTP tree."
 fi
 
+# ── Inject state-size into the kernel cmdline ────────────────────────
+# The rootfs's pi5-state OpenRC service reads jonerix.state_size from
+# /proc/cmdline at boot and mounts /var/state with that size. We
+# patch the cmdline.txt the Pi will receive over TFTP to carry the
+# user's chosen value (default 512M).
+if [ -f "$TFTP_DIR/cmdline.txt" ]; then
+    # Strip any prior jonerix.state_size= and append the new one.
+    _tmp=$(mktemp)
+    awk -v sz="$STATE_SIZE" '
+        {
+            gsub(/[[:space:]]+jonerix.state_size=[^[:space:]]*/, "", $0)
+            sub(/[[:space:]]*$/, "", $0)
+            printf "%s jonerix.state_size=%s\n", $0, sz
+        }
+    ' "$TFTP_DIR/cmdline.txt" > "$_tmp"
+    mv "$_tmp" "$TFTP_DIR/cmdline.txt"
+    msg "cmdline.txt now carries jonerix.state_size=${STATE_SIZE}"
+fi
+
+# ── Stage live-installer rootfs (mode A/B target) ────────────────────
+ROOTFS_TZST_LOCAL="${CACHE_DIR}/jonerix-pi5-netboot-rootfs.tar.zst"
+if [ ! -s "$ROOTFS_TZST_LOCAL" ]; then
+    if fetch_one "jonerix-pi5-netboot-rootfs.tar.zst" "$ROOTFS_TZST_LOCAL" 2>/dev/null; then
+        msg "Rootfs cached at ${ROOTFS_TZST_LOCAL}"
+    else
+        warn "no jonerix-pi5-netboot-rootfs.tar.zst at ${RELEASE_BASE} or pi5-netboot — Pi will boot a kernel but no rootfs to mount"
+    fi
+fi
+
 # ── Stage rootfs (best-effort) ───────────────────────────────────────
 HTTP_ROOT="${CACHE_DIR}/http-root"
 rm -rf "$HTTP_ROOT"
@@ -296,8 +324,8 @@ mkdir -p "$HTTP_ROOT"
 # Always copy the TFTP tree into the HTTP root too — initramfs scripts
 # often want to fetch kernel + dtb over HTTP rather than TFTP.
 cp -R "$TFTP_DIR/." "$HTTP_ROOT/"
-if [ -s "$ROOTFS_TZST" ]; then
-    cp "$ROOTFS_TZST" "$HTTP_ROOT/jonerix-pi5-rootfs.tar.zst"
+if [ -s "$ROOTFS_TZST_LOCAL" ]; then
+    cp "$ROOTFS_TZST_LOCAL" "$HTTP_ROOT/jonerix-pi5-netboot-rootfs.tar.zst"
 fi
 
 # ── Run servers ──────────────────────────────────────────────────────
