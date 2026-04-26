@@ -128,8 +128,12 @@ for name in $(cat "$ORDER_FILE"); do
     pkg_start=$(date +%s)
     # toybox timeout uses short flags only: -k DURATION instead of GNU's
     # --kill-after=DURATION. Confirmed in builder via `timeout --help`.
+    # CRITICAL: --build-jpkg makes jpkg actually produce a .jpkg in
+    # --output. Without this flag, `jpkg build` installs directly to the
+    # builder's live / filesystem (DESTDIR=/), corrupting the host and
+    # producing zero .jpkg files. See cmd_build.c line 894.
     if timeout -k 30 1200 jpkg build "$recipe_dir" \
-            --output "$OUT/jpkgs" >"$log" 2>&1; then
+            --build-jpkg --output "$OUT/jpkgs" >"$log" 2>&1; then
         version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
             "$recipe_dir/recipe.toml")
         printf '%s\t%s\n' "$name" "$version" >> "$OUT/built-packages.txt"
