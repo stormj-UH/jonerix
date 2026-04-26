@@ -1,8 +1,22 @@
 [package]
 name = "jmake"
-version = "1.1.8"
+version = "1.1.9"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.1.9: conformance test suite + JMAKE_TEST_MODE byte-equivalence.
+# Adds a Tier-1 real-world driver (musl, expat, libffi, dropbear, toybox)
+# that runs `jmake -n` and `/usr/bin/make -n` against each upstream
+# tarball and diffs. Adds a Tier-2 feature suite (15 .mk fixtures with
+# golden GNU Make 4.4.1 outputs) covering target-/pattern-specific
+# variables, patsubst chains, wildcard variants, $(eval)+$(foreach),
+# order-only prereqs, double-colon, .PHONY/.SUFFIXES, -r/-k/-n,
+# include / -include / sinclude, TAB-VAR-in-conditional, and bare-`:`
+# rules under conditionals. JMAKE_TEST_MODE=1 routes ALL customer-
+# visible output (--version, error prefix, MAKE/MAKE_COMMAND,
+# Entering/Leaving directory, recipe error format, "is up to date"
+# / "Nothing to be done") through the GNU make 4.4.1 byte format —
+# without the env var, jmake remains honest about being jmake.
+#
 # 1.1.8: preserve `./` leader when dir_prefix contains a glob. Companion
 # to 1.1.7 — the v1.1.7 fix correctly stopped the bogus dir_prefix
 # re-prepend for `./src/*/*.c` patterns, but it ALSO stopped the `./`
@@ -110,8 +124,8 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.8/jmake-v1.1.8.tar.gz"
-sha256 = "e9fd11d9f426538222a158f3a569d5f399a31643cb8881724a26ab60ccac3c4c"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.9/jmake-v1.1.9.tar.gz"
+sha256 = "35ae2e3d9cfea63c29dc0e245626fda2929a1a9f6d717a9d2b7a6e1b80a82252"
 
 [build]
 system = "custom"
