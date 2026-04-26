@@ -1,6 +1,6 @@
 [package]
 name = "flex"
-version = "2.6.4-r2"
+version = "2.6.4-r3"
 license = "BSD-2-Clause"
 description = "Fast lexical analyzer generator"
 
@@ -12,31 +12,22 @@ sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995"
 system = "autoconf"
 configure = """# m4oxide does not accept -P; create a wrapper that drops the -P flag
 # so flex's configure probe and build-time m4 invocations both succeed.
-# The wrapper finds the real m4 at runtime (walking PATH, skipping our
-# own wrapper dir), so it works in the Alpine builder (GNU m4) and on
-# a fully-bootstrapped jonerix system (m4oxide at /bin/m4).
+# Resolve the real m4 path BEFORE prepending the wrapper dir to PATH so
+# the wrapper can hardcode it — avoids a runtime PATH walk that fails
+# when the wrapper's own dir shadows every real m4 location.
+REAL_M4=$(command -v m4)
+[ -n "$REAL_M4" ] || { printf 'flex configure: no m4 found in PATH\\n' >&2; exit 1; }
 mkdir -p _m4wrap
-cat > _m4wrap/m4 <<'M4WRAP'
+# Write the wrapper using sed substitution so the literal @REAL_M4@
+# token is replaced with the resolved path without any quoting tangle.
+sed "s|@REAL_M4@|$REAL_M4|g" > _m4wrap/m4 <<'WRAPEOF'
 #!/bin/sh
-# Drop -P from the argument list (m4oxide rejects it; GNU m4 accepts it).
-args=
-for a in "$@"; do
-  [ "$a" = "-P" ] || args="$args '$a'"
-done
-# Find the real m4 by searching PATH components, skipping our wrapper dir.
-MYDIR=$(cd "$(dirname "$0")" && pwd)
-REAL_M4=
-OIFS="$IFS"
-IFS=:
-for d in $PATH; do
-  IFS="$OIFS"
-  [ "$d" = "$MYDIR" ] && continue
-  [ -x "$d/m4" ] && REAL_M4="$d/m4" && break
-done
-IFS="$OIFS"
-[ -n "$REAL_M4" ] || { printf 'm4 wrapper: no real m4 found in PATH\\n' >&2; exit 1; }
-eval exec "$REAL_M4" $args
-M4WRAP
+# Drop -P from arguments; m4oxide rejects it but GNU m4 accepts it.
+_saved="$@"
+set --
+for _a in $_saved; do [ "$_a" = "-P" ] || set -- "$@" "$_a"; done
+exec @REAL_M4@ "$@"
+WRAPEOF
 chmod 755 _m4wrap/m4
 PATH="$(pwd)/_m4wrap:$PATH" CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin CC=clang"""
 build = "make -j$(nproc)"
