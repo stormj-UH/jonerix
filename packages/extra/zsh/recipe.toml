@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r8"
+version = "5.9-r9"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
@@ -13,13 +13,14 @@ sha256 = "9b8d1ecedd5b5e81fbf1918e876752a7dd948e05c1a0dba10ab863842d45acd5"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --infodir=/share/info --with-tcsetpgrp --enable-multibyte --enable-unicode9 --disable-gdbm --without-tcl CC=clang"
-# Serial build. zsh's Makefile generates Src/modules.stamp via a
-# non-PHONY side-effect rule in mkmakemod.sh; under `make -j$(nproc)`
-# the bltinmods.list target races its own dependency and fails with
-# "No rule to make target 'modules.stamp', needed by 'bltinmods.list'".
-# The race happens in sub-makes too (zsh nests make calls): export
-# MAKEFLAGS=-j1 so every recursive make is also serial.
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --infodir=/share/info --with-tcsetpgrp --enable-multibyte --enable-unicode9 --disable-gdbm --disable-dynamic --without-tcl CC=clang"
+# --disable-dynamic compiles all zsh modules as builtins (no dlopen).
+# This avoids the modules.stamp race: Src/mkmakemod.sh generates Makemod
+# which defines the modules.stamp rule, but with dynamic modules enabled
+# the generated Makemod is incomplete on the first make pass even with
+# MAKEFLAGS=-j1, causing "No rule to make target 'modules.stamp'".
+# Disabling dynamic modules short-circuits that entire code path.
+# Also keeps -j1 for safety (no parallel sub-make ordering issues).
 build = "MAKEFLAGS=-j1 make -j1"
 install = """
 make DESTDIR=$DESTDIR install
