@@ -1,6 +1,6 @@
 [package]
 name = "flex"
-version = "2.6.4"
+version = "2.6.4-r1"
 license = "BSD-2-Clause"
 description = "Fast lexical analyzer generator"
 
@@ -10,7 +10,19 @@ sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin CC=clang"
+configure = """# m4oxide does not accept -P; create a wrapper that strips the flag so
+# flex's configure probe and build-time m4 invocations both succeed.
+mkdir -p _m4wrap
+cat > _m4wrap/m4 <<'M4WRAP'
+#!/bin/sh
+args=''
+for a in "$@"; do
+  [ "$a" = "-P" ] || args="$args '$a'"
+done
+eval exec m4oxide $args
+M4WRAP
+chmod 755 _m4wrap/m4
+PATH="$(pwd)/_m4wrap:$PATH" CFLAGS="-O2 -fomit-frame-pointer" ./configure --prefix=/ --bindir=/bin CC=clang"""
 build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
