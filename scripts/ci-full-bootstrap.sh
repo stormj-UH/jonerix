@@ -194,6 +194,14 @@ while IFS=$(printf '\t') read -r name _; do
 done < "$RECIPE_MAP"
 
 # --- step B: walk the order, build each package ---------------------------
+# Refresh jpkg's INDEX once before the build loop so install_target_build_deps
+# can `jpkg install --force <dep>` for build deps that aren't yet in /out/jpkgs/
+# (e.g. m4oxide via flex when flex builds before m4oxide can in this run's
+# build order). Without this, every `jpkg install` errors with
+# "no cached INDEX found. Run 'jpkg update' first." (reproduced 2026-04-26).
+echo ">>> running jpkg update so install_target_build_deps can fall back to network"
+jpkg update >/dev/null 2>&1 || echo "WARN: jpkg update failed; network-fallback installs will not work" >&2
+
 build_count=0
 fail_count=0
 skip_count=0

@@ -27,6 +27,10 @@
 musl
 ncurses
 # Tier 1: depends on musl only (tiny)
+# byacc must precede doas/jq (which use yacc); 2026-04-26 bootstrap CI
+# showed doas failing because byacc's local .jpkg wasn't yet in /out/jpkgs/
+# when install_target_build_deps ran for doas.
+byacc
 snooze
 doas
 pigz
@@ -35,7 +39,6 @@ lz4
 mandoc
 bc
 dhcpcd
-byacc
 ifupdown-ng
 # Tier 3: depends on musl only (medium)
 toybox
