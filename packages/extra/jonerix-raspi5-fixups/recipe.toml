@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.5"
+version = "1.6.6"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -154,7 +154,13 @@ if [ -f /etc/fstab ]; then
             echo "raspi5-fixups: added fstab line: $2"
         fi
     }
-    if ! grep -q "raspi5-fixups rescue" /etc/fstab 2>/dev/null; then
+    # Idempotency: prior versions used `grep -q "raspi5-fixups rescue"`
+    # but the marker line written below contains the parenthesised form
+    # `raspi5-fixups (base-image fstab rescue)` — the literal "raspi5-fixups
+    # rescue" with a space never appears in fstab, so the guard never
+    # tripped and the marker was duplicated on every install. Match the
+    # literal string we actually write.
+    if ! grep -qF "raspi5-fixups (base-image fstab rescue)" /etc/fstab 2>/dev/null; then
         # Two separate echoes — portable across busybox/toybox
         # printf, which don't all honour `\\n` the same way in
         # here-doc-delivered recipes.
