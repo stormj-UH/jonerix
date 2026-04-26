@@ -116,12 +116,16 @@ jobs:
           # ubuntu-24.04-arm runner is native arm64; no --platform flag
           # needed and no QEMU binfmt setup. Just docker run + jpkg.
           docker login ghcr.io -u "$GITHUB_ACTOR" -p "$GH_TOKEN" 2>/dev/null || true
+          # The builder's default entrypoint is /bin/zsh as a login
+          # shell, which tries to execute the first arg as a script
+          # file. Override to /bin/sh -c so the python3 invocation
+          # survives the shell.
           docker run --rm --privileged \
+            --entrypoint /bin/sh \
             -v "$PWD:/workspace" \
             -w /workspace \
             "$BUILDER_IMAGE" \
-            python3 image/pi5/build-netboot-rootfs.py \
-              --output out/jonerix-pi5-netboot-rootfs.tar.zst
+            -c 'python3 image/pi5/build-netboot-rootfs.py --output out/jonerix-pi5-netboot-rootfs.tar.zst'
           ls -lh out/jonerix-pi5-netboot-rootfs.tar.zst
           ( cd out && sha256sum jonerix-pi5-netboot-rootfs.tar.zst >> SHA256SUMS )
 
