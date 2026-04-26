@@ -1,6 +1,6 @@
 [package]
 name = "bsdsed"
-version = "0.99.2"
+version = "0.99.2-r1"
 license = "BSD-2-Clause"
 description = "FreeBSD sed made portable — POSIX stream editor"
 
@@ -19,7 +19,7 @@ ln -sf bsdsed $DESTDIR/bin/sed
 llvm-strip --strip-all $DESTDIR/bin/bsdsed 2>/dev/null || true"""
 
 [hooks]
-post_remove = '[ ! -e /bin/sed ] && [ -x /bin/toybox ] && ln -sf toybox /bin/sed'
+post_remove = "[ ! -e /bin/sed ] && [ -x /bin/toybox ] && ln -sf toybox /bin/sed"
 
 [depends]
 runtime = ["musl"]
