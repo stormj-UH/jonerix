@@ -45,9 +45,14 @@ concurrency:
 jobs:
   build:
     name: Build Pi 5 netboot payload
-    runs-on: ubuntu-latest
+    # Native arm64 runner so jonerix:builder-arm64 can run without QEMU.
+    # x86_64 runners hit `exec /bin/zsh: exec format error` when the
+    # container starts because binfmt_misc isn't pre-registered. The
+    # GitHub-hosted ubuntu-24.04-arm runner is free for public repos.
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: write
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -108,10 +113,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
+          # ubuntu-24.04-arm runner is native arm64; no --platform flag
+          # needed and no QEMU binfmt setup. Just docker run + jpkg.
           docker login ghcr.io -u "$GITHUB_ACTOR" -p "$GH_TOKEN" 2>/dev/null || true
-          mkdir -p out/rootfs-stage
           docker run --rm --privileged \
-            --platform linux/arm64 \
             -v "$PWD:/workspace" \
             -w /workspace \
             "$BUILDER_IMAGE" \

@@ -149,6 +149,38 @@ def jpkg_install(root: pathlib.Path, packages: list[str], release_tag: str):
     )
 
 
+def write_netboot_fstab(root: pathlib.Path):
+    """Mode B (diskless) needs writable storage so a user poking around
+    isn't trapped on a read-only-ish tarball-extracted root. Lay down
+    a 512 MiB tmpfs at /var/state for "save these here" workflows
+    (config tweaks, jpkg installs that the user knows are ephemeral),
+    plus the usual /run /tmp / /dev/pts / sysfs that any rootfs needs.
+
+    This file is overwritten by pi5-install.sh in mode A — the
+    installed disk's fstab uses real ext4, not tmpfs.
+    """
+    fstab = root / "etc" / "fstab"
+    fstab.parent.mkdir(parents=True, exist_ok=True)
+    fstab.write_text("""# /etc/fstab — jonerix Pi 5 netboot live root (mode B)
+#
+# The whole rootfs is tmpfs (extracted from the netboot tarball into
+# RAM at boot). These extra mounts give a netbooted Pi the same
+# /run, /tmp, /dev/pts, /sys, and a 512 MiB scratch area for any
+# state the user wants to keep across reboots without involving
+# the install path.
+proc       /proc        proc        defaults                          0 0
+sysfs      /sys         sysfs       defaults                          0 0
+devpts     /dev/pts     devpts      gid=5,mode=0620,ptmxmode=0666     0 0
+tmpfs      /run         tmpfs       defaults,size=128M                0 0
+tmpfs      /tmp         tmpfs       defaults,size=512M                0 0
+
+# 512 MiB scratch for the netbooted user. Logs, /home edits, jpkg
+# installs that aren't worth keeping. Cleared on reboot. To make any
+# of this persistent, pick mode A from the menu.
+tmpfs      /var/state   tmpfs       defaults,size=512M,mode=0755      0 0
+""")
+
+
 def install_menu_and_init(root: pathlib.Path, release_tag: str):
     """Copy the menu script + an OpenRC service that runs it on tty1."""
     repo_root = pathlib.Path(__file__).resolve().parents[2]
@@ -251,6 +283,7 @@ def build(args):
         root.mkdir()
 
         jpkg_install(root, NETBOOT_ROOTFS_PACKAGES, args.release_tag)
+        write_netboot_fstab(root)
         install_menu_and_init(root, args.release_tag)
 
         # Tar + zstd. Use `tar --xattrs` so file caps + ACLs survive.
