@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.6"
+version = "1.6.7"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -20,6 +20,7 @@ replaces = ["toybox", "jonerix-boot-helpers"]
 [build]
 system = "custom"
 build = """
+[ "$(uname -m)" = "aarch64" ] || exit 0
 set -e
 cd "$RECIPE_DIR"
 # eee-tool: single-file Rust program (no Cargo, no external deps).
