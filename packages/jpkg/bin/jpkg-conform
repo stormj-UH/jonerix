@@ -264,11 +264,17 @@ failed=0
 while IFS="	" read -r pkg pinned_ver; do
     [ -n "$pkg" ] || continue
 
-    # Is this package installed? db layout: /var/db/jpkg/installed/<pkg>/
-    # with per-package files. Simpler than parsing: shell out to jpkg info
-    # and grep. That survives any future DB-format change.
-    installed_ver=$(jpkg info "$pkg" 2>/dev/null \
-        | awk -F': +' '/^Version:/ { print $2; exit }')
+    # Read installed version directly from the on-disk metadata file
+    # rather than shelling out to `jpkg info <pkg>`. The previous
+    # implementation invoked jpkg ~once per release-pinned package
+    # (~90 packages on aarch64), each call paying the lock-acquisition
+    # + INDEX-load cost — turning conform into an 80-90s wallclock
+    # operation. A direct awk on the metadata file runs in microseconds.
+    metafile="/var/db/jpkg/installed/${pkg}/metadata.toml"
+    [ -f "$metafile" ] || continue
+    installed_ver=$(awk -F\" '/^[[:space:]]*version[[:space:]]*=/ {
+        print $2; exit
+    }' "$metafile" 2>/dev/null)
     if [ -z "$installed_ver" ]; then
         continue
     fi
