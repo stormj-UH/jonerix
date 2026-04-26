@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r10"
+version = "5.9-r11"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
@@ -14,12 +14,23 @@ sha256 = "9b8d1ecedd5b5e81fbf1918e876752a7dd948e05c1a0dba10ab863842d45acd5"
 [build]
 system = "autoconf"
 configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --mandir=/share/man --infodir=/share/info --with-tcsetpgrp --enable-multibyte --enable-unicode9 --disable-gdbm --disable-dynamic --without-tcl CC=clang"
-# --disable-dynamic compiles all zsh modules as builtins (no dlopen).
-# Despite that flag, Src/mkmakemod.sh still generates Makemod at build time
-# and the modules.stamp rule it defines is not visible to make until a second
-# pass enters Src/.  Running "make prep" first completes that generation phase
-# so the rule exists before the real build starts.  -j1 kept for safety.
-build = "make prep && MAKEFLAGS=-j1 make -j1"
+# zsh's build is two-phase: Src/mkmakemod.sh generates Src/Makemod (a
+# Makefile fragment containing the `modules.stamp` rule). Src/Makefile
+# `include`s Makemod — so on the FIRST make invocation, the rule isn't
+# visible until after mkmakemod.sh has run, but mkmakemod.sh runs as a
+# rule action mid-build. r10's `make prep` got mkmakemod.sh to run but
+# the second `make` STILL didn't see Makemod (the include path is finicky
+# under jmake's recursion). Fix: run mkmakemod.sh DIRECTLY before any
+# make invocation, so Src/Makemod exists when make first reads
+# Src/Makefile. After that the build is plain serial.
+build = """set -e
+# Generate Src/Makemod up front so the modules.stamp rule it defines is
+# present in Src/Makefile from the start. mkmakemod.sh is run from the
+# top-level dir per its own argv expectations; it writes to Src/Makemod.
+top_srcdir=. /bin/sh Src/mkmakemod.sh Src Src/Makemod
+ls -l Src/Makemod
+MAKEFLAGS=-j1 make -j1
+"""
 install = """
 make DESTDIR=$DESTDIR install
 install -Dm644 "$RECIPE_DIR/zshrc" "$DESTDIR/etc/zshrc"
