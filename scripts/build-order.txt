@@ -91,5 +91,7 @@ uutils
 ripgrep
 jfsck
 anvil
-# Tier 11: prebuilt SDK repackages (Microsoft-hosted upstream binaries)
-dotnet
+# Tier 11 (WIP): dotnet — see packages/extra/dotnet/recipe.toml.
+# Excluded from build-order until a libc++-compatible source build lands;
+# Microsoft's musl tarball links GNU libstdc++/libgcc_s, which the
+# zero-GPL runtime policy does not allow. Tracking: docs/plans/dotnet.md.
