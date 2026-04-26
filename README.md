@@ -64,6 +64,38 @@ docker build -f Dockerfile.builder --tag jonerix:builder .
 docker build -f Dockerfile.router --tag jonerix:router .
 ```
 
+### Raspberry Pi 5
+
+One-liner from any Linux host with `curl` + `sudo`. The bootstrap fetches
+the install script from this repo, accepts the GPLv2 + Broadcom Redistributable
+licenses for the kernel + firmware blobs (downloaded directly from
+`raspberrypi/firmware`, not redistributed by jonerix), and lays down a
+permissive-userland Pi 5 with `shadow`-backed login on tty1, the u-root
+`ip`, zsh, and the rest.
+
+```sh
+# Fresh install onto an attached USB / SD / NVMe device:
+curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
+  | sudo sh -s -- -d /dev/sdX
+
+# Pin to a specific jonerix release for a reproducible package set:
+curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
+  | sudo sh -s -- -d /dev/sdX --release-tag v1.1.6
+
+# Complete an install on a USB you already dd'd a CI jonerix-pi5.img to
+# (the CI image deliberately ships without firmware):
+curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
+  | sudo sh -s -- -d /dev/sdX --firmware-only
+```
+
+The CI image artifact (`jonerix-pi5.img`, published per release) contains
+only the jonerix permissive userland — no Linux kernel and no Broadcom blobs.
+Run `--firmware-only` after dd'ing it to fetch the missing pieces directly
+from `raspberrypi/firmware` under their own licenses.
+
+See [`install/jonerix-pi5.sh --help`](install/jonerix-pi5.sh) for the full
+flag set.
+
 ## What's Inside
 
 ### Image Layers
