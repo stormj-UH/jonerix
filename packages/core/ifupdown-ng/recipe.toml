@@ -1,11 +1,11 @@
 [package]
 name = "ifupdown-ng"
-version = "0.12.1-r1"
+version = "0.12.1-r2"
 license = "ISC"
 description = "Next-generation network interface configuration tool"
 
 [source]
-url = "https://github.com/ifupdown-ng/ifupdown-ng/releases/download/ifupdown-ng-0.12.1/ifupdown-ng-0.12.1.tar.xz"
+url = "https://github.com/ifupdown-ng/ifupdown-ng/archive/refs/tags/ifupdown-ng-0.12.1.tar.gz"
 sha256 = "d42c8c18222efbce0087b92a14ea206de4e865d5c9dde6c0864dcbb2b45f2d85"
 
 [build]
