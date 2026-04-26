@@ -150,6 +150,21 @@ for name in $(cat "$ORDER_FILE"); do
         build_count=$((build_count + 1))
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
         echo ">>> built $name in ${pkg_elapsed}s"
+        # Install the freshly-built jpkg into the builder's live / so
+        # subsequent recipes can find it as a build dep. The builder
+        # image already has older versions of these packages; --force
+        # overwrites with the just-built variant. Without this step,
+        # downstream recipes that expect headers/.so files from a freshly-
+        # built dep get "not found via jpkg" warnings and fail at the
+        # configure / link stage (e.g. hostapd needs nloxide; tmux needs
+        # libevent; curl needs libressl). Best-effort — a failure here
+        # doesn't fail the bootstrap (the .jpkg still ships into the
+        # rootfs in step C, which is what counts for the smoke test).
+        new_jpkg=$(ls "$OUT/jpkgs/${name}-${version}-${ARCH}.jpkg" 2>/dev/null | head -1)
+        if [ -n "$new_jpkg" ]; then
+            jpkg-local install "$new_jpkg" >> "$OUT/install-log/builder-install.log" 2>&1 \
+                || echo ">>>   (warn: builder-install of $name failed)" >&2
+        fi
     else
         rc=$?
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
