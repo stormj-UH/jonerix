@@ -1,6 +1,6 @@
 [package]
 name = "containerd"
-version = "2.2.2"
+version = "2.2.2-r1"
 license = "Apache-2.0"
 description = "Industry-standard container runtime"
 
@@ -22,6 +22,33 @@ install = """set -e
 mkdir -p $DESTDIR/bin
 for bin in containerd containerd-shim-runc-v2 ctr; do
   install -m755 "bin/$bin" "$DESTDIR/bin/$bin"
+done
+
+# Strip /lib64 references from ELF files only (Go embeds the dynamic
+# linker path in its string table even for static binaries). Null-pad
+# /lib64 -> /lib\0\0 (same length, terminates string early). Safe:
+# jonerix has no /lib64, so the padded path dereferences to /lib.
+ELF_LIST=$(mktemp)
+find "$DESTDIR" -type f -exec sh -c '
+    head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d " " | grep -q "^7f454c46" && printf "%s\n" "$1"
+' _ {} \; > "$ELF_LIST" 2>/dev/null || true
+if [ -s "$ELF_LIST" ]; then
+    python3 - "$ELF_LIST" <<'PYEOF' || true
+import sys
+with open(sys.argv[1]) as f:
+    files = [ln.rstrip("\n") for ln in f if ln.strip()]
+for p in files:
+    with open(p, "rb") as fh: d = fh.read()
+    n = d.count(b"/lib64")
+    if not n: continue
+    d = d.replace(b"/lib64", b"/lib\x00\x00")
+    with open(p, "wb") as fh: fh.write(d)
+    print(f"containerd lib64-fix: {p} replaced {n} refs")
+PYEOF
+fi
+rm -f "$ELF_LIST"
+
+for bin in containerd containerd-shim-runc-v2 ctr; do
   llvm-strip --strip-all "$DESTDIR/bin/$bin" 2>/dev/null || true
 done"""
 
