@@ -1,6 +1,6 @@
 [package]
 name = "curl"
-version = "8.11.1-r1"
+version = "8.11.1-r2"
 license = "MIT"
 description = "Command-line tool and library for transferring data with URLs"
 
@@ -26,6 +26,7 @@ configure = """cmake -B build -G Ninja \
   -DCURL_DISABLE_LDAP=ON \
   -DCURL_USE_LIBSSH2=OFF \
   -DBUILD_TESTING=OFF \
+  -DBUILD_EXAMPLES=OFF \
   -DCMAKE_INSTALL_PREFIX=/ \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_C_COMPILER=clang \
