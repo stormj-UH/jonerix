@@ -1,6 +1,6 @@
 [package]
 name = "jpkg"
-version = "1.1.4"
+version = "1.1.5"
 license = "MIT"
 description = "jonerix package manager"
 # 1.1.2: absorb jpkg-local as a second binary built from the same source
