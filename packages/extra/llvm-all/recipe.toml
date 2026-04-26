@@ -1,14 +1,15 @@
 [package]
 name = "llvm-all"
-version = "21.1.2"
+version = "21.1.2-r1"
 license = "Apache-2.0"
-description = "Full LLVM toolchain with all 80+ clang/llvm tools — pairs with slim llvm"
+description = "Full LLVM toolchain with all 80+ clang/llvm/lldb tools — pairs with slim llvm"
 
 # llvm-all shares its source build with `llvm`. The `llvm` package in
-# packages/develop/ produces a SLIM toolchain (clang, lld, core llvm-*
-# tools) intended for the builder image and most build use. llvm-all
-# ships the full set — llvm-dwp, llvm-mca, llvm-opt-report, bugpoint,
-# dsymutil, clang-tidy, clang-format, etc — for development/debugging.
+# packages/develop/ produces a SLIM toolchain (clang, lld, lldb, core
+# llvm-* tools) intended for the builder image and most build use.
+# llvm-all ships the full set — llvm-dwp, llvm-mca, llvm-opt-report,
+# bugpoint, dsymutil, clang-tidy, clang-format, lldb, lldb-server, etc
+# — for development/debugging.
 #
 # This recipe is intentionally lightweight: scripts/build-all.sh does not
 # build it directly (not in build-order.txt). The artifacts on the release
@@ -16,6 +17,9 @@ description = "Full LLVM toolchain with all 80+ clang/llvm tools — pairs with 
 # build — same payload, different manifest. A future rebuild should teach
 # build-all how to split the LLVM source build into two jpkgs instead of
 # running the whole thing twice.
+#
+# r1: lldb added to LLVM_ENABLE_PROJECTS in the upstream llvm recipe.
+#     /bin/lldb, /bin/lldb-server, and /lib/liblldb.so now ship.
 
 [source]
 url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
