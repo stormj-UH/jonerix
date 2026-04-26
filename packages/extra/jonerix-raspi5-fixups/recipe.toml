@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.8"
+version = "1.6.9"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -59,6 +59,15 @@ install -Dm755 init.d/pi5-wifi     $DESTDIR/etc/init.d/pi5-wifi
 # uplink while it has carrier and falls over to wlan0 automatically.
 install -Dm755 bin/pi5-wifi-connect $DESTDIR/usr/local/bin/pi5-wifi-connect
 install -Dm755 init.d/wpa_supplicant_wlan0 $DESTDIR/etc/init.d/wpa_supplicant_wlan0
+
+# pi5-wifi-set-country: Python+ctypes shim for `iw reg set <CC>` (which
+# is GPL-2 and not in jonerix). Sends NL80211_CMD_REQ_SET_REG over a
+# generic netlink socket built directly with libc.bind() because the
+# jonerix python3 build doesn't expose AF_NETLINK via the socket
+# module. Effective on kernels that accept user-originated regulatory
+# hints; kernels built with CFG80211_INTERNAL_REGDB=y reject the
+# command with EINVAL and need a kernel rebuild or the iw tool.
+install -Dm755 bin/pi5-wifi-set-country $DESTDIR/usr/local/bin/pi5-wifi-set-country
 
 # pi5-fw: direct /dev/vcio tool (stand-in for vcgencmd +
 # rpi-eeprom-config reads). Static-musl, zero deps.

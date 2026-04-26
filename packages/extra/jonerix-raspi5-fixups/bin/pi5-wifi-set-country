@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""pi5-wifi-set-country — set the WiFi regulatory domain via nl80211.
+
+Stand-in for `iw reg set <CC>` (which is GPL-2 and not in jonerix).
+Sends NL80211_CMD_REQ_SET_REG over generic netlink so the kernel
+trusts the user-originated country code, regardless of whether
+`/lib/firmware/regulatory.db` is honoured or the kernel was built
+with CFG80211_INTERNAL_REGDB.
+
+This is the missing piece on Pi 5 boards whose brcmfmac silently
+falls back to the worldwide regdom (which disallows 5 GHz channels —
+visible as `brcmf_set_channel: ... fail, reason -52`). Without 5 GHz
+the chip can't associate with most modern access points.
+
+Usage:
+    sudo pi5-wifi-set-country US
+    sudo pi5-wifi-set-country JP
+    pi5-wifi-set-country show
+
+Stdlib only (socket, struct). Part of jonerix-raspi5-fixups — MIT.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import ctypes.util
+import os
+import struct
+import sys
+
+
+# Generic netlink protocol
+AF_NETLINK = 16
+NETLINK_GENERIC = 16
+
+# Message header sizes
+NLMSG_HDRLEN = 16
+GENL_HDRLEN  = 4
+
+# nlmsghdr flags
+NLM_F_REQUEST = 0x01
+NLM_F_ACK     = 0x04
+
+# Generic netlink controller (id 0x10) commands
+GENL_ID_CTRL          = 0x10
+CTRL_CMD_GETFAMILY    = 0x03
+CTRL_ATTR_FAMILY_ID   = 0x01
+CTRL_ATTR_FAMILY_NAME = 0x02
+
+# nl80211 attributes & commands
+NL80211_FAMILY_NAME       = b"nl80211"
+NL80211_CMD_REQ_SET_REG   = 0x21
+NL80211_CMD_GET_REG       = 0x1F
+NL80211_ATTR_REG_ALPHA2   = 0x21
+
+
+def _align(n: int, a: int = 4) -> int:
+    return (n + a - 1) & ~(a - 1)
+
+
+def _attr(typ: int, val: bytes) -> bytes:
+    """Encode a single netlink attribute (TLV)."""
+    raw = struct.pack("HH", 4 + len(val), typ) + val
+    pad = _align(len(raw)) - len(raw)
+    return raw + (b"\x00" * pad)
+
+
+def _nlmsg(msg_type: int, flags: int, seq: int, pid: int, payload: bytes) -> bytes:
+    total = NLMSG_HDRLEN + len(payload)
+    return struct.pack("IHHII", total, msg_type, flags, seq, pid) + payload
+
+
+def _genlmsg(cmd: int, version: int, attrs: bytes) -> bytes:
+    return struct.pack("BBxx", cmd, version) + attrs
+
+
+# jonerix's python3 build doesn't expose AF_NETLINK via the socket
+# module (and even when we pass the integer family, .bind() refuses
+# because the C helper needs an AF_NETLINK-aware address parser).
+# Drop into libc via ctypes for the netlink socket lifecycle. Once
+# the fd is bound, os.read/os.write work fine.
+_libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6",
+                    use_errno=True)
+
+
+class _SockaddrNl(ctypes.Structure):
+    _fields_ = [
+        ("nl_family", ctypes.c_ushort),
+        ("nl_pad",    ctypes.c_ushort),
+        ("nl_pid",    ctypes.c_uint),
+        ("nl_groups", ctypes.c_uint),
+    ]
+
+
+def _open_socket() -> int:
+    SOCK_RAW = 3
+    fd = _libc.socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC)
+    if fd < 0:
+        raise OSError(ctypes.get_errno(), "netlink socket()")
+    sa = _SockaddrNl(AF_NETLINK, 0, 0, 0)  # pid=0 → kernel auto-assigns
+    rc = _libc.bind(fd, ctypes.byref(sa), ctypes.sizeof(sa))
+    if rc < 0:
+        os.close(fd)
+        raise OSError(ctypes.get_errno(), "netlink bind()")
+    return fd
+
+
+def _send(fd: int, msg: bytes) -> None:
+    n = _libc.send(fd, msg, len(msg), 0)
+    if n < 0:
+        raise OSError(ctypes.get_errno(), "netlink send()")
+
+
+def _recv(fd: int, bufsize: int = 8192, timeout_s: float = 3.0) -> bytes:
+    # No socket-level timeout via libc — use poll().
+    import select
+    rl, _, _ = select.select([fd], [], [], timeout_s)
+    if not rl:
+        raise OSError(110, "netlink recv() timed out")  # 110 = ETIMEDOUT
+    return os.read(fd, bufsize)
+
+
+def _resolve_family_id(fd: int) -> int:
+    """Look up the nl80211 family id via the GENL controller."""
+    payload = _genlmsg(CTRL_CMD_GETFAMILY, 1,
+                       _attr(CTRL_ATTR_FAMILY_NAME,
+                             NL80211_FAMILY_NAME + b"\x00"))
+    msg = _nlmsg(GENL_ID_CTRL, NLM_F_REQUEST, 1, 0, payload)
+    _send(fd, msg)
+    raw = _recv(fd)
+    # Parse: skip nlmsg header + genl header, walk attrs.
+    off = NLMSG_HDRLEN + GENL_HDRLEN
+    while off + 4 <= len(raw):
+        attr_len, attr_type = struct.unpack("HH", raw[off:off + 4])
+        if attr_len < 4 or off + attr_len > len(raw):
+            break
+        if attr_type == CTRL_ATTR_FAMILY_ID:
+            return struct.unpack("H", raw[off + 4:off + 6])[0]
+        off += _align(attr_len)
+    raise RuntimeError("nl80211 family not found via GENL_ID_CTRL")
+
+
+def cmd_show() -> int:
+    """Print the kernel-visible regdom + the cfg80211 module param."""
+    try:
+        with open("/sys/module/cfg80211/parameters/ieee80211_regdom") as f:
+            print(f"cfg80211.ieee80211_regdom: {f.read().strip()}")
+    except OSError:
+        print("cfg80211.ieee80211_regdom: (param file not present)")
+    # Best-effort: walk /sys/class/ieee80211/*/index for any phy.
+    if os.path.isdir("/sys/class/ieee80211"):
+        for phy in sorted(os.listdir("/sys/class/ieee80211")):
+            print(f"phy: {phy}")
+    return 0
+
+
+def cmd_set(cc: str) -> int:
+    if len(cc) != 2 or not cc.isalpha():
+        print(f"error: country code must be 2 ASCII letters, got {cc!r}",
+              file=sys.stderr)
+        return 2
+    cc = cc.upper()
+    if os.geteuid() != 0:
+        print("error: must run as root (NETLINK_GENERIC needs CAP_NET_ADMIN)",
+              file=sys.stderr)
+        return 1
+
+    fd = _open_socket()
+    try:
+        family_id = _resolve_family_id(fd)
+        # Country code attribute: exactly 2 ASCII bytes per nl80211.h
+        # (NL80211_ATTR_REG_ALPHA2 is `u8 alpha2[2]`). Some implementations
+        # (iw, hostapd) tack on a NUL but the kernel only reads the first
+        # two bytes; including a NUL grew the payload to 3 and earned us
+        # EINVAL on the 2024+ Pi 5 kernel.
+        attr = _attr(NL80211_ATTR_REG_ALPHA2, cc.encode())
+        payload = _genlmsg(NL80211_CMD_REQ_SET_REG, 1, attr)
+        msg = _nlmsg(family_id, NLM_F_REQUEST | NLM_F_ACK, 2, 0, payload)
+        _send(fd, msg)
+        # Read until ACK or error.
+        while True:
+            try:
+                raw = _recv(fd)
+            except OSError as e:
+                if e.errno == 110:
+                    print("error: timed out waiting for nl80211 ACK", file=sys.stderr)
+                    return 1
+                raise
+            # nlmsg type 2 = NLMSG_ERROR. Payload starts with int32 errno.
+            mtype = struct.unpack("H", raw[4:6])[0]
+            if mtype == 2:
+                err = struct.unpack("i", raw[NLMSG_HDRLEN:NLMSG_HDRLEN + 4])[0]
+                if err == 0:
+                    print(f"set regdom to {cc} via NL80211_CMD_REQ_SET_REG")
+                    return 0
+                print(f"error: nl80211 returned errno={-err} ({os.strerror(-err)})",
+                      file=sys.stderr)
+                return 1
+            # Otherwise loop and read more.
+    finally:
+        os.close(fd)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2 or argv[1] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if len(argv) >= 2 else 2
+    if argv[1] == "show":
+        return cmd_show()
+    return cmd_set(argv[1])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

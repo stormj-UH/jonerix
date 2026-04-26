@@ -1,4 +1,4 @@
-#!/sbin/openrc-run
+#!/bin/openrc-run
 # pi5-wifi — bring up the Pi 5 onboard BCM4345 WiFi at boot.
 #
 # jonerix's permissive-license runtime excludes kmod and any udev that
