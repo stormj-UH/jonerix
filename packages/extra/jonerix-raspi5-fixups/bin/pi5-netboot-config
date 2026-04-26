@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""pi5-netboot-config — point a Raspberry Pi 5's EEPROM bootloader at
+a TFTP server, or restore the factory boot order.
+
+jonerix doesn't ship rpi-eeprom-config (GPL, Debian-flavoured).
+But the Pi 5 EEPROM accepts arbitrary KEY=VALUE config via the
+VideoCore mailbox SET_BOOTLOADER_CONFIG tag, and we already have
+that plumbing in pi5-wake-on-power. This tool reuses the same
+codepath so a netboot setup is one command on the Pi:
+
+    sudo pi5-netboot-config enable 192.168.1.42
+
+That writes:
+    BOOT_ORDER  = 0xf124   # USB → SD → NETWORK → restart
+    TFTP_IP     = 192.168.1.42
+    TFTP_PREFIX = 2
+
+To roll back to factory boot order:
+    sudo pi5-netboot-config disable
+
+Or just inspect:
+    pi5-netboot-config show
+
+Stdlib only (fcntl, struct, os, sys). Runs on Pi 5 only.
+Part of jonerix-raspi5-fixups — MIT.
+"""
+
+from __future__ import annotations
+
+import fcntl
+import os
+import struct
+import sys
+
+# ── Mailbox plumbing — same as pi5-wake-on-power ─────────────────────
+
+# _IOWR(100, 0, char*) on aarch64 linux = 0xC008_6400
+IOCTL_MBOX_PROPERTY = 0xC008_6400
+MBOX_REQUEST = 0x0000_0000
+
+TAG_GET_CONFIG = 0x0003_0086  # GET_BOOTLOADER_CONFIG
+TAG_SET_CONFIG = 0x0003_8087  # SET_BOOTLOADER_CONFIG (sets/queues update)
+TAG_END        = 0x0000_0000
+
+
+def die(msg: str, code: int = 1) -> None:
+    sys.stderr.write(f"pi5-netboot-config: error: {msg}\n")
+    sys.exit(code)
+
+
+def mbox_call(tag: int, payload: bytes = b"") -> tuple[int, bytes]:
+    """Send a single mailbox property message. Returns (response code,
+    response payload up to its declared length)."""
+    # Buffer layout (u32 words):
+    #   [0] total size in bytes
+    #   [1] request code (0)
+    #   [2] tag id
+    #   [3] value buffer size (max of req/resp)
+    #   [4] tag request/response code
+    #   [5..] value buffer (size from [3], rounded up to u32)
+    #   [N] TAG_END (0)
+    val_size = max(len(payload), 256)
+    val_size_words = (val_size + 3) // 4
+    total_words = 6 + val_size_words
+    total_bytes = total_words * 4
+    buf = bytearray(total_bytes)
+
+    struct.pack_into("<IIIIII", buf, 0,
+                     total_bytes, MBOX_REQUEST, tag,
+                     val_size, 0, 0)
+    if payload:
+        buf[20:20 + len(payload)] = payload
+    struct.pack_into("<I", buf, total_bytes - 4, TAG_END)
+
+    try:
+        fd = os.open("/dev/vcio", os.O_RDWR)
+    except OSError as e:
+        die(f"open /dev/vcio: {e}")
+    try:
+        fcntl.ioctl(fd, IOCTL_MBOX_PROPERTY, buf, True)
+    finally:
+        os.close(fd)
+
+    code = struct.unpack_from("<I", buf, 16)[0]
+    resp_len = code & 0x7FFF_FFFF
+    return code, bytes(buf[20:20 + resp_len])
+
+
+# ── Config read/write (same algorithm as pi5-wake-on-power) ──────────
+
+def read_config() -> str:
+    code, raw = mbox_call(TAG_GET_CONFIG)
+    # Some Pi 5 EEPROM firmware revisions (2024+) return the response
+    # as 0x80000000 | <payload_len_in_bytes> instead of plain
+    # 0x80000000. Either way, the high bit signals success.
+    if (code & 0x8000_0000) == 0:
+        die(f"mailbox GET_BOOTLOADER_CONFIG returned 0x{code:08x}")
+    if len(raw) < 4:
+        return ""
+    cfg_len = struct.unpack_from("<I", raw, 0)[0]
+    if cfg_len == 0:
+        return ""
+    return raw[4:4 + cfg_len].decode("ascii", errors="replace")
+
+
+def write_config(text: str) -> None:
+    encoded = text.encode("ascii")
+    payload = struct.pack("<I", len(encoded)) + encoded
+    code, _ = mbox_call(TAG_SET_CONFIG, payload)
+    if (code & 0x8000_0000) == 0:
+        die(f"mailbox SET_BOOTLOADER_CONFIG returned 0x{code:08x}")
+
+
+def set_key(text: str, key: str, value: str) -> str:
+    """Set a key in the EEPROM config text. Replaces an existing
+    KEY=... line in place; appends if not present."""
+    lines = text.splitlines() if text else []
+    target = f"{key}={value}"
+    seen = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if (stripped.startswith(key)
+                and stripped[len(key):].lstrip().startswith("=")):
+            lines[i] = target
+            seen = True
+            break
+    if not seen:
+        lines.append(target)
+    return "\n".join(lines) + "\n"
+
+
+def remove_key(text: str, key: str) -> str:
+    out = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if (stripped.startswith(key)
+                and stripped[len(key):].lstrip().startswith("=")):
+            continue
+        out.append(line)
+    return "\n".join(out) + ("\n" if out else "")
+
+
+# ── Subcommands ──────────────────────────────────────────────────────
+
+USAGE = """\
+usage: pi5-netboot-config <command> [args]
+
+  show                          Print the current EEPROM bootloader config.
+  enable <server-ip> [prefix]   Set the Pi to TFTP-boot from <server-ip>.
+                                Default prefix '2' means "look in
+                                serial/MAC subdirs first, then fall back
+                                to root".
+  disable                       Restore default boot order (SD → USB →
+                                restart) and remove TFTP_IP/TFTP_PREFIX.
+  set KEY=VALUE                 Set an arbitrary EEPROM config key.
+                                Use sparingly — this is the same
+                                mechanism the rpi-eeprom-config tool
+                                uses on Raspberry Pi OS.
+
+This rewrites the EEPROM config in place (no staging file). On the
+next reboot the Pi 5 bootloader will use the new values. Apply
+WAKE_ON_GPIO / POWER_OFF_ON_HALT separately via pi5-wake-on-power.
+"""
+
+
+def cmd_show(_args: list[str]) -> int:
+    text = read_config()
+    if not text.strip():
+        print("(empty config)")
+    else:
+        sys.stdout.write(text)
+        if not text.endswith("\n"):
+            sys.stdout.write("\n")
+    return 0
+
+
+def cmd_enable(args: list[str]) -> int:
+    if not args:
+        die("enable requires <server-ip>")
+    server = args[0]
+    prefix = args[1] if len(args) > 1 else "2"
+    cur = read_config()
+    new = set_key(cur, "BOOT_ORDER", "0xf124")
+    new = set_key(new, "TFTP_IP", server)
+    new = set_key(new, "TFTP_PREFIX", prefix)
+    write_config(new)
+    sys.stdout.write("EEPROM config now:\n")
+    sys.stdout.write(read_config())
+    sys.stdout.write("\nReboot to net-boot from {}.\n".format(server))
+    return 0
+
+
+def cmd_disable(_args: list[str]) -> int:
+    cur = read_config()
+    new = set_key(cur, "BOOT_ORDER", "0xf41")
+    new = remove_key(new, "TFTP_IP")
+    new = remove_key(new, "TFTP_PREFIX")
+    write_config(new)
+    sys.stdout.write("EEPROM config now:\n")
+    sys.stdout.write(read_config())
+    return 0
+
+
+def cmd_set(args: list[str]) -> int:
+    if not args or "=" not in args[0]:
+        die("set requires KEY=VALUE")
+    key, _, value = args[0].partition("=")
+    cur = read_config()
+    new = set_key(cur, key.strip(), value.strip())
+    write_config(new)
+    sys.stdout.write("EEPROM config now:\n")
+    sys.stdout.write(read_config())
+    return 0
+
+
+COMMANDS = {
+    "show":    cmd_show,
+    "enable":  cmd_enable,
+    "disable": cmd_disable,
+    "set":     cmd_set,
+}
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2 or argv[1] in ("-h", "--help", "help"):
+        sys.stdout.write(USAGE)
+        return 0 if len(argv) >= 2 else 2
+    cmd = argv[1]
+    handler = COMMANDS.get(cmd)
+    if not handler:
+        sys.stdout.write(USAGE)
+        die(f"unknown command: {cmd}", 2)
+    if os.geteuid() != 0 and cmd in ("enable", "disable", "set"):
+        die("must run as root for write commands")
+    return handler(argv[2:])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

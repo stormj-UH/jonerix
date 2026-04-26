@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.7"
+version = "1.6.8"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -61,6 +61,13 @@ install -Dm755 /tmp/pi5-fw $DESTDIR/usr/local/bin/pi5-fw
 # restored (WAKE_ON_GPIO / POWER_OFF_ON_HALT). Python 3 stdlib only
 # (fcntl, os, struct, sys) — no pip deps, PSF-2.0.
 install -Dm755 bin/pi5-wake-on-power $DESTDIR/usr/local/bin/pi5-wake-on-power
+
+# pi5-netboot-config: jonerix's stand-in for rpi-eeprom-config (which is
+# Debian-flavoured + GPL and not in jonerix). Same VideoCore mailbox
+# plumbing as pi5-wake-on-power, but writes BOOT_ORDER / TFTP_IP /
+# TFTP_PREFIX so a Pi 5 can be flipped between SD-boot and TFTP-boot
+# with one command. Python 3 stdlib only.
+install -Dm755 bin/pi5-netboot-config $DESTDIR/usr/local/bin/pi5-netboot-config
 
 # apply-pi5-boot-settings: idempotent shell helper that patches
 # /boot/cmdline.txt (reboot=c) and /boot/config.txt
