@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r7"
+version = "5.9-r8"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
@@ -17,10 +17,10 @@ configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir
 # Serial build. zsh's Makefile generates Src/modules.stamp via a
 # non-PHONY side-effect rule in mkmakemod.sh; under `make -j$(nproc)`
 # the bltinmods.list target races its own dependency and fails with
-# "No rule to make target 'modules.stamp', needed by 'bltinmods.list'"
-# (reproduced 2026-04-25 on aarch64 builder). zsh is small enough
-# that -j1 costs us ~90s; trading determinism for that is fine.
-build = "make -j1"
+# "No rule to make target 'modules.stamp', needed by 'bltinmods.list'".
+# The race happens in sub-makes too (zsh nests make calls): export
+# MAKEFLAGS=-j1 so every recursive make is also serial.
+build = "MAKEFLAGS=-j1 make -j1"
 install = """
 make DESTDIR=$DESTDIR install
 install -Dm644 "$RECIPE_DIR/zshrc" "$DESTDIR/etc/zshrc"
