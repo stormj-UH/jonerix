@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r6"
+version = "10.1.0-r7"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -49,7 +49,15 @@ export TAILQ_FOREACH_SAFE=no TAILQ_CONCAT=no TAILQ_FOREACH=no
 # definitions, "here-string" variants) that toybox sh can't
 # parse — line 63 trips "syntax error ... newline" — so invoke
 # mksh explicitly. mksh is a runtime dep on every jonerix box.
-CC="$CC_CMD" CFLAGS="-O2 -fomit-frame-pointer -I/include" \
+# When jonerix-headers is installed, kernel headers live at /include/linux/*.
+# In an Alpine CI container where jpkg-local cannot install jonerix-headers,
+# they live at /usr/include/linux/*. Add /usr/include as a fallback so
+# this recipe builds in both environments. The jonerix clang .cfg already
+# sets the musl sysroot; /usr/include is searched last and only provides
+# kernel-ABI headers (no glibc pollution) in the Alpine builder.
+EXTRA_INC=""
+[ -f /include/linux/rtnetlink.h ] || EXTRA_INC="-I/usr/include"
+CC="$CC_CMD" CFLAGS="-O2 -fomit-frame-pointer -I/include $EXTRA_INC" \
   mksh ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib/dhcpcd
 grep -E 'queue|HAVE_SYS' config.h
 # musl provides all the types dhcpcd needs; asm/types.h is a Linux
