@@ -1,8 +1,22 @@
 [package]
 name = "jmake"
-version = "1.1.5"
+version = "1.1.6"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.1.6: paren-aware colon search in target-specific variable parsing.
+# Lines like
+#   $(NOSSP_OBJS) $(NOSSP_OBJS:%.o=%.lo): CFLAGS_ALL += $(CFLAGS_NOSSP)
+# (musl Makefile vintage) have a literal `:` inside the $(VAR:pat=sub)
+# pattern-substitution reference. The previous TSV split used
+# `name.find(':')` which is NOT paren-aware, hit the inner colon, and
+# fell through to try_parse_rule — registering CFLAGS_ALL as a real
+# prerequisite of every NOSSP_OBJS target (CRT_OBJS includes
+# obj/crt/Scrt1.o), so `jmake obj/crt/Scrt1.o` would die with
+# `No rule to make target 'CFLAGS_ALL'`. Switching to find_rule_colon
+# (which honours $()/${} nesting depth) makes the TSV split align with
+# the actual rule colon GNU make sees, and musl's whole bootstrap goes
+# green again.
+#
 # 1.1.5: three compatibility fixes needed by the package repo audit:
 #   - gate GNU Make `--version` impersonation behind JMAKE_TEST_MODE=1,
 #     otherwise identify as jmake.
@@ -68,10 +82,11 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # builders should consume the cached tarball in /workspace/sources/
 # via JPKG_SOURCE_CACHE instead of reaching for the network.
 #
-# Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/jmake/archive/v1.1.5.tar.gz
-url = "https://castle.great-morpho.ts.net:3000/jonerik/jmake/archive/v1.1.5.tar.gz"
-sha256 = "a9efe20fa04a621ee61be2c7cfb8d5aadb583849f63d6a69d033c0aca5de35c4"
+# Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
+# mirror that CI can reach without VPN. The mirror tarball is generated
+# from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.6/jmake-v1.1.6.tar.gz"
+sha256 = "44ade629964f9d288a7fd737f9cb8c50b2415e66e78bc604103a6d8328f81731"
 
 [build]
 system = "custom"
