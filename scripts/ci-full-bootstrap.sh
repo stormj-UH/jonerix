@@ -151,20 +151,29 @@ for name in $(cat "$ORDER_FILE"); do
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
         echo ">>> built $name in ${pkg_elapsed}s"
         # Install the freshly-built jpkg into the builder's live / so
-        # subsequent recipes can find it as a build dep. The builder
-        # image already has older versions of these packages; --force
-        # overwrites with the just-built variant. Without this step,
-        # downstream recipes that expect headers/.so files from a freshly-
-        # built dep get "not found via jpkg" warnings and fail at the
-        # configure / link stage (e.g. hostapd needs nloxide; tmux needs
-        # libevent; curl needs libressl). Best-effort — a failure here
-        # doesn't fail the bootstrap (the .jpkg still ships into the
-        # rootfs in step C, which is what counts for the smoke test).
-        new_jpkg=$(ls "$OUT/jpkgs/${name}-${version}-${ARCH}.jpkg" 2>/dev/null | head -1)
-        if [ -n "$new_jpkg" ]; then
-            jpkg-local install "$new_jpkg" >> "$OUT/install-log/builder-install.log" 2>&1 \
-                || echo ">>>   (warn: builder-install of $name failed)" >&2
-        fi
+        # subsequent recipes can find it as a build dep. SKIPS the
+        # foundational set whose install hooks rewrite /bin/sh and
+        # other shell/init plumbing — installing toybox over the live
+        # builder rewrites /bin/sh -> toybox via its applet farm,
+        # which breaks every subsequent recipe whose `build = """set -e`
+        # relies on mksh semantics (toybox sh prints `set: bad -e`).
+        # Same risk for mksh itself, openrc, dropbear, and the multi-
+        # call shells. Library + tool packages (libressl, libevent,
+        # pcre2, nloxide, ...) DO get installed so downstream recipes
+        # find their headers/.so. Best-effort — a failure here
+        # doesn't fail the bootstrap.
+        case " toybox mksh openrc dropbear shadow musl ncurses dotnet linux limine " in
+            *" $name "*)
+                # Skip — already in builder image, install would corrupt it.
+                ;;
+            *)
+                new_jpkg=$(ls "$OUT/jpkgs/${name}-${version}-${ARCH}.jpkg" 2>/dev/null | head -1)
+                if [ -n "$new_jpkg" ]; then
+                    jpkg-local install "$new_jpkg" >> "$OUT/install-log/builder-install.log" 2>&1 \
+                        || echo ">>>   (warn: builder-install of $name failed)" >&2
+                fi
+                ;;
+        esac
     else
         rc=$?
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
