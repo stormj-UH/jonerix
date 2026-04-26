@@ -150,30 +150,23 @@ for name in $(cat "$ORDER_FILE"); do
         build_count=$((build_count + 1))
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
         echo ">>> built $name in ${pkg_elapsed}s"
-        # Install the freshly-built jpkg into the builder's live / so
-        # subsequent recipes can find it as a build dep. SKIPS the
-        # foundational set whose install hooks rewrite /bin/sh and
-        # other shell/init plumbing — installing toybox over the live
-        # builder rewrites /bin/sh -> toybox via its applet farm,
-        # which breaks every subsequent recipe whose `build = """set -e`
-        # relies on mksh semantics (toybox sh prints `set: bad -e`).
-        # Same risk for mksh itself, openrc, dropbear, and the multi-
-        # call shells. Library + tool packages (libressl, libevent,
-        # pcre2, nloxide, ...) DO get installed so downstream recipes
-        # find their headers/.so. Best-effort — a failure here
-        # doesn't fail the bootstrap.
-        case " toybox mksh openrc dropbear shadow musl ncurses dotnet linux limine " in
-            *" $name "*)
-                # Skip — already in builder image, install would corrupt it.
-                ;;
-            *)
-                new_jpkg=$(ls "$OUT/jpkgs/${name}-${version}-${ARCH}.jpkg" 2>/dev/null | head -1)
-                if [ -n "$new_jpkg" ]; then
-                    jpkg-local install "$new_jpkg" >> "$OUT/install-log/builder-install.log" 2>&1 \
-                        || echo ">>>   (warn: builder-install of $name failed)" >&2
-                fi
-                ;;
-        esac
+        # NOTE: previous versions of this script installed each freshly-
+        # built .jpkg into the builder's live / via `jpkg-local install`
+        # so downstream recipes could find the new versions of their
+        # build-time deps. That broke too many things: every install
+        # touched /bin (multicall symlinks), and some package's install
+        # rewrote /bin/tar -> hwclock somehow, after which `tar -xf` (used
+        # by jpkg's own source-extract step) emitted `hwclock: unknown
+        # option 'tar'` and EVERY subsequent recipe failed to extract its
+        # source. The builder image already ships the deps every recipe
+        # needs (musl, libressl, libevent, pcre2, nloxide, etc); its
+        # versions may lag the rolling `packages` release by a few
+        # hours, but the bootstrap CI is verifying that the RECIPES
+        # build from source, not that recipes link against newer-than-
+        # builder-image deps. If we ever want self-consistent
+        # recipe-against-just-built-recipe builds, the right pattern is
+        # a side-load prefix (/tmp/orch-libs) added to LIBRARY_PATH /
+        # C_INCLUDE_PATH, NOT a destructive install over /.
     else
         rc=$?
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
