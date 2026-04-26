@@ -1,6 +1,6 @@
 [package]
 name = "ncurses"
-version = "6.5-r2"
+version = "6.5-r3"
 license = "MIT"
 description = "Terminal handling library"
 # ncurses ships full-featured /bin/reset, /bin/clear, /bin/tput, /bin/tic,
@@ -14,7 +14,7 @@ sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --with-shared --without-debug --enable-widec --without-cxx --without-manpages --disable-stripping CC=clang"
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --with-shared --without-debug --enable-widec --without-cxx --without-manpages --disable-stripping --without-tests CC=clang"
 build = "make -C include && make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
