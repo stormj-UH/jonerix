@@ -1,6 +1,6 @@
 [package]
 name = "curl"
-version = "8.11.1-r4"
+version = "8.11.1-r5"
 license = "MIT"
 description = "Command-line tool and library for transferring data with URLs"
 
@@ -23,9 +23,8 @@ cmake -B build -G Ninja \
   -DCURL_USE_OPENSSL=ON \
   -DOPENSSL_ROOT_DIR=/ \
   -DOPENSSL_INCLUDE_DIR=/include \
-  -DOPENSSL_SSL_LIBRARY=/lib/libssl.a \
-  -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.a \
-  -DOPENSSL_USE_STATIC_LIBS=ON \
+  -DOPENSSL_SSL_LIBRARY=/lib/libssl.so \
+  -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.so \
   -DUSE_NGHTTP2=OFF \
   -DCURL_ZLIB=ON \
   -DZLIB_INCLUDE_DIR=/include \
