@@ -2,45 +2,90 @@
 """pi5-netboot-config — point a Raspberry Pi 5's EEPROM bootloader at
 a TFTP server, or restore the factory boot order.
 
-jonerix doesn't ship rpi-eeprom-config (GPL, Debian-flavoured).
-But the Pi 5 EEPROM accepts arbitrary KEY=VALUE config via the
-VideoCore mailbox SET_BOOTLOADER_CONFIG tag, and we already have
-that plumbing in pi5-wake-on-power. This tool reuses the same
-codepath so a netboot setup is one command on the Pi:
+jonerix doesn't ship rpi-eeprom-config (GPL, Debian-flavoured). We
+implement the same persistence mechanism it uses: drop a patched
+pieeprom.upd plus a sha256 pieeprom.sig on the FAT boot partition;
+the Pi 5 ROM-loaded bootloader detects them on the next boot, verifies
+the sha256, and flashes the new image into the SPI EEPROM.
 
+(An earlier version of this tool used the VideoCore mailbox SET tag
+0x00038087, but that's a silent no-op on retail Pi 5 firmware — the
+tag returns a "success" code but neither the runtime config nor the
+SPI EEPROM ever change. The .upd flow is the only mechanism that
+actually persists.)
+
+Usage:
     sudo pi5-netboot-config enable 192.168.1.42
-
-That writes:
-    BOOT_ORDER  = 0xf124   # USB → SD → NETWORK → restart
-    TFTP_IP     = 192.168.1.42
-    TFTP_PREFIX = 2
-
-To roll back to factory boot order:
     sudo pi5-netboot-config disable
+    sudo pi5-netboot-config show
+    sudo pi5-netboot-config set KEY=VALUE
 
-Or just inspect:
-    pi5-netboot-config show
-
-Stdlib only (fcntl, struct, os, sys). Runs on Pi 5 only.
+Stdlib only (urllib, hashlib, struct, subprocess, os, sys). Pi 5 only.
 Part of jonerix-raspi5-fixups — MIT.
 """
 
 from __future__ import annotations
 
-import fcntl
+import hashlib
 import os
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
+import urllib.request
+from pathlib import Path
 
-# ── Mailbox plumbing — same as pi5-wake-on-power ─────────────────────
+# ── EEPROM image format ──────────────────────────────────────────────
+# 2 MiB image of TLV sections. The last 4 KiB is reserved scratch.
+# Each section is 8-byte aligned; header is:
+#   u32_be magic
+#   u32_be length        (= bytes after this length field, before next section)
+# For file sections (magic=FILE_MAGIC) the layout is:
+#   [0..4)   magic
+#   [4..8)   length       (= 12 + 4 + len(content))
+#   [8..20)  filename     (12 bytes, null-padded)
+#   [20..24) reserved     (4 zero bytes)
+#   [24..)   content
+# Section parser advances by `8 + length`, then aligns up to 8.
 
-# _IOWR(100, 0, char*) on aarch64 linux = 0xC008_6400
-IOCTL_MBOX_PROPERTY = 0xC008_6400
-MBOX_REQUEST = 0x0000_0000
+IMAGE_SIZE = 2 * 1024 * 1024
+ERASE_ALIGN_SIZE = 4096
 
-TAG_GET_CONFIG = 0x0003_0086  # GET_BOOTLOADER_CONFIG
-TAG_SET_CONFIG = 0x0003_8087  # SET_BOOTLOADER_CONFIG (sets/queues update)
-TAG_END        = 0x0000_0000
+MAGIC      = 0x55AAF00F
+PAD_MAGIC  = 0x55AAFEEF
+FILE_MAGIC = 0x55AAF11F
+MAGIC_MASK = 0xFFFFF00F
+
+FILENAME_LEN = 12
+FILE_HDR_LEN = 20  # 4(magic) + 4(length) + 12(filename); content begins at +24
+
+BOOTCONF_TXT = "bootconf.txt"
+
+# ── Source for base .bin ─────────────────────────────────────────────
+# Pinned to a known-good Raspberry Pi 5 stable release. The .bin is
+# Broadcom-licensed firmware (same boat as start4.elf / fixup4.dat,
+# already accepted at install time on jonerix-pi5).
+DEFAULT_BIN_NAME = "pieeprom-2026-04-14.bin"
+DEFAULT_BIN_URL = (
+    "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/master/"
+    "firmware-2712/latest/" + DEFAULT_BIN_NAME
+)
+# sha256 of pieeprom-2026-04-14.bin pinned at integration time.
+# Empty string disables verification (override with --bin if you want
+# to bring your own image).
+DEFAULT_BIN_SHA256 = "2ad1e314f5425e0362765a34220f841d4548a4711c77d10cb3988cc82af14495"
+
+CACHE_DIR = Path("/var/cache/jonerix/pi5-eeprom")
+SEARCH_DIRS = [
+    Path("/lib/firmware/raspberrypi/bootloader-2712/stable"),
+    Path("/lib/firmware/raspberrypi/bootloader-2712/latest"),
+    CACHE_DIR,
+]
+
+# ── Boot partition ───────────────────────────────────────────────────
+BOOT_MOUNTPOINTS = ["/boot/firmware", "/boot"]
+BOOT_DEV_HINTS   = ["/dev/mmcblk0p1", "/dev/disk/by-label/BOOT"]
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -48,96 +93,335 @@ def die(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
-def mbox_call(tag: int, payload: bytes = b"") -> tuple[int, bytes]:
-    """Send a single mailbox property message. Returns (response code,
-    response payload up to its declared length)."""
-    # Buffer layout (u32 words):
-    #   [0] total size in bytes
-    #   [1] request code (0)
-    #   [2] tag id
-    #   [3] value buffer size (max of req/resp)
-    #   [4] tag request/response code
-    #   [5..] value buffer (size from [3], rounded up to u32)
-    #   [N] TAG_END (0)
-    val_size = max(len(payload), 256)
-    val_size_words = (val_size + 3) // 4
-    total_words = 6 + val_size_words
-    total_bytes = total_words * 4
-    buf = bytearray(total_bytes)
+def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
-    struct.pack_into("<IIIIII", buf, 0,
-                     total_bytes, MBOX_REQUEST, tag,
-                     val_size, 0, 0)
-    if payload:
-        buf[20:20 + len(payload)] = payload
-    struct.pack_into("<I", buf, total_bytes - 4, TAG_END)
 
+# ── Boot partition discovery and (un)mount ───────────────────────────
+
+def find_mounted_boot() -> Path | None:
+    """Return mountpoint of the FAT boot partition, or None."""
     try:
-        fd = os.open("/dev/vcio", os.O_RDWR)
-    except OSError as e:
-        die(f"open /dev/vcio: {e}")
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                dev, mnt, fs = parts[0], parts[1], parts[2]
+                if fs == "vfat" and any(dev.startswith(h.split("/by")[0]) or
+                                        dev == h for h in BOOT_DEV_HINTS):
+                    return Path(mnt)
+                if fs == "vfat" and mnt in BOOT_MOUNTPOINTS:
+                    return Path(mnt)
+    except OSError:
+        pass
+    return None
+
+
+def find_boot_device() -> str:
+    for hint in BOOT_DEV_HINTS:
+        if os.path.exists(hint):
+            return hint
+    die("can't find Pi 5 boot partition (looked for /dev/mmcblk0p1 etc)")
+    return ""  # unreachable
+
+
+class BootMount:
+    """Context manager that ensures /dev/mmcblk0p1 is mounted somewhere
+    writable. If it was already mounted we use that mountpoint and
+    don't unmount on exit."""
+
+    def __init__(self) -> None:
+        self.mountpoint: Path | None = None
+        self._we_mounted = False
+        self._tmpdir: Path | None = None
+
+    def __enter__(self) -> Path:
+        existing = find_mounted_boot()
+        if existing is not None:
+            # Make sure it's writable
+            if not os.access(existing, os.W_OK):
+                die(f"boot partition mounted read-only at {existing}; "
+                    f"remount rw or unmount before running this tool")
+            self.mountpoint = existing
+            return existing
+        dev = find_boot_device()
+        self._tmpdir = Path(tempfile.mkdtemp(prefix="pi5-boot-"))
+        try:
+            run(["mount", "-t", "vfat", "-o", "rw", dev, str(self._tmpdir)])
+        except subprocess.CalledProcessError as e:
+            die(f"mount {dev}: {(e.stderr or e.stdout or '').strip()}")
+        self._we_mounted = True
+        self.mountpoint = self._tmpdir
+        return self._tmpdir
+
+    def __exit__(self, *_exc) -> None:
+        if self._we_mounted and self._tmpdir is not None:
+            try:
+                run(["umount", str(self._tmpdir)], check=False)
+            finally:
+                try:
+                    self._tmpdir.rmdir()
+                except OSError:
+                    pass
+
+
+# ── Base .bin acquisition ────────────────────────────────────────────
+
+def find_local_base_bin() -> Path | None:
+    for d in SEARCH_DIRS:
+        if not d.is_dir():
+            continue
+        # Prefer a file matching DEFAULT_BIN_NAME, else newest pieeprom-*.bin
+        exact = d / DEFAULT_BIN_NAME
+        if exact.is_file():
+            return exact
+        cands = sorted(d.glob("pieeprom-*.bin"))
+        if cands:
+            return cands[-1]
+    return None
+
+
+def fetch_base_bin() -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    target = CACHE_DIR / DEFAULT_BIN_NAME
+    if target.is_file() and target.stat().st_size == IMAGE_SIZE:
+        return target
+    sys.stderr.write(f"pi5-netboot-config: downloading {DEFAULT_BIN_URL}\n")
+    tmp = target.with_suffix(target.suffix + ".tmp")
     try:
-        fcntl.ioctl(fd, IOCTL_MBOX_PROPERTY, buf, True)
-    finally:
-        os.close(fd)
-
-    code = struct.unpack_from("<I", buf, 16)[0]
-    resp_len = code & 0x7FFF_FFFF
-    return code, bytes(buf[20:20 + resp_len])
-
-
-# ── Config read/write (same algorithm as pi5-wake-on-power) ──────────
-
-def read_config() -> str:
-    code, raw = mbox_call(TAG_GET_CONFIG)
-    # Some Pi 5 EEPROM firmware revisions (2024+) return the response
-    # as 0x80000000 | <payload_len_in_bytes> instead of plain
-    # 0x80000000. Either way, the high bit signals success.
-    if (code & 0x8000_0000) == 0:
-        die(f"mailbox GET_BOOTLOADER_CONFIG returned 0x{code:08x}")
-    if len(raw) < 4:
-        return ""
-    cfg_len = struct.unpack_from("<I", raw, 0)[0]
-    if cfg_len == 0:
-        return ""
-    return raw[4:4 + cfg_len].decode("ascii", errors="replace")
+        with urllib.request.urlopen(DEFAULT_BIN_URL, timeout=60) as r, \
+             open(tmp, "wb") as out:
+            shutil.copyfileobj(r, out)
+    except Exception as e:
+        die(f"download {DEFAULT_BIN_URL}: {e}")
+    if tmp.stat().st_size != IMAGE_SIZE:
+        tmp.unlink(missing_ok=True)
+        die(f"downloaded image has wrong size {tmp.stat().st_size}, "
+            f"expected {IMAGE_SIZE}")
+    if DEFAULT_BIN_SHA256 and not DEFAULT_BIN_SHA256.startswith("__"):
+        h = hashlib.sha256(tmp.read_bytes()).hexdigest()
+        if h != DEFAULT_BIN_SHA256:
+            tmp.unlink(missing_ok=True)
+            die(f"downloaded image sha256 mismatch:\n  got      {h}\n  expected {DEFAULT_BIN_SHA256}")
+    tmp.rename(target)
+    return target
 
 
-def write_config(text: str) -> None:
-    encoded = text.encode("ascii")
-    payload = struct.pack("<I", len(encoded)) + encoded
-    code, _ = mbox_call(TAG_SET_CONFIG, payload)
-    if (code & 0x8000_0000) == 0:
-        die(f"mailbox SET_BOOTLOADER_CONFIG returned 0x{code:08x}")
+def resolve_base_bin(override: str | None) -> Path:
+    if override:
+        p = Path(override)
+        if not p.is_file():
+            die(f"--bin {override}: not a file")
+        if p.stat().st_size != IMAGE_SIZE:
+            die(f"--bin {override}: size {p.stat().st_size}, expected {IMAGE_SIZE}")
+        return p
+    local = find_local_base_bin()
+    if local is not None:
+        return local
+    return fetch_base_bin()
 
 
-def set_key(text: str, key: str, value: str) -> str:
-    """Set a key in the EEPROM config text. Replaces an existing
-    KEY=... line in place; appends if not present."""
+# ── EEPROM image parsing / patching ──────────────────────────────────
+
+class Section:
+    __slots__ = ("magic", "offset", "length", "filename")
+
+    def __init__(self, magic: int, offset: int, length: int, filename: str = ""):
+        self.magic = magic
+        self.offset = offset
+        self.length = length
+        self.filename = filename
+
+
+def parse_image(data: bytes) -> list[Section]:
+    sections: list[Section] = []
+    off = 0
+    n = len(data)
+    while off < n:
+        magic, length = struct.unpack_from(">II", data, off)
+        if magic == 0 or magic == 0xFFFFFFFF:
+            break
+        if (magic & MAGIC_MASK) != MAGIC:
+            die(f"image corrupt at offset 0x{off:x}: magic 0x{magic:08x}")
+        fname = ""
+        if magic == FILE_MAGIC:
+            fname = bytes(data[off + 8:off + 8 + FILENAME_LEN]).split(b"\x00", 1)[0].decode("ascii", "replace")
+        sections.append(Section(magic, off, length, fname))
+        off += 8 + length
+        off = (off + 7) & ~7
+    return sections
+
+
+def find_file_section(sections: list[Section], name: str) -> Section | None:
+    for s in sections:
+        if s.magic == FILE_MAGIC and s.filename == name:
+            return s
+    return None
+
+
+def read_file_content(data: bytes, sec: Section) -> bytes:
+    # content_len = section.length - FILENAME_LEN(12) - 4(reserved)
+    content_len = sec.length - FILENAME_LEN - 4
+    return bytes(data[sec.offset + 24:sec.offset + 24 + content_len])
+
+
+def patch_bootconf(image: bytes, new_text: bytes) -> bytes:
+    """Return a new 2 MiB image with bootconf.txt replaced by new_text.
+
+    Writes the new content into the existing bootconf.txt section,
+    updates the section length, pads tail to 8-byte boundary with 0xff,
+    and fills any remaining bytes up to the section's end-of-region
+    with 0xff. By convention bootconf.txt is the last file section so
+    we don't need to insert a padding section after it."""
+    if len(image) != IMAGE_SIZE:
+        die(f"base image is {len(image)} bytes, expected {IMAGE_SIZE}")
+    sections = parse_image(image)
+    bsec = find_file_section(sections, BOOTCONF_TXT)
+    if bsec is None:
+        die("base image has no bootconf.txt section — wrong .bin?")
+
+    # The next section after bootconf.txt (or end-of-non-scratch) bounds
+    # how big we can go.
+    idx = sections.index(bsec)
+    # Find the next non-padding section. If none, we're bounded by the
+    # last 4 KiB scratch area.
+    next_off = IMAGE_SIZE - ERASE_ALIGN_SIZE
+    for follow in sections[idx + 1:]:
+        if follow.magic != PAD_MAGIC:
+            next_off = follow.offset
+            break
+
+    new_section_payload_len = FILENAME_LEN + 4 + len(new_text)
+    update_total = 8 + new_section_payload_len  # incl. 8-byte header
+    if bsec.offset + update_total > next_off:
+        die(f"new bootconf.txt ({len(new_text)} bytes) doesn't fit "
+            f"(have {next_off - bsec.offset - 8 - FILENAME_LEN - 4} bytes)")
+
+    out = bytearray(image)
+    # Update the length field
+    struct.pack_into(">I", out, bsec.offset + 4, new_section_payload_len)
+    # Zero the 4-byte reserved gap (defensive — already zero in factory)
+    struct.pack_into(">I", out, bsec.offset + 20, 0)
+    # Write new content
+    content_off = bsec.offset + 24
+    out[content_off:content_off + len(new_text)] = new_text
+    # Pad tail with 0xff up to next_off
+    pad_start = content_off + len(new_text)
+    # 8-byte align
+    while pad_start % 8 != 0:
+        out[pad_start] = 0xFF
+        pad_start += 1
+    # Fill remainder of the bootconf region with 0xff (last section
+    # convention — no padding-section insertion needed)
+    for i in range(pad_start, next_off):
+        out[i] = 0xFF
+
+    # Sanity: re-parse and verify
+    new_sections = parse_image(bytes(out))
+    new_bsec = find_file_section(new_sections, BOOTCONF_TXT)
+    if new_bsec is None:
+        die("internal: patched image lost bootconf.txt section")
+    got = read_file_content(bytes(out), new_bsec)
+    if got != new_text:
+        die(f"internal: patched bootconf.txt readback mismatch "
+            f"({len(got)} vs {len(new_text)})")
+    return bytes(out)
+
+
+# ── bootconf.txt manipulation ────────────────────────────────────────
+
+def set_kv(text: str, key: str, value: str) -> str:
     lines = text.splitlines() if text else []
     target = f"{key}={value}"
-    seen = False
     for i, line in enumerate(lines):
-        stripped = line.strip()
-        if (stripped.startswith(key)
-                and stripped[len(key):].lstrip().startswith("=")):
+        s = line.strip()
+        if s.startswith(key) and s[len(key):].lstrip().startswith("="):
             lines[i] = target
-            seen = True
-            break
-    if not seen:
-        lines.append(target)
+            return "\n".join(lines) + "\n"
+    lines.append(target)
     return "\n".join(lines) + "\n"
 
 
-def remove_key(text: str, key: str) -> str:
+def remove_kv(text: str, key: str) -> str:
     out = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if (stripped.startswith(key)
-                and stripped[len(key):].lstrip().startswith("=")):
+    for line in (text.splitlines() if text else []):
+        s = line.strip()
+        if s.startswith(key) and s[len(key):].lstrip().startswith("="):
             continue
         out.append(line)
-    return "\n".join(out) + ("\n" if out else "")
+    return ("\n".join(out) + "\n") if out else ""
+
+
+# ── Pending update read ──────────────────────────────────────────────
+
+def read_pending(boot: Path) -> str | None:
+    upd = boot / "pieeprom.upd"
+    if not upd.is_file():
+        return None
+    data = upd.read_bytes()
+    if len(data) != IMAGE_SIZE:
+        return f"(pieeprom.upd present but wrong size {len(data)})"
+    sections = parse_image(data)
+    bsec = find_file_section(sections, BOOTCONF_TXT)
+    if bsec is None:
+        return "(pieeprom.upd present but no bootconf.txt — corrupt?)"
+    return read_file_content(data, bsec).decode("ascii", "replace")
+
+
+# ── Image write to boot partition ────────────────────────────────────
+
+def write_pieeprom_upd(boot: Path, image: bytes) -> tuple[Path, Path]:
+    upd = boot / "pieeprom.upd"
+    sig = boot / "pieeprom.sig"
+    upd_tmp = upd.with_suffix(upd.suffix + ".tmp")
+    sig_tmp = sig.with_suffix(sig.suffix + ".tmp")
+    upd_tmp.write_bytes(image)
+    sig_tmp.write_text(hashlib.sha256(image).hexdigest() + "\n")
+    os.replace(upd_tmp, upd)
+    os.replace(sig_tmp, sig)
+    # Best-effort flush; FAT doesn't need fsyncfs but doesn't hurt
+    try:
+        fd = os.open(str(boot), os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+    subprocess.run(["sync"], check=False)
+    return upd, sig
+
+
+# ── High-level operations ────────────────────────────────────────────
+
+def build_target_config(current: str, kvs: list[tuple[str, str | None]]) -> str:
+    """Apply a series of (key, value) edits. value=None means remove."""
+    text = current
+    for key, value in kvs:
+        if value is None:
+            text = remove_kv(text, key)
+        else:
+            text = set_kv(text, key, value)
+    return text
+
+
+def apply_config(boot: Path, base_bin: Path, kvs: list[tuple[str, str | None]]) -> str:
+    """Patch base_bin with kvs applied to its bootconf.txt; write
+    pieeprom.upd / pieeprom.sig to boot. Return the resulting
+    bootconf.txt text."""
+    base = base_bin.read_bytes()
+    sections = parse_image(base)
+    bsec = find_file_section(sections, BOOTCONF_TXT)
+    if bsec is None:
+        die(f"base image {base_bin} has no bootconf.txt")
+    current = read_file_content(base, bsec).decode("ascii", "replace")
+    new_text = build_target_config(current, kvs)
+    new_image = patch_bootconf(base, new_text.encode("ascii"))
+    upd, sig = write_pieeprom_upd(boot, new_image)
+    sys.stdout.write(f"wrote {upd} ({len(new_image)} bytes)\n"
+                     f"wrote {sig}\n")
+    return new_text
 
 
 # ── Subcommands ──────────────────────────────────────────────────────
@@ -145,71 +429,86 @@ def remove_key(text: str, key: str) -> str:
 USAGE = """\
 usage: pi5-netboot-config <command> [args]
 
-  show                          Print the current EEPROM bootloader config.
-  enable <server-ip> [prefix]   Set the Pi to TFTP-boot from <server-ip>.
-                                Default prefix '2' means "look in
-                                serial/MAC subdirs first, then fall back
-                                to root".
-  disable                       Restore default boot order (SD → USB →
-                                restart) and remove TFTP_IP/TFTP_PREFIX.
-  set KEY=VALUE                 Set an arbitrary EEPROM config key.
-                                Use sparingly — this is the same
-                                mechanism the rpi-eeprom-config tool
-                                uses on Raspberry Pi OS.
+  show                          Print the queued (pending) bootconf.txt
+                                from /boot/firmware/pieeprom.upd, if any.
+                                The currently-flashed config can't be
+                                read on jonerix (no rpi-eeprom-update).
+  enable <server-ip> [prefix]   Queue a TFTP-boot config. BOOT_ORDER is
+                                set to 0xf124 (USB → NETWORK → SD →
+                                restart) and TFTP_IP / TFTP_PREFIX are
+                                set. Prefix defaults to '2' (look in
+                                serial subdir, then root).
+  disable                       Queue a config that restores BOOT_ORDER
+                                to the Pi 5 factory default 0xf461
+                                (SD → NVME → USB → restart) and removes
+                                TFTP_IP / TFTP_PREFIX.
+  set KEY=VALUE                 Queue an arbitrary KEY=VALUE edit.
 
-This rewrites the EEPROM config in place (no staging file). On the
-next reboot the Pi 5 bootloader will use the new values. Apply
-WAKE_ON_GPIO / POWER_OFF_ON_HALT separately via pi5-wake-on-power.
+Options (before the subcommand):
+  --bin <path>                  Use a specific pieeprom-2712 .bin as
+                                the base image, instead of the local
+                                cache or the github fallback.
+
+This writes /boot/firmware/pieeprom.upd plus its sha256 in pieeprom.sig.
+The Pi 5 bootloader picks them up on next reboot, verifies the sha256,
+and flashes the SPI EEPROM. If the verification fails the bootloader
+falls back to the previous EEPROM, so a bad write won't brick.
 """
 
 
-def cmd_show(_args: list[str]) -> int:
-    text = read_config()
-    if not text.strip():
-        print("(empty config)")
-    else:
-        sys.stdout.write(text)
-        if not text.endswith("\n"):
-            sys.stdout.write("\n")
+def cmd_show(_args: list[str], _bin: str | None) -> int:
+    with BootMount() as boot:
+        pending = read_pending(boot)
+    if pending is None:
+        sys.stdout.write("no pending pieeprom.upd on boot partition\n")
+        sys.stdout.write("(currently-flashed EEPROM config is not "
+                         "readable from jonerix userland)\n")
+        return 0
+    sys.stdout.write("pending pieeprom.upd bootconf.txt:\n")
+    sys.stdout.write(pending if pending.endswith("\n") else pending + "\n")
     return 0
 
 
-def cmd_enable(args: list[str]) -> int:
+def cmd_enable(args: list[str], bin_override: str | None) -> int:
     if not args:
         die("enable requires <server-ip>")
     server = args[0]
     prefix = args[1] if len(args) > 1 else "2"
-    cur = read_config()
-    new = set_key(cur, "BOOT_ORDER", "0xf124")
-    new = set_key(new, "TFTP_IP", server)
-    new = set_key(new, "TFTP_PREFIX", prefix)
-    write_config(new)
-    sys.stdout.write("EEPROM config now:\n")
-    sys.stdout.write(read_config())
-    sys.stdout.write("\nReboot to net-boot from {}.\n".format(server))
+    base_bin = resolve_base_bin(bin_override)
+    with BootMount() as boot:
+        new_text = apply_config(boot, base_bin, [
+            ("BOOT_ORDER", "0xf124"),
+            ("TFTP_IP", server),
+            ("TFTP_PREFIX", prefix),
+        ])
+    sys.stdout.write("\nqueued bootconf.txt:\n")
+    sys.stdout.write(new_text)
+    sys.stdout.write(f"\nReboot to net-boot from {server}.\n")
     return 0
 
 
-def cmd_disable(_args: list[str]) -> int:
-    cur = read_config()
-    new = set_key(cur, "BOOT_ORDER", "0xf41")
-    new = remove_key(new, "TFTP_IP")
-    new = remove_key(new, "TFTP_PREFIX")
-    write_config(new)
-    sys.stdout.write("EEPROM config now:\n")
-    sys.stdout.write(read_config())
+def cmd_disable(_args: list[str], bin_override: str | None) -> int:
+    base_bin = resolve_base_bin(bin_override)
+    with BootMount() as boot:
+        new_text = apply_config(boot, base_bin, [
+            ("BOOT_ORDER", "0xf461"),
+            ("TFTP_IP", None),
+            ("TFTP_PREFIX", None),
+        ])
+    sys.stdout.write("\nqueued bootconf.txt:\n")
+    sys.stdout.write(new_text)
     return 0
 
 
-def cmd_set(args: list[str]) -> int:
+def cmd_set(args: list[str], bin_override: str | None) -> int:
     if not args or "=" not in args[0]:
         die("set requires KEY=VALUE")
     key, _, value = args[0].partition("=")
-    cur = read_config()
-    new = set_key(cur, key.strip(), value.strip())
-    write_config(new)
-    sys.stdout.write("EEPROM config now:\n")
-    sys.stdout.write(read_config())
+    base_bin = resolve_base_bin(bin_override)
+    with BootMount() as boot:
+        new_text = apply_config(boot, base_bin, [(key.strip(), value.strip())])
+    sys.stdout.write("\nqueued bootconf.txt:\n")
+    sys.stdout.write(new_text)
     return 0
 
 
@@ -221,18 +520,44 @@ COMMANDS = {
 }
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) < 2 or argv[1] in ("-h", "--help", "help"):
+def parse_argv(argv: list[str]) -> tuple[str, list[str], str | None]:
+    """Tiny argv parser: --bin <path> may appear before the subcommand."""
+    bin_override: str | None = None
+    i = 1
+    while i < len(argv) and argv[i].startswith("-"):
+        a = argv[i]
+        if a in ("-h", "--help", "help"):
+            sys.stdout.write(USAGE)
+            sys.exit(0)
+        if a == "--bin":
+            if i + 1 >= len(argv):
+                die("--bin requires a path")
+            bin_override = argv[i + 1]
+            i += 2
+            continue
+        if a.startswith("--bin="):
+            bin_override = a[len("--bin="):]
+            i += 1
+            continue
+        die(f"unknown option: {a}")
+    if i >= len(argv):
         sys.stdout.write(USAGE)
-        return 0 if len(argv) >= 2 else 2
-    cmd = argv[1]
+        sys.exit(2)
+    return argv[i], argv[i + 1:], bin_override
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        sys.stdout.write(USAGE)
+        return 2
+    cmd, args, bin_override = parse_argv(argv)
     handler = COMMANDS.get(cmd)
     if not handler:
         sys.stdout.write(USAGE)
         die(f"unknown command: {cmd}", 2)
-    if os.geteuid() != 0 and cmd in ("enable", "disable", "set"):
+    if cmd != "show" and os.geteuid() != 0:
         die("must run as root for write commands")
-    return handler(argv[2:])
+    return handler(args, bin_override)
 
 
 if __name__ == "__main__":
