@@ -5,7 +5,7 @@ name = "strace"
 # the permissive-only policy, so we pin to the final BSD-3-Clause cut.
 # Trade-off: misses post-2018 syscall decoders (io_uring, openat2,
 # faccessat2, mount_setattr). Acceptable for a developer-image tool.
-version = "4.25"
+version = "4.25-r1"
 license = "BSD-3-Clause"
 description = "ptrace-based syscall tracer (last BSD-3-Clause release)"
 
@@ -19,6 +19,13 @@ system = "custom"
 # ulimit. exproxide provides the /bin/expr probes configure expects.
 build = """set -e
 ulimit -n 65536 || true
+
+# strace 4.25 needs linux/ipx.h for IPX socket decode. musl and the
+# sabotage-linux kernel headers package do not ship it (IPX is a dead
+# protocol). Create a minimal stub so net.c can include it without
+# pulling in IPX-specific struct definitions.
+mkdir -p linux
+printf '#pragma once\n' > linux/ipx.h
 
 # strace 4.25 build notes for jonerix:
 #   --enable-mpers=no       — multi-personality (32+64 bit decoders) requires
