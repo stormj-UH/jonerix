@@ -1,6 +1,6 @@
 [package]
 name = "libcxx"
-version = "21.1.2"
+version = "21.1.2-r1"
 license = "Apache-2.0"
 description = "LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME"
 
@@ -41,6 +41,14 @@ cmake --build build -j1
 
 # Install to staging
 DESTDIR=$DESTDIR cmake --install build
+
+# cmake --install with CMAKE_INSTALL_PREFIX=/ still places headers under
+# $DESTDIR/usr/include via GNUInstallDirs defaults. Flatten into merged-usr
+# layout before the symlink work below touches $DESTDIR/lib.
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
 
 # Fix libunwind SONAME: the default LLVM build produces libunwind.so.1
 # with SONAME=libgcc_s.so.1. Rebuild just the shared lib with correct SONAME
