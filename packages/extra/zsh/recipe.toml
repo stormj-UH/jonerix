@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r13"
+version = "5.9-r14"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
@@ -33,15 +33,12 @@ build = """set -e
 # the cwd it cd'd into, which is ./Src — so Src/Makemod ends up correct.
 top_srcdir=. /bin/sh Src/mkmakemod.sh Src Makemod
 ls -l Src/Makemod
-# zsh.mdd:117 declares `bltinmods.list: modules.stamp ...` with a BARE
-# name, but Makemod.in.in:120 defines the rule as `$(dir_src)/modules.stamp:`
-# which expands to `../Src/modules.stamp` when make[2] is in Src/. GNU
-# make canonicalises both paths to the same target. jmake doesn't (yet)
-# — it sees them as distinct and errors with "No rule to make target
-# 'modules.stamp', needed by 'bltinmods.list'". Sidestep that by
-# pre-touching the stamp file: a bare-name prereq is satisfied if the
-# file exists on disk, regardless of whether any rule matches the name.
-touch Src/modules.stamp
+# r13's `touch Src/modules.stamp` workaround was for jmake <= 1.1.13's
+# MAKEFLAGS escaping bug, which silently set dry_run=true touch=true at
+# make[2] (so `make[2] -f Makemod headers` never created Src/modules.stamp,
+# breaking the bare-name prereq in zsh.mdd:117). jmake 1.1.14 escapes
+# variable values when writing MAKEFLAGS, so headers builds modules.stamp
+# normally and the touch is no longer required.
 MAKEFLAGS=-j1 make -j1
 """
 install = """

@@ -1,8 +1,20 @@
 [package]
 name = "jmake"
-version = "1.1.13"
+version = "1.1.14"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.1.14: escape spaces/backslashes/dollars in MAKEFLAGS variable values so
+# unescaped whitespace inside `CFLAGS=-Wall -Wmissing-prototypes -O2` (zsh's
+# Src/Makefile MAKEDEFS) doesn't leak `-O2` and the chars of
+# `-Wmissing-prototypes` back through the bundled-flag parser as
+# -i/-s/-n/-t/-r at the next recursive make. Without this, zsh's `make[2] -f
+# Makemod headers` silently inherited dry_run=true touch=true and never
+# created Src/modules.stamp, which then caused `bltinmods.list` to fail at
+# the next recursive level with "No rule to make target 'modules.stamp'".
+# Defense-in-depth companion: parse_makeflags now never re-interprets a
+# post-`--` token as a flag, even if it leaked in unescaped from a
+# non-conforming peer make.
+#
 # 1.1.9: conformance test suite + JMAKE_TEST_MODE byte-equivalence.
 # Adds a Tier-1 real-world driver (musl, expat, libffi, dropbear, toybox)
 # that runs `jmake -n` and `/usr/bin/make -n` against each upstream
@@ -124,8 +136,8 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.13/jmake-v1.1.13.tar.gz"
-sha256 = "3a762be422eda3eabfa5a5fa59a511fba5bcda8f275205c43b30baaa99d1ae56"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.14/jmake-v1.1.14.tar.gz"
+sha256 = "1428631bb78785cd4d3593918cd87080dc3213804cfa45f4565acbf5ed7857b1"
 
 [build]
 system = "custom"

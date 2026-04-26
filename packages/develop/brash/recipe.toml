@@ -1,11 +1,11 @@
 [package]
 name = "brash"
-version = "0.2.0-r1"
+version = "1.0.0-r1"
 license = "MIT"
-description = "Bash-compatible shell written in Rust (clean-room, MIT)"
+description = "Clean-room Rust reimplementation of bash 5.3 (MIT)"
 # Canonical source-of-truth is the Forgejo repo jonerik/brash on
-# castle.great-morpho.ts.net:3000 at commit
-# 67d0a28f4a197dfc9a662b1f69ef69548eaf6253 (v0.2.0).
+# castle.great-morpho.ts.net:3000 at tag v1.0.0
+# (f0567f86563dc933c21d9b4885797fef82c586b5).
 # That host sits behind Tailscale and GitHub's runners cannot reach it,
 # so the tarball is mirrored to a stormj-UH GH release for CI.
 #
@@ -17,8 +17,8 @@ description = "Bash-compatible shell written in Rust (clean-room, MIT)"
 # stop reimplementing install.sh in pure mksh.
 
 [source]
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v0.2.0/brash-0.2.0.tar.gz"
-sha256 = "4a5f730e600a44881dc91d0e6522fefc9d7010f3d192196c274f4dc98655db80"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.0/brash-1.0.0.tar.gz"
+sha256 = "b3464c9db0a53d148e87e00ca21a256fd10a9555cf869ffae3254b46763d52f8"
 
 [build]
 system = "custom"
