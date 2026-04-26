@@ -381,9 +381,19 @@ static int fetch_source(const build_recipe_t *recipe, const char *work_dir) {
 
     /* Try local source cache before downloading */
     if (try_source_cache(recipe, tarball) != 0) {
-        /* Download */
+        /* Download. curl native retry: --retry 3 covers transient 5xx
+         * responses, --retry-connrefused also retries on TCP refusal.
+         * --retry-delay 2 + --retry-all-errors makes curl wait 2s between
+         * attempts and treat all transient errors (including the 502s
+         * that GHA-runner builds frequently see from the GitHub releases
+         * CDN) as retryable. We deliberately do NOT use a long
+         * --max-time here; the per-package timeout in
+         * scripts/ci-full-bootstrap.sh (20 min) is the outer guard. */
         char cmd[2048];
-        snprintf(cmd, sizeof(cmd), "curl -fsSL -o '%s' '%s'", tarball, recipe->source_url);
+        snprintf(cmd, sizeof(cmd),
+                 "curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused "
+                 "--retry-all-errors -o '%s' '%s'",
+                 tarball, recipe->source_url);
         log_info("  downloading source: %s", recipe->source_url);
         if (system(cmd) != 0) {
             log_error("failed to download source");
