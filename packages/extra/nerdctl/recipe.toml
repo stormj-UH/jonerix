@@ -1,6 +1,6 @@
 [package]
 name = "nerdctl"
-version = "2.2.1"
+version = "2.2.1-r1"
 license = "Apache-2.0"
 description = "Docker-compatible CLI for containerd"
 
@@ -12,10 +12,36 @@ sha256 = "f39c34d3a285e087f2b2869f06fea343d8285ad9bfb9417b9c5b6dd4e78d6fad"
 system = "custom"
 build = """go mod download
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/nerdctl"""
-install = """install -Dm755 nerdctl $DESTDIR/bin/nerdctl
+install = """set -e
+install -Dm755 nerdctl $DESTDIR/bin/nerdctl
 ln -sf nerdctl $DESTDIR/bin/docker
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+# Strip /lib64 references from ELF files only (Go embeds the dynamic
+# linker path in its string table even for static binaries). Null-pad
+# /lib64 -> /lib\0\0 (same length, terminates string early). Safe:
+# jonerix has no /lib64, so the padded path dereferences to /lib.
+ELF_LIST=$(mktemp)
+find "$DESTDIR" -type f -exec sh -c '
+    head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d " " | grep -q "^7f454c46" && printf "%s\n" "$1"
+' _ {} \; > "$ELF_LIST" 2>/dev/null || true
+if [ -s "$ELF_LIST" ]; then
+    python3 - "$ELF_LIST" <<'PYEOF' || true
+import sys
+with open(sys.argv[1]) as f:
+    files = [ln.rstrip("\n") for ln in f if ln.strip()]
+for p in files:
+    with open(p, "rb") as fh: d = fh.read()
+    n = d.count(b"/lib64")
+    if not n: continue
+    d = d.replace(b"/lib64", b"/lib\x00\x00")
+    with open(p, "wb") as fh: fh.write(d)
+    print(f"nerdctl lib64-fix: {p} replaced {n} refs")
+PYEOF
+fi
+rm -f "$ELF_LIST"
+
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true"""
 
 [depends]
