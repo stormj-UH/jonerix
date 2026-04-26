@@ -1,6 +1,6 @@
 [package]
 name = "onetrueawk"
-version = "20240728-r1"
+version = "20240728-r2"
 license = "MIT"
 description = "Brian Kernighan's one true awk"
 
@@ -11,7 +11,17 @@ sha256 = "2d479817f95d5997fc4348ecebb1d8a1b25c81cebedb46ca4f59434247e08543"
 [build]
 system = "custom"
 configure = ""
-build = """byacc -d awkgram.y
+build = """# byacc is the build dep; in Alpine CI it may be installed as 'yacc'.
+# Try byacc first, then yacc as fallback so the build works in both
+# the jonerix-native and Alpine bootstrap environments.
+if command -v byacc >/dev/null 2>&1; then
+  YACC_CMD=byacc
+elif command -v yacc >/dev/null 2>&1; then
+  YACC_CMD=yacc
+else
+  printf 'onetrueawk: no byacc or yacc found in PATH\n' >&2; exit 1
+fi
+$YACC_CMD -d awkgram.y
 cp y.tab.c awkgram.tab.c
 cp y.tab.h awkgram.tab.h
 clang -O2 --rtlib=compiler-rt -fuse-ld=lld maketab.c -o maketab
