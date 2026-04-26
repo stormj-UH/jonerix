@@ -5,7 +5,7 @@ name = "strace"
 # the permissive-only policy, so we pin to the final BSD-3-Clause cut.
 # Trade-off: misses post-2018 syscall decoders (io_uring, openat2,
 # faccessat2, mount_setattr). Acceptable for a developer-image tool.
-version = "4.25-r1"
+version = "4.25-r2"
 license = "BSD-3-Clause"
 description = "ptrace-based syscall tracer (last BSD-3-Clause release)"
 
@@ -22,10 +22,12 @@ ulimit -n 65536 || true
 
 # strace 4.25 needs linux/ipx.h for IPX socket decode. musl and the
 # sabotage-linux kernel headers package do not ship it (IPX is a dead
-# protocol). Create a minimal stub so net.c can include it without
-# pulling in IPX-specific struct definitions.
+# protocol). Create a minimal stub with the struct definitions that
+# sockaddr.c actually uses: sipx_port, sipx_network, sipx_node,
+# sipx_type, and IPX_NODE_LEN. A bare #pragma-once stub (r1) left
+# struct sockaddr_ipx incomplete, causing 16 clang errors at compile.
 mkdir -p linux
-printf '#pragma once\n' > linux/ipx.h
+printf '#pragma once\n#include <stdint.h>\n#define IPX_NODE_LEN 6\nstruct sockaddr_ipx {\n  uint16_t sipx_family;\n  uint16_t sipx_port;\n  uint32_t sipx_network;\n  uint8_t  sipx_node[IPX_NODE_LEN];\n  uint8_t  sipx_type;\n  uint8_t  sipx_pad;\n};\n' > linux/ipx.h
 
 # strace 4.25 build notes for jonerix:
 #   --enable-mpers=no       — multi-personality (32+64 bit decoders) requires
