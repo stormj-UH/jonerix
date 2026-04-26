@@ -191,7 +191,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--release-tag", default="",
         help=(
-            "GitHub release tag the netboot payload pins to (e.g. v1.1.6)."
+            "GitHub release tag the netboot payload pins to (e.g. v1.1.7)."
             " The booted Pi runs `jpkg conform <ver>` against this tag if"
             " the rootfs is later configured for it. Default: read"
             " VERSION_ID from config/defaults/etc/os-release."

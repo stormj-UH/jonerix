@@ -26,7 +26,7 @@
 #   --branch NAME        Git branch of jonerix repo to pull recipes
 #                        and helpers from. Default: main.
 #   --release-tag TAG    GitHub release tag whose pinned package set
-#                        to install from (e.g. v1.1.6). Default is
+#                        to install from (e.g. v1.1.7). Default is
 #                        VERSION_ID from the BRANCH's os-release.
 #                        Pass 'packages' for the rolling mirror.
 #                        The booted Pi is left pointing at rolling
@@ -488,7 +488,7 @@ REPOSEOF
         msg "Sealing target jpkg mirror to rolling ($ROLLING_TAG)"
         cat > "$ROOT_MNT/etc/jpkg/repos.conf" <<REPOSEOF
 # Default jonerix package mirror. Tracks the rolling \`$ROLLING_TAG\` release.
-# To pin this host to a specific release version: jpkg conform 1.1.6
+# To pin this host to a specific release version: jpkg conform 1.1.7
 [repo]
 url = "${RELEASE_BASE_URL}/${ROLLING_TAG}"
 REPOSEOF

@@ -76,7 +76,7 @@ passed straight through. Common flows:
 
   # Pin to a specific jonerix release:
   curl -fsSL ${GH_RAW}/install/jonerix-pi5.sh \\
-    | sudo sh -s -- -d /dev/sdX --release-tag v1.1.6
+    | sudo sh -s -- -d /dev/sdX --release-tag v1.1.7
 
   # Use a feature branch's installer (developer flow):
   BRANCH=my-branch curl -fsSL ${GH_RAW}/install/jonerix-pi5.sh | sudo sh

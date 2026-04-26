@@ -2,7 +2,7 @@
 # jonerix-pi5-netboot.sh — boot a Raspberry Pi 5 over the network from
 # this Mac or Linux host. Downloads the latest netboot payload + rootfs
 # from the jonerix release matching the source tree's VERSION_ID
-# (default: v1.1.6 → "CONFORMable" set), starts a TFTP server on :69 and
+# (default: v1.1.7 → "CONFORMable" set), starts a TFTP server on :69 and
 # an HTTP server on :8080 pointing at them, and prints the exact Pi 5
 # bootloader settings the user needs.
 #
@@ -12,7 +12,7 @@
 #
 # Or with a fixed release pin and a specific network interface:
 #   curl -fsSL .../jonerix-pi5-netboot.sh | sudo sh -s -- \
-#     --release-tag v1.1.6 --bind 192.168.1.42
+#     --release-tag v1.1.7 --bind 192.168.1.42
 #
 # Why root: TFTP listens on port 69 (privileged). HTTP defaults to 8080
 # (unprivileged) so the same script works on hosts where you'd rather
@@ -69,7 +69,7 @@ server's option 66/67) at this machine and the Pi will netboot a
 permissive-licensed jonerix userland.
 
 Options:
-  --release-tag TAG     Pin to a specific jonerix release (e.g. v1.1.6).
+  --release-tag TAG     Pin to a specific jonerix release (e.g. v1.1.7).
                         Default: VERSION_ID from the BRANCH's os-release.
                         Pass 'packages' to use the rolling mirror.
   --bind IP             IP to bind both servers to (default: 0.0.0.0,

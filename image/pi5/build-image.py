@@ -96,8 +96,8 @@ MANDATORY_PACKAGES = [
 
 # Default release tag the image pins to. Read from
 # config/defaults/etc/os-release's VERSION_ID at build time so a
-# `jonerix 1.1.6` source tree builds an image whose package set is the
-# v1.1.6 release set, not whatever the rolling `packages` mirror
+# `jonerix 1.1.7` source tree builds an image whose package set is the
+# v1.1.7 release set, not whatever the rolling `packages` mirror
 # happens to serve at build time. This makes the image artifact
 # reproducible: same source tree → same image, regardless of when
 # you build.
@@ -527,7 +527,7 @@ def jpkg_install(root: Path, packages: Iterable[str], release_tag: str) -> None:
     rolling_repo_conf = (
         f"# Default jonerix package mirror. Tracks the rolling `{ROLLING_TAG}` release\n"
         f"# at github.com/stormj-UH/jonerix/releases. To pin this host to a specific\n"
-        f"# release version (e.g. v1.1.6), run: jpkg conform 1.1.6\n"
+        f"# release version (e.g. v1.1.7), run: jpkg conform 1.1.7\n"
         f"[repo]\n"
         f'url = "{RELEASE_BASE_URL}/{ROLLING_TAG}"\n'
     )
