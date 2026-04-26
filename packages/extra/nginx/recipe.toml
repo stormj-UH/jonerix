@@ -1,6 +1,6 @@
 [package]
 name = "nginx"
-version = "1.28.3-r1"
+version = "1.28.3-r2"
 license = "BSD-2-Clause"
 description = "High-performance HTTP server and reverse proxy"
 
@@ -18,9 +18,13 @@ configure = """cat > /tmp/clang-jonerix << 'WRAPPER'
 exec clang --rtlib=compiler-rt -fuse-ld=lld -Wno-unused-command-line-argument "$@"
 WRAPPER
 chmod +x /tmp/clang-jonerix
+# Strip trailing slash so paths like "${prefix}/lib" don't become "//lib"
+# (nginx configure rejects //lib as an invalid --with-ld-opt value).
 PCRE2_PREFIX="${JPKG_PCRE2_PREFIX:-/}"
+PCRE2_PREFIX="${PCRE2_PREFIX%/}"
 OPENSSL_PREFIX="${JPKG_LIBRESSL_PREFIX:-/}"
-export LD_LIBRARY_PATH="$PCRE2_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+OPENSSL_PREFIX="${OPENSSL_PREFIX%/}"
+export LD_LIBRARY_PATH="${PCRE2_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 ./configure \
   --prefix=/etc/nginx \
   --sbin-path=/bin/nginx \
