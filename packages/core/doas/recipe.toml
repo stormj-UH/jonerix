@@ -1,6 +1,6 @@
 [package]
 name = "doas"
-version = "6.8.2-r1"
+version = "6.8.2-r2"
 license = "ISC"
 description = "Lightweight privilege escalation tool (OpenDoas)"
 
@@ -11,7 +11,11 @@ sha256 = "4e98828056d6266bd8f2c93e6ecf12a63a71dbfd70a5ea99ccd4ab6d0745adf0"
 [build]
 system = "autoconf"
 configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" CC=clang ./configure --prefix=/ --bindir=/bin"
-build = "make -j$(nproc)"
+# OpenDoas's Makefile expects $(YACC) but its own configure does not detect
+# or set it; the implicit recipe `parse.c: parse.y` then becomes a literal
+# `parse.y` command line and mksh reports `parse.y: inaccessible or not
+# found`. Pass YACC=byacc explicitly to make.
+build = "make YACC=byacc -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
@@ -20,4 +24,4 @@ find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "make"]
+build = ["clang", "make", "byacc"]

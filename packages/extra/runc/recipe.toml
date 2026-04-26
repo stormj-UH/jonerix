@@ -1,6 +1,6 @@
 [package]
 name = "runc"
-version = "1.4.1-r1"
+version = "1.4.1-r2"
 license = "Apache-2.0"
 description = "OCI container runtime"
 
@@ -19,6 +19,30 @@ CGO_ENABLED=1 go build -trimpath \
   -o runc .
 """
 install = """install -Dm755 runc $DESTDIR/bin/runc
+# Go binaries embed /lib64/ld-linux-x86-64.so.2 in their string table for
+# the dynamic linker reference. Harmless (runc is statically linked here)
+# but jpkg 1.1.0+ refuses to package binaries containing a literal /lib64
+# string. Null-pad /lib64 -> /lib\\0\\0 in the ELF the same way containerd
+# and nerdctl do (see those recipes for the canonical pattern).
+ELF_LIST=$(mktemp)
+find "$DESTDIR" -type f -exec sh -c '
+    head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d " " | grep -q "^7f454c46" && printf "%s\\n" "$1"
+' _ {} \\; > "$ELF_LIST" 2>/dev/null || true
+if [ -s "$ELF_LIST" ]; then
+    python3 - "$ELF_LIST" <<'PYEOF' || true
+import sys
+with open(sys.argv[1]) as f:
+    files = [ln.rstrip("\n") for ln in f if ln.strip()]
+for p in files:
+    with open(p, "rb") as fh: d = fh.read()
+    n = d.count(b"/lib64")
+    if not n: continue
+    d = d.replace(b"/lib64", b"/lib\x00\x00")
+    with open(p, "wb") as fh: fh.write(d)
+    print(f"runc lib64-fix: {p} replaced {n} refs")
+PYEOF
+fi
+rm -f "$ELF_LIST"
 llvm-strip --strip-all $DESTDIR/bin/runc 2>/dev/null || true"""
 
 [depends]
