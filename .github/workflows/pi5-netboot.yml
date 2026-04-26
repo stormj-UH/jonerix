@@ -70,12 +70,22 @@ jobs:
           FIRMWARE_TAG: ${{ inputs.firmware_tag || 'stable' }}
         run: |
           set -eu
-          ARGS="--output out/tftp --serial ${SERIAL} --firmware-tag ${FIRMWARE_TAG} --root-source ${ROOT_SOURCE} --yes"
+          # Pin to the source tree's VERSION_ID so the netboot payload's
+          # build-info.json records exactly the jonerix release this
+          # tree corresponds to. Downstream tooling (jonerix-pi5-netboot.sh)
+          # uses this to decide which `jpkg conform <ver>` post-boot
+          # makes the netbooted Pi a deterministic match for the v1.1.6
+          # package set.
+          VER=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' \
+                config/defaults/etc/os-release)
+          RELEASE_TAG="v${VER}"
+          ARGS="--output out/tftp --serial ${SERIAL} --firmware-tag ${FIRMWARE_TAG} --root-source ${ROOT_SOURCE} --release-tag ${RELEASE_TAG} --yes"
           if [ "${ROOT_SOURCE}" = "nfs" ]; then
             ARGS="${ARGS} --nfs-server ${NFS_SERVER} --nfs-path ${NFS_PATH}"
           fi
           python3 image/pi5/network-boot.py ${ARGS}
           ls -lR out/tftp | head -200
+          cat out/tftp/build-info.json
 
       - name: Package payload as tarball
         run: |
@@ -85,8 +95,57 @@ jobs:
           sha256sum jonerix-pi5-netboot.tar.gz > SHA256SUMS
           ls -lh jonerix-pi5-netboot.tar.gz SHA256SUMS
 
-      # ── Tag push: publish to a GitHub Release ───────────────────────────
-      - name: Create release (tag push)
+      # ── Always publish to the rolling `pi5-netboot` release ────────────
+      # Mirrors how `packages` is the rolling release for jpkg artifacts:
+      # `jonerix-pi5-netboot.sh` (and any other tooling) always knows
+      # where to fetch from without chasing tag names. The matching
+      # versioned `v*` release also gets the artifact below if it
+      # already exists (i.e. the v1.1.6 release is "complete" with both
+      # jpkg packages AND a netboot payload pinned to the same set).
+      - name: Publish to rolling `pi5-netboot` release
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: pi5-netboot
+        run: |
+          if ! gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GH_REPO" \
+              --title "jonerix Pi 5 netboot payload (rolling)" \
+              --notes "Rolling TFTP payload for Raspberry Pi 5. Replaced on every main push." \
+              --prerelease
+          fi
+          gh release upload "$TAG" --repo "$GH_REPO" --clobber \
+            out/jonerix-pi5-netboot.tar.gz \
+            out/SHA256SUMS
+
+      # ── Versioned `v*` release: attach if it exists ─────────────────────
+      # When `config/defaults/etc/os-release` is at version 1.1.6 and the
+      # `v1.1.6` release exists (created by the package-set release flow),
+      # mirror the netboot tarball there too so a single release tag has
+      # everything needed for a fully reproducible install + netboot.
+      - name: Attach to matching versioned release (if present)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          VER=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' \
+                config/defaults/etc/os-release)
+          TAG="v${VER}"
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GH_REPO" --clobber \
+              out/jonerix-pi5-netboot.tar.gz \
+              out/SHA256SUMS
+            echo "attached netboot payload to $TAG"
+          else
+            echo "$TAG release does not exist yet — skipping versioned attach"
+          fi
+
+      # ── Legacy: pi5-netboot-v* tag push ─────────────────────────────────
+      - name: Create release (legacy tag push)
         if: startsWith(github.ref, 'refs/tags/pi5-netboot-v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -97,16 +156,8 @@ jobs:
             gh release create "$TAG" \
               --repo "$GH_REPO" \
               --title "jonerix Pi 5 netboot payload ${TAG}" \
-              --notes "TFTP-ready payload tree for Raspberry Pi 5. Drop behind dnsmasq or in.tftpd; see README.md inside the tarball."
+              --notes "TFTP-ready payload tree for Raspberry Pi 5. See README.md inside the tarball."
           fi
-
-      - name: Upload release assets (tag push)
-        if: startsWith(github.ref, 'refs/tags/pi5-netboot-v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
           gh release upload "$TAG" --repo "$GH_REPO" --clobber \
             out/jonerix-pi5-netboot.tar.gz \
             out/SHA256SUMS
