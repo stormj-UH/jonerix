@@ -39,7 +39,7 @@ fi
 # `python3` and `ruby` and `perl` are slow interpreter builds — added because
 # we mostly want this CI to validate the lightweight package set, not the
 # language-runtime tail (which is exercised by publish-packages.yml anyway).
-HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl"
+HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl dotnet linux lldb"
 
 OUT=/out
 mkdir -p "$OUT/build-log" "$OUT/install-log" "$OUT/jpkgs" "$OUT/rootfs"
