@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r5"
+version = "10.1.0-r6"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -51,7 +51,14 @@ export TAILQ_FOREACH_SAFE=no TAILQ_CONCAT=no TAILQ_FOREACH=no
 # mksh explicitly. mksh is a runtime dep on every jonerix box.
 CC="$CC_CMD" CFLAGS="-O2 -fomit-frame-pointer -I/include" \
   mksh ./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/lib/dhcpcd
-grep -E 'queue|HAVE_SYS' config.h"""
+grep -E 'queue|HAVE_SYS' config.h
+# musl provides all the types dhcpcd needs; asm/types.h is a Linux
+# kernel UAPI header that dhcpcd's configure unconditionally embeds
+# in config.h as a "fix for broken headers" workaround that predates
+# musl 1.x. The sabotage-linux kernel headers package may not be
+# installed when dhcpcd builds. Strip the line so the build succeeds
+# with musl alone; the workaround is unnecessary on modern musl.
+sed 's|#include.*<asm/types.h>.*||' config.h > config.h.tmp && mv config.h.tmp config.h"""
 build = """CFG_FILE=$(ls /etc/clang/*.cfg 2>/dev/null | head -1)
 CC="clang${CFG_FILE:+ --config=$CFG_FILE}" \
   make -j$(nproc)"""
