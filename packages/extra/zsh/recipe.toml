@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r11"
+version = "5.9-r12"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
@@ -25,9 +25,13 @@ configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir
 # Src/Makefile. After that the build is plain serial.
 build = """set -e
 # Generate Src/Makemod up front so the modules.stamp rule it defines is
-# present in Src/Makefile from the start. mkmakemod.sh is run from the
-# top-level dir per its own argv expectations; it writes to Src/Makemod.
-top_srcdir=. /bin/sh Src/mkmakemod.sh Src Src/Makemod
+# present in Src/Makefile from the start. mkmakemod.sh internally
+# `cd $top_srcdir/$1` then writes `$2.in` relative to that — so $1 is the
+# subdir under top_srcdir (`Src`) and $2 is the output basename
+# (`Makemod`), NOT a path. r11 passed `Src/Makemod` and the script tried
+# to create Src/Src/Makemod.in. The script writes the final Makemod into
+# the cwd it cd'd into, which is ./Src — so Src/Makemod ends up correct.
+top_srcdir=. /bin/sh Src/mkmakemod.sh Src Makemod
 ls -l Src/Makemod
 MAKEFLAGS=-j1 make -j1
 """
