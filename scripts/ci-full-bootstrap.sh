@@ -97,20 +97,7 @@ install_target_build_deps() {
         | sed 's/,/ /g')
     for _dep in $_deps; do
         [ -n "$_dep" ] || continue
-        # Library packages — always install even if a namesake binary
-        # is on PATH, because their headers may be missing.
-        case "$_dep" in
-            xz|bzip2|zstd|zlib|lz4|ncurses|pcre2|libffi|sqlite|\
-            libressl|libarchive|libevent|libcxx|nloxide|curl|expat|\
-            jonerix-headers)
-                _is_lib=1 ;;
-            *)
-                _is_lib=0 ;;
-        esac
-        if [ "$_is_lib" = 0 ] && command -v "$_dep" >/dev/null 2>&1; then
-            continue
-        fi
-        # Map binary names to package names (clang -> llvm, make -> jmake).
+        # Map binary names to package names first (clang -> llvm, etc).
         _dep_pkg="$_dep"
         case "$_dep" in
             clang|clang++|ld.lld|llvm-ar|llvm-ranlib|llvm-nm|llvm-strip)
@@ -119,21 +106,50 @@ install_target_build_deps() {
                 _dep_pkg=jmake ;;
             python)
                 _dep_pkg=python3 ;;
-            rust)
-                command -v cargo >/dev/null 2>&1 && continue ;;
         esac
-        # Prefer a just-built local jpkg over `jpkg install` over network.
+        # Library packages always need the install (their headers may be
+        # missing in the builder even if a namesake binary is on PATH).
+        case "$_dep" in
+            xz|bzip2|zstd|zlib|lz4|ncurses|pcre2|libffi|sqlite|\
+            libressl|libarchive|libevent|libcxx|nloxide|curl|expat|\
+            jonerix-headers)
+                _is_lib=1 ;;
+            *)
+                _is_lib=0 ;;
+        esac
+        # Priority order:
+        #   1. If a local jpkg in $OUT/jpkgs/ for this dep exists, ALWAYS
+        #      install (raw zstd+tar, no hooks). Local builds are fresh and
+        #      supersede whatever stale state is in the builder image
+        #      (e.g. the byacc symlink loop in older builder images).
+        #   2. Else if it's a library package, jpkg install from network.
+        #   3. Else if `command -v` finds an EXECUTABLE binary on PATH
+        #      (broken symlinks fail this check), skip.
+        #   4. Else, jpkg install from network.
         _local=$(ls "$OUT/jpkgs/${_dep_pkg}-"*-"${ARCH}.jpkg" 2>/dev/null \
             | sort -V | tail -1)
         if [ -n "$_local" ] && [ -f "$_local" ]; then
             echo "  dep: ${_dep_pkg} (local $(basename "$_local"))"
             install_local_jpkg "$_local" 2>/dev/null || \
                 echo "    WARN: extract failed for ${_dep_pkg}" >&2
-        else
-            echo "  dep: ${_dep_pkg} (jpkg install)"
+            continue
+        fi
+        if [ "$_is_lib" = 1 ]; then
+            echo "  dep: ${_dep_pkg} (lib, jpkg install)"
             jpkg install --force "$_dep_pkg" >/dev/null 2>&1 || \
                 echo "    WARN: jpkg install failed for ${_dep_pkg}" >&2
+            continue
         fi
+        # Tool package — accept builder's pre-installed binary IF it is
+        # actually executable (broken symlink loops fail `[ -x ]`).
+        _resolved=$(command -v "$_dep" 2>/dev/null || true)
+        if [ -n "$_resolved" ] && [ -x "$_resolved" ]; then
+            continue
+        fi
+        # Tool not on PATH or broken — pull from network.
+        echo "  dep: ${_dep_pkg} (tool, jpkg install)"
+        jpkg install --force "$_dep_pkg" >/dev/null 2>&1 || \
+            echo "    WARN: jpkg install failed for ${_dep_pkg}" >&2
     done
 }
 
