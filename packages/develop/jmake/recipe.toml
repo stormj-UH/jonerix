@@ -1,6 +1,6 @@
 [package]
 name = "jmake"
-version = "1.1.9"
+version = "1.1.13"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # 1.1.9: conformance test suite + JMAKE_TEST_MODE byte-equivalence.
@@ -124,8 +124,8 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.9/jmake-v1.1.9.tar.gz"
-sha256 = "35ae2e3d9cfea63c29dc0e245626fda2929a1a9f6d717a9d2b7a6e1b80a82252"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.13/jmake-v1.1.13.tar.gz"
+sha256 = "3a762be422eda3eabfa5a5fa59a511fba5bcda8f275205c43b30baaa99d1ae56"
 
 [build]
 system = "custom"
