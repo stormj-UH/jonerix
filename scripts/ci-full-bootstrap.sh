@@ -215,14 +215,18 @@ for name in $(cat "$ORDER_FILE"); do
 
     log="$OUT/build-log/${name}.log"
     echo ">>> building $name from $recipe_dir"
-    # Install declared build deps before invoking jpkg build. Without this
-    # step, recipes that declare e.g. `build = ["jonerix-headers", "libressl"]`
-    # only get a `not found via jpkg` warning and hit "header not found"
-    # at compile time. The function uses raw zstd+tar extract for library
-    # deps (no install hooks → no /bin/sh corruption) and falls back to
-    # `jpkg install` from the rolling release for anything not yet built
-    # in this run.
-    install_target_build_deps "$recipe_dir" >> "$log" 2>&1
+    # Install declared build deps before invoking jpkg build. Both this
+    # call and `jpkg build` below APPEND to $log so the dep-install
+    # output is preserved (was being clobbered by jpkg build's `>` until
+    # round 5). Recipes that declare `build = ["jonerix-headers", ...]`
+    # otherwise only get a `not found via jpkg` warning and hit the
+    # actual error at compile time.
+    : > "$log"
+    {
+        echo "=== install_target_build_deps for $name ==="
+        install_target_build_deps "$recipe_dir"
+        echo "=== jpkg build ==="
+    } >> "$log" 2>&1
     # REVIEW: if jpkg build honours a JPKG_SOURCE_CACHE env var for a
     # pre-populated tarball cache, set it here (e.g. via the workflow's
     # actions/cache step) to avoid re-downloading sources on every run.
@@ -242,7 +246,7 @@ for name in $(cat "$ORDER_FILE"); do
     # builder's live / filesystem (DESTDIR=/), corrupting the host and
     # producing zero .jpkg files. See cmd_build.c line 894.
     if timeout -k 30 1200 jpkg build "$recipe_dir" \
-            --build-jpkg --output "$OUT/jpkgs" >"$log" 2>&1; then
+            --build-jpkg --output "$OUT/jpkgs" >>"$log" 2>&1; then
         version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
             "$recipe_dir/recipe.toml")
         printf '%s\t%s\n' "$name" "$version" >> "$OUT/built-packages.txt"
