@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r2"
+version = "0.8.11-r3"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 
@@ -12,10 +12,21 @@ sha256 = "15aa3f832f4ec1874db761b9950617f99e1e38144c22da39a71311093bfe67dc"
 system = "custom"
 build = """set -e
 cp "$RECIPE_DIR/toybox.config" .config
-# All bash->mksh and tr->sed fixes are in patches/0001-mksh-compat.patch
-# (applied by jpkg before this script runs).
-# Fix shebangs so sub-scripts invoked by make.sh use mksh too.
-sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
+# Shell selection — prefer brash (a bash-compatible Rust shell shipped
+# at /bin/bash on jonerix). Brash understands the full bash 5.3 surface
+# upstream's scripts/*.sh and configure use, so we can run them
+# unmodified. If /bin/bash isn't present (first-pass bootstrap before
+# brash exists in the host image), fall back to applying the
+# mksh-compat patch and running everything under mksh.
+if [ -x /bin/bash ]; then
+    BUILD_SHELL=/bin/bash
+    echo "toybox: using brash (/bin/bash) — upstream sources unmodified"
+else
+    BUILD_SHELL=/bin/mksh
+    echo "toybox: brash unavailable — applying patches.optional/0001-mksh-compat.patch"
+    patch -p1 < "$RECIPE_DIR/patches.optional/0001-mksh-compat.patch"
+    sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
+fi
 # Kernel UAPI headers: needed by blockdev, ip, brctl, fdisk, losetup, etc.
 # Install into ./linux/ etc so -I. resolves linux/fs.h during compilation.
 if [ ! -f linux/fs.h ]; then
@@ -51,7 +62,7 @@ if [ ! -f linux/fs.h ]; then
   fi
 fi
 rm -rf generated/*
-DEBUG=1 V=1 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) mksh scripts/make.sh || {
+DEBUG=1 V=1 CC=clang CFLAGS="-Os -fomit-frame-pointer" CPUS=$(nproc) "$BUILD_SHELL" scripts/make.sh || {
   echo "=== generated/config.h (first 20 lines) ===" >&2
   head -20 generated/config.h >&2 || echo "config.h missing" >&2
   echo "=== generated/flags.raw (first 10 lines) ===" >&2
@@ -75,4 +86,7 @@ rm -f /tmp/_instlist /tmp/_applets.txt"""
 
 [depends]
 runtime = ["musl"]
-build = ["clang"]
+# brash is best-effort: install_target_build_deps WARNs and continues if
+# brash isn't yet built (first-pass bootstrap), so the recipe falls back
+# to mksh+patch via the build-time check above.
+build = ["clang", "brash"]

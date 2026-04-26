@@ -1,0 +1,46 @@
+[package]
+name = "brash"
+version = "0.2.0-r1"
+license = "MIT"
+description = "Bash-compatible shell written in Rust (clean-room, MIT)"
+# Canonical source-of-truth is the Forgejo repo jonerik/brash on
+# castle.great-morpho.ts.net:3000 at commit
+# 67d0a28f4a197dfc9a662b1f69ef69548eaf6253 (v0.2.0).
+# That host sits behind Tailscale and GitHub's runners cannot reach it,
+# so the tarball is mirrored to a stormj-UH GH release for CI.
+#
+# Brash is built from the same vendored Rust toolchain as jmake/stormwall.
+# At install time we lay down /bin/brash and a /bin/bash → brash symlink
+# so any package whose upstream scripts insist on bash can run them under
+# brash without patching shebangs to /bin/mksh. This is what lets
+# `core/toybox` drop its 0001-mksh-compat.patch and lets `develop/rust`
+# stop reimplementing install.sh in pure mksh.
+
+[source]
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v0.2.0/brash-0.2.0.tar.gz"
+sha256 = "4a5f730e600a44881dc91d0e6522fefc9d7010f3d192196c274f4dc98655db80"
+
+[build]
+system = "custom"
+build = """set -e
+export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
+export OPENSSL_DIR=/
+export OPENSSL_INCLUDE_DIR=/include
+export OPENSSL_LIB_DIR=/lib
+cargo build --release --locked --bin brash
+"""
+install = """set -e
+install -Dm755 target/release/brash "$DESTDIR/bin/brash"
+# /bin/bash points at brash so upstream scripts whose shebang is
+# `#!/bin/bash` (toybox's scripts/make.sh, rust's install.sh, et al)
+# work unmodified. NEVER replace /bin/sh — that stays mksh.
+ln -sf brash "$DESTDIR/bin/bash"
+# /bin/rash is a brash convenience alias from upstream's Makefile.
+ln -sf brash "$DESTDIR/bin/rash"
+install -Dm644 LICENSE "$DESTDIR/share/licenses/brash/LICENSE"
+llvm-strip --strip-all "$DESTDIR/bin/brash" 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]

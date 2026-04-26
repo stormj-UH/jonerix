@@ -1,6 +1,6 @@
 [package]
 name = "rust"
-version = "1.94.1-r2"
+version = "1.94.1-r3"
 license = "MIT"
 description = "Systems programming language (jonerix-linux-musl triple, no GNU runtime)"
 
@@ -28,20 +28,30 @@ curl -fsSL "$URL" -o rust.tar.gz
 printf '%s  rust.tar.gz\n' "$SHA" | sha256sum -c
 tar xf rust.tar.gz --strip-components=1
 
-# Manual install (upstream's install.sh requires bash which jonerix doesn't
-# ship). Iterate the rustc, rust-std-<triple>, and cargo components; for
-# each, copy bin/ and lib/ into DESTDIR. Mirrors what install.sh does but
-# in pure /bin/mksh + coreutils.
-for comp in rustc rust-std-${TRIPLE} cargo; do
-    compdir="$comp"
-    [ -d "$compdir" ] || { echo "missing component: $compdir"; exit 1; }
-    for d in bin lib etc share; do
-        if [ -d "$compdir/$d" ]; then
-            mkdir -p "$DESTDIR/$d"
-            cp -a "$compdir/$d/." "$DESTDIR/$d/"
-        fi
+# Component install — prefer upstream's install.sh under brash if
+# /bin/bash is present (brash provides full bash 5.3 surface). Falls
+# back to the pure-mksh manual loop when brash hasn't built yet (first-
+# pass bootstrap). The fallback mirrors install.sh: it copies bin/, lib/,
+# etc/ and share/ from each component into DESTDIR.
+if [ -x /bin/bash ] && [ -x install.sh ]; then
+    echo "rust: installing via upstream install.sh under brash (/bin/bash)"
+    /bin/bash ./install.sh \
+        --prefix="$DESTDIR" \
+        --components="rustc,rust-std-${TRIPLE},cargo" \
+        --disable-ldconfig
+else
+    echo "rust: brash unavailable — using mksh manual component install"
+    for comp in rustc rust-std-${TRIPLE} cargo; do
+        compdir="$comp"
+        [ -d "$compdir" ] || { echo "missing component: $compdir"; exit 1; }
+        for d in bin lib etc share; do
+            if [ -d "$compdir/$d" ]; then
+                mkdir -p "$DESTDIR/$d"
+                cp -a "$compdir/$d/." "$DESTDIR/$d/"
+            fi
+        done
     done
-done
+fi
 
 # --- cargo CA + openssl-sys env (system-wide) ---
 # Without this, cargo's bundled libcurl can't find CAs on jonerix and

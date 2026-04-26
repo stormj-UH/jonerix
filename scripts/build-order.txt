@@ -41,7 +41,8 @@ bc
 dhcpcd
 ifupdown-ng
 # Tier 3: depends on musl only (medium)
-toybox
+# (toybox was here pre-2026-04-26; moved to Tier 11 so it can build under
+# /bin/bash → brash and skip the local mksh-compat patch.)
 zlib
 xz
 zstd
@@ -87,6 +88,12 @@ cni-plugins
 rust
 # Tier 10: Rust-based packages (requires from-source rust)
 exproxide
+# brash — Rust bash-compatible shell. Once present in the host (either
+# baked into the builder image or installed by install_target_build_deps
+# when listed as a downstream build-dep), recipes whose upstream builds
+# expect /bin/bash can run under brash and skip their local
+# mksh-compat hacks (toybox, rust install.sh).
+brash
 stormwall
 m4oxide
 readlineoxide
@@ -94,6 +101,12 @@ uutils
 ripgrep
 jfsck
 anvil
+# Tier 11: brash-aware rebuilds. Recipes here use /bin/bash (= brash)
+# at build time to drive their upstream build scripts unmodified —
+# retiring local mksh-compat hacks. Each falls back to its previous
+# mksh path if brash is unavailable, so the tier is safe before brash
+# is baked into the builder image.
+toybox
 # Tier 11 (WIP): dotnet — see packages/extra/dotnet/recipe.toml.
 # Excluded from build-order until a libc++-compatible source build lands;
 # Microsoft's musl tarball links GNU libstdc++/libgcc_s, which the
