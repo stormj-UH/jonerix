@@ -97,6 +97,27 @@ install_target_build_deps() {
         | sed 's/,/ /g')
     for _dep in $_deps; do
         [ -n "$_dep" ] || continue
+        # Heavy toolchains: trust whatever the builder image already
+        # has and DO NOT reinstall. `jpkg install --force rust` over
+        # the live builder corrupts cargo's sysroot mid-bootstrap and
+        # every Rust recipe (jmake, nloxide, stormwall, ...) then fails
+        # with "could not compile clap_derive (lib)" or similar build-
+        # script errors. clang is similarly hot-cached.
+        case "$_dep" in
+            rust)
+                command -v cargo >/dev/null 2>&1 && continue
+                # cargo not on PATH and rust not in /out/jpkgs (heavy is
+                # in HEAVIES) — silently skip; downstream builds will
+                # fail on their own with a clear "cargo not found".
+                continue ;;
+            go|go-bootstrap|go-current)
+                command -v go >/dev/null 2>&1 && continue
+                continue ;;
+            cmake)
+                command -v cmake >/dev/null 2>&1 && continue ;;
+            llvm|llvm-all)
+                command -v clang >/dev/null 2>&1 && continue ;;
+        esac
         # Map binary names to package names first (clang -> llvm, etc).
         _dep_pkg="$_dep"
         case "$_dep" in
