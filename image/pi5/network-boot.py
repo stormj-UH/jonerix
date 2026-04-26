@@ -197,6 +197,20 @@ def parse_args() -> argparse.Namespace:
             " VERSION_ID from config/defaults/etc/os-release."
         ),
     )
+    ap.add_argument(
+        "--include-firmware", action="store_true",
+        help=(
+            "Bake the raspberrypi/firmware payload (kernel_2712.img, DTBs,"
+            " start4.elf, fixup4.dat — GPL-2.0 + Broadcom Redistributable)"
+            " into the output tarball. Default OFF: jonerix's permissive-"
+            " license policy keeps non-permissive bits OUT of CI artifacts."
+            " The companion install/jonerix-pi5-netboot.sh server bootstrap"
+            " fetches them on the user's machine at runtime with explicit"
+            " license acceptance. Use --include-firmware only for air-"
+            " gapped scenarios where you can't pull from raspberrypi/"
+            " firmware at deploy time."
+        ),
+    )
     return ap.parse_args()
 
 
@@ -455,19 +469,45 @@ def main() -> None:
     out = pathlib.Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    license_gate(args.yes)
+    # License gate only fires when the build will actually pull
+    # raspberrypi/firmware. With --include-firmware off (the default),
+    # we never touch GPL/Broadcom-licensed bits — the install-side
+    # bootstrap (install/jonerix-pi5-netboot.sh) handles license
+    # acceptance + download at deploy time.
+    if args.include_firmware:
+        license_gate(args.yes)
 
     # Work dir for fetch / extract. Cleaned up automatically.
     with tempfile.TemporaryDirectory(prefix="pi5-netboot-") as tmp:
         work = pathlib.Path(tmp)
-        tgz = fetch_firmware(args, work)
-        fw_sha = hashlib.sha256(tgz.read_bytes()).hexdigest()
-        boot = extract_boot_dir(tgz, work)
 
         # Target subdir (serial or 'any' → root of tftp)
         payload = out / args.serial if args.serial and args.serial != "any" else out
         info(f"Assembling payload under {payload}")
-        copy_boot_tree(boot, payload)
+        payload.mkdir(parents=True, exist_ok=True)
+
+        if args.include_firmware:
+            tgz = fetch_firmware(args, work)
+            fw_sha = hashlib.sha256(tgz.read_bytes()).hexdigest()
+            boot = extract_boot_dir(tgz, work)
+            copy_boot_tree(boot, payload)
+            info("firmware: included (--include-firmware)")
+        else:
+            fw_sha = ""
+            (payload / "FIRMWARE_MISSING").write_text(
+                "This jonerix Pi 5 netboot payload was built without the\n"
+                "raspberrypi/firmware tree (Linux kernel + Broadcom blobs).\n"
+                "jonerix's userland-only policy keeps non-permissive bits\n"
+                "OUT of CI artifacts.\n"
+                "\n"
+                "To complete the netboot tree, run install/jonerix-pi5-\n"
+                "netboot.sh on your Mac or Linux host: it downloads the\n"
+                "firmware tarball directly from raspberrypi/firmware (with\n"
+                "explicit GPL-2.0 + Broadcom Redistributable license\n"
+                "acceptance) and stages it next to these files before\n"
+                "starting the TFTP/HTTP server the Pi boots from.\n"
+            )
+            info("firmware: NOT included (companion script downloads at deploy)")
 
         (payload / "cmdline.txt").write_text(build_cmdline(args))
         (payload / "config.txt").write_text(build_config(args))

@@ -32,6 +32,9 @@ BIND_IP="${BIND_IP:-}"
 TFTP_PORT="${TFTP_PORT:-69}"
 HTTP_PORT="${HTTP_PORT:-8080}"
 CACHE_DIR="${CACHE_DIR:-${HOME}/.cache/jonerix-pi5-netboot}"
+FIRMWARE_TAG="${FIRMWARE_TAG:-stable}"
+FIRMWARE_URL="https://github.com/raspberrypi/firmware/archive/refs/heads/${FIRMWARE_TAG}.tar.gz"
+ACCEPT_LICENSES="${ACCEPT_LICENSES:-0}"
 
 banner() {
     cat <<'EOF'
@@ -62,17 +65,22 @@ server's option 66/67) at this machine and the Pi will netboot a
 permissive-licensed jonerix userland.
 
 Options:
-  --release-tag TAG    Pin to a specific jonerix release (e.g. v1.1.6).
-                       Default: VERSION_ID from the BRANCH's os-release.
-                       Pass 'packages' to use the rolling mirror.
-  --bind IP            IP to bind both servers to (default: 0.0.0.0,
-                       printed addresses use the first non-loopback
-                       interface).
-  --tftp-port N        TFTP port (default 69; needs root).
-  --http-port N        HTTP rootfs port (default 8080).
-  --cache DIR          Cache dir for downloaded payloads
-                       (default ${CACHE_DIR}).
-  -h, --help           Show this help.
+  --release-tag TAG     Pin to a specific jonerix release (e.g. v1.1.6).
+                        Default: VERSION_ID from the BRANCH's os-release.
+                        Pass 'packages' to use the rolling mirror.
+  --bind IP             IP to bind both servers to (default: 0.0.0.0,
+                        printed addresses use the first non-loopback
+                        interface).
+  --tftp-port N         TFTP port (default 69; needs root).
+  --http-port N         HTTP rootfs port (default 8080).
+  --firmware-tag TAG    raspberrypi/firmware branch/tag to fetch
+                        (default ${FIRMWARE_TAG}).
+  --accept-licenses     Skip the interactive GPL-2.0 + Broadcom
+                        Redistributable license prompt and accept
+                        non-interactively. Required for unattended use.
+  --cache DIR           Cache dir for downloaded payloads
+                        (default ${CACHE_DIR}).
+  -h, --help            Show this help.
 
 Pi 5 bootloader configuration (one-time, on the Pi side):
 
@@ -95,6 +103,11 @@ while [ $# -gt 0 ]; do
         --http-port)   HTTP_PORT="${2:-}"; shift 2 ;;
         --cache)       CACHE_DIR="${2:-}"; shift 2 ;;
         --branch)      BRANCH="${2:-}"; GH_RAW="https://raw.githubusercontent.com/stormj-UH/jonerix/${BRANCH}"; shift 2 ;;
+        --firmware-tag)
+            FIRMWARE_TAG="${2:-stable}"
+            FIRMWARE_URL="https://github.com/raspberrypi/firmware/archive/refs/heads/${FIRMWARE_TAG}.tar.gz"
+            shift 2 ;;
+        --accept-licenses) ACCEPT_LICENSES=1; shift ;;
         -h|--help)     usage; exit 0 ;;
         *) die "unknown arg: $1" ;;
     esac
@@ -191,9 +204,90 @@ fi
 TFTP_DIR="${CACHE_DIR}/tftp"
 rm -rf "$TFTP_DIR"
 mkdir -p "$TFTP_DIR"
-msg "Extracting TFTP tree to ${TFTP_DIR}"
+msg "Extracting jonerix TFTP tree to ${TFTP_DIR}"
 ( cd "$TFTP_DIR" && tar xzf "$TFTP_TGZ" --strip-components=1 ) \
     || die "failed to extract ${TFTP_TGZ}"
+
+# ── Firmware: not in jonerix CI artifacts; fetch from raspberrypi/firmware ──
+# jonerix's permissive-userland policy keeps the Linux kernel (GPL-2.0)
+# and the Broadcom GPU/CPU firmware blobs (Broadcom Redistributable)
+# OUT of CI artifacts. The bootstrap downloads them directly from the
+# upstream raspberrypi/firmware repo on the user's machine, with
+# explicit license acceptance, and stages them into the same TFTP tree
+# the Pi will boot from.
+needs_firmware=1
+[ -f "$TFTP_DIR/kernel_2712.img" ] && needs_firmware=0
+if [ "$needs_firmware" = 1 ]; then
+    cat <<'LICENSE_NOTICE'
+
+------------------------------------------------------------------------
+The Pi 5 cannot boot without these two non-permissive components, both
+fetched from raspberrypi/firmware (NOT from jonerix):
+
+  1. Linux kernel (kernel_2712.img, device-tree blobs)
+     License: GNU General Public License v2.0
+     Source:  https://github.com/raspberrypi/linux
+
+  2. VideoCore / Broadcom firmware blobs (start4.elf, fixup4.dat, etc.)
+     License: proprietary Broadcom binary — see LICENCE.broadcom in
+              the tarball. Free to redistribute with Raspberry Pi
+              hardware; may NOT be modified or used outside Pi boards.
+     Source:  closed-source (Broadcom, distributed by Raspberry Pi Ltd)
+
+Continuing means you have reviewed and accept BOTH licenses.
+LICENSE_NOTICE
+    if [ "$ACCEPT_LICENSES" != 1 ]; then
+        printf 'Accept these licenses and download? [y/N] '
+        read _ans </dev/tty || _ans=""
+        case "${_ans:-n}" in
+            y|Y|yes|YES) : ;;
+            *) die "declined firmware/kernel license — aborting (re-run with --accept-licenses to skip this prompt)" ;;
+        esac
+    fi
+
+    FW_TGZ="${CACHE_DIR}/raspberrypi-firmware-${FIRMWARE_TAG}.tar.gz"
+    if [ ! -s "$FW_TGZ" ]; then
+        msg "Fetching ${FIRMWARE_URL} (~500 MiB — first run only, then cached)"
+        curl -fL --retry 3 -o "$FW_TGZ" "$FIRMWARE_URL" \
+            || die "failed to download ${FIRMWARE_URL}"
+    else
+        msg "Cached firmware tarball at ${FW_TGZ}"
+    fi
+
+    # Extract just boot/* into the TFTP dir (drop the
+    # firmware-${TAG}/ prefix the github archive includes).
+    FW_STAGE="${CACHE_DIR}/firmware-extract"
+    rm -rf "$FW_STAGE"; mkdir -p "$FW_STAGE"
+    msg "Extracting firmware boot/ tree"
+    tar xzf "$FW_TGZ" -C "$FW_STAGE" \
+        --strip-components=1 \
+        '*/boot' \
+        || die "failed to extract firmware tarball"
+    if [ ! -d "$FW_STAGE/boot" ]; then
+        die "firmware tarball did not contain a boot/ tree"
+    fi
+    # Copy the Pi 5-relevant subset into the TFTP root.
+    for f in kernel_2712.img \
+             bcm2712-rpi-5-b.dtb bcm2712-d-rpi-5-b.dtb \
+             bcm2712-rpi-cm5-cm4io.dtb bcm2712-rpi-cm5-cm5io.dtb \
+             bcm2712-rpi-cm5l-cm4io.dtb bcm2712-rpi-cm5l-cm5io.dtb \
+             bcm2712-rpi-500.dtb \
+             start4.elf start4cd.elf start4db.elf start4x.elf \
+             fixup4.dat fixup4cd.dat fixup4db.dat fixup4x.dat \
+             LICENCE.broadcom; do
+        if [ -f "$FW_STAGE/boot/$f" ]; then
+            cp -f "$FW_STAGE/boot/$f" "$TFTP_DIR/$f"
+        fi
+    done
+    # Overlays directory (Pi 5 needs at least disable-bt, miniuart-bt
+    # for some setups; bring the lot — they're tiny).
+    if [ -d "$FW_STAGE/boot/overlays" ]; then
+        mkdir -p "$TFTP_DIR/overlays"
+        cp -f "$FW_STAGE/boot/overlays/"*.dtbo "$TFTP_DIR/overlays/" 2>/dev/null || true
+    fi
+    rm -f "$TFTP_DIR/FIRMWARE_MISSING"
+    msg "Firmware staged into TFTP tree."
+fi
 
 # ── Stage rootfs (best-effort) ───────────────────────────────────────
 HTTP_ROOT="${CACHE_DIR}/http-root"
