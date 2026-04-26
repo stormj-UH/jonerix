@@ -37,7 +37,15 @@ RUN cd /build/jpkg && \
       -I/usr/include \
       -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') \
       -L/usr/lib -ltls -lssl -lcrypto -lzstd -static && \
-    strip jpkg
+    clang -std=c11 -Os -fuse-ld=lld \
+      -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
+      -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
+      -fstack-protector-strong \
+      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
+      -I/usr/include \
+      -o jpkg-local $(ls src/*.c | grep -v '/main\.c$') \
+      -L/usr/lib -ltls -lssl -lcrypto -lzstd -static && \
+    strip jpkg jpkg-local
 
 # Stage 1: Install core packages on minimal
 FROM ${MINIMAL_IMAGE}
@@ -49,6 +57,7 @@ RUN if command -v apk >/dev/null 2>&1; then \
 
 # Install fixed jpkg (with toybox tar pipe instead of cp -a in install_files)
 COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
+COPY --from=jpkg-builder /build/jpkg/jpkg-local /bin/jpkg-local
 
 # Install core runtime packages via jpkg.
 # Keep zsh late in the list so its post-install completion refresh sees the
