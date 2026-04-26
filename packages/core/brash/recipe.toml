@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.0"
+version = "1.0.0-r1"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -32,7 +32,14 @@ build = """
 set -e
 export CARGO_HOME=/tmp/brash-cargo
 export CARGO_TARGET_DIR="$PWD/target"
-export CARGO_NET_OFFLINE=true
+# brash's source tarball doesn't ship a `vendor/` directory, so cargo
+# must reach crates.io to resolve `glob`/`nix`/`libc`/`bitflags`. Match
+# the jmake recipe pattern (online cargo + jonerix CA bundle) instead
+# of stormwall's offline+vendored pattern.
+export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
+export OPENSSL_DIR=/
+export OPENSSL_INCLUDE_DIR=/include
+export OPENSSL_LIB_DIR=/lib
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
 cargo build --release --locked --bin brash
 """
