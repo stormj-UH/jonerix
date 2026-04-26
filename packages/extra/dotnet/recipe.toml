@@ -2,73 +2,32 @@
 name = "dotnet"
 version = "10.0.203"
 license = "MIT"
-description = ".NET SDK and runtime (Microsoft, MIT) — musl build, repackaged for jonerix"
+description = ".NET 10 SDK + runtime (WIP — source build against libc++, see docs/plans/dotnet.md)"
 
-# .NET is shipped as a repackaged upstream binary, the same approach the
-# `go` recipe uses for the Go toolchain. Microsoft publishes a
-# linux-musl-x64 / linux-musl-arm64 SDK tarball built against musl libc;
-# we extract it into /lib/dotnet, normalize /lib64 references for
-# merged-usr, and place a /bin/dotnet symlink. The SDK tarball includes
-# the runtime, so a single jpkg covers both `dotnet build` and `dotnet
-# foo.dll`.
+# This recipe is intentionally non-functional. The first attempt
+# (commit 04566f3) repackaged Microsoft's official linux-musl tarballs;
+# those binaries DT_NEEDED libstdc++.so.6 and libgcc_s.so.1, which the
+# zero-GPL runtime policy does not allow. The recipe was reverted and
+# the broken jpkgs yanked from the packages release.
 #
-# Building .NET from source is genuinely viable via dotnet/source-build,
-# but the bootstrap chain (Roslyn → SDK → runtime → BCL → NuGet feed) is
-# multi-stage and not warranted for a first pass. The upstream binaries
-# are MIT licensed end-to-end, so this is policy-clean unlike a JDK
-# repackage would be.
+# The path forward is to source-build dotnet/dotnet (the VMR) against
+# clang + lld + libcxx, with patches in patches/dotnet/. Full plan,
+# bootstrap strategy, libc++ migration scope, and phased rollout are in
+# docs/plans/dotnet.md. Until phase 3 of that plan lands, this recipe
+# fails fast so nothing accidentally ships.
 #
-# Globalization: jonerix does not ship ICU. .NET's invariant-globalization
-# mode handles culture-insensitive string ops without ICU; consumers that
-# need full globalization can install icu separately and unset
-# DOTNET_SYSTEM_GLOBALIZATION_INVARIANT.
+# Do not add this to scripts/build-order.txt until phase 3.
 
 [build]
 system = "custom"
 build = """
-set -e
-
-ARCH=$(uname -m)
-case "$ARCH" in
-  aarch64)
-    URL="https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.203/dotnet-sdk-10.0.203-linux-musl-arm64.tar.gz"
-    SHA512="662a54d629acc8bce11e6f9a4497e204ce586c984afafaa91ed60207aea6c3afc60689a2448a20c14cbc0e1ec23a8ec0e22b2f8a3a893991296fb4a339c12802"
-    ;;
-  x86_64)
-    URL="https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.203/dotnet-sdk-10.0.203-linux-musl-x64.tar.gz"
-    SHA512="06e9fd7e1811f0b7940eba7de2efcfb7a692d69b31e96398bd75d63e59549c3fe66de53aea6b9ceacde940a4954a99318c2bdb6873df07e2fc1071d63d5ef023"
-    ;;
-  *)
-    echo "unsupported architecture: $ARCH"
-    exit 1
-    ;;
-esac
-
-curl -fsSL "$URL" -o dotnet.tar.gz
-printf '%s  dotnet.tar.gz\n' "$SHA512" | sha512sum -c
-
-mkdir -p "$DESTDIR/lib/dotnet" "$DESTDIR/bin" "$DESTDIR/etc/dotnet"
-tar xf dotnet.tar.gz -C "$DESTDIR/lib/dotnet"
-
-# Normalize any /lib64 references baked into ELF binaries / scripts /
-# config to /lib (jonerix is merged-usr, no /lib64).
-python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" "$DESTDIR/lib/dotnet"
-
-# Tell the muxer where the SDK lives without relying on /usr/share/dotnet
-# auto-detection.
-printf '/lib/dotnet\n' > "$DESTDIR/etc/dotnet/install_location"
-
-# /bin entry point.
-ln -sf /lib/dotnet/dotnet "$DESTDIR/bin/dotnet"
-
-# Sanity check: refuse to ship an install that still references /lib64.
-if rg -n --text '/lib64' "$DESTDIR/lib/dotnet" 2>/dev/null; then
-  echo "FATAL: dotnet install still contains /lib64 references"
-  exit 1
-fi
+echo "dotnet recipe is WIP — see docs/plans/dotnet.md."
+echo "Source build against libc++ has not landed; this recipe intentionally"
+echo "fails so a half-broken jpkg cannot be published."
+exit 1
 """
 install = ""
 
 [depends]
-runtime = ["musl", "zlib", "gnu-compat-symlinks"]
-build = ["python3"]
+runtime = ["musl", "libcxx", "zlib", "gnu-compat-symlinks"]
+build = ["clang", "cmake", "samurai", "python3", "libcxx"]
