@@ -21,15 +21,17 @@ docker run --rm \
     alpine:latest sh -c '
         set -e
 
-        # Install build-time dependencies (all GPL/BSD, build-time only)
-        apk add --no-cache clang lld musl-dev make nasm samurai zstd-dev mtools
+        # Install build-time dependencies (all permissive, build-time only).
+        # nasm + mtools are for limine itself; cargo/rust/python3 are for
+        # jpkg 2.0 (Rust port).
+        apk add --no-cache clang lld musl-dev nasm mtools cargo rust python3
 
-        # Build jpkg from source so we can use it to build the Limine package
-        cd /workspace/packages/jpkg
-        samu clean 2>/dev/null || true
-        samu
-
-        install -m755 jpkg /usr/local/bin/jpkg
+        # Build jpkg 2.0 from source so we can use it to build the Limine package
+        cd /workspace/packages/core/jpkg
+        TRIPLE=$(rustc -vV | sed -n "s/^host: //p")
+        RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+            cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+        install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
 
         # Build the Limine recipe
         jpkg build /workspace/packages/extra/limine --build-jpkg --output /output

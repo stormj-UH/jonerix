@@ -22,7 +22,7 @@
 #   - GNU make, perl, bash, bc, flex, and bison are installed from Alpine for
 #     the kernel build system; they are build-time only and do NOT enter the
 #     final .jpkg archive.
-#   - jpkg is compiled from source inside the container (requires samu).
+#   - jpkg is compiled from source inside the container (requires cargo+rust).
 
 set -e
 
@@ -72,13 +72,14 @@ docker run --rm \
             diffutils findutils coreutils \
             zstd-dev zlib-dev \
             git \
-            samu
+            cargo rust python3
 
-        echo "==> Building jpkg from source"
-        cd /workspace/packages/jpkg
-        samu clean 2>/dev/null || true
-        samu
-        install -m755 jpkg /usr/local/bin/jpkg
+        echo "==> Building jpkg 2.0 (Rust) from source"
+        cd /workspace/packages/core/jpkg
+        TRIPLE=$(rustc -vV | sed -n "s/^host: //p")
+        RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+            cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+        install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
         echo "jpkg version: $(jpkg --version 2>/dev/null || echo unknown)"
 
         echo "==> Starting Linux kernel build"

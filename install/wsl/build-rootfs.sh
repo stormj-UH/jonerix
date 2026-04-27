@@ -52,12 +52,17 @@ ln -sf bsdtar /usr/bin/tar
 # ---------------------------------------------------------------------------
 if ! command -v jpkg > /dev/null 2>&1; then
     echo "--- Building jpkg ---"
-    apk add --no-cache clang lld musl-dev make zstd-dev zstd-static
+    # jpkg 2.0 = Rust port; cargo + rust + python3 (for /lib64 null-pad).
+    apk add --no-cache cargo rust python3
     # WORKSPACE is set by CI; fall back to the repo root relative to this script
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
     REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-    cd "${REPO_ROOT}/packages/jpkg"
-    make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg
+    cd "${REPO_ROOT}/packages/core/jpkg"
+    TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+    RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+        cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+    install -m 755 "target/$TRIPLE/release/jpkg" jpkg
+    python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" jpkg
     install -m 755 jpkg /usr/local/bin/jpkg
     cd -
 fi
