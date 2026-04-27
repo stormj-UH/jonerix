@@ -103,21 +103,17 @@ printf '[repo]\nurl = "%s"\n' "${PKG_BASE_URL}" > "${STAGING}/etc/jpkg/repos.con
 # ---------------------------------------------------------------------------
 # 5. Install packages via jpkg
 #
-# Core runtime mirrors jonerix:core (the "fresh install" reference image):
-#   libs/crypto  : musl, zlib, ncurses, libressl, zstd, lz4, xz
-#   shell/coreutils: mksh (as /bin/sh), toybox, libarchive, bsdtar
-#   network      : curl, dropbear
-#   dev essentials (expected by `jpkg install` users): tzdata
-#   userland     : doas, snooze, pigz, mandoc
-#   editor/shell : micro, fastfetch
-#   search       : ripgrep
-#   pkg mgmt     : jpkg (installed last)
+# Mirrors the jonerix:core package set (Dockerfile.core), MINUS openrc.
+# WSL2's own /init (Microsoft's wsl-init.exe + the supervised PID 1 inside
+# the distro) is the init system for this rootfs, so a second init —
+# OpenRC — would just sit idle and never run a runlevel. The daemon
+# packages (dhcpcd, ifupdown-ng, unbound, openntpd) DO ship — their
+# binaries are present and usable; they're simply not auto-supervised
+# at boot. A user who wants them running can launch them by hand or
+# flip `systemd=true` in /etc/wsl.conf to switch to systemd supervision.
 #
-# Not shipped in WSL rootfs:
-#   openrc, dhcpcd, ifupdown-ng, unbound, openntpd — WSL provides init,
-#   networking, and DNS through the hypervisor; shipping these just adds
-#   bloat and services that never start. Users can `jpkg install` them.
-#   LLVM/Go/Rust/nodejs/python3 — huge; install on demand.
+# Not shipped in any case: LLVM/Go/Rust/nodejs/python3 — huge; install
+# on demand via `jpkg install`.
 # ---------------------------------------------------------------------------
 echo "--- Installing packages via jpkg ---"
 # Mirrors the modern Dockerfile pattern (not Dockerfile.core's --force
@@ -127,20 +123,39 @@ echo "--- Installing packages via jpkg ---"
 # for /bin/tar). jpkg handles ownership transfer automatically when
 # it sees that metadata; --force is no longer needed or appropriate.
 #
-# Install order: base libs → coreutils/multicall → specialised
-# replacements → extras. Each step lets the next package's `replaces`
-# declaration take over cleanly.
+# Install order mirrors Dockerfile.core: toybox + mksh first (so
+# /bin/sh is mksh before any post_install hook runs); then base libs,
+# coreutils/multicall replacements, network daemons, login surface,
+# archive/text utils, oxidised replacements, editor/shell extras.
 jpkg --root "${STAGING}" update
 
 failures=0
 failed=""
+# toybox + mksh + /bin/sh handoff first, exactly as Dockerfile.core does.
+for pkg in toybox mksh; do
+    echo "=== Installing: $pkg ==="
+    if ! jpkg --root "${STAGING}" install "$pkg"; then
+        failures=$((failures + 1))
+        failed="$failed $pkg"
+    fi
+done
+ln -sf mksh "${STAGING}/bin/sh"
+
+# Core package list — mirror of Dockerfile.core's `for pkg in ...` loop,
+# with `openrc` removed. Anything kept depends only on its own runtime
+# libraries; nothing here references rc-service or rc-update at install
+# time, so an init-less environment is fine.
 for pkg in \
-    musl zlib xz lz4 zstd libarchive libressl \
-    toybox \
-    ncurses mksh bsdtar \
-    curl dropbear \
-    tzdata doas snooze pigz mandoc \
-    micro fastfetch ripgrep
+    musl \
+    zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
+    doas snooze tzdata \
+    dropbear dhcpcd ifupdown-ng unbound openntpd \
+    shadow \
+    libarchive bsdtar openrsync \
+    pigz mandoc onetrueawk \
+    anvil exproxide \
+    micro libcxx fastfetch ripgrep gitoxide \
+    iproute-go zsh
 do
     echo "=== Installing: $pkg ==="
     if ! jpkg --root "${STAGING}" install "$pkg"; then
@@ -246,7 +261,9 @@ nameserver 1.0.0.1
 EOF
 
 # /etc/wsl.conf — WSL2 per-distro configuration.
-# - [boot] systemd=false: jonerix uses openrc/no-init; no systemd in the tree.
+# - [boot] systemd=false: this rootfs ships no init system. WSL's own
+#   /init is PID 1; flipping this to true is supported (a user who wants
+#   supervision can `jpkg install systemd` and switch).
 # - [network] generateResolvConf=true: let WSL maintain resolv.conf from the
 #   Windows host (users with corporate DNS get it automatically).
 # - [user] default=root: match the Pi install default (root-by-default shell).
