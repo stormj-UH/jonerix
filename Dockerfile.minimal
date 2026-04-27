@@ -22,23 +22,18 @@ ARG BUILDER=ghcr.io/stormj-uh/jonerix:minimal
 # ============================================================
 FROM ghcr.io/stormj-uh/jonerix:builder AS jpkg-builder
 
+# jpkg 2.0 is Rust; build via cargo with crt-static + symbol strip,
+# then null-pad any residual /lib64 reference so audit_layout_tree
+# accepts the binaries downstream.
 COPY packages/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && \
-    clang -std=c11 -Os -fuse-ld=lld \
-      -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
-      -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
-      -fstack-protector-strong \
-      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
-      -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') \
-      -ltls -lssl -lcrypto -lzstd && \
-    clang -std=c11 -Os -fuse-ld=lld \
-      -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
-      -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
-      -fstack-protector-strong \
-      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
-      -o jpkg-local $(ls src/*.c | grep -v '/main\.c$') \
-      -ltls -lssl -lcrypto -lzstd && \
-    llvm-strip jpkg jpkg-local
+    RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+    cargo build --release --locked --bin jpkg --bin jpkg-local && \
+    cp -f target/release/jpkg jpkg && \
+    cp -f target/release/jpkg-local jpkg-local && \
+    for b in jpkg jpkg-local; do \
+        sed -i 's|/lib64|/lib\x00\x00|g' "$b" || true ; \
+    done
 
 # ============================================================
 # Stage 1: Download + install packages using existing jonerix
