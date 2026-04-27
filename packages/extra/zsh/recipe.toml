@@ -1,6 +1,6 @@
 [package]
 name = "zsh"
-version = "5.9-r14"
+version = "5.9-r15"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
@@ -89,9 +89,9 @@ post_install = """refresh_completions() {
 }
 
 if [ -f /etc/shells ]; then
-    grep -qx '/bin/zsh' /etc/shells 2>/dev/null || printf '%s\\n' /bin/zsh >> /etc/shells
+    grep -qx '/bin/zsh' /etc/shells 2>/dev/null || printf '%s\n' /bin/zsh >> /etc/shells
 else
-    printf '%s\\n' '# /etc/shells — valid login shells' '/bin/sh' '/bin/mksh' '/bin/zsh' > /etc/shells
+    printf '%s\n' '# /etc/shells — valid login shells' '/bin/sh' '/bin/mksh' '/bin/zsh' > /etc/shells
 fi
 
 [ -x /bin/zsh ] && refresh_completions

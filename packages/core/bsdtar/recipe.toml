@@ -1,6 +1,6 @@
 [package]
 name = "bsdtar"
-version = "3.8.6-r6"
+version = "3.8.6-r7"
 license = "Apache-2.0"
 description = "Compatibility package providing /bin/tar via libarchive bsdtar"
 # bsdtar is the system /bin/tar provider (via libarchive). Toybox's tar
@@ -13,7 +13,10 @@ build = ""
 # Install a tiny wrapper script (not a symlink) so the archive has a real file
 # that toybox tar can extract. The script just execs bsdtar.
 install = """mkdir -p $DESTDIR/bin
-printf '#!/bin/sh\\nexec bsdtar "$@"\\n' > $DESTDIR/bin/tar
+cat > $DESTDIR/bin/tar <<'EOF'
+#!/bin/sh
+exec bsdtar "$@"
+EOF
 chmod 755 $DESTDIR/bin/tar"""
 
 [hooks]

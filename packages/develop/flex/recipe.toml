@@ -1,6 +1,6 @@
 [package]
 name = "flex"
-version = "2.6.4-r3"
+version = "2.6.4-r4"
 license = "BSD-2-Clause"
 description = "Fast lexical analyzer generator"
 
@@ -16,7 +16,7 @@ configure = """# m4oxide does not accept -P; create a wrapper that drops the -P 
 # the wrapper can hardcode it — avoids a runtime PATH walk that fails
 # when the wrapper's own dir shadows every real m4 location.
 REAL_M4=$(command -v m4)
-[ -n "$REAL_M4" ] || { printf 'flex configure: no m4 found in PATH\\n' >&2; exit 1; }
+[ -n "$REAL_M4" ] || { printf 'flex configure: no m4 found in PATH\n' >&2; exit 1; }
 mkdir -p _m4wrap
 # Write the wrapper using sed substitution so the literal @REAL_M4@
 # token is replaced with the resolved path without any quoting tangle.
