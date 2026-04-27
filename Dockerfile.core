@@ -24,10 +24,13 @@ RUN apk add --no-cache clang lld musl-dev rust cargo
 
 COPY packages/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && \
+    TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-    cargo build --release --locked --bin jpkg --bin jpkg-local && \
-    # Null-pad any residual `/lib64` reference so audit_layout_tree sees
-    # `/lib\0\0` rather than the literal `/lib64` (matches the recipe).
+    cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
+    mkdir -p target/release && \
+    cp -f "target/$TRIPLE/release/jpkg" target/release/jpkg && \
+    cp -f "target/$TRIPLE/release/jpkg-local" target/release/jpkg-local && \
+    # Null-pad any residual `/lib64` reference (matches the recipe).
     for b in target/release/jpkg target/release/jpkg-local; do \
         sed -i 's|/lib64|/lib\x00\x00|g' "$b" || true ; \
     done

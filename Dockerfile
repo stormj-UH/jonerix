@@ -26,11 +26,15 @@ RUN apk add --no-cache clang lld musl-dev rust cargo
 
 COPY packages/jpkg/ /src/
 RUN cd /src && \
+    TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-    cargo build --release --locked --bin jpkg --bin jpkg-local && \
-    # Null-pad any residual `/lib64` reference so the merged-/usr layout
-    # audit doesn't reject these binaries when they're packaged later
-    # (matches packages/jpkg/recipe.toml's belt-and-suspenders sed).
+    cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
+    # Surface the artefacts at the unsuffixed target/release/ path so the
+    # downstream COPYs don't have to know the host triple.
+    mkdir -p target/release && \
+    cp -f "target/$TRIPLE/release/jpkg" target/release/jpkg && \
+    cp -f "target/$TRIPLE/release/jpkg-local" target/release/jpkg-local && \
+    # Null-pad any residual `/lib64` reference (matches the recipe).
     for b in target/release/jpkg target/release/jpkg-local; do \
         sed -i 's|/lib64|/lib\x00\x00|g' "$b" || true ; \
     done
