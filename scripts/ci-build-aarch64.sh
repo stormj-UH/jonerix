@@ -9,19 +9,19 @@ set -e
 # repo checkout (important for new features like RECIPE_DIR).
 if [ -f /jpkg-bin/jpkg ]; then
     install -m 755 /jpkg-bin/jpkg /bin/jpkg
-    echo “jpkg: using cached binary”
+    echo "jpkg: using cached binary"
 else
     cd /workspace/packages/jpkg
-    clang -std=c11 -Os -fuse-ld=lld \
-      -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
-      -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
-      -fstack-protector-strong \
-      --rtlib=compiler-rt --unwindlib=none \
-      -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DJPKG_USE_LIBRESSL \
-      -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') \
-      -ltls -lssl -lcrypto -lzstd
-    install -m 755 jpkg /bin/jpkg
-    cp jpkg /jpkg-bin/jpkg
+    TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+    RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+        cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+    for b in "target/$TRIPLE/release/jpkg" "target/$TRIPLE/release/jpkg-local"; do
+        python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled', file=sys.stderr)" "$b" || true
+    done
+    install -m 755 "target/$TRIPLE/release/jpkg" /bin/jpkg
+    install -m 755 "target/$TRIPLE/release/jpkg-local" /bin/jpkg-local
+    install -m 755 bin/jpkg-conform /bin/jpkg-conform
+    cp "target/$TRIPLE/release/jpkg" /jpkg-bin/jpkg
     cd /workspace
 fi
 

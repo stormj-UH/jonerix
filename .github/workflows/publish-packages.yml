@@ -286,15 +286,16 @@ jobs:
 
       - name: Build jpkg from source for signing
         run: |
-          apk add --no-cache clang lld musl-dev zstd-dev openssl-dev
+          # jpkg 2.0 is Rust; build via cargo + crt-static.  Pass --target
+          # $HOST_TRIPLE to keep proc-macros free of crt-static (they need
+          # dylibs).  Python null-pads any residual /lib64.
+          apk add --no-cache clang lld musl-dev rust cargo python3
           cd "$GITHUB_WORKSPACE/packages/jpkg"
-          clang -std=c11 -Os -fuse-ld=lld \
-            -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
-            -Wno-unused-parameter -Wshadow -Wstrict-prototypes \
-            -fstack-protector-strong \
-            -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
-            -o jpkg $(ls src/*.c | grep -v '/main_local\.c$') -lzstd -lssl -lcrypto
-          install -m 755 jpkg /usr/local/bin/jpkg
+          TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+          RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+              cargo build --release --locked --target "$TRIPLE" --bin jpkg
+          python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" "target/$TRIPLE/release/jpkg" || true
+          install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
           jpkg --version || true
 
       - name: Sign INDEX.zst
