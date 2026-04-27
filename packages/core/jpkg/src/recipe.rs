@@ -302,21 +302,36 @@ pub(crate) fn sanitize_legacy_escapes(input: &str) -> Cow<'_, str> {
                 // containerd, nerdctl, tzdata, strace all failed at this point.
                 //
                 // Fix: inside `"""..."""` ONLY, double EVERY backslash so the
-                // toml crate yields the literal two-char sequence.  The
-                // exception is `\\` itself (already doubled — leave alone) and
-                // `\"""`-near-end where the next chars form the closing
-                // delimiter (handled by the state-transition check below).
+                // toml crate yields the literal two-char sequence the recipe
+                // author actually wrote.  Source `\X` → sanitised `\\X` →
+                // toml parses `\\X` → `\X` literal (2 chars).  Source `\\X` →
+                // sanitised `\\\\X` → toml parses `\\\\X` → `\\X` literal (3
+                // chars).  This was reproduced 2026-04-27 by strace (which
+                // uses `\\<newline>` for sed multi-line `a\` line continuation
+                // through a shell `"..."` quoted argument); without doubling
+                // every backslash including the `\\` pairs, the parsed string
+                // ended up as `\<newline>` and mksh's `"..."` line-continuation
+                // collapsed all 4 lines into one, producing a malformed
+                // dirent64.c.
                 // Single-line `"..."` strings keep spec-conformant escape
                 // processing (handled by the SanitizeState::BasicSingle arm).
                 if b == b'\\' && i + 1 < n {
                     let nxt = bytes[i + 1];
                     if nxt == b'\\' {
-                        // Already a doubled backslash — pass through verbatim.
-                        out.extend_from_slice(b"\\\\");
+                        // Doubled backslash in source: emit 4 so toml parses
+                        // back to the literal `\\` (2 chars) the C jpkg
+                        // produced.  Don't fold this into the `\X` branch —
+                        // we must consume both source bytes here so the next
+                        // iteration starts after the `\\` pair, otherwise the
+                        // second `\` would be re-processed against whatever
+                        // follows it (e.g. `\\n` would mis-read as `\\` then
+                        // `\n`).
+                        out.extend_from_slice(b"\\\\\\\\");
+                        changed = true;
                         i += 2;
                     } else {
-                        // Any other char after `\`: double the backslash so
-                        // the toml crate produces the literal 2-char sequence.
+                        // `\X` where X != `\`: double the backslash so the
+                        // toml crate produces the literal 2-char sequence.
                         out.extend_from_slice(b"\\\\");
                         out.push(nxt);
                         changed = true;
