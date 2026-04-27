@@ -515,7 +515,21 @@ fn create_archive(
     // is built inside the archive call).  The factory closure runs AFTER
     // the payload is compressed, so the sha256 + size we pass to
     // Metadata::from_recipe are real values, not placeholders.
-    let recipe_for_factory = recipe.clone();
+    //
+    // We also inject the RESOLVED arch into the recipe-clone before
+    // building Metadata.  Recipes commonly omit `arch` (it's a build-time
+    // resolution from `uname -m`), but the EMITTED metadata.toml MUST
+    // include arch so downstream tooling like scripts/gen-index.sh can
+    // distinguish jpkg-2.0.0-x86_64.jpkg from jpkg-2.0.0-aarch64.jpkg
+    // without falling back to the default "x86_64" — which would group
+    // both arches into the same (name, arch) bucket and let dedup discard
+    // the wrong file.  Reproduced 2026-04-27 publish-packages run
+    // 24977249193: gen-index.sh ran `discarding: jpkg-2.0.0-aarch64.jpkg`
+    // because that file's metadata had no arch field.
+    let mut recipe_for_factory = recipe.clone();
+    if recipe_for_factory.package.arch.is_none() {
+        recipe_for_factory.package.arch = Some(arch_owned.clone());
+    }
     archive::create_with_metadata_factory(&out_path, dest_dir, move |sha, size| {
         let meta = Metadata::from_recipe(&recipe_for_factory, sha.to_owned(), size);
         meta.to_string().map_err(|e| {
