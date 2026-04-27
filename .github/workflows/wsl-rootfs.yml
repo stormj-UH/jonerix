@@ -69,7 +69,7 @@ jobs:
       - name: Build jpkg
         if: steps.jpkg-cache.outputs.cache-hit != 'true'
         run: |
-          cd packages/jpkg
+          cd packages/core/jpkg
           # Use samu (there's no Makefile; the project is ninja-based).
           # LDLIBS pulls in libtls + libssl + libcrypto statically via
           # libretls-static so the resulting binary has no libtls.so
@@ -202,7 +202,7 @@ jobs:
                 install -m 755 /jpkg-bin/jpkg /usr/local/bin/jpkg
                 echo "jpkg: using cached binary"
               else
-                cd /workspace/packages/jpkg
+                cd /workspace/packages/core/jpkg
                 # jpkg is ninja-based; there is no Makefile.
                 LDLIBS="-ltls -lssl -lcrypto -lzstd" samu
                 ./jpkg --version

@@ -11,7 +11,7 @@ if [ -f /jpkg-bin/jpkg ]; then
     install -m 755 /jpkg-bin/jpkg /bin/jpkg
     echo "jpkg: using cached binary"
 else
-    cd /workspace/packages/jpkg
+    cd /workspace/packages/core/jpkg
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
         cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local

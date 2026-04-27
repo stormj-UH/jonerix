@@ -124,7 +124,7 @@ jobs:
               # .github/workflows/wsl-rootfs.yml does, so the binaries
               # match byte-for-byte (and we do not depend on whatever
               # arbitrarily-old jpkg a pre-built builder image might ship).
-              cd /workspace/packages/jpkg
+              cd /workspace/packages/core/jpkg
               LDLIBS="-ltls -lssl -lcrypto -lzstd" samu
               ./jpkg --version
               install -m 755 jpkg /usr/local/bin/jpkg

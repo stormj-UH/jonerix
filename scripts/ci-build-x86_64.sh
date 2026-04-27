@@ -11,7 +11,7 @@ if [ -f /jpkg-bin/jpkg ]; then
     install -m 755 /jpkg-bin/jpkg /bin/jpkg
     echo "jpkg: using cached binary"
 else
-    cd /workspace/packages/jpkg
+    cd /workspace/packages/core/jpkg
     # jpkg 2.0 is Rust; --target $HOST_TRIPLE keeps proc-macros free of
     # crt-static (they need dylibs).  Python null-pads any residual /lib64
     # in the produced binaries.

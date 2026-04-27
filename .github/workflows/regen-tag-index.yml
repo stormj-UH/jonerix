@@ -82,7 +82,7 @@ jobs:
 
       - name: Build jpkg from source for signing
         run: |
-          cd "$GITHUB_WORKSPACE/packages/jpkg"
+          cd "$GITHUB_WORKSPACE/packages/core/jpkg"
           clang -std=c11 -Os -fuse-ld=lld \
             -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration \
             -Wno-unused-parameter -Wshadow -Wstrict-prototypes \

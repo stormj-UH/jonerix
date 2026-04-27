@@ -290,7 +290,7 @@ jobs:
           # $HOST_TRIPLE to keep proc-macros free of crt-static (they need
           # dylibs).  Python null-pads any residual /lib64.
           apk add --no-cache clang lld musl-dev rust cargo python3
-          cd "$GITHUB_WORKSPACE/packages/jpkg"
+          cd "$GITHUB_WORKSPACE/packages/core/jpkg"
           TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
           RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
               cargo build --release --locked --target "$TRIPLE" --bin jpkg
