@@ -13,6 +13,16 @@ IMG="${1:?image tag required}"
 
 OUT=out
 mkdir -p "$OUT/smoke-log"
+# The bootstrap step inside the builder container writes out/* as root,
+# but this smoke-test step runs on the host runner as UID 1001 and needs
+# to append to out/report.md. Take ownership of the dir tree once,
+# upfront, so every subsequent write here doesn't EACCES. Use sudo only
+# if it's available (the runner has it; bare alpine images don't).
+if [ "$(id -u)" != "0" ] && [ ! -w "$OUT" ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        sudo chown -R "$(id -u):$(id -g)" "$OUT" 2>/dev/null || true
+    fi
+fi
 
 if [ ! -f "$OUT/binaries.txt" ]; then
     echo "no binaries.txt; skipping smoke test"
