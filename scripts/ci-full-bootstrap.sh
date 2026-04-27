@@ -39,7 +39,7 @@ fi
 # `python3` and `ruby` and `perl` are slow interpreter builds — added because
 # we mostly want this CI to validate the lightweight package set, not the
 # language-runtime tail (which is exercised by publish-packages.yml anyway).
-HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl dotnet linux lldb tmux"
+HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux"
 # hostapd / wpa_supplicant used to live in HEAVIES because their hostap.git
 # Makefiles tripped the jmake MAKEFLAGS escape bug fixed in jmake 1.1.14.
 # They're regular recipes now: build under jmake against nloxide (the in-house
