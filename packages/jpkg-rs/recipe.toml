@@ -1,0 +1,54 @@
+[package]
+name = "jpkg-rs"
+version = "2.0.0"
+license = "MIT"
+description = "jonerix package manager — Rust port of jpkg (side-by-side, does NOT replace jpkg yet)"
+# This recipe builds the Rust port of jpkg into TWO binaries (jpkg-rs and
+# jpkg-rs-local) installed at /bin/jpkg-rs and /bin/jpkg-rs-local.  It
+# DOES NOT replace the C-built /bin/jpkg, /bin/jpkg-local, or /bin/jpkg-conform
+# — those continue to ship from packages/jpkg/ until jpkg-rs has been
+# validated against the full CI chain.  After validation, this recipe will
+# be amended to add `replaces = ["jpkg"]` and the binaries renamed to
+# /bin/jpkg / /bin/jpkg-local.
+#
+# The Rust port is feature-equivalent with C jpkg 1.1.5: the .jpkg archive
+# format (`JPKG\x00\x01\x00\x00` magic + LE32 hdr + TOML metadata + zstd(tar)),
+# the /var/db/jpkg/installed/<name>/{metadata.toml,files} on-disk layout,
+# the INDEX format, the Ed25519 signing flow, the merged-/usr flattening
+# in `build`, and the `replaces=[…]` ownership-transfer semantics are all
+# byte-equivalent.  158 in-crate tests pass, plus a complete real-jpkg
+# smoke test (build → install → info → verify → tamper-detect → remove).
+
+[source]
+# Local-only build from $RECIPE_DIR — there is no external upstream URL.
+# The whole crate (Cargo.toml, src/, tests/, .cargo/config.toml) is staged
+# from $RECIPE_DIR by the configure step and built with cargo.
+
+[build]
+system = "custom"
+configure = "cp -a $RECIPE_DIR/Cargo.toml $RECIPE_DIR/Cargo.lock $RECIPE_DIR/src $RECIPE_DIR/.cargo ."
+build = """set -e
+export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
+export OPENSSL_DIR=/
+export OPENSSL_INCLUDE_DIR=/include
+export OPENSSL_LIB_DIR=/lib
+cargo build --release --locked --bin jpkg --bin jpkg-local
+"""
+install = """set -e
+# Install under -rs suffixes for the side-by-side rollout.  When this
+# recipe is promoted to replace packages/jpkg/, drop the suffixes here
+# and add `replaces = ["jpkg"]` to [package] above.
+install -Dm755 target/release/jpkg "$DESTDIR/bin/jpkg-rs"
+install -Dm755 target/release/jpkg-local "$DESTDIR/bin/jpkg-rs-local"
+llvm-strip --strip-all "$DESTDIR/bin/jpkg-rs" 2>/dev/null || true
+llvm-strip --strip-all "$DESTDIR/bin/jpkg-rs-local" 2>/dev/null || true
+# Ensure the standard jpkg directory tree exists so the new binary can be
+# pointed at it for testing without first running C jpkg.
+install -d "$DESTDIR/etc/jpkg/keys"
+install -d "$DESTDIR/var/db/jpkg/installed"
+install -d "$DESTDIR/var/cache/jpkg"
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]

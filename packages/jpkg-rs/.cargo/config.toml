@@ -1,0 +1,8 @@
+# `JPKG_ROOT` is process-global env state that the cmd tests mutate to
+# point each command at a tempdir-scoped rootfs.  Default cargo test
+# runs N tests in parallel threads inside one process, which races on
+# that env var.  Pin tests to a single thread for this crate so the
+# 158-test suite stays green without the cmd modules having to thread
+# rootfs/arch through every signature.  Production code is unaffected.
+[env]
+RUST_TEST_THREADS = "1"

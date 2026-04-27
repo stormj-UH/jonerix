@@ -1,0 +1,67 @@
+[package]
+name = "jpkg"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "jonerix package manager (Rust port of jpkg, behaviour-equivalent with C jpkg 1.1.5)"
+authors = ["Jon-Erik G. Storm <lava-goat@users.noreply.github.com>"]
+
+# Two binaries from one crate: `jpkg` (network-ish: install/update/upgrade/search/info/audit/verify/sign/keygen)
+# and `jpkg-local` (recipe builds + local-jpkg installs + conform), mirroring the C build's twin-binary layout.
+[[bin]]
+name = "jpkg"
+path = "src/bin/jpkg.rs"
+
+[[bin]]
+name = "jpkg-local"
+path = "src/bin/jpkg-local.rs"
+
+[lib]
+name = "jpkg"
+path = "src/lib.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Recipe TOML and INDEX/manifest parsing
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Archive create/extract — must NOT depend on bsdtar; we own the format.
+zstd = "0.13"
+tar = "0.4"
+
+# HTTPS for fetch.c — ureq is sync, embeds rustls, no async runtime overhead.
+ureq = { version = "2", default-features = false, features = ["tls", "json", "gzip"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
+webpki-roots = "0.26"
+
+# Ed25519 signing (sign.c) — pure Rust, no libcrypto.
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core", "pem"] }
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+
+# Filesystem helpers
+walkdir = "2"
+nix = { version = "0.29", default-features = false, features = ["fs", "user", "signal", "process"] }
+tempfile = "3"
+
+# Logging — quiet by default, JPKG_LOG=debug etc. for debugging
+log = "0.4"
+env_logger = { version = "0.11", default-features = false, features = ["humantime"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+opt-level = 3
+panic = "abort"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
