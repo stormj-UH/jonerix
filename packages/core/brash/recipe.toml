@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.0-r1"
+version = "1.0.1"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -19,12 +19,16 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 [source]
 # Canonical source: Forgejo jonerik/brash on castle.great-morpho.ts.net:3000.
 # That host is behind Tailscale and unreachable from GitHub-hosted runners,
-# so the v1.0.0 tarball is mirrored to a jonerix GH release tag for CI.
+# so the v1.0.1 tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.0.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.0/brash-1.0.0.tar.gz"
-sha256 = "b3464c9db0a53d148e87e00ca21a256fd10a9555cf869ffae3254b46763d52f8"
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.1.tar.gz
+#
+# Patch release rolls in the glibc-Linux portability fix (RlimitResource
+# type alias) that v1.0.0 was missing and the zero-warnings cleanup that
+# DESIGN.md §2 requires.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.1/brash-1.0.1.tar.gz"
+sha256 = "bcc775d04aa54a28c05b917278d35007395d9a4010fdba457a32ac55eacc722d"
 
 [build]
 system = "custom"
