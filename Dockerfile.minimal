@@ -32,8 +32,9 @@ RUN cd /build/jpkg && \
     cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
     cp -f "target/$TRIPLE/release/jpkg" jpkg && \
     cp -f "target/$TRIPLE/release/jpkg-local" jpkg-local && \
+    # Null-pad /lib64 via Python (the jonerix builder image already has python3).
     for b in jpkg jpkg-local; do \
-        sed -i 's|/lib64|/lib\x00\x00|g' "$b" || true ; \
+        python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" "$b" || true ; \
     done
 
 # ============================================================

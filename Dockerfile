@@ -34,9 +34,12 @@ RUN cd /src && \
     mkdir -p target/release && \
     cp -f "target/$TRIPLE/release/jpkg" target/release/jpkg && \
     cp -f "target/$TRIPLE/release/jpkg-local" target/release/jpkg-local && \
-    # Null-pad any residual `/lib64` reference (matches the recipe).
+    # Null-pad any residual `/lib64` reference using the canonical
+    # Python bytestring-replace pattern from packages/extra/runc/recipe.toml
+    # (BusyBox sed can't emit real NUL bytes; GNU sed needs apk install).
+    apk add --no-cache python3 >/dev/null && \
     for b in target/release/jpkg target/release/jpkg-local; do \
-        sed -i 's|/lib64|/lib\x00\x00|g' "$b" || true ; \
+        python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" "$b" || true ; \
     done
 
 # ============================================================
