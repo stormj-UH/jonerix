@@ -106,12 +106,26 @@ anvil
 # packages/jpkg/ until CI validation clears the swap.  Listed at this
 # tier because cargo build needs the from-source rust toolchain.
 jpkg-rs
+# nloxide — clean-room Rust libnl-3 / libnl-genl-3 drop-in. Must build
+# before its consumers (hostapd, wpa_supplicant) so install_target_build_deps
+# finds /out/jpkgs/nloxide-*.jpkg when they ask for it. Auto-discovery
+# would otherwise alphabetically schedule `hostapd` before `nloxide`
+# (h < n) and the consumers' build-deps would WARN-and-skip nloxide.
+nloxide
 # Tier 11: brash-aware rebuilds. Recipes here use /bin/bash (= brash)
 # at build time to drive their upstream build scripts unmodified —
 # retiring local mksh-compat hacks. Each falls back to its previous
 # mksh path if brash is unavailable, so the tier is safe before brash
 # is baked into the builder image.
 toybox
+# Tier 12: nloxide consumers. hostapd and wpa_supplicant link against
+# /lib/libnl-3.so / /lib/libnl-genl-3.so (provided by nloxide), and
+# their Makefiles run under jmake. Both used to be in HEAVIES because
+# their hostap.git Makefiles hit the jmake MAKEFLAGS escape bug fixed
+# in jmake 1.1.14; promoting them out of HEAVIES means CI now exercises
+# the full jmake + jpkg + nloxide combination on every run.
+hostapd
+wpa_supplicant
 # Tier 11 (WIP): dotnet — see packages/extra/dotnet/recipe.toml.
 # Excluded from build-order until a libc++-compatible source build lands;
 # Microsoft's musl tarball links GNU libstdc++/libgcc_s, which the

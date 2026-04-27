@@ -39,7 +39,14 @@ fi
 # `python3` and `ruby` and `perl` are slow interpreter builds — added because
 # we mostly want this CI to validate the lightweight package set, not the
 # language-runtime tail (which is exercised by publish-packages.yml anyway).
-HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl dotnet linux lldb tmux hostapd wpa_supplicant"
+HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl dotnet linux lldb tmux"
+# hostapd / wpa_supplicant used to live in HEAVIES because their hostap.git
+# Makefiles tripped the jmake MAKEFLAGS escape bug fixed in jmake 1.1.14.
+# They're regular recipes now: build under jmake against nloxide (the in-house
+# Rust libnl-3 / libnl-genl-3 drop-in) plus libressl/jonerix-headers, and
+# finish in well under a minute each on CI hardware. nloxide is also listed
+# explicitly in build-order.txt so it lands in /out/jpkgs/ before either
+# consumer's install_target_build_deps phase looks for it.
 
 OUT=/out
 mkdir -p "$OUT/build-log" "$OUT/install-log" "$OUT/jpkgs" "$OUT/rootfs"
