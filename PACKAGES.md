@@ -7,7 +7,7 @@ Generated from tracked `packages/**/recipe.toml` — **91 recipes**. All jonerix
 - **`packages/core/`** — runtime-critical userland that every jonerix system needs.
 - **`packages/develop/`** — toolchain + compilers (clang/LLVM, rust, go, python3, perl, nodejs, jmake, cmake).
 - **`packages/extra/`** — everything else: networking daemons, container runtime, shells, editors, vendored tooling.
-- **`packages/jpkg/`** — the jonerix package manager itself (including the `jpkg-local` and `jpkg-conform` sidecar binaries built from the same source tree), built out-of-tree by the CI scripts; the parallel recipe under `core/jpkg/` is what ships the runtime binary.
+- **`packages/core/jpkg/`** — the jonerix package manager itself (including the `jpkg-local` and `jpkg-conform` sidecar binaries built from the same source tree). As of 2.0.0 this is the Rust port of the C jpkg 1.1.5 (~11.7K LOC, zero `unsafe`, 160 in-crate tests, byte-equivalent `.jpkg` / INDEX / `/var/db/jpkg/installed/` wire formats with the C version). The CI scripts compile it via `cargo build --release` and publish the built artifact into the rolling release.
 
 ## Build targets that consume these packages
 
@@ -38,7 +38,6 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 
 | Package | Folder | Version | License | Arch | Runtime deps | Build deps | Used in | Description |
 |---|---|---|---|---|---|---|---|---|
-| **`jpkg`** | `(top)` | 1.1.4 | MIT | any | `musl`, `libressl`, `zstd` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
 | **`anvil`** | `core` | 0.2.1-r1 | MIT | any | `musl` | `rust` | `pi5-install`, `pi5-image` | Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...) |
 | **`bsdtar`** | `core` | 3.8.6-r6 | Apache-2.0 | any | `libarchive` | — | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | Compatibility package providing /bin/tar via libarchive bsdtar |
 | **`curl`** | `core` | 8.11.1-r1 | MIT | any | `musl`, `libressl`, `zlib` | `clang`, `cmake`, `samurai`, `libressl`, `zlib` | `docker:minimal`, `docker:core`, `docker:full` | Command-line tool and library for transferring data with URLs |
@@ -51,7 +50,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | — | — | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
 | **`ifupdown-ng`** | `core` | 0.12.1 | ISC | any | `musl` | `clang`, `make`, `jonerix-headers` | `pi5-image`, `docker:core`, `docker:full` | Next-generation network interface configuration tool |
 | **`iproute-go`** | `core` | 0.16.0 | BSD-3-Clause | any | — | `go` | `docker:core` | u-root's ip command — Go reimplementation of iproute2's ip(8) |
-| **`jpkg`** | `core` | 1.0.10 | MIT | any | `musl`, `libressl`, `zstd` | `clang`, `llvm`, `samurai`, `libressl`, `zstd` | — | jonerix package manager |
+| **`jpkg`** | `core` | 2.0.0 | MIT | any | `musl` | `rust` | `docker:minimal`, `docker:core`, `docker:builder`, `docker:full` | jonerix package manager — Rust port (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
 | **`jq`** | `core` | 1.8.1 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Lightweight and flexible command-line JSON processor |
 | **`libarchive`** | `core` | 3.8.6-r5 | Apache-2.0 | any | `musl`, `zlib`, `xz`, `zstd`, `lz4`, `libressl` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `xz`, `zstd`, `lz4` | `docker:core` | Multi-format archive and compression library with bsdtar |
 | **`libffi`** | `core` | 3.4.6 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Foreign Function Interface library — dispatches to C ABI from dynamic callers |
@@ -132,5 +131,5 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 ## Special-purpose / not-built-by-CI
 
 - **`linux`** (`packages/extra/linux`) — Linux kernel 6.14.2, GPL-2.0-only. Deliberately blocked by jpkg's license gate (`cmd_build.c`). Built out-of-band via `scripts/build-kernel.sh` as the sole GPL exception in the project.
-- **`jpkg`** (`packages/jpkg`) — The package manager itself. CI builds this from source in each runner (`scripts/ci-build-*.sh`) rather than pulling a prebuilt one; the parallel `packages/core/jpkg/recipe.toml` is what publishes the runtime binary into INDEX. Since 1.1.2 this package also ships `/bin/jpkg-local` (ad-hoc `.jpkg`-file installer and in-tree recipe builder, dispatched as `jpkg local ...`) and `/bin/jpkg-conform` (host version pin, dispatched as `jpkg conform ...`).
+- **`jpkg`** (`packages/core/jpkg`) — The package manager itself. CI scripts (`scripts/ci-build-*.sh`) compile a fresh `jpkg` binary from this same recipe at the start of every run rather than pulling a prebuilt one, so the in-tree code is self-bootstrapping. Since 2.0.0 it's the Rust port of the C jpkg 1.1.5; ships `/bin/jpkg-local` (local `.jpkg`-file installer + in-tree recipe builder, dispatched as `jpkg local ...`) and `/bin/jpkg-conform` (host version pin, dispatched as `jpkg conform ...`).
 - **`jonerix-raspi5-fixups`** — `arch = "aarch64"`; skipped by ci-build on x86_64 runners since its inline asm is Pi 5-only.
