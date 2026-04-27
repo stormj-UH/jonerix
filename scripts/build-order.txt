@@ -101,11 +101,11 @@ uutils
 ripgrep
 jfsck
 anvil
-# jpkg-rs — Rust port of jpkg, side-by-side with the C jpkg.
-# Installs as /bin/jpkg-rs and /bin/jpkg-rs-local; does NOT replace
-# packages/jpkg/ until CI validation clears the swap.  Listed at this
-# tier because cargo build needs the from-source rust toolchain.
-jpkg-rs
+# jpkg 2.0 — Rust port of jpkg.  Listed at this tier because cargo build
+# needs the from-source rust toolchain.  The C jpkg 1.1.5 series shipped
+# from packages/jpkg/{src,build.ninja} as C; that tree was retired when
+# this Rust recipe took the package name (see packages/jpkg/recipe.toml).
+jpkg
 # nloxide — clean-room Rust libnl-3 / libnl-genl-3 drop-in. Must build
 # before its consumers (hostapd, wpa_supplicant) so install_target_build_deps
 # finds /out/jpkgs/nloxide-*.jpkg when they ask for it. Auto-discovery

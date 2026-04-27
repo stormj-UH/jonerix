@@ -11,7 +11,7 @@ on:
       - 'install/wsl/**'
       - 'config/defaults/etc/**'
       - 'packages/core/**/recipe.toml'
-      - 'packages/jpkg/**'
+      - 'packages/core/jpkg/**'
       - '.github/workflows/wsl-rootfs.yml'
   workflow_dispatch:
 
@@ -64,7 +64,7 @@ jobs:
           path: /tmp/jpkg-bin-x86_64
           # Cache key v2: pre-v2 keys point at pre-libretls-linkage binaries
           # that fail at runtime with missing tls_* symbols. Invalidating.
-          key: jpkg-bin-x86_64-v2-${{ hashFiles('packages/jpkg/src/**', 'packages/jpkg/build.ninja') }}
+          key: jpkg-bin-x86_64-v2-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/build.ninja') }}
 
       - name: Build jpkg
         if: steps.jpkg-cache.outputs.cache-hit != 'true'
@@ -155,7 +155,7 @@ jobs:
         with:
           path: /tmp/jpkg-bin-aarch64
           # v2: see x86_64 job for rationale (pre-libretls binaries are stale).
-          key: jpkg-bin-aarch64-v2-${{ hashFiles('packages/jpkg/src/**', 'packages/jpkg/build.ninja') }}
+          key: jpkg-bin-aarch64-v2-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/build.ninja') }}
 
       - name: Download packages from release (aarch64)
         env:

@@ -3,7 +3,7 @@ name = "jpkg"
 version = "2.0.0"
 edition = "2021"
 license = "MIT"
-description = "jonerix package manager (Rust port of jpkg, behaviour-equivalent with C jpkg 1.1.5)"
+description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
 authors = ["Jon-Erik G. Storm <lava-goat@users.noreply.github.com>"]
 
 # Two binaries from one crate: `jpkg` (network-ish: install/update/upgrade/search/info/audit/verify/sign/keygen)

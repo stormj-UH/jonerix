@@ -24,7 +24,7 @@ FROM alpine:latest AS jpkg-builder
 
 RUN apk add --no-cache clang lld musl-dev rust cargo
 
-COPY packages/jpkg/ /src/
+COPY packages/core/jpkg/ /src/
 RUN cd /src && \
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \

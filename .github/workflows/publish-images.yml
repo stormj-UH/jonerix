@@ -6,7 +6,7 @@ on:
     paths:
       - 'Dockerfile*'
       - 'config/**'
-      - 'packages/jpkg/**'
+      - 'packages/core/jpkg/**'
       - 'scripts/**'
       - '.github/workflows/publish-images.yml'
   workflow_dispatch:

@@ -22,7 +22,7 @@ FROM alpine:latest AS jpkg-builder
 # which is statically linked and bundles its own roots via webpki-roots.
 RUN apk add --no-cache clang lld musl-dev rust cargo
 
-COPY packages/jpkg/ /build/jpkg/
+COPY packages/core/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && \
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \

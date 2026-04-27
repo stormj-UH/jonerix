@@ -7,7 +7,7 @@ on:
   #   branches: [main]
   #   paths:
   #     - 'packages/core/**'
-  #     - 'packages/jpkg/**'
+  #     - 'packages/core/jpkg/**'
   #     - '.github/workflows/publish-packages.yml'
   workflow_dispatch:
     inputs:
@@ -84,7 +84,7 @@ jobs:
         id: jpkg-cache-x86_64
         with:
           path: /tmp/jpkg-bin-x86_64
-          key: jpkg-bin-x86_64-${{ hashFiles('packages/jpkg/src/**') }}
+          key: jpkg-bin-x86_64-${{ hashFiles('packages/core/jpkg/src/**') }}
 
       - name: Download existing x86_64 packages
         env:
@@ -146,7 +146,7 @@ jobs:
         id: jpkg-cache-aarch64
         with:
           path: /tmp/jpkg-bin-aarch64
-          key: jpkg-bin-aarch64-${{ hashFiles('packages/jpkg/src/**') }}
+          key: jpkg-bin-aarch64-${{ hashFiles('packages/core/jpkg/src/**') }}
 
       - name: Download existing aarch64 packages
         env:

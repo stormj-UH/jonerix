@@ -25,7 +25,7 @@ FROM ghcr.io/stormj-uh/jonerix:builder AS jpkg-builder
 # jpkg 2.0 is Rust; build via cargo with crt-static + symbol strip,
 # then null-pad any residual /lib64 reference so audit_layout_tree
 # accepts the binaries downstream.
-COPY packages/jpkg/ /build/jpkg/
+COPY packages/core/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && \
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \

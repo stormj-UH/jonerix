@@ -1042,10 +1042,26 @@ build-depends = ["clang", "cmake", "samurai"]
         // the sanitizer).  No `.take(N)` cap — with the sanitizer in place
         // the entire corpus must parse, otherwise we have a real regression
         // and the new jpkg-rs would refuse to build legacy recipes.
-        let pkgs_dir = manifest_dir()
-            .join("..")
-            .canonicalize()
-            .expect("canonicalize packages/ parent");
+        // Walk up from manifest_dir() looking for a parent named `packages`.
+        // The crate has lived at packages/jpkg-rs/, packages/jpkg/, and now
+        // packages/core/jpkg/ — auto-discovery makes the test path-stable.
+        let mut pkgs_dir: Option<std::path::PathBuf> = None;
+        for ancestor in manifest_dir().ancestors() {
+            if ancestor.file_name().map(|n| n == "packages").unwrap_or(false) {
+                pkgs_dir = Some(ancestor.to_path_buf());
+                break;
+            }
+        }
+        let pkgs_dir = match pkgs_dir {
+            Some(p) => p,
+            None => {
+                eprintln!(
+                    "skipping: no `packages` ancestor of {:?}",
+                    manifest_dir()
+                );
+                return;
+            }
+        };
         if !pkgs_dir.exists() {
             eprintln!("skipping: pkgs dir {:?} not found", pkgs_dir);
             return;
