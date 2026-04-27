@@ -96,6 +96,61 @@ from `raspberrypi/firmware` under their own licenses.
 See [`install/jonerix-pi5.sh --help`](install/jonerix-pi5.sh) for the full
 flag set.
 
+### Windows (WSL2)
+
+CI publishes a ready-to-import WSL rootfs to the rolling [`packages`](https://github.com/stormj-UH/jonerix/releases/tag/packages)
+release tag (`jonerix-rootfs-x86_64.tar.gz` and `jonerix-rootfs-aarch64.tar.gz`).
+The PowerShell installer downloads the right tarball for your host, runs
+`wsl --import`, and registers it as a distribution.
+
+**Prerequisites:** WSL2 enabled. If you've never used WSL on this machine, run
+`wsl --install` once from an elevated PowerShell and reboot.
+
+**One-shot install:**
+
+```powershell
+# Run from a regular (non-elevated) PowerShell. Auto-detects arch from the host.
+iwr -useb https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/wsl/install.ps1 `
+  | iex
+```
+
+That installs jonerix to `%LOCALAPPDATA%\jonerix\` and registers the
+distro as `jonerix`. Launch it any time after with:
+
+```powershell
+wsl -d jonerix
+```
+
+Or list and pick from your registered distros:
+
+```powershell
+wsl -l -v          # list installed distros + their state
+wsl -d jonerix     # launch jonerix
+wsl --terminate jonerix  # stop the running instance
+wsl --unregister jonerix # uninstall (removes the .vhdx)
+```
+
+**Custom install location, distro name, or pinned release:**
+
+```powershell
+# Save the script first, then call with parameters:
+iwr -useb https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/wsl/install.ps1 `
+  -OutFile $env:TEMP\jonerix-install.ps1
+
+# Install to D:\WSL\jonerix and register as "jonerix-dev":
+& $env:TEMP\jonerix-install.ps1 -InstallDir "D:\WSL\jonerix" -DistroName "jonerix-dev"
+
+# Pin to a specific release tag (defaults to "packages", which rolls):
+& $env:TEMP\jonerix-install.ps1 -Release "v1.2.0"
+
+# Install from a local rootfs tarball you've already downloaded:
+& $env:TEMP\jonerix-install.ps1 -RootfsUrl "C:\Downloads\jonerix-rootfs-x86_64.tar.gz"
+```
+
+See [`install/wsl/install.ps1`](install/wsl/install.ps1) for the full parameter
+set, and [`install/wsl/build-rootfs.sh`](install/wsl/build-rootfs.sh) for how
+the rootfs is assembled in CI.
+
 ## What's Inside
 
 ### Image Layers
