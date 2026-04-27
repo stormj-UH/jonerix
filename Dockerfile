@@ -13,18 +13,27 @@
 # Build: docker build --tag jonerix:latest .
 
 # ============================================================
-# Stage 0: Build jpkg from source (the only Alpine build step)
+# Stage 0: Build jpkg from source (the only Alpine build step).
+#
+# jpkg 2.0 is Rust; this stage installs cargo + rust from Alpine's
+# packages, statically links against musl, and copies just the
+# `jpkg` binary out of the build tree.  We don't run `cargo test`
+# here — the test suite runs at recipe-build time inside CI.
 # ============================================================
 FROM alpine:latest AS jpkg-builder
 
-RUN apk add --no-cache clang lld musl-dev make zstd-dev zstd-static linux-headers
+RUN apk add --no-cache clang lld musl-dev rust cargo
 
 COPY packages/jpkg/ /src/
 RUN cd /src && \
-    find . -name '*.o' -o -name '*.d' | xargs rm -f && rm -f jpkg && \
-    make CC=clang LDFLAGS="-static -fuse-ld=lld" jpkg -j$(nproc) && \
-    strip jpkg
-RUN cd /src && make test
+    RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+    cargo build --release --locked --bin jpkg --bin jpkg-local && \
+    # Null-pad any residual `/lib64` reference so the merged-/usr layout
+    # audit doesn't reject these binaries when they're packaged later
+    # (matches packages/jpkg/recipe.toml's belt-and-suspenders sed).
+    for b in target/release/jpkg target/release/jpkg-local; do \
+        sed -i 's|/lib64|/lib\x00\x00|g' "$b" || true ; \
+    done
 
 # ============================================================
 # Stage 1: Assemble jonerix rootfs using jpkg packages
@@ -34,7 +43,11 @@ FROM alpine:latest AS rootfs
 # Alpine tools needed only to run jpkg during assembly
 RUN apk add --no-cache curl ca-certificates zstd tar libarchive-tools
 
-COPY --from=jpkg-builder /src/jpkg /usr/local/bin/jpkg
+COPY --from=jpkg-builder /src/target/release/jpkg /usr/local/bin/jpkg
+COPY --from=jpkg-builder /src/target/release/jpkg-local /usr/local/bin/jpkg-local
+# jpkg-conform is a POSIX shell script; ship it alongside so `jpkg conform`
+# (which falls through to PATH-resolved `jpkg-<verb>`) keeps working.
+COPY --from=jpkg-builder /src/bin/jpkg-conform /usr/local/bin/jpkg-conform
 COPY scripts/bootstrap-meson.sh /usr/local/bin/bootstrap-meson
 
 # Create rootfs skeleton
@@ -101,8 +114,10 @@ RUN if [ -d /jonerix/usr ]; then \
     fi && \
     ln -s / /jonerix/usr
 
-# Copy jpkg itself into the rootfs
-RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg
+# Copy jpkg + jpkg-local + jpkg-conform into the rootfs
+RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg && \
+    cp /usr/local/bin/jpkg-local /jonerix/bin/jpkg-local && \
+    cp /usr/local/bin/jpkg-conform /jonerix/bin/jpkg-conform
 
 # Post-install symlinks
 RUN \
