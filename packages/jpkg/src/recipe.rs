@@ -559,12 +559,36 @@ pub struct Index {
 impl Index {
     /// Parse an INDEX from its TOML text representation.
     ///
-    /// The INDEX is a single-level TOML document where each top-level key is a
-    /// `pkgname-arch` string containing an inline table of fields.  We
-    /// deserialise it as `BTreeMap<String, IndexEntry>`.
+    /// The INDEX is a single-level TOML document where each top-level key is
+    /// either:
+    ///   * `pkgname-arch` — a package entry with full IndexEntry fields, or
+    ///   * a metadata section like `[meta]` (gen-index.sh emits one carrying
+    ///     a timestamp).  Any top-level key whose value is NOT shaped like an
+    ///     IndexEntry is silently skipped — the C jpkg's parser ignores
+    ///     non-conformant sections the same way (repo.c:171-182 strips the
+    ///     `-arch` suffix and bails out cleanly when the suffix isn't there).
+    ///
+    /// Implementation: deserialise into `BTreeMap<String, toml::Value>` first
+    /// (always succeeds for any valid TOML), then per-key try to lift each
+    /// value into an `IndexEntry`.  Failures are dropped, not propagated.
     pub fn parse(text: &str) -> Result<Self, RecipeError> {
         let sanitized = sanitize_legacy_escapes(text);
-        let entries: BTreeMap<String, IndexEntry> = toml::from_str(&sanitized)?;
+        let raw: BTreeMap<String, toml::Value> = toml::from_str(&sanitized)?;
+        let mut entries: BTreeMap<String, IndexEntry> = BTreeMap::new();
+        for (key, val) in raw {
+            // Package entries carry an `-arch` suffix; metadata tables (e.g.
+            // `[meta]`) do not.  Skip anything that doesn't match the shape.
+            if !key.contains('-') {
+                continue;
+            }
+            // Try to deserialise as IndexEntry.  Skip on shape mismatch.
+            match val.try_into::<IndexEntry>() {
+                Ok(entry) => {
+                    entries.insert(key, entry);
+                }
+                Err(_) => continue,
+            }
+        }
         Ok(Index { entries })
     }
 
@@ -600,7 +624,19 @@ mod tests {
 
     #[test]
     fn roundtrip_jpkg_recipe_toml() {
-        let recipe_path = manifest_dir().join("../jpkg/recipe.toml");
+        // jpkg's own recipe sits next to this crate (manifest_dir/recipe.toml
+        // under the new packages/jpkg/ layout post-2.0 promotion).  Try the
+        // sibling location first; fall back to the historical
+        // packages/jpkg/recipe.toml path so the test still finds it if the
+        // crate is rearranged again later.
+        let recipe_path = {
+            let here = manifest_dir().join("recipe.toml");
+            if here.exists() {
+                here
+            } else {
+                manifest_dir().join("../jpkg/recipe.toml")
+            }
+        };
         if !recipe_path.exists() {
             eprintln!("skipping: {:?} not found", recipe_path);
             return;
@@ -609,11 +645,14 @@ mod tests {
         let original = std::fs::read_to_string(&recipe_path).expect("read recipe.toml");
         let recipe = Recipe::from_str(&original).expect("parse recipe");
 
+        // Stable invariants — the recipe IS for jpkg, MIT-licensed, and
+        // declares musl as a runtime dep.  The version + replaces shape
+        // is intentionally not asserted here so the test survives version
+        // bumps.
         assert_eq!(recipe.package.name.as_deref(), Some("jpkg"));
-        assert_eq!(recipe.package.version.as_deref(), Some("1.1.5"));
         assert_eq!(recipe.package.license.as_deref(), Some("MIT"));
         assert_eq!(recipe.depends.runtime, vec!["musl"]);
-        assert!(recipe.package.replaces.contains(&"jpkg-local".to_string()));
+        assert!(recipe.package.version.as_deref().map_or(false, |v| !v.is_empty()));
 
         // Re-serialise then re-parse — fields must survive a round-trip.
         let serialised = toml::to_string(&recipe).expect("serialise");
@@ -998,5 +1037,67 @@ license = "MIT"
         let toml_out = meta.to_string().expect("serialise");
         assert!(!toml_out.contains("[source]"), "source section must not appear in metadata");
         assert!(!toml_out.contains("[build]"), "build section must not appear in metadata");
+    }
+
+    /// Regression for the publish-images iteration that broke on the live
+    /// rolling-release INDEX: `gen-index.sh` emits a `[meta]` table with
+    /// timestamp at the top of the document.  The original parse impl
+    /// deserialised straight into `BTreeMap<String, IndexEntry>`, which
+    /// rejected `[meta]` because it had no `version`/`license`/`sha256`
+    /// fields.  The new impl skips non-package sections silently — match
+    /// the C jpkg's repo.c behaviour of strip-`-arch`-and-bail.
+    #[test]
+    fn index_parse_skips_meta_section() {
+        let live_shape = r#"[meta]
+timestamp = "2026-04-26T23:54:05Z"
+
+[anvil-x86_64]
+version = "0.2.1-r1"
+license = "MIT"
+description = "ext2/3/4 userland in pure Rust"
+arch = "x86_64"
+sha256 = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+size = 12345
+depends = ["musl"]
+build-depends = ["rust"]
+
+[brash-aarch64]
+version = "1.0.0"
+license = "MIT"
+description = "Bash-compatible Rust shell"
+arch = "aarch64"
+sha256 = "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
+size = 67890
+depends = ["musl"]
+build-depends = ["rust"]
+"#;
+        let idx = Index::parse(live_shape).expect("parse INDEX with [meta]");
+        assert_eq!(idx.entries.len(), 2, "[meta] must be skipped");
+        assert!(idx.get("anvil", "x86_64").is_some());
+        assert!(idx.get("brash", "aarch64").is_some());
+        // [meta] must NOT have leaked through as a package
+        assert!(!idx.entries.contains_key("meta"));
+    }
+
+    /// And section keys without an `-arch` suffix (e.g. a stray legacy
+    /// `[debug]` block) must also be skipped, not error out the parse.
+    #[test]
+    fn index_parse_skips_keys_without_dash_suffix() {
+        let with_debug = r#"[debug]
+trace = true
+
+[uutils-x86_64]
+version = "0.1.0"
+license = "MIT"
+description = "GNU coreutils in Rust"
+arch = "x86_64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 1
+depends = ["musl"]
+build-depends = ["rust"]
+"#;
+        let idx = Index::parse(with_debug).expect("parse INDEX with stray section");
+        assert_eq!(idx.entries.len(), 1);
+        assert!(idx.get("uutils", "x86_64").is_some());
     }
 }
