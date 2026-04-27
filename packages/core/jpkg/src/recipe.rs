@@ -291,17 +291,37 @@ pub(crate) fn sanitize_legacy_escapes(input: &str) -> Cow<'_, str> {
                 }
             }
             SanitizeState::BasicMulti => {
+                // Triple-quoted basic strings ("""...""") in jonerix recipes
+                // are nearly always shell or python heredocs that the C jpkg's
+                // lenient parser treated as literal (it ignored backslash
+                // escape processing).  Recipe authors wrote `python3 -c '"\n"'`
+                // expecting the literal two-char `\n` sequence to land in the
+                // python source; the strict toml crate processes it as a real
+                // newline and breaks the heredoc with `unterminated string
+                // literal`.  Reproduced 2026-04-27 bootstrap CI: sudo, runc,
+                // containerd, nerdctl, tzdata, strace all failed at this point.
+                //
+                // Fix: inside `"""..."""` ONLY, double EVERY backslash so the
+                // toml crate yields the literal two-char sequence.  The
+                // exception is `\\` itself (already doubled — leave alone) and
+                // `\"""`-near-end where the next chars form the closing
+                // delimiter (handled by the state-transition check below).
+                // Single-line `"..."` strings keep spec-conformant escape
+                // processing (handled by the SanitizeState::BasicSingle arm).
                 if b == b'\\' && i + 1 < n {
                     let nxt = bytes[i + 1];
-                    if is_valid_basic_escape(nxt) {
-                        out.push(b'\\');
-                        out.push(nxt);
+                    if nxt == b'\\' {
+                        // Already a doubled backslash — pass through verbatim.
+                        out.extend_from_slice(b"\\\\");
+                        i += 2;
                     } else {
+                        // Any other char after `\`: double the backslash so
+                        // the toml crate produces the literal 2-char sequence.
                         out.extend_from_slice(b"\\\\");
                         out.push(nxt);
                         changed = true;
+                        i += 2;
                     }
-                    i += 2;
                 } else if b == b'"' && i + 2 < n && bytes[i + 1] == b'"' && bytes[i + 2] == b'"' {
                     // TOML allows up to two trailing double-quotes inside the
                     // body of a multi-line basic string before the closing
