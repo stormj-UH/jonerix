@@ -8,7 +8,7 @@
 # Prerequisites:
 #   - jonerix:all image (ghcr.io/stormj-uh/jonerix:all)
 #   - libcxx jpkg uploaded to GitHub
-#   - packages/jpkg/ source in repo
+#   - packages/core/jpkg/ source in repo (Rust port; jpkg 2.0+)
 #
 # Usage:
 #   sh scripts/build-llvm-libcxx.sh
@@ -38,9 +38,13 @@ docker run --rm \
 set -e
 
 echo "Building jpkg from source..."
-cd /workspace/packages/jpkg
-samu clean 2>/dev/null || true
-samu && install -m 755 jpkg /bin/jpkg
+cd /workspace/packages/core/jpkg
+# jpkg 2.0 = Rust port. The jonerix:all image already has rust + cargo.
+TRIPLE=$(rustc -vV | sed -n "s/^host: //p")
+RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+    cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+install -m 755 "target/$TRIPLE/release/jpkg" /bin/jpkg
+install -m 755 "target/$TRIPLE/release/jpkg-local" /bin/jpkg-local
 cd /
 
 echo "Installing libc++..."
