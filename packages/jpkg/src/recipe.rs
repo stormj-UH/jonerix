@@ -53,6 +53,156 @@ fn is_valid_basic_escape(b: u8) -> bool {
 /// non-conformant escape sequences that C jpkg's hand-rolled parser used to
 /// pass through.  Returns `Cow::Borrowed` when the input is already strict-
 /// conformant (no doubling needed); otherwise returns an owned, doubled copy.
+/// Merge duplicate top-level table headers in a TOML document so the strict
+/// `toml` crate accepts metadata files written by C jpkg 1.x — which used a
+/// hand-rolled parser that silently merged duplicate `[package]` (and other)
+/// blocks across separate writes (audit § 6: "Hook body escaping" notes the
+/// same parser laxity).  Newer .jpkg metadata files commonly carry two
+/// `[package]` blocks (one for `name`/`version`/`license`/etc., a second for
+/// `replaces`/`conflicts`), and the strict parser errors on the second header
+/// with `TOML parse error at line N, column 1`.
+///
+/// Algorithm: walk the document line-by-line, group body lines under their
+/// most-recent table header, then emit each unique header exactly once with
+/// all collected body lines concatenated.  Array-of-tables (`[[X]]`) and
+/// dotted sub-table headers (`[a.b]`) keep their identity (the dedup key is
+/// the literal content between the brackets).  Lines before the first header
+/// (comments, blank lines) stay at the top in their original order.
+pub(crate) fn merge_duplicate_sections(input: &str) -> Cow<'_, str> {
+    // Quick early-out: if there's at most one `[`-prefixed line, nothing to merge.
+    let n_headers = input
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            t.starts_with('[') && !t.starts_with("[[")
+        })
+        .count();
+    if n_headers <= 1 {
+        return Cow::Borrowed(input);
+    }
+
+    // Two-pass: collect bodies grouped by header key, preserving header order
+    // of first occurrence.  Array-of-tables `[[X]]` headers are NOT merged
+    // (they are intentionally repeatable per TOML spec) — they're emitted
+    // verbatim in document order along with their bodies.
+    let mut order: Vec<String> = Vec::new();
+    let mut bodies: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+    let mut prefix: Vec<&str> = Vec::new();
+    let mut current: Option<String> = None;
+    // For [[X]]: we treat each occurrence as a unique slot — generate a
+    // synthetic key so it's preserved in order without merging.
+    let mut aot_counter: usize = 0;
+    let mut needs_merge = false;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Track whether we're currently inside a multi-line basic string (`"""`)
+    // or multi-line literal string (`'''`).  Header-like lines inside these
+    // are SHELL content, not TOML headers.  We update the state on the line
+    // BEFORE classifying — so a line that opens a multi-line string is
+    // treated as a header iff it starts with `[` outside a string AT THE
+    // START of the line (Worker B's sanitizer uses byte-state for the same
+    // reason; here a simpler line-level toggle suffices because TOML's
+    // multi-line delimiters are themselves on dedicated lines in the
+    // metadata files we encounter — and the recipes that use `"""<body>"""`
+    // open the delimiter on a `key = """` line that doesn't start with `[`).
+    let mut in_basic_multi = false;
+    let mut in_literal_multi = false;
+    for line in input.lines() {
+        // Toggle multi-line string state from THIS line first if it has an
+        // opening delimiter, so subsequent in-body lines see the new state.
+        // We don't bother with bytewise counting — odd-count toggles handle
+        // both open and close.
+        if !in_literal_multi {
+            let n = line.matches("\"\"\"").count();
+            if n % 2 == 1 {
+                in_basic_multi = !in_basic_multi;
+            }
+        }
+        if !in_basic_multi {
+            let n = line.matches("'''").count();
+            if n % 2 == 1 {
+                in_literal_multi = !in_literal_multi;
+            }
+        }
+        // Inside a multi-line string => treat as body, never as a header.
+        let in_string = in_basic_multi || in_literal_multi;
+
+        let trimmed = line.trim_start();
+        if !in_string && trimmed.starts_with("[[") {
+            if let Some(end) = trimmed[2..].find("]]") {
+                let inner = &trimmed[2..2 + end];
+                let key = format!("__aot__{}__{}", aot_counter, inner);
+                aot_counter += 1;
+                order.push(key.clone());
+                bodies.entry(key.clone()).or_default().push(line);
+                current = Some(key);
+                continue;
+            }
+        } else if !in_string {
+            if let Some(rest) = trimmed.strip_prefix('[') {
+                if let Some(end) = rest.find(']') {
+                    let inner = rest[..end].trim().to_string();
+                    if !seen.insert(inner.clone()) {
+                        needs_merge = true;
+                    } else {
+                        order.push(inner.clone());
+                    }
+                    bodies.entry(inner.clone()).or_default().push(line);
+                    current = Some(inner);
+                    continue;
+                }
+            }
+        }
+        // Body line (or comment/blank, or in-string content).
+        match &current {
+            Some(key) => {
+                bodies.get_mut(key).unwrap().push(line);
+            }
+            None => prefix.push(line),
+        }
+    }
+
+    if !needs_merge {
+        return Cow::Borrowed(input);
+    }
+
+    // Reassemble: prefix, then each unique section (in first-seen order)
+    // with its header line + all body lines from every occurrence.
+    let mut out = String::with_capacity(input.len());
+    for line in prefix {
+        out.push_str(line);
+        out.push('\n');
+    }
+    for key in &order {
+        if let Some(lines) = bodies.get(key) {
+            // Skip empty groups (defensive)
+            if lines.is_empty() {
+                continue;
+            }
+            // The first body line under each unique header is the header itself.
+            // Subsequent occurrences only contribute their NON-header body lines —
+            // skip the duplicate header lines on merge.
+            let mut emitted_header = false;
+            for line in lines {
+                let t = line.trim_start();
+                let is_header = t.starts_with('[');
+                if is_header {
+                    if !emitted_header {
+                        out.push_str(line);
+                        out.push('\n');
+                        emitted_header = true;
+                    }
+                    // duplicate header — skip
+                } else {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    Cow::Owned(out)
+}
+
 pub(crate) fn sanitize_legacy_escapes(input: &str) -> Cow<'_, str> {
     // Quick early-out: no backslashes => no work to do.
     if !input.contains('\\') {
@@ -427,7 +577,8 @@ impl Recipe {
     /// recipe corpus (which depends on the C parser's escape laxity) parses
     /// cleanly under the strict-conformant `toml` crate.
     pub fn from_str(s: &str) -> Result<Self, RecipeError> {
-        let sanitized = sanitize_legacy_escapes(s);
+        let merged = merge_duplicate_sections(s);
+        let sanitized = sanitize_legacy_escapes(merged.as_ref());
         let r: Recipe = toml::from_str(&sanitized)?;
         Ok(r)
     }
@@ -488,7 +639,8 @@ pub struct Metadata {
 impl Metadata {
     /// Parse metadata from a TOML string (embedded in a `.jpkg` or read from disk).
     pub fn from_str(s: &str) -> Result<Self, RecipeError> {
-        let sanitized = sanitize_legacy_escapes(s);
+        let merged = merge_duplicate_sections(s);
+        let sanitized = sanitize_legacy_escapes(merged.as_ref());
         let m: Metadata = toml::from_str(&sanitized)?;
         Ok(m)
     }
@@ -572,7 +724,8 @@ impl Index {
     /// (always succeeds for any valid TOML), then per-key try to lift each
     /// value into an `IndexEntry`.  Failures are dropped, not propagated.
     pub fn parse(text: &str) -> Result<Self, RecipeError> {
-        let sanitized = sanitize_legacy_escapes(text);
+        let merged = merge_duplicate_sections(text);
+        let sanitized = sanitize_legacy_escapes(merged.as_ref());
         let raw: BTreeMap<String, toml::Value> = toml::from_str(&sanitized)?;
         let mut entries: BTreeMap<String, IndexEntry> = BTreeMap::new();
         for (key, val) in raw {
