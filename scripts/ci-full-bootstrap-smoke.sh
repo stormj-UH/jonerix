@@ -15,10 +15,14 @@ OUT=out
 mkdir -p "$OUT/smoke-log"
 # The bootstrap step inside the builder container writes out/* as root,
 # but this smoke-test step runs on the host runner as UID 1001 and needs
-# to append to out/report.md. Take ownership of the dir tree once,
-# upfront, so every subsequent write here doesn't EACCES. Use sudo only
-# if it's available (the runner has it; bare alpine images don't).
-if [ "$(id -u)" != "0" ] && [ ! -w "$OUT" ]; then
+# to append to out/report.md. The DIRECTORY out/ is writable by us (we
+# created it), but FILES inside it (out/report.md, out/binaries.txt)
+# were written by root inside docker and aren't writable by us. The
+# previous `[ ! -w "$OUT" ]` guard tested the dir, missed this case,
+# and let the >> append below blow up at line ~78. Always chown
+# unconditionally when we're non-root and out/ exists; sudo is the only
+# way that works because the file owner is root.
+if [ "$(id -u)" != "0" ] && [ -d "$OUT" ]; then
     if command -v sudo >/dev/null 2>&1; then
         sudo chown -R "$(id -u):$(id -g)" "$OUT" 2>/dev/null || true
     fi
