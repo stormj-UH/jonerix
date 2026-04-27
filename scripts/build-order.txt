@@ -101,6 +101,11 @@ uutils
 ripgrep
 jfsck
 anvil
+# jpkg-rs — Rust port of jpkg, side-by-side with the C jpkg.
+# Installs as /bin/jpkg-rs and /bin/jpkg-rs-local; does NOT replace
+# packages/jpkg/ until CI validation clears the swap.  Listed at this
+# tier because cargo build needs the from-source rust toolchain.
+jpkg-rs
 # Tier 11: brash-aware rebuilds. Recipes here use /bin/bash (= brash)
 # at build time to drive their upstream build scripts unmodified —
 # retiring local mksh-compat hacks. Each falls back to its previous
