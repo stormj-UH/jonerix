@@ -106,26 +106,27 @@ jobs:
               set -e
 
               # Alpine base: install everything the Python builder shells
-              # out to + the toolchain for a fresh jpkg build. libretls/
-              # libretls-static provide the libtls API jpkg links against
-              # since Alpine dropped libressl in 3.15 (same pattern as the
-              # WSL rootfs CI). samurai is ninja; jpkg is build.ninja-
-              # based. Everything installed here is build-time only and
-              # never leaks into the produced disk image.
+              # out to + the Rust toolchain for a fresh jpkg 2.0 build.
+              # jpkg 2.0 is the Rust port (ureq + rustls + webpki-roots)
+              # so libretls + samurai are no longer needed. Everything
+              # installed here is build-time only and never leaks into
+              # the produced disk image.
               apk update -q
               apk add -q \
-                clang lld musl-dev samurai \
+                cargo rust \
                 util-linux dosfstools e2fsprogs \
                 zstd libarchive-tools curl ca-certificates \
-                libretls-dev libretls-static openssl-libs-static zstd-static zstd-dev \
                 python3 tar
 
-              # Build jpkg from source against libretls — matches what
-              # .github/workflows/wsl-rootfs.yml does, so the binaries
-              # match byte-for-byte (and we do not depend on whatever
-              # arbitrarily-old jpkg a pre-built builder image might ship).
+              # Build jpkg 2.0 from source via cargo. --target $HOST_TRIPLE
+              # splits compile lanes so proc-macros build host-side without
+              # crt-static; Python null-pads /lib64 refs (audit_layout_tree).
               cd /workspace/packages/core/jpkg
-              LDLIBS="-ltls -lssl -lcrypto -lzstd" samu
+              TRIPLE=$(rustc -vV | sed -n "s/^host: //p")
+              RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+                cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+              install -m 755 "target/$TRIPLE/release/jpkg" jpkg
+              python3 -c "import sys; p=sys.argv[1]; d=open(p,\"rb\").read(); n=d.count(b\"/lib64\"); open(p,\"wb\").write(d.replace(b\"/lib64\", b\"/lib\x00\x00\")); print(p+\": \"+str(n)+\" /lib64 refs nulled\")" jpkg
               ./jpkg --version
               install -m 755 jpkg /usr/local/bin/jpkg
               cd /workspace

@@ -46,15 +46,12 @@ jobs:
         run: |
           mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
           apk update -q
-          # libretls-{dev,static}: provides the LibreSSL libtls API on top
-          # of OpenSSL. Alpine dropped libressl in 3.15, so without this
-          # the static-link step silently falls back to dynamic, and the
-          # resulting jpkg can't relocate tls_* symbols at runtime.
+          # jpkg 2.0 is the Rust port — built via cargo, no libretls needed
+          # (the Rust port uses ureq + rustls + webpki-roots).
           apk add -q \
-            clang lld musl-dev make samurai \
+            cargo rust \
             curl tar zstd libarchive-tools ca-certificates \
-            zstd-dev zstd-static \
-            libretls-dev libretls-static openssl-libs-static \
+            python3 \
             github-cli
 
       - name: Restore jpkg binary cache
@@ -62,23 +59,26 @@ jobs:
         id: jpkg-cache
         with:
           path: /tmp/jpkg-bin-x86_64
-          # Cache key v2: pre-v2 keys point at pre-libretls-linkage binaries
-          # that fail at runtime with missing tls_* symbols. Invalidating.
-          key: jpkg-bin-x86_64-v2-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/build.ninja') }}
+          # Cache key v3: jpkg 2.0 (Rust port) — invalidates v2 C-jpkg binaries.
+          key: jpkg-bin-x86_64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock') }}
 
       - name: Build jpkg
         if: steps.jpkg-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/core/jpkg
-          # Use samu (there's no Makefile; the project is ninja-based).
-          # LDLIBS pulls in libtls + libssl + libcrypto statically via
-          # libretls-static so the resulting binary has no libtls.so
-          # dependency.
-          LDLIBS='-ltls -lssl -lcrypto -lzstd' samu
+          # jpkg 2.0 = Rust port. crt-static + --target $HOST_TRIPLE is the
+          # canonical pattern (matches Dockerfile.minimal/core/full); --target
+          # splits compile lanes so proc-macros (curve25519-dalek-derive etc.)
+          # still build host-side without crt-static.
+          TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+          RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+            cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+          install -m 755 "target/$TRIPLE/release/jpkg" jpkg
+          # Null-pad /lib64 references in the binary (audit_layout_tree gate;
+          # Alpine BusyBox sed can't emit real NUL bytes — use Python).
+          python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" jpkg
           mkdir -p /tmp/jpkg-bin-x86_64
           cp jpkg /tmp/jpkg-bin-x86_64/jpkg
-          # Sanity: confirm no missing TLS symbols (the runtime bug we're
-          # fixing manifested as "Error relocating: tls_config_set_ca_file").
           ./jpkg --version
 
       - name: Install jpkg
@@ -154,8 +154,8 @@ jobs:
         id: jpkg-cache-aarch64
         with:
           path: /tmp/jpkg-bin-aarch64
-          # v2: see x86_64 job for rationale (pre-libretls binaries are stale).
-          key: jpkg-bin-aarch64-v2-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/build.ninja') }}
+          # v3: jpkg 2.0 (Rust port) — invalidates v2 C-jpkg binaries.
+          key: jpkg-bin-aarch64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock') }}
 
       - name: Download packages from release (aarch64)
         env:
@@ -190,21 +190,22 @@ jobs:
               set -e
               mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
               apk update -q
-              # libretls = libtls API shim on top of OpenSSL; required for
-              # static linking of jpkg after Alpine dropped libressl.
+              # jpkg 2.0 is the Rust port — no libretls / no samurai needed.
               apk add -q \
-                clang lld musl-dev make samurai \
+                cargo rust \
                 curl tar zstd libarchive-tools ca-certificates \
-                zstd-dev zstd-static \
-                libretls-dev libretls-static openssl-libs-static
+                python3
 
               if [ "$JPKG_CACHE_HIT" = "true" ] && [ -f /jpkg-bin/jpkg ]; then
                 install -m 755 /jpkg-bin/jpkg /usr/local/bin/jpkg
                 echo "jpkg: using cached binary"
               else
                 cd /workspace/packages/core/jpkg
-                # jpkg is ninja-based; there is no Makefile.
-                LDLIBS="-ltls -lssl -lcrypto -lzstd" samu
+                TRIPLE=$(rustc -vV | sed -n "s/^host: //p")
+                RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+                  cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+                install -m 755 "target/$TRIPLE/release/jpkg" jpkg
+                python3 -c "import sys; p=sys.argv[1]; d=open(p,\"rb\").read(); n=d.count(b\"/lib64\"); open(p,\"wb\").write(d.replace(b\"/lib64\", b\"/lib\x00\x00\")); print(p+\": \"+str(n)+\" /lib64 refs nulled\")" jpkg
                 ./jpkg --version
                 install -m 755 jpkg /usr/local/bin/jpkg
                 cp jpkg /jpkg-bin/jpkg
