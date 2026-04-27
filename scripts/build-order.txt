@@ -59,9 +59,8 @@ openntpd
 # The default Pi 5 image also uses musl, toybox, openrc, dhcpcd, dropbear,
 # ifupdown-ng, bsdtar, ca-certificates -- all already produced by earlier
 # tiers, so no dedicated "pi5-base" tier is warranted yet. When a
-# linux-rpi / rpi-firmware / brcmfmac-firmware recipe lands (see
-# docs/plans/raspberry-pi.md section 9 Tier 1), those four belong together
-# at a new tier above this one.
+# linux-rpi / rpi-firmware / brcmfmac-firmware recipe lands, those four
+# belong together at a new tier above this one.
 jonerix-raspi5-fixups
 libarchive
 bsdtar

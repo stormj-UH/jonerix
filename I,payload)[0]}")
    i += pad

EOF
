@@ -1,5 +1,0 @@
-bash: line 136: warning: here-document at line 2 delimited by end-of-file (wanted `EOF')
-  File "<stdin>", line 8
-    "0c000200" "735f706c61696e00" \
-    ^^^^^^^^^^
-SyntaxError: invalid syntax

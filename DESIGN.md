@@ -470,20 +470,17 @@ jonerix/
 │   ├── license-audit.sh     ← verify all components are permissive
 │   └── size-report.sh       ← image size analysis
 │
-├── tools/
-│   └── bsdtar-static-aarch64 ← static bsdtar fallback for CI
-│
 ├── sources/                 ← vendored source tarballs
 │
 ├── .github/
 │   └── workflows/
 │       ├── publish-images.yml    ← CI: build + push Docker images
 │       ├── publish-packages.yml  ← CI: build + upload jpkg packages
+│       ├── full-bootstrap.yml    ← CI: full from-source bootstrap test
 │       ├── license-check.yml
 │       └── wsl-rootfs.yml
 │
 └── docs/
-    ├── bootstrapping.md
     ├── packaging.md
     └── contributing.md
 ```

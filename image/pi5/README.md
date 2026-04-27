@@ -16,9 +16,8 @@ all tools already present in the jonerix builder containers.
 | `/dev/sdX2` | ext4 (label `root`) | rest of the disk | jonerix rootfs populated by `jpkg install -r /mnt` |
 
 The partition table is **MBR**, not GPT. The Pi 5 EEPROM bootloader does not
-recognise GPT for the boot partition -- see `docs/plans/raspberry-pi.md`
-section 6.1. `image/mkimage.sh` (x86_64) uses GPT; that pattern is wrong for
-Raspberry Pi.
+recognise GPT for the boot partition. `image/mkimage.sh` (x86_64) uses GPT;
+that pattern is wrong for Raspberry Pi.
 
 All device references (`/etc/fstab`, `cmdline.txt`) use `PARTUUID=` rather
 than `/dev/mmcblk0p*` so the same image boots from SD (`/dev/mmcblk0`) and
@@ -52,7 +51,7 @@ time and extracts just the Pi 5-relevant pieces (`kernel_2712.img`,
 avoid repeated downloads, or when building offline).
 
 The firmware is Broadcom Redistributable -- same exception category as the
-Linux kernel. See `docs/plans/raspberry-pi.md` section 2.3 for the license
+Linux kernel. See the README's "Raspberry Pi 5" section for the license
 rationale.
 
 ## Usage

@@ -3,6 +3,12 @@
 CLAUDE.md
 # Worktree-specific files (generated per worktree)
 .env.worktree
+# macOS Finder metadata
+.DS_Store
+# Python bytecode caches (we don't ship .pyc; .py is what builds reach for)
+__pycache__/
+*.pyc
+*.pyo
 # Build artifacts
 node-v*.tar.gz
 output/
