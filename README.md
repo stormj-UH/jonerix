@@ -215,9 +215,7 @@ gate runs the bash 5.3 test suite and the `musl`/`expat`/`dropbear`/
 
 ### In-house
 
-These are written and maintained inside the jonerix project. Canonical
-sources live on the Forgejo at `castle.great-morpho.ts.net:3000` and
-mirror to `stormj-UH/<name>` on GitHub for CI.
+These are written and maintained inside the jonerix project. 
 
 | Replaces | Package | License | Notes |
 |----------|---------|---------|-------|
