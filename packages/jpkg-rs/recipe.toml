@@ -32,6 +32,12 @@ export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
 export OPENSSL_DIR=/
 export OPENSSL_INCLUDE_DIR=/include
 export OPENSSL_LIB_DIR=/lib
+# crt-static + strip=symbols mirror packages/core/stormwall/recipe.toml.
+# Without these the produced binaries carry the dynamic-linker fallback
+# string `/lib64/ld-linux-...so.*` baked in by the rust runtime, which
+# jpkg's audit_layout_tree (refusing to ship anything that references the
+# non-merged-/usr path) rejects with "embedded /lib64 reference".
+export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
 cargo build --release --locked --bin jpkg --bin jpkg-local
 """
 install = """set -e
