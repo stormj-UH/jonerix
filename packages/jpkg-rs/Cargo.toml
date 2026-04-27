@@ -21,8 +21,9 @@ name = "jpkg"
 path = "src/lib.rs"
 
 [dependencies]
-# CLI
-clap = { version = "4", features = ["derive"] }
+# CLI: hand-written dispatchers in src/bin/{jpkg,jpkg-local}.rs — no clap.
+# Avoiding clap_derive (a proc-macro) means we don't need a separate
+# proc-macro compilation lane in the bootstrap builder.
 
 # Recipe TOML and INDEX/manifest parsing
 toml = "0.8"
