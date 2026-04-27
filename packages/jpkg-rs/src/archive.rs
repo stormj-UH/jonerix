@@ -236,6 +236,40 @@ pub fn create(
     metadata_toml: &str,
     payload_root: &Path,
 ) -> Result<(), ArchiveError> {
+    // Thin shim over create_with_metadata_factory for callers that already
+    // have a fixed metadata blob and don't need the payload-sha-and-size
+    // chicken-and-egg fix.  Most production callers should use the factory
+    // form so files.sha256 / files.size land filled-in instead of empty.
+    create_with_metadata_factory(out_path, payload_root, |_sha, _size| {
+        Ok(metadata_toml.to_string())
+    })
+}
+
+/// Like [`create`], but lets the caller plug in the
+/// `files.sha256` / `files.size` of the (zstd-compressed) payload AFTER it
+/// has been built.  Resolves the chicken-and-egg in cmd_build.c (and Worker
+/// M's previous FIXME): the metadata block is written BEFORE the payload in
+/// the .jpkg file, but the payload's sha256/size are part of the metadata.
+///
+/// The closure receives the 64-char lowercase hex sha256 of the compressed
+/// payload and its byte length, and must return the full metadata TOML text
+/// to embed.  Typical usage:
+///
+/// ```ignore
+/// archive::create_with_metadata_factory(&out_path, &dest_dir, |sha, size| {
+///     let meta = Metadata::from_recipe(recipe, sha.to_string(), size);
+///     meta.to_string().map_err(|e| ArchiveError::Io(io::Error::new(
+///         io::ErrorKind::Other, e.to_string())))
+/// })?;
+/// ```
+pub fn create_with_metadata_factory<F>(
+    out_path: &Path,
+    payload_root: &Path,
+    metadata_factory: F,
+) -> Result<(), ArchiveError>
+where
+    F: FnOnce(&str, u64) -> Result<String, ArchiveError>,
+{
     // ── layout audit (mirrors audit_layout_tree in util.c) ──────────────────
     for banned in &["usr", "lib64"] {
         let candidate = payload_root.join(banned);
@@ -245,14 +279,18 @@ pub fn create(
     }
 
     // ── build tar in memory (streaming zstd encoder) ─────────────────────────
-    // We use zstd::stream::Encoder wrapping a Vec<u8> writer so we never need
-    // to hold the full uncompressed tar in memory.
     let compressed_payload = build_compressed_tar(payload_root)?;
 
-    // ── assemble .jpkg header + payload ─────────────────────────────────────
+    // ── compute sha256 + size of the compressed payload ────────────────────
+    let payload_sha256 = sha256_hex_of(&compressed_payload);
+    let payload_size = compressed_payload.len() as u64;
+
+    // ── caller plugs sha+size into the metadata TOML ───────────────────────
+    let metadata_toml = metadata_factory(&payload_sha256, payload_size)?;
     let meta_bytes = metadata_toml.as_bytes();
     let hdr_len = meta_bytes.len() as u32; // pkg.c:178 uses strlen()
 
+    // ── assemble .jpkg header + payload ─────────────────────────────────────
     // Atomic write: write to .tmp then rename (pkg.c uses file_write directly
     // but on POSIX that is not atomic; we improve on the C behaviour here).
     let tmp_path = out_path.with_extension("tmp");
@@ -271,6 +309,15 @@ pub fn create(
     fs::rename(&tmp_path, out_path)?;
 
     Ok(())
+}
+
+/// 64-char lowercase hex sha256 of `bytes`.  Local helper to avoid a
+/// `crate::util` dependency from `archive` (keeps the module self-contained).
+fn sha256_hex_of(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    hex::encode(h.finalize())
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

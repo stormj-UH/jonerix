@@ -505,28 +505,27 @@ fn create_archive(
     });
     let arch = arch_owned.as_str();
 
-    // Build the metadata TOML.  sha256/size are filled with proxy values;
-    // see divergence note at top of file.
-    //
-    // We create the archive first (which computes the payload internally),
-    // then compute sha256 of the .jpkg file and its size as a proxy.
-    // FIXME(integrator): replace with actual zstd-payload sha256/size once
-    // archive::create exposes them.
-    let placeholder_sha = String::new();
-    let placeholder_size: u64 = 0;
-    let metadata = Metadata::from_recipe(recipe, placeholder_sha, placeholder_size);
-    let metadata_toml = metadata
-        .to_string()
-        .map_err(|e| format!("serialize metadata: {e}"))?;
-
     fs::create_dir_all(output_dir)
         .map_err(|e| format!("create output dir: {e}"))?;
 
     let out_path = output_dir.join(format!("{name}-{version}-{arch}.jpkg"));
 
-    archive::create(&out_path, &metadata_toml, dest_dir).map_err(|e| {
-        format!("archive::create: {e}")
-    })?;
+    // archive::create_with_metadata_factory handles the chicken-and-egg
+    // (metadata.files.sha256/size depend on the compressed payload, which
+    // is built inside the archive call).  The factory closure runs AFTER
+    // the payload is compressed, so the sha256 + size we pass to
+    // Metadata::from_recipe are real values, not placeholders.
+    let recipe_for_factory = recipe.clone();
+    archive::create_with_metadata_factory(&out_path, dest_dir, move |sha, size| {
+        let meta = Metadata::from_recipe(&recipe_for_factory, sha.to_owned(), size);
+        meta.to_string().map_err(|e| {
+            crate::archive::ArchiveError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("serialize metadata: {e}"),
+            ))
+        })
+    })
+    .map_err(|e| format!("archive::create: {e}"))?;
 
     Ok(out_path)
 }
