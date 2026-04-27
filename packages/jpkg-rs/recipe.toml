@@ -1,6 +1,6 @@
 [package]
 name = "jpkg-rs"
-version = "2.0.0"
+version = "2.0.0-r1"
 license = "MIT"
 description = "jonerix package manager — Rust port of jpkg (side-by-side, does NOT replace jpkg yet)"
 # This recipe builds the Rust port of jpkg into TWO binaries (jpkg-rs and
@@ -57,6 +57,35 @@ install -Dm755 target/release/jpkg "$DESTDIR/bin/jpkg-rs"
 install -Dm755 target/release/jpkg-local "$DESTDIR/bin/jpkg-rs-local"
 llvm-strip --strip-all "$DESTDIR/bin/jpkg-rs" 2>/dev/null || true
 llvm-strip --strip-all "$DESTDIR/bin/jpkg-rs-local" 2>/dev/null || true
+# Even with -C target-feature=+crt-static, Rust binaries still carry the
+# string "/lib64/ld-linux-..." in the .interp/.comment area of the ELF
+# (it's emitted by the linker as the dynamic-linker fallback path, even
+# when nothing actually loads it). jpkg's audit_layout_tree refuses to
+# package any binary containing a literal "/lib64" substring because the
+# merged-/usr layout has no /lib64 directory. Null-pad "/lib64" → "/lib\0\0"
+# in-place — same byte length, harmless to strict-static binaries because
+# nothing reads .interp on a statically-linked program. Same pattern that
+# packages/extra/runc, packages/extra/containerd, and packages/extra/nerdctl
+# use for their Go binaries.
+ELF_LIST=$(mktemp)
+find "$DESTDIR" -type f -exec sh -c '
+    head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d " " | grep -q "^7f454c46" && printf "%s\\n" "$1"
+' _ {} ';' > "$ELF_LIST" 2>/dev/null || true
+if [ -s "$ELF_LIST" ]; then
+    python3 - "$ELF_LIST" <<'PYEOF' || true
+import sys
+with open(sys.argv[1]) as f:
+    files = [ln.rstrip("\n") for ln in f if ln.strip()]
+for p in files:
+    with open(p, "rb") as fh: d = fh.read()
+    n = d.count(b"/lib64")
+    if not n: continue
+    d = d.replace(b"/lib64", b"/lib\x00\x00")
+    with open(p, "wb") as fh: fh.write(d)
+    print(f"jpkg-rs lib64-fix: {p} replaced {n} refs")
+PYEOF
+fi
+rm -f "$ELF_LIST"
 # Ensure the standard jpkg directory tree exists so the new binary can be
 # pointed at it for testing without first running C jpkg.
 install -d "$DESTDIR/etc/jpkg/keys"
