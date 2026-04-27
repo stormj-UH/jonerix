@@ -15,18 +15,25 @@
 use crate::sign;
 use std::path::Path;
 
-const USAGE: &str = "usage: jpkg sign <keyfile.sec> <input>";
+const USAGE: &str = "usage: jpkg sign <keyfile.sec> <input>\n   or: jpkg sign <input> --key <keyfile.sec>";
 
 pub fn run(args: &[String]) -> i32 {
-    // ── Argument validation ───────────────────────────────────────────────────
-    if args.len() != 2 {
-        eprintln!("jpkg sign: expected exactly 2 arguments, got {}", args.len());
-        eprintln!("{USAGE}");
-        return 2;
-    }
-
-    let key_path = Path::new(&args[0]);
-    let input_path = Path::new(&args[1]);
+    // Accept both forms — the C jpkg's CLI was lenient and the
+    // publish-packages workflow uses the second form
+    // (`jpkg sign INDEX.zst --key /tmp/jpkg-sign.sec`).
+    //
+    //   form 1:  <keyfile.sec> <input>
+    //   form 2:  <input> --key <keyfile.sec>      (or --key=<keyfile.sec>)
+    let (key_str, input_str) = match parse_args(args) {
+        Some(pair) => pair,
+        None => {
+            eprintln!("jpkg sign: bad arguments ({:?})", args);
+            eprintln!("{USAGE}");
+            return 2;
+        }
+    };
+    let key_path = Path::new(&key_str);
+    let input_path = Path::new(&input_str);
 
     // ── Load secret key ───────────────────────────────────────────────────────
     let sk = match sign::read_secret_key(key_path) {
@@ -60,6 +67,44 @@ pub fn run(args: &[String]) -> i32 {
 
     println!("Signed: {} -> {}", input_path.display(), sig_path.display());
     0
+}
+
+/// Resolve the (key, input) pair from either argv form:
+///   form 1:  [<keyfile>, <input>]
+///   form 2:  [<input>, --key, <keyfile>]   (or --key=<keyfile>, in any order)
+fn parse_args(args: &[String]) -> Option<(String, String)> {
+    // Strip --key/--key=KEY from anywhere in the list and capture its value.
+    let mut key: Option<String> = None;
+    let mut positional: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--key" {
+            if i + 1 >= args.len() {
+                return None;
+            }
+            key = Some(args[i + 1].clone());
+            i += 2;
+        } else if let Some(rest) = a.strip_prefix("--key=") {
+            key = Some(rest.to_string());
+            i += 1;
+        } else {
+            positional.push(a.clone());
+            i += 1;
+        }
+    }
+    match (positional.len(), key) {
+        // form 2: jpkg sign <input> --key <keyfile>
+        (1, Some(k)) => Some((k, positional.into_iter().next().unwrap())),
+        // form 1: jpkg sign <keyfile> <input>  (no --key)
+        (2, None) => {
+            let mut it = positional.into_iter();
+            let keyf = it.next().unwrap();
+            let inp = it.next().unwrap();
+            Some((keyf, inp))
+        }
+        _ => None,
+    }
 }
 
 /// Write a raw 64-byte signature to `path` with mode 0644.
