@@ -25,6 +25,11 @@
 //! ```
 
 #![allow(dead_code)]
+// jpkg is your own MIT-licensed source — the Rust port is a translation
+// rather than a clean-room rewrite — but we still want the safety budget
+// at zero.  `forbid(unsafe_code)` makes any future regression a compile
+// error, not a code-review escape.
+#![forbid(unsafe_code)]
 
 pub mod util;
 pub mod recipe;

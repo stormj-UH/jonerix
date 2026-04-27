@@ -36,13 +36,12 @@
 //! upgrade from C jpkg to jpkg-rs 2.0.0 without re-installing packages.
 
 use crate::recipe::Metadata;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use nix::fcntl::{Flock, FlockArg, OFlag};
-use nix::sys::stat::Mode;
+use nix::fcntl::{Flock, FlockArg};
 
 // ─── Symlink sentinel (db.c:88-89) ─────────────────────────────────────────
 
@@ -326,17 +325,16 @@ impl InstalledDb {
     pub fn lock(&self) -> Result<DbLock, DbError> {
         let lock_path = self.db_dir.join("lock");
 
-        // Open or create the lock file with O_WRONLY|O_CREAT (db.c:32).
-        let raw_fd = nix::fcntl::open(
-            &lock_path,
-            OFlag::O_WRONLY | OFlag::O_CREAT,
-            Mode::from_bits_truncate(0o644),
-        )
-        .map_err(|e| io::Error::from_raw_os_error(e as i32))?;
-
-        // Convert the raw fd to a File so Flock can own it.
-        // SAFETY: raw_fd is a valid, open file descriptor we just created.
-        let std_file: File = unsafe { std::os::unix::io::FromRawFd::from_raw_fd(raw_fd) };
+        // Open or create the lock file with O_WRONLY|O_CREAT (db.c:32) using
+        // safe std::fs::OpenOptions — no `unsafe` raw-fd dance required.  The
+        // owned File is handed straight to nix::fcntl::Flock, which takes any
+        // `AsFd` implementor (File qualifies).
+        let std_file: File = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o644)
+            .open(&lock_path)?;
 
         // Attempt a non-blocking exclusive write lock (F_SETLK) (db.c:45).
         let flock_result = Flock::lock(std_file, FlockArg::LockExclusiveNonblock);
