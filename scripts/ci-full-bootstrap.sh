@@ -23,6 +23,35 @@ SKIP_HEAVIES="${SKIP_HEAVIES:-true}"
 STOP_ON_FAIL="${STOP_ON_FAIL:-false}"
 ARCH="${ARCH:-$(uname -m)}"
 
+# --- Rebuild jpkg from source so bootstrap tests the IN-TREE recipe parser
+# rather than whatever was baked into the builder image at last publish-images.
+# Without this, recipe-parser fixes in main can't surface in the bootstrap
+# because the running /bin/jpkg lags behind.  Mirrors ci-build-{x86_64,aarch64}.sh
+# but unconditional (no /jpkg-bin cache) — this script runs in jonerix:builder
+# which already has rust/cargo, so the cost is one cargo build (~30s).
+if [ -f /workspace/packages/core/jpkg/Cargo.toml ]; then
+    echo "=== Rebuilding /bin/jpkg from /workspace/packages/core/jpkg ==="
+    (
+        cd /workspace/packages/core/jpkg
+        TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+        RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+            cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+        for b in "target/$TRIPLE/release/jpkg" "target/$TRIPLE/release/jpkg-local"; do
+            python3 -c "
+import sys
+p = sys.argv[1]
+d = open(p,'rb').read()
+n = d.count(b'/lib64')
+if n:
+    open(p,'wb').write(d.replace(b'/lib64', b'/lib\\x00\\x00'))
+" "$b" || true
+        done
+        install -m 755 "target/$TRIPLE/release/jpkg" /bin/jpkg
+        install -m 755 "target/$TRIPLE/release/jpkg-local" /bin/jpkg-local
+    )
+    echo "=== /bin/jpkg version after rebuild: $(/bin/jpkg --version 2>&1) ==="
+fi
+
 # Point jpkg at the vendored source cache. /workspace/sources/ contains
 # pre-fetched tarballs for ~88 packages (musl, micro, ifupdown-ng, etc).
 # Without this, jpkg falls through to network downloads which fail or
