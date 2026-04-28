@@ -39,8 +39,8 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 # invoke either name resolve to the same binary. Some autoconf scripts
 # look for `pkg-config` only.
 ln -sf pkgconf "$DESTDIR/bin/pkg-config"
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
-find $DESTDIR/lib -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find $DESTDIR/lib -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
 rm -rf $DESTDIR/share/man $DESTDIR/share/doc
 """
 
