@@ -1,0 +1,52 @@
+[package]
+name = "libnghttp2"
+version = "1.69.0-r1"
+license = "MIT"
+description = "HTTP/2 C library and tools (nghttp2)"
+# Build the library only, not the bundled binaries (nghttp, nghttpd, nghttpx,
+# h2load) — those pull libev/openssl/jansson/cunit and aren't what curl needs.
+# This was previously bundled into curl via -DUSE_NGHTTP2=OFF (i.e. curl
+# shipped without HTTP/2 support); curl 8.11.1-r6 now links libnghttp2.so
+# from this package and turns USE_NGHTTP2=ON.
+
+[source]
+url = "https://github.com/nghttp2/nghttp2/releases/download/v1.69.0/nghttp2-1.69.0.tar.xz"
+sha256 = "1fb324b6ec2c56f6bde0658f4139ffd8209fa9e77ce98fd7a5f63af8d0e508ad"
+
+[build]
+system = "autoconf"
+configure = """./configure \
+    --prefix=/ \
+    --bindir=/bin \
+    --libdir=/lib \
+    --includedir=/include \
+    --enable-lib-only \
+    --enable-shared \
+    --disable-static \
+    --disable-examples \
+    --disable-python-bindings \
+    --without-libxml2 \
+    --without-jansson \
+    --without-libevent-openssl \
+    --without-jemalloc \
+    --without-cunit \
+    CC=clang \
+    CXX=clang++ \
+    CFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
+    CXXFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
+    LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind -Wl,--disable-new-dtags"
+"""
+build = "make -j$(nproc)"
+install = """set -e
+make install DESTDIR=$DESTDIR
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/lib -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+rm -rf $DESTDIR/share/man $DESTDIR/share/doc
+"""
+
+[depends]
+runtime = ["musl"]
+# pkgconf is required by configure to detect the (otherwise auto-disabled)
+# optional libraries even when we pass --without-* explicitly.
+build = ["clang", "make", "pkgconf"]

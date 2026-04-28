@@ -1,0 +1,43 @@
+[package]
+name = "libnghttp3"
+version = "1.13.0-r1"
+license = "MIT"
+description = "HTTP/3 C library (nghttp3) — implements RFC 9114 framing and QPACK"
+# Companion to libngtcp2 (which provides QUIC transport per RFC 9000).
+# Together with libngtcp2 + curl this gives jonerix HTTP/3 client support
+# without bundling. Library-only build; we don't ship the upstream
+# binaries.
+
+[source]
+url = "https://github.com/ngtcp2/nghttp3/releases/download/v1.13.0/nghttp3-1.13.0.tar.xz"
+sha256 = "926d358a74d6f15e5a11239e3e980dd4c66332e52e4d1b38c2cf8820458ad4d8"
+
+[build]
+system = "autoconf"
+configure = """./configure \
+    --prefix=/ \
+    --bindir=/bin \
+    --libdir=/lib \
+    --includedir=/include \
+    --enable-lib-only \
+    --enable-shared \
+    --disable-static \
+    --without-cunit \
+    CC=clang \
+    CXX=clang++ \
+    CFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
+    CXXFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
+    LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind -Wl,--disable-new-dtags"
+"""
+build = "make -j$(nproc)"
+install = """set -e
+make install DESTDIR=$DESTDIR
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/lib -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+rm -rf $DESTDIR/share/man $DESTDIR/share/doc
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make", "pkgconf"]

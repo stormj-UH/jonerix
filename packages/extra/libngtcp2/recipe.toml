@@ -1,0 +1,46 @@
+[package]
+name = "libngtcp2"
+version = "1.18.0-r1"
+license = "MIT"
+description = "QUIC C library (ngtcp2) — implements RFC 9000 / 9001"
+# QUIC transport layer. With --with-libressl, ngtcp2's libressl crypto
+# binding is built so curl can negotiate QUIC over LibreSSL when
+# CURL_USE_NGTCP2=ON is enabled. libnghttp3 is the HTTP/3 framing partner
+# (separate package).
+
+[source]
+url = "https://github.com/ngtcp2/ngtcp2/releases/download/v1.18.0/ngtcp2-1.18.0.tar.xz"
+sha256 = "aac91fbcb8af77216862cc1bf6e9ddcabfe42b4c373a438b7b1d36b763a4ac5f"
+
+[build]
+system = "autoconf"
+configure = """./configure \
+    --prefix=/ \
+    --bindir=/bin \
+    --libdir=/lib \
+    --includedir=/include \
+    --enable-lib-only \
+    --enable-shared \
+    --disable-static \
+    --with-libressl \
+    --without-cunit \
+    CC=clang \
+    CXX=clang++ \
+    CFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
+    CXXFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
+    LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind -Wl,--disable-new-dtags"
+"""
+build = "make -j$(nproc)"
+install = """set -e
+make install DESTDIR=$DESTDIR
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find $DESTDIR/lib -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+rm -rf $DESTDIR/share/man $DESTDIR/share/doc
+"""
+
+[depends]
+# ngtcp2 links against the libressl crypto provider for the
+# libngtcp2_crypto_quictls.so backend; that's what curl needs.
+runtime = ["musl", "libressl"]
+build = ["clang", "make", "pkgconf", "libressl"]

@@ -40,6 +40,12 @@ mandoc
 bc
 dhcpcd
 ifupdown-ng
+# pkgconf — drop-in pkg-config, ISC. Build-dep for any recipe whose
+# configure runs PKG_CHECK_MODULES (shadow, python3, libnghttp2,
+# libnghttp3, libngtcp2, etc). Listed here so /bin/pkgconf and
+# /bin/pkg-config are in /out/jpkgs/ before any of those recipes try
+# to install_target_build_deps.
+pkgconf
 # Tier 3: depends on musl only (medium)
 # (toybox was here pre-2026-04-26; moved to Tier 11 so it can build under
 # /bin/bash → brash and skip the local mksh-compat patch.)
@@ -65,6 +71,12 @@ jonerix-raspi5-fixups
 libarchive
 bsdtar
 unbound
+# libnghttp2 must build BEFORE curl (curl 8.11.1-r6 onward links against
+# /lib/libnghttp2.so for HTTP/2). libnghttp3 + libngtcp2 are paired here
+# so they're available alongside for downstream HTTP/3 work.
+libnghttp2
+libnghttp3
+libngtcp2
 curl
 perl
 python3

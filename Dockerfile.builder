@@ -34,6 +34,7 @@ RUN jpkg update && \
     for pkg in \
       llvm rust go \
       cmake jmake samurai flex bc byacc \
+      pkgconf \
       perl python3 nodejs \
       strace; \
     do \

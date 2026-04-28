@@ -1,6 +1,6 @@
 [package]
 name = "curl"
-version = "8.11.1-r5"
+version = "8.11.1-r6"
 license = "MIT"
 description = "Command-line tool and library for transferring data with URLs"
 
@@ -25,7 +25,9 @@ cmake -B build -G Ninja \
   -DOPENSSL_INCLUDE_DIR=/include \
   -DOPENSSL_SSL_LIBRARY=/lib/libssl.so \
   -DOPENSSL_CRYPTO_LIBRARY=/lib/libcrypto.so \
-  -DUSE_NGHTTP2=OFF \
+  -DUSE_NGHTTP2=ON \
+  -DNGHTTP2_INCLUDE_DIR=/include \
+  -DNGHTTP2_LIBRARY=/lib/libnghttp2.so \
   -DCURL_ZLIB=ON \
   -DZLIB_INCLUDE_DIR=/include \
   -DZLIB_LIBRARY=/lib/libz.a \
@@ -49,5 +51,5 @@ find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl", "libressl", "zlib"]
-build = ["clang", "cmake", "samurai", "libressl", "zlib"]
+runtime = ["musl", "libressl", "zlib", "libnghttp2"]
+build = ["clang", "cmake", "samurai", "libressl", "zlib", "libnghttp2"]

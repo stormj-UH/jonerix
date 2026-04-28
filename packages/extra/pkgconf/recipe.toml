@@ -1,0 +1,49 @@
+[package]
+name = "pkgconf"
+version = "2.5.1-r1"
+license = "ISC"
+description = "Drop-in replacement for pkg-config (canonical pkg-config implementation since freedesktop.org adopted it)"
+# Ships /bin/pkgconf and a /bin/pkg-config symlink so consumers that hard-code
+# either name see the same binary. Default search path covers both /lib/pkgconfig
+# and /share/pkgconfig (jonerix's merged-/usr layout). Replaces the
+# per-recipe pkg-config stubs (shadow's /tmp/pkgconf-stub, hostapd/wpa_supplicant's
+# CONFIG_LIBNL32+LIBNL_INC bypasses, the LIBSQLITE3_* env-var workaround in
+# python3) once it's installed in the builder image.
+
+[source]
+url = "https://distfiles.dereferenced.org/pkgconf/pkgconf-2.5.1.tar.xz"
+sha256 = "cd05c9589b9f86ecf044c10a2269822bc9eb001eced2582cfffd658b0a50c243"
+
+[build]
+system = "autoconf"
+configure = """./configure \
+    --prefix=/ \
+    --bindir=/bin \
+    --libdir=/lib \
+    --includedir=/include \
+    --with-pkg-config-dir=/lib/pkgconfig:/share/pkgconfig \
+    --with-system-libdir=/lib \
+    --with-system-includedir=/include \
+    --enable-shared \
+    --disable-static \
+    CC=clang \
+    CFLAGS="-Os -fomit-frame-pointer --rtlib=compiler-rt --unwindlib=libunwind" \
+    LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind -Wl,--disable-new-dtags"
+"""
+build = "make -j$(nproc)"
+install = """set -e
+make install DESTDIR=$DESTDIR
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# Provide /bin/pkg-config as a symlink to /bin/pkgconf so recipes that
+# invoke either name resolve to the same binary. Some autoconf scripts
+# look for `pkg-config` only.
+ln -sf pkgconf "$DESTDIR/bin/pkg-config"
+find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find $DESTDIR/lib -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+rm -rf $DESTDIR/share/man $DESTDIR/share/doc
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make"]

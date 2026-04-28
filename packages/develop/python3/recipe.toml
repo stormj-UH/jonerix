@@ -1,6 +1,6 @@
 [package]
 name = "python3"
-version = "3.14.3-r9"
+version = "3.14.3-r10"
 license = "PSF-2.0"
 description = "Python programming language interpreter (with _bz2)"
 
@@ -16,23 +16,19 @@ chmod 755 .jpkg-tools/diff
 sed -i 's/X509_VERIFY_PARAM_get_hostflags(ssl_verification_params)/0 \/* LibreSSL lacks get_hostflags *\//' Modules/_ssl.c
 PATH="$PWD/.jpkg-tools:$PATH" \
   CFLAGS="$CFLAGS -I/include/ncursesw" \
-  LIBSQLITE3_CFLAGS="-I/include" \
-  LIBSQLITE3_LIBS="-lsqlite3" \
-  LIBLZMA_CFLAGS="-I/include" \
-  LIBLZMA_LIBS="-llzma" \
-  LIBBZIP2_CFLAGS="-I/include" \
-  LIBBZIP2_LIBS="-lbz2" \
   CC=clang CXX=clang++ ./configure \
   --prefix=/usr \
   --enable-shared \
   --with-ensurepip=no \
   --with-openssl=/ \
   --disable-test-modules"""
-# LIBSQLITE3_* short-circuits Python's pkg-config-based sqlite detection
-# (configure.ac's PKG_CHECK_MODULES): our sqlite package installs headers
-# + libsqlite3.so but no sqlite3.pc, so the pkg-config probe would fail
-# and Python would mark _sqlite3 as unavailable. Setting the vars
-# directly makes configure skip pkg-config and compile the module.
+# r4 (2026-04-27): dropped LIBSQLITE3_/LIBLZMA_/LIBBZIP2_CFLAGS/LIBS env-var
+# overrides. They were short-circuits for Python's PKG_CHECK_MODULES probe
+# back when jonerix had no pkgconf and the .pc files weren't shipped. Both
+# conditions are now resolved: pkgconf is a build-dep (see [depends].build
+# below) and the sqlite/xz/bzip2 recipes ship sqlite3.pc, liblzma.pc, and
+# bzip2.pc respectively. configure now finds them via the regular
+# pkg-config probe and the manual env-var bypass is no longer needed.
 # --prefix=/usr (not /) because Python 3.14's bootstrap chokes on
 # sys.prefix='' during _bootstrap_python → site.py import:
 #   AttributeError: module 'sys' has no attribute 'prefix'
@@ -136,4 +132,4 @@ runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi", "sqlit
 # the build list, so a clean aarch64 CI runner hit `'lzma.h' file
 # not found` mid-build. Matches the sqlite / bzip2 / libffi pattern
 # (headers needed both at build and runtime).
-build = ["clang", "libffi", "sqlite", "bzip2", "xz"]
+build = ["clang", "libffi", "sqlite", "bzip2", "xz", "pkgconf"]
