@@ -373,10 +373,38 @@ if [ -n "$PKG_INPUT" ]; then
         fi
     fi
 else
-    for recipe in /workspace/packages/core/*/recipe.toml /workspace/packages/develop/*/recipe.toml /workspace/packages/extra/*/recipe.toml; do
+    # Walk packages in build-order.txt's dependency order, then any
+    # unlisted recipes after.  Needed because plain alphabetical iteration
+    # over core/develop/extra means a core/* recipe with an extra/*
+    # build-dep (e.g. core/curl wants extra/libnghttp2) hits
+    # install_target_build_deps before the dep has been built into
+    # /var/cache/jpkg/, and INDEX may not have it either if it's a brand
+    # new recipe.  Mirror ci-full-bootstrap.sh's build-order strategy.
+    ORDER_FILE=$(mktemp)
+    awk '/^[[:space:]]*#/ {next} /^[[:space:]]*$/ {next} {print}' \
+        /workspace/scripts/build-order.txt > "$ORDER_FILE"
+
+    RECIPE_MAP=$(mktemp)
+    for r in /workspace/packages/*/*/recipe.toml; do
+        [ -f "$r" ] || continue
+        name=$(awk -F'"' '/^name *= *"/ {print $2; exit}' "$r")
+        [ -n "$name" ] || continue
+        printf '%s\t%s\n' "$name" "$r" >> "$RECIPE_MAP"
+    done
+
+    while IFS=$(printf '\t') read -r name _; do
+        grep -qxF "$name" "$ORDER_FILE" && continue
+        echo "$name" >> "$ORDER_FILE"
+    done < "$RECIPE_MAP"
+
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        recipe=$(awk -F'\t' -v n="$name" '$1 == n {print $2; exit}' "$RECIPE_MAP")
         [ -f "$recipe" ] || continue
         build_one "$recipe"
-    done
+    done < "$ORDER_FILE"
+
+    rm -f "$ORDER_FILE" "$RECIPE_MAP"
 fi
 
 echo "Built/cached packages (x86_64):"
