@@ -1,0 +1,58 @@
+#!/bin/openrc-run
+# Load nftables compatibility/fib modules before tailscaled starts.
+#
+# The Raspberry Pi 5 image uses toybox modprobe. OpenRC's stock modules
+# service calls kmod-only long options, so /etc/modules-load.d is not
+# reliable here. tailscaled also has a direct insmod fallback that can
+# try nft_fib_inet/nft_compat before their dependency modules are in,
+# producing boot-time Unknown symbol noise. This service uses plain
+# modprobe in dependency order.
+#
+# Part of jonerix-raspi5-fixups - MIT License
+
+description="Load nftables dependency modules before tailscaled"
+
+extra_started_commands="reload"
+
+modules="x_tables nft_fib nft_fib_ipv4 nft_fib_ipv6 nft_fib_inet nft_compat"
+
+depend() {
+    need modules
+    before tailscaled tailscale-up
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+_modprobe() {
+    if command -v modprobe >/dev/null 2>&1; then
+        command -v modprobe
+        return 0
+    fi
+    if [ -x /usr/local/bin/modprobe-shim ]; then
+        echo /usr/local/bin/modprobe-shim
+        return 0
+    fi
+    return 1
+}
+
+load_netfilter_modules() {
+    local mp rc m
+    mp=$(_modprobe) || {
+        eerror "no modprobe implementation found"
+        return 1
+    }
+    rc=0
+    for m in $modules; do
+        ebegin "Loading module $m"
+        "$mp" "$m"
+        eend $? || rc=$?
+    done
+    return $rc
+}
+
+start() {
+    load_netfilter_modules
+}
+
+reload() {
+    load_netfilter_modules
+}

@@ -86,7 +86,7 @@ FIRMWARE_ONLY=0     # --firmware-only: skip partition/format/userland,
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd sudo python3 anvil raspi-config jonerix-raspi5-fixups shadow iproute-go zsh gitoxide ripgrep micro fastfetch"
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd sudo python3 anvil raspi-config shadow jonerix-raspi5-fixups iproute-go zsh gitoxide ripgrep micro fastfetch"
 # Kept identical to image/pi5/build-image.py's DEFAULT_PACKAGES so a
 # Pi installed by hand via this script lands at the same package set
 # as a CI-built jonerix-pi5.img. Beyond the minimal boot core (musl,

@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.10"
+version = "1.6.11"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -34,6 +34,7 @@ install -Dm755 /tmp/eee-tool $DESTDIR/bin/eee-tool
 install -Dm755 bin/disable-eee $DESTDIR/bin/disable-eee
 install -Dm755 init.d/disable-eee $DESTDIR/etc/init.d/disable-eee
 install -Dm755 init.d/fan-control $DESTDIR/etc/init.d/fan-control
+install -Dm755 init.d/netfilter-nft-modules $DESTDIR/etc/init.d/netfilter-nft-modules
 # adduser-safe: safe replacement for toybox adduser, which truncates
 # /etc/passwd and /etc/shadow on failure (see bin/adduser-safe header).
 install -Dm755 bin/adduser-safe $DESTDIR/bin/adduser-safe
@@ -279,8 +280,96 @@ fi
 # --- Pi 5 hardware fixups (only on a live Pi 5) ---
 ln -sf /etc/init.d/disable-eee     /etc/runlevels/boot/disable-eee     2>/dev/null || true
 ln -sf /etc/init.d/fan-control     /etc/runlevels/boot/fan-control     2>/dev/null || true
+ln -sf /etc/init.d/netfilter-nft-modules /etc/runlevels/boot/netfilter-nft-modules 2>/dev/null || true
 ln -sf /etc/init.d/pi5-wifi        /etc/runlevels/boot/pi5-wifi        2>/dev/null || true
 ln -sf /etc/init.d/pi5-cold-reboot /etc/runlevels/boot/pi5-cold-reboot 2>/dev/null || true
+
+# --- shadow login defaults ---
+# shadow owns /etc/init.d/shadow-login and /etc/login.defs. Keep ownership
+# there, but normalize Pi images away from the supervised one-minute idle
+# timeout loop that spammed logs on jonerix-tormenta.
+if [ -f /etc/login.defs ]; then
+    if [ ! -e /etc/login.defs.pre-raspi5-fixups ]; then
+        cp -p /etc/login.defs /etc/login.defs.pre-raspi5-fixups 2>/dev/null || true
+    fi
+    if grep -q '^[[:space:]]*LOGIN_TIMEOUT[[:space:]]' /etc/login.defs 2>/dev/null; then
+        sed -i -E 's/^[[:space:]]*LOGIN_TIMEOUT[[:space:]].*/LOGIN_TIMEOUT	0/' /etc/login.defs
+    else
+        echo 'LOGIN_TIMEOUT	0' >> /etc/login.defs
+    fi
+fi
+if [ -x /bin/shadow-getty ] && [ -d /etc/init.d ]; then
+    if [ -f /etc/init.d/shadow-login ] && [ ! -e /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
+        cp -p /etc/init.d/shadow-login /etc/init.d/shadow-login.pre-raspi5-fixups 2>/dev/null || true
+    fi
+    cat > /etc/init.d/shadow-login <<'SHADOW_LOGIN_EOF'
+#!/bin/openrc-run
+# shadow-login: tty1 login prompt via shadow-getty.
+#
+# /bin/login is shadow login and reads LOGIN_TIMEOUT from /etc/login.defs.
+# LOGIN_TIMEOUT 0 keeps an idle tty prompt up indefinitely. This service only
+# loops after real logouts so tty1 comes back after an interactive session ends.
+
+name="shadow-login"
+description="shadow-utils login(1) on /dev/tty1 via shadow-getty"
+pidfile="/run/shadow-login.pid"
+logfile="/var/log/shadow-login.log"
+
+start_pre() {
+    [ -c /dev/tty1 ] || mknod /dev/tty1 c 4 1 2>/dev/null || true
+    touch "$logfile" 2>/dev/null || true
+}
+
+is_running() {
+    local pid
+    [ -f "$pidfile" ] || return 1
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    [ -n "$pid" ] || return 1
+    [ -d "/proc/$pid" ]
+}
+
+start() {
+    ebegin "Starting shadow-login"
+    if is_running; then
+        eend 0
+        return 0
+    fi
+    /bin/mksh -c 'while :; do /bin/shadow-getty /dev/tty1; sleep 1; done' >>"$logfile" 2>&1 &
+    echo $! > "$pidfile"
+    eend 0
+}
+
+stop() {
+    ebegin "Stopping shadow-login"
+    if [ -f "$pidfile" ]; then
+        loop_pid="$(cat "$pidfile" 2>/dev/null || true)"
+        [ -n "$loop_pid" ] && kill "$loop_pid" 2>/dev/null || true
+    fi
+    pkill -x shadow-getty 2>/dev/null || true
+    pkill -x login 2>/dev/null || true
+    rm -f "$pidfile"
+    eend 0
+}
+
+status() {
+    if is_running; then
+        einfo "shadow-login running (pid $(cat "$pidfile"))"
+        return 0
+    fi
+    einfo "shadow-login not running"
+    return 3
+}
+
+depend() {
+    need localmount
+    after devfs
+    keyword -jail -prefix -vserver
+}
+SHADOW_LOGIN_EOF
+    chmod 0755 /etc/init.d/shadow-login
+    mkdir -p /etc/runlevels/default
+    ln -sf /etc/init.d/shadow-login /etc/runlevels/default/shadow-login 2>/dev/null || true
+fi
 # Console getty is shadow-login's job (supervise-daemon respawned
 # /bin/login on /dev/tty1) — see packages/core/shadow. raspi5-fixups
 # does NOT install or enable a tty1-console anymore.
@@ -326,6 +415,16 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
         "$MP" brcmfmac      2>/dev/null || true
     fi
 
+    # Live-apply the netfilter module order fix. The boot service keeps
+    # this persistent, and this call quiets tailscaled/nft immediately on
+    # package upgrade.
+    if command -v rc-service >/dev/null 2>&1; then
+        rc-service netfilter-nft-modules start 2>/dev/null || true
+    fi
+    if command -v rc-service >/dev/null 2>&1; then
+        rc-service shadow-login restart 2>/dev/null || true
+    fi
+
     # --- cold-reboot: patch cmdline.txt once + live-flip sysfs ---
     # Firmware prepends reboot=w to the kernel command line; our
     # reboot=c in cmdline.txt overrides that (kernel keeps the last
@@ -359,7 +458,16 @@ exit 0"""
 # Tear down the runlevel symlinks that post_install created.
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
 # Also restore the original /bin/adduser symlink if we have a record of it.
-post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console
+post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console
+if [ -f /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
+    cp -p /etc/init.d/shadow-login.pre-raspi5-fixups /etc/init.d/shadow-login
+    chmod 0755 /etc/init.d/shadow-login 2>/dev/null || true
+    rm -f /etc/init.d/shadow-login.pre-raspi5-fixups
+fi
+if [ -f /etc/login.defs.pre-raspi5-fixups ]; then
+    cp -p /etc/login.defs.pre-raspi5-fixups /etc/login.defs
+    rm -f /etc/login.defs.pre-raspi5-fixups
+fi
 if [ -f /etc/jpkg/raspi5-fixups/adduser.prev ]; then
     prev=$(cat /etc/jpkg/raspi5-fixups/adduser.prev)
     [ -n "$prev" ] && ln -sf "$prev" /bin/adduser
@@ -409,5 +517,5 @@ exit 0"""
 [depends]
 # pi5-wake-on-power is a Python 3 stdlib script — no pip deps.
 # python3 itself is PSF-2.0, on jonerix's permissive allowlist.
-runtime = ["musl", "openrc", "python3"]
+runtime = ["musl", "openrc", "python3", "shadow"]
 build = ["rust"]
