@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r4"
+version = "4.19.4-r5"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Specifically, installing this package redirects these /bin
@@ -147,8 +147,15 @@ for f in "$DESTDIR"/lib/*.a "$DESTDIR"/lib/*.so*; do
     [ -f "$f" ] && llvm-strip --strip-unneeded "$f" 2>/dev/null || true
 done
 
-# /etc/login.defs: shadow ships one; keep it, but arch-neutral.
-# Nothing else to do — configure wrote the right paths.
+# /etc/login.defs: keep tty prompts open indefinitely. The default
+# LOGIN_TIMEOUT=60 caused idle HDMI logins to exit every minute.
+if [ -f "$DESTDIR/etc/login.defs" ]; then
+    if grep -q '^[[:space:]]*LOGIN_TIMEOUT[[:space:]]' "$DESTDIR/etc/login.defs" 2>/dev/null; then
+        sed -i 's/^[[:space:]]*LOGIN_TIMEOUT[[:space:]].*/LOGIN_TIMEOUT	0/' "$DESTDIR/etc/login.defs"
+    else
+        echo 'LOGIN_TIMEOUT	0' >> "$DESTDIR/etc/login.defs"
+    fi
+fi
 
 # shadow-getty: a ~100-line C helper that does the full agetty dance
 # (setsid → open tty → TIOCSCTTY → dup2 0/1/2 → tcsetattr → execl
@@ -162,10 +169,10 @@ clang -O2 -Wall -Wextra \
 install -Dm755 "$DESTDIR/../shadow-getty" "$DESTDIR/bin/shadow-getty"
 llvm-strip --strip-all "$DESTDIR/bin/shadow-getty" 2>/dev/null || true
 
-# shadow-login OpenRC service: supervise-daemon respawns shadow-getty
-# on /dev/tty1. post_install wires the service into the `default`
-# runlevel unless the operator has created /etc/shadow/no-console
-# (opt-out).
+# shadow-login OpenRC service: a small mksh loop runs shadow-getty on
+# /dev/tty1 and only respawns after a real logout. post_install wires the
+# service into the `default` runlevel unless the operator has created
+# /etc/shadow/no-console (opt-out).
 install -Dm755 "$RECIPE_DIR/init.d/shadow-login" \
     "$DESTDIR/etc/init.d/shadow-login"
 """
@@ -207,6 +214,13 @@ done
 # never clobber the operator's edited copy.
 if [ ! -f /etc/login.defs ] && [ -f /etc/default/useradd ]; then
     : # configure-installed
+fi
+if [ -f /etc/login.defs ]; then
+    if grep -q '^[[:space:]]*LOGIN_TIMEOUT[[:space:]]' /etc/login.defs 2>/dev/null; then
+        sed -i 's/^[[:space:]]*LOGIN_TIMEOUT[[:space:]].*/LOGIN_TIMEOUT	0/' /etc/login.defs
+    else
+        echo 'LOGIN_TIMEOUT	0' >> /etc/login.defs
+    fi
 fi
 
 # --- shadow-login OpenRC service wiring ---
@@ -296,5 +310,5 @@ fi
 exit 0"""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "toybox"]
 build = ["clang", "make", "jonerix-headers", "pkgconf"]

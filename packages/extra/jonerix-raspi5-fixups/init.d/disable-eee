@@ -1,19 +1,27 @@
 #!/bin/openrc-run
 # Disable EEE on the eth0 PHY at boot.
 # Fixes BCM54213PE (Pi 5) link-flap caused by LPI transitions.
-# Runs after kernel modules load and before networking brings the link up.
-# Part of jonerix — MIT License
+# This is a PHY setting, not a network dependency. Run it after dhcpcd
+# has brought the interface/link up enough for eee-tool to latch, but
+# do not make SSH or console login depend on this succeeding.
+# Part of jonerix - MIT License
 
 description="Disable Energy-Efficient Ethernet on eth0 PHY (Pi 5 BCM54213PE fix)"
 
 depend() {
     need modules
-    before networking
+    after dhcpcd
+    before ntpd sshd tailscaled tailscale-up
     keyword -jail -prefix -vserver
 }
 
 start() {
     ebegin "Disabling EEE on eth0 PHY"
-    /bin/disable-eee eth0
-    eend $?
+    if /bin/disable-eee eth0; then
+        eend 0
+        return 0
+    fi
+
+    ewarn "disable-eee failed to confirm EEE off; continuing boot"
+    eend 0
 }

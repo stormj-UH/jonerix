@@ -190,8 +190,10 @@ fn dfs_visit(
 /// Algorithm (post-order DFS, matching deps.c:122-168):
 ///   1. Collect installed package names from `db`.
 ///   2. For each requested package, run `dfs_visit` which recursively walks
-///      `IndexEntry.depends`.  Shared dependencies are visited only once (the
-///      `Visited` guard).
+///      `IndexEntry.depends`. The caller's requested package order is preserved
+///      because same-level packages can replace one another's files. The Pi
+///      image depends on this: toybox must land before mksh/shadow/fixups so
+///      their hooks can claim /bin/sh, /bin/login, and /bin/reboot.
 ///   3. Cycle → `Err::Cycle`; unknown dep → `Err::UnknownDependency`.
 ///   4. If `force=false`, split the post-order result into `to_install`
 ///      (not yet installed) and `already_installed` (already present).
@@ -209,11 +211,9 @@ pub fn resolve_install(
     let mut result: Vec<String> = Vec::new();
     let mut stack: Vec<String> = Vec::new();
 
-    // Process requested packages in sorted order for determinism.
-    let mut sorted_want = want.to_vec();
-    sorted_want.sort();
-
-    for name in &sorted_want {
+    // Preserve caller order. Reordering independent packages can change the
+    // final owner of replacement paths such as /bin/sh and /bin/reboot.
+    for name in want {
         // Verify the package exists in the index before diving in.
         if index.get(name, arch).is_none() {
             return Err(DepsError::UnknownPackage {
@@ -632,6 +632,24 @@ mod tests {
             plan.already_installed.is_empty(),
             "already_installed must be empty when force=true"
         );
+    }
+
+    #[test]
+    fn test_preserves_requested_package_order() {
+        let index = make_index(&[
+            ("toybox", vec![]),
+            ("mksh", vec![]),
+            ("shadow", vec![]),
+        ]);
+        let (_tmp, db) = make_db(&[]);
+        let want = vec![
+            String::from("toybox"),
+            String::from("mksh"),
+            String::from("shadow"),
+        ];
+        let plan = resolve_install(&want, "x86_64", &db, &index, false)
+            .expect("resolve_install failed");
+        assert_eq!(plan.to_install, want);
     }
 
     // ── Test 6: Unknown dependency ───────────────────────────────────────────

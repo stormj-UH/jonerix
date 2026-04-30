@@ -138,6 +138,11 @@ def jpkg_install(root: pathlib.Path, packages: list[str], release_tag: str):
         usr.symlink_to(".")
 
     run(["jpkg", "--root", str(root), "update"])
+    if "toybox" in packages:
+        # Mirror build-image.py: replacement hooks need toybox applets
+        # available before mksh/shadow/raspi5-fixups run, and toybox must
+        # not be installed later after those packages claim their links.
+        run(["jpkg", "--root", str(root), "install", "toybox"])
     run(["jpkg", "--root", str(root), "install"] + packages)
 
     # Switch to rolling for post-boot updates

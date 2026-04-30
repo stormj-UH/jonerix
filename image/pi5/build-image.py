@@ -13,6 +13,7 @@ import argparse
 import contextlib
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -514,6 +515,14 @@ def jpkg_install(root: Path, packages: Iterable[str], release_tag: str) -> None:
     log(f"jpkg update -r {root}")
     run(["jpkg", "--root", str(root), "update"])
 
+    if "toybox" in pkgs:
+        # Several later packages replace toybox applet links in post_install
+        # hooks (/bin/sh, /bin/login, /bin/reboot). Install toybox first so
+        # those hooks have cat/sed/ln/cp available and toybox cannot clobber
+        # their final links later in the same install transaction.
+        log(f"jpkg install -r {root} toybox (bootstrap)")
+        run(["jpkg", "--root", str(root), "install", "toybox"])
+
     log(f"jpkg install -r {root} {' '.join(pkgs)}")
     # Per packages/jpkg/src/main.c line 81 ("-r, --root <path> Use alternative
     # root filesystem"), --root is a top-level flag BEFORE the subcommand.
@@ -749,6 +758,101 @@ def enable_openrc_service(root: Path, svc: str, runlevel: str = "default") -> No
 def disable_openrc_service(root: Path, svc: str, runlevel: str) -> None:
     link = root / "etc" / "runlevels" / runlevel / svc
     link.unlink(missing_ok=True)
+
+
+def force_symlink(root: Path, path: str, target: str) -> None:
+    link = root / path.lstrip("/")
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if link.exists() or link.is_symlink():
+        if link.is_dir() and not link.is_symlink():
+            die(f"cannot replace directory with symlink: /{path.lstrip('/')}")
+        link.unlink()
+    link.symlink_to(target)
+
+
+def normalize_login_timeout(root: Path) -> None:
+    login_defs = root / "etc" / "login.defs"
+    if not login_defs.exists():
+        return
+    lines = login_defs.read_text().splitlines()
+    saw = False
+    out = []
+    for line in lines:
+        if re.match(r"^\s*LOGIN_TIMEOUT\s", line):
+            out.append("LOGIN_TIMEOUT\t0")
+            saw = True
+        else:
+            out.append(line)
+    if not saw:
+        out.append("LOGIN_TIMEOUT\t0")
+    login_defs.write_text("\n".join(out) + "\n")
+
+
+def enforce_pi5_boot_defaults(root: Path) -> None:
+    """Make image-critical replacement links match the known-good Pi."""
+    if (root / "bin" / "mksh").exists():
+        force_symlink(root, "/bin/sh", "mksh")
+
+    shadow_bins = (
+        "passwd login chpasswd chage chfn chsh chgpasswd useradd userdel "
+        "usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin "
+        "vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd "
+        "newgidmap newuidmap faillog lastlog sulogin"
+    ).split()
+    for name in shadow_bins:
+        if (root / "bin" / f"shadow-{name}").exists():
+            force_symlink(root, f"/bin/{name}", f"shadow-{name}")
+
+    if (root / "bin" / "adduser-safe").exists():
+        force_symlink(root, "/bin/adduser", "adduser-safe")
+    if (root / "local" / "bin" / "reboot-openrc").exists():
+        force_symlink(root, "/bin/reboot", "/usr/local/bin/reboot-openrc")
+
+    normalize_login_timeout(root)
+
+
+def validate_pi5_boot_defaults(root: Path) -> None:
+    problems: list[str] = []
+
+    def expect_link(path: str, targets: set[str]) -> None:
+        link = root / path.lstrip("/")
+        if not link.is_symlink():
+            problems.append(f"{path} is not a symlink")
+            return
+        actual = os.readlink(link)
+        if actual not in targets:
+            problems.append(f"{path} -> {actual}, expected one of {sorted(targets)}")
+
+    expect_link("/bin/sh", {"mksh"})
+    expect_link("/bin/login", {"shadow-login"})
+    expect_link("/bin/passwd", {"shadow-passwd"})
+    expect_link("/bin/adduser", {"adduser-safe"})
+    expect_link("/bin/reboot", {"/usr/local/bin/reboot-openrc", "/local/bin/reboot-openrc"})
+
+    shadow_login = root / "etc" / "init.d" / "shadow-login"
+    if not shadow_login.is_file() or shadow_login.stat().st_size == 0:
+        problems.append("/etc/init.d/shadow-login is missing or empty")
+    else:
+        text = shadow_login.read_text(errors="replace")
+        if "while :; do /bin/shadow-getty /dev/tty1; sleep 1; done" not in text:
+            problems.append("/etc/init.d/shadow-login is not the fixed shadow-getty loop")
+
+    disable_eee = root / "etc" / "init.d" / "disable-eee"
+    if not disable_eee.is_file():
+        problems.append("/etc/init.d/disable-eee is missing")
+    else:
+        text = disable_eee.read_text(errors="replace")
+        if "after dhcpcd" not in text or "continuing boot" not in text:
+            problems.append("/etc/init.d/disable-eee is not the tolerant post-dhcpcd service")
+
+    login_defs = root / "etc" / "login.defs"
+    if login_defs.exists():
+        for line in login_defs.read_text(errors="replace").splitlines():
+            if re.match(r"^\s*LOGIN_TIMEOUT\s", line) and line.split()[-1] != "0":
+                problems.append(f"/etc/login.defs keeps nonzero {line!r}")
+
+    if problems:
+        die("Pi 5 boot defaults failed validation:\n  - " + "\n  - ".join(problems))
 
 
 # ----------------------------------------------------------------------------
@@ -1145,6 +1249,7 @@ def build(args: argparse.Namespace) -> int:
             with mount(root_part, mnt_root), mount(boot_part, mnt_boot):
                 # jpkg first -- it creates /etc, /lib, etc.
                 jpkg_install(mnt_root, packages, args.release_tag)
+                enforce_pi5_boot_defaults(mnt_root)
 
                 # CA trust store for TLS-using daemons (tailscale,
                 # curl, ntpd). Must come AFTER jpkg_install so the
@@ -1203,6 +1308,7 @@ def build(args: argparse.Namespace) -> int:
                 write_restricted_motd(mnt_root)
 
                 enable_default_services(mnt_root)
+                validate_pi5_boot_defaults(mnt_root)
 
                 # Make sure /boot exists on rootfs for the fstab mount point.
                 (mnt_root / "boot").mkdir(exist_ok=True)

@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.13"
+version = "1.6.14"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -63,6 +63,7 @@ install -Dm755 init.d/pi5-wifi     $DESTDIR/etc/init.d/pi5-wifi
 # uplink while it has carrier and falls over to wlan0 automatically.
 install -Dm755 bin/pi5-wifi-connect $DESTDIR/usr/local/bin/pi5-wifi-connect
 install -Dm755 init.d/wpa_supplicant_wlan0 $DESTDIR/etc/init.d/wpa_supplicant_wlan0
+install -Dm755 init.d/shadow-login $DESTDIR/share/jonerix-raspi5-fixups/shadow-login
 
 # pi5-wifi-set-country: Python+ctypes shim for `iw reg set <CC>` (which
 # is GPL-2 and not in jonerix). Sends NL80211_CMD_REQ_SET_REG over a
@@ -301,7 +302,7 @@ if [ -f /etc/login.defs ]; then
         cp -p /etc/login.defs /etc/login.defs.pre-raspi5-fixups 2>/dev/null || true
     fi
     if grep -q '^[[:space:]]*LOGIN_TIMEOUT[[:space:]]' /etc/login.defs 2>/dev/null; then
-        sed -i -E 's/^[[:space:]]*LOGIN_TIMEOUT[[:space:]].*/LOGIN_TIMEOUT	0/' /etc/login.defs
+        sed -i 's/^[[:space:]]*LOGIN_TIMEOUT[[:space:]].*/LOGIN_TIMEOUT	0/' /etc/login.defs
     else
         echo 'LOGIN_TIMEOUT	0' >> /etc/login.defs
     fi
@@ -310,76 +311,15 @@ if [ -x /bin/shadow-getty ] && [ -d /etc/init.d ]; then
     if [ -f /etc/init.d/shadow-login ] && [ ! -e /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
         cp -p /etc/init.d/shadow-login /etc/init.d/shadow-login.pre-raspi5-fixups 2>/dev/null || true
     fi
-    cat > /etc/init.d/shadow-login <<'SHADOW_LOGIN_EOF'
-#!/bin/openrc-run
-# shadow-login: tty1 login prompt via shadow-getty.
-#
-# /bin/login is shadow login and reads LOGIN_TIMEOUT from /etc/login.defs.
-# LOGIN_TIMEOUT 0 keeps an idle tty prompt up indefinitely. This service only
-# loops after real logouts so tty1 comes back after an interactive session ends.
-
-name="shadow-login"
-description="shadow-utils login(1) on /dev/tty1 via shadow-getty"
-pidfile="/run/shadow-login.pid"
-logfile="/var/log/shadow-login.log"
-
-start_pre() {
-    [ -c /dev/tty1 ] || mknod /dev/tty1 c 4 1 2>/dev/null || true
-    touch "$logfile" 2>/dev/null || true
-}
-
-is_running() {
-    local pid
-    [ -f "$pidfile" ] || return 1
-    pid="$(cat "$pidfile" 2>/dev/null || true)"
-    [ -n "$pid" ] || return 1
-    [ -d "/proc/$pid" ]
-}
-
-start() {
-    ebegin "Starting shadow-login"
-    if is_running; then
-        eend 0
-        return 0
+    if [ -r /share/jonerix-raspi5-fixups/shadow-login ]; then
+        cp /share/jonerix-raspi5-fixups/shadow-login /etc/init.d/shadow-login
+        chmod 0755 /etc/init.d/shadow-login
     fi
-    /bin/mksh -c 'while :; do /bin/shadow-getty /dev/tty1; sleep 1; done' >>"$logfile" 2>&1 &
-    echo $! > "$pidfile"
-    eend 0
-}
-
-stop() {
-    ebegin "Stopping shadow-login"
-    if [ -f "$pidfile" ]; then
-        loop_pid="$(cat "$pidfile" 2>/dev/null || true)"
-        [ -n "$loop_pid" ] && kill "$loop_pid" 2>/dev/null || true
-    fi
-    pkill -x shadow-getty 2>/dev/null || true
-    pkill -x login 2>/dev/null || true
-    rm -f "$pidfile"
-    eend 0
-}
-
-status() {
-    if is_running; then
-        einfo "shadow-login running (pid $(cat "$pidfile"))"
-        return 0
-    fi
-    einfo "shadow-login not running"
-    return 3
-}
-
-depend() {
-    need localmount
-    after devfs
-    keyword -jail -prefix -vserver
-}
-SHADOW_LOGIN_EOF
-    chmod 0755 /etc/init.d/shadow-login
     mkdir -p /etc/runlevels/default
     ln -sf /etc/init.d/shadow-login /etc/runlevels/default/shadow-login 2>/dev/null || true
 fi
-# Console getty is shadow-login's job (supervise-daemon respawned
-# /bin/login on /dev/tty1) — see packages/core/shadow. raspi5-fixups
+# Console getty is shadow-login's job (shadow-getty on tty1) — see
+# packages/core/shadow. raspi5-fixups
 # does NOT install or enable a tty1-console anymore.
 # Clean up legacy runlevel symlinks from <= 1.6.4 installs so a
 # stale tty1-console doesn't silently start in parallel with
@@ -525,5 +465,5 @@ exit 0"""
 [depends]
 # pi5-wake-on-power is a Python 3 stdlib script — no pip deps.
 # python3 itself is PSF-2.0, on jonerix's permissive allowlist.
-runtime = ["musl", "openrc", "python3", "shadow"]
+runtime = ["musl", "openrc", "python3", "shadow", "toybox"]
 build = ["rust"]
