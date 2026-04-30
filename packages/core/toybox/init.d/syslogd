@@ -1,0 +1,17 @@
+#!/bin/openrc-run
+# OpenRC service script for toybox syslogd
+# Part of jonerix - MIT License
+
+name="syslogd"
+description="toybox syslogd - system log daemon"
+
+supervisor="supervise-daemon"
+command="/usr/bin/syslogd"
+command_args="-n ${SYSLOGD_OPTS}"
+pidfile="/run/syslogd.pid"
+
+depend() {
+    provide logger
+    use net
+    before *
+}

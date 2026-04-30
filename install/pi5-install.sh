@@ -592,7 +592,7 @@ rm -f "$ROOT_MNT/etc/runlevels/default/dhcpcd" "$ROOT_MNT/etc/runlevels/default/
 for _svc in boot-trace dhcpcd disable-eee fan-control hostname hwclock localmount loopback netfilter-nft-modules pi5-cold-reboot pi5-wifi root sysctl; do
     _enable_openrc_service "$_svc" boot
 done
-for _svc in ntp-bootstrap ntpd shadow-login wpa_supplicant_wlan0; do
+for _svc in ntp-bootstrap ntpd shadow-login syslogd wpa_supplicant_wlan0; do
     _enable_openrc_service "$_svc" default
 done
 _enable_openrc_service reboot-trace-shutdown shutdown

@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r3"
+version = "0.8.11-r4"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 
@@ -82,7 +82,17 @@ while read applet; do
   [ "$applet" = "bash" ] && continue
   ln -sf toybox "$DESTDIR/bin/$applet"
 done < /tmp/_applets.txt
-rm -f /tmp/_instlist /tmp/_applets.txt"""
+rm -f /tmp/_instlist /tmp/_applets.txt
+install -Dm755 "$RECIPE_DIR/init.d/syslogd" "$DESTDIR/etc/init.d/syslogd"
+install -Dm644 "$RECIPE_DIR/conf.d/syslogd" "$DESTDIR/etc/conf.d/syslogd"
+"""
+
+[hooks]
+post_install = """mkdir -p /etc/runlevels/default
+[ -f /etc/init.d/syslogd ] && ln -sf /etc/init.d/syslogd /etc/runlevels/default/syslogd 2>/dev/null || true
+"""
+post_remove = """rm -f /etc/runlevels/default/syslogd
+"""
 
 [depends]
 runtime = ["musl"]

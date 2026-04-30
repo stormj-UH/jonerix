@@ -1026,7 +1026,7 @@ def enable_default_services(root: Path) -> None:
     """Wire runlevels to match jonerix-tormenta's core Pi startup.
 
     Host-specific apps such as Tailscale, sshd/dropbear variants, and syslog
-    forwarding are deliberately left out. Only enables services whose init
+    forwarding destinations are deliberately left out. Only enables services whose init
     scripts are present.
     """
     for svc in ("devfs", "modules"):
@@ -1052,7 +1052,7 @@ def enable_default_services(root: Path) -> None:
         if (root / "etc" / "init.d" / svc).exists():
             enable_openrc_service(root, svc, runlevel="boot")
 
-    for svc in ("ntp-bootstrap", "ntpd", "shadow-login", "wpa_supplicant_wlan0"):
+    for svc in ("ntp-bootstrap", "ntpd", "shadow-login", "syslogd", "wpa_supplicant_wlan0"):
         if (root / "etc" / "init.d" / svc).exists():
             enable_openrc_service(root, svc, runlevel="default")
 

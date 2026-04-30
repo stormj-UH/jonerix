@@ -1,0 +1,5 @@
+# Options for toybox syslogd
+# -R HOST[:PORT]  forward to remote syslog
+# -L              also log locally (add if you want both)
+# Remote forwarding is intentionally not configured by the base image.
+SYSLOGD_OPTS=""

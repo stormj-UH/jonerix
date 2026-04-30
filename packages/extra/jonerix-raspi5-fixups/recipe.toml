@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.12"
+version = "1.6.13"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -287,7 +287,7 @@ rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
 for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
 done
-for svc in ntp-bootstrap ntpd shadow-login wpa_supplicant_wlan0; do
+for svc in ntp-bootstrap ntpd shadow-login syslogd wpa_supplicant_wlan0; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/default/$svc" 2>/dev/null || true
 done
 [ -f /etc/init.d/reboot-trace-shutdown ] && ln -sf /etc/init.d/reboot-trace-shutdown /etc/runlevels/shutdown/reboot-trace-shutdown 2>/dev/null || true
