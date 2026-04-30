@@ -42,7 +42,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`bsdtar`** | `core` | 3.8.6-r6 | Apache-2.0 | any | `libarchive` | — | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | Compatibility package providing /bin/tar via libarchive bsdtar |
 | **`curl`** | `core` | 8.11.1-r1 | MIT | any | `musl`, `libressl`, `zlib` | `clang`, `cmake`, `samurai`, `libressl`, `zlib` | `docker:minimal`, `docker:core`, `docker:full` | Command-line tool and library for transferring data with URLs |
 | **`dhcpcd`** | `core` | 10.1.0-r4 | BSD-2-Clause | any | `musl`, `openrc` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | RFC2131-compliant DHCP client daemon |
-| **`doas`** | `core` | 6.8.2 | ISC | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | Lightweight privilege escalation tool (OpenDoas) |
+| **`doas`** | `core` | 6.8.2-r5 | ISC | any | `musl` | `clang`, `make`, `byacc` | `docker:core`, `docker:full` | Lightweight privilege escalation tool (OpenDoas) |
 | **`dropbear`** | `core` | 2025.89-r2 | MIT AND BSD-2-Clause AND Public-Domain | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight SSH server and client |
 | **`exproxide`** | `core` | 0.1.0 | MIT | any | `musl` | `rust` | `docker:core`, `docker:builder`, `docker:full` | Clean-room Rust implementation of expr for jonerix |
 | **`fastfetch`** | `core` | 2.36.1 | MIT | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | `docker:core`, `docker:full` | Feature-rich system information tool |
@@ -50,7 +50,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | — | — | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
 | **`ifupdown-ng`** | `core` | 0.12.1 | ISC | any | `musl` | `clang`, `make`, `jonerix-headers` | `pi5-image`, `docker:core`, `docker:full` | Next-generation network interface configuration tool |
 | **`iproute-go`** | `core` | 0.16.0 | BSD-3-Clause | any | — | `go` | `docker:core` | u-root's ip command — Go reimplementation of iproute2's ip(8) |
-| **`jpkg`** | `core` | 2.0.0 | MIT | any | `musl` | `rust` | `docker:minimal`, `docker:core`, `docker:builder`, `docker:full` | jonerix package manager — Rust port (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
+| **`jpkg`** | `core` | 2.0.2 | MIT | any | `musl` | `rust` | `docker:minimal`, `docker:core`, `docker:builder`, `docker:full` | jonerix package manager — Rust port (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
 | **`jq`** | `core` | 1.8.1 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Lightweight and flexible command-line JSON processor |
 | **`libarchive`** | `core` | 3.8.6-r5 | Apache-2.0 | any | `musl`, `zlib`, `xz`, `zstd`, `lz4`, `libressl` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `xz`, `zstd`, `lz4` | `docker:core` | Multi-format archive and compression library with bsdtar |
 | **`libffi`** | `core` | 3.4.6 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Foreign Function Interface library — dispatches to C ABI from dynamic callers |
@@ -68,7 +68,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`ripgrep`** | `core` | 15.1.0 | MIT | any | `musl` | `rust` | `docker:core` | Fast line-oriented search tool (grep replacement) |
 | **`snooze`** | `core` | 0.5-r1 | CC0 | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | Lightweight cron alternative for running a command at a specific time |
 | **`stormwall`** | `core` | 0.1.1 | MIT | any | `musl` | `rust` | — | Drop-in replacement for the nft CLI |
-| **`sudo`** | `core` | 1.9.17p2 | ISC | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image` | Privilege escalation utility |
+| **`sudo`** | `core` | 1.9.17p2-r3 | ISC | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image` | Privilege escalation utility |
 | **`toybox`** | `core` | 0.8.11-r2 | 0BSD | any | `musl` | `clang` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | BSD-licensed coreutils replacement |
 | **`tzdata`** | `core` | 2026a | Public-Domain | any | `musl` | `clang` | `docker:core` | IANA time zone database (zoneinfo data plus zic/zdump tools) |
 | **`unbound`** | `core` | 1.22.0 | BSD-3-Clause | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `docker:core`, `docker:full` | Validating, recursive, and caching DNS resolver |

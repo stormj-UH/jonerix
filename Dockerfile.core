@@ -113,6 +113,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     /bin/toybox ln -sf dbclient /bin/ssh 2>/dev/null || true && \
     /bin/toybox ln -sf micro /bin/editor 2>/dev/null || true && \
     /bin/toybox ln -sf micro /bin/vi 2>/dev/null || true && \
+    /bin/toybox ln -sf mksh /bin/sh 2>/dev/null || true && \
     # GCC compat symlinks for Rust binaries (gix, etc.)
     /bin/toybox ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true && \
     /bin/toybox ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true

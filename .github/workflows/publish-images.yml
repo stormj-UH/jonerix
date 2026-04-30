@@ -439,7 +439,9 @@ jobs:
           samu --version >/dev/null 2>&1 && pass "samu (ninja)" || fail "samu"
 
           # jpkg
-          jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
+          jpkg --version 2>&1 | grep -q "jpkg 2.0.2" && pass "jpkg 2.0.2" || fail "jpkg 2.0.2"
+          [ "$(toybox readlink /bin/sh 2>/dev/null)" = "mksh" ] && pass "sh provider mksh" || fail "sh provider mksh"
+          [ -u /bin/doas ] && pass "doas setuid" || fail "doas setuid"
 
           # Dropbear must come from the refreshed package release before
           # container images are published.
@@ -465,6 +467,9 @@ jobs:
 
 
           # Networking daemons
+          jpkg --version 2>&1 | grep -q "jpkg 2.0.2" && pass "jpkg 2.0.2" || fail "jpkg 2.0.2"
+          [ "$(toybox readlink /bin/sh 2>/dev/null)" = "mksh" ] && pass "sh provider mksh" || fail "sh provider mksh"
+          [ -u /bin/doas ] && pass "doas setuid" || fail "doas setuid"
           dropbear -V 2>&1 | grep -q "Dropbear v2025.89" && pass "dropbear 2025.89" || fail "dropbear 2025.89"
           unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
           dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || echo "WARN: dhcpcd (known issue)"
@@ -528,7 +533,9 @@ jobs:
           samu --version >/dev/null 2>&1 && pass "samu (ninja)" || fail "samu"
 
           # jpkg
-          jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
+          jpkg --version 2>&1 | grep -q "jpkg 2.0.2" && pass "jpkg 2.0.2" || fail "jpkg 2.0.2"
+          [ "$(toybox readlink /bin/sh 2>/dev/null)" = "mksh" ] && pass "sh provider mksh" || fail "sh provider mksh"
+          [ -u /bin/doas ] && pass "doas setuid" || fail "doas setuid"
 
           # Dropbear must come from the refreshed package release before
           # container images are published.
@@ -554,6 +561,9 @@ jobs:
 
 
           # Networking daemons
+          jpkg --version 2>&1 | grep -q "jpkg 2.0.2" && pass "jpkg 2.0.2" || fail "jpkg 2.0.2"
+          [ "$(toybox readlink /bin/sh 2>/dev/null)" = "mksh" ] && pass "sh provider mksh" || fail "sh provider mksh"
+          [ -u /bin/doas ] && pass "doas setuid" || fail "doas setuid"
           dropbear -V 2>&1 | grep -q "Dropbear v2025.89" && pass "dropbear 2025.89" || fail "dropbear 2025.89"
           unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
           dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || echo "WARN: dhcpcd (known issue)"

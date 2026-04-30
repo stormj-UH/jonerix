@@ -48,8 +48,9 @@ RUN jpkg update && \
       echo "builder package install failures:$failed"; \
       exit 1; \
     fi && \
-    /usr/local/bin/bootstrap-meson && \
-    sh /usr/local/sbin/image-slim && \
+    /bin/toybox ln -sf mksh /bin/sh 2>/dev/null || true && \
+    /bin/mksh /usr/local/bin/bootstrap-meson && \
+    /bin/mksh /usr/local/sbin/image-slim && \
     rm /usr/local/sbin/image-slim
 
 # Compiler wrappers and tool symlinks

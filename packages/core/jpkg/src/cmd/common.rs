@@ -12,7 +12,7 @@
 use std::fmt;
 use std::fs;
 use std::io;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
@@ -375,6 +375,7 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> io::Result<()> {
             std::os::unix::fs::symlink(target, &dest)?;
         } else if m.is_dir() {
             fs::create_dir_all(&dest)?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(m.mode() & 0o7777))?;
         } else {
             // Regular file — remove any existing symlink/file at dest first so
             // we do not inadvertently write through a symlink.
@@ -385,6 +386,7 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> io::Result<()> {
                 fs::create_dir_all(p)?;
             }
             fs::copy(abs, &dest)?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(m.mode() & 0o7777))?;
         }
     }
     Ok(())
@@ -741,6 +743,49 @@ pub(crate) mod tests {
         let got = db.get("mypkg").unwrap().expect("mypkg should be in db");
         assert_eq!(got.metadata.package.name.as_deref(), Some("mypkg"));
         assert!(!got.files.is_empty(), "files manifest should be non-empty");
+    }
+
+    #[test]
+    fn test_extract_and_register_preserves_setuid_mode() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        let destdir = tmp.path().join("suid-destdir");
+        fs::create_dir_all(destdir.join("bin")).unwrap();
+        fs::write(destdir.join("bin/sudo"), b"sudo stub").unwrap();
+        fs::set_permissions(
+            destdir.join("bin/sudo"),
+            fs::Permissions::from_mode(0o4755),
+        )
+        .unwrap();
+
+        let meta = make_metadata("suidpkg", "1.0.0");
+        let meta_toml = meta.to_string().unwrap();
+        let jpkg_path = tmp.path().join("suidpkg-1.0.0-x86_64.jpkg");
+        archive::create(&jpkg_path, &meta_toml, &destdir).unwrap();
+
+        fs::create_dir_all(&rootfs).unwrap();
+        let archive = JpkgArchive::open(&jpkg_path).unwrap();
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        extract_and_register(&archive, &rootfs, &db).unwrap();
+
+        let mode = rootfs
+            .join("bin/sudo")
+            .symlink_metadata()
+            .expect("bin/sudo should be installed")
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(mode, 0o4755, "setuid mode should survive install");
+
+        let got = db.get("suidpkg").unwrap().expect("suidpkg should be in db");
+        let sudo = got
+            .files
+            .iter()
+            .find(|e| e.path == "bin/sudo")
+            .expect("bin/sudo should be in manifest");
+        assert_eq!(sudo.mode & 0o7777, 0o4755, "manifest should record setuid mode");
     }
 
     // ── 4. extract_and_register + replaces ────────────────────────────────────

@@ -386,8 +386,14 @@ fn extract_zstd_tar(zstd_tar_bytes: &[u8], dest: &Path) -> Result<Vec<PathBuf>, 
         zstd::stream::Decoder::new(zstd_tar_bytes).map_err(ArchiveError::Zstd)?;
 
     let mut archive = tar::Archive::new(decoder);
+    // Preserve suid/sgid/sticky bits for privileged tools such as sudo,
+    // doas, su, and passwd. The tar crate masks extended permissions by
+    // default unless this is explicitly enabled.
+    archive.set_preserve_permissions(true);
+    if nix::unistd::getuid().is_root() {
+        archive.set_preserve_ownerships(true);
+    }
     // preserve_mtime is true by default in the tar crate.
-    // preserve_permissions is true by default.
     // unpack() handles symlinks, directories, and regular files.
 
     let mut created: Vec<PathBuf> = Vec::new();
@@ -635,5 +641,36 @@ version = "0.1.0"
         // The symlink target should be readable.
         let contents = fs::read(&sym_path).expect("reading through symlink failed");
         assert_eq!(contents, b"\x7fELF stub");
+    }
+
+    #[test]
+    fn test_setuid_mode_preserved_after_roundtrip() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().unwrap();
+        let destdir = tmp.path().join("suid_destdir");
+        fs::create_dir_all(destdir.join("bin")).unwrap();
+        fs::write(destdir.join("bin/sudo"), b"sudo stub").unwrap();
+        fs::set_permissions(
+            destdir.join("bin/sudo"),
+            fs::Permissions::from_mode(0o4755),
+        )
+        .unwrap();
+
+        let out = tmp.path().join("suid-test.jpkg");
+        create(&out, SYNTHETIC_TOML, &destdir).expect("create() failed");
+
+        let arch = JpkgArchive::open(&out).expect("open() failed");
+        let extract_dir = tmp.path().join("suid_extract");
+        arch.extract(&extract_dir).expect("extract() failed");
+
+        let mode = extract_dir
+            .join("bin/sudo")
+            .symlink_metadata()
+            .expect("bin/sudo not found after extraction")
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(mode, 0o4755, "setuid mode should survive archive extraction");
     }
 }

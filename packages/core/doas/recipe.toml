@@ -1,6 +1,6 @@
 [package]
 name = "doas"
-version = "6.8.2-r3"
+version = "6.8.2-r5"
 license = "ISC"
 description = "Lightweight privilege escalation tool (OpenDoas)"
 
@@ -18,11 +18,11 @@ configure = """CFLAGS="-O2 -fomit-frame-pointer" CC=clang ./configure --prefix=/
 # Pre-generate parse.c here so make finds it already built.
 byacc -o parse.c parse.y"""
 build = "make -j$(nproc)"
-install = """make DESTDIR=$DESTDIR install
-if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
-if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+install = """set -e
+install -Dm755 doas "$DESTDIR/bin/doas"
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+chmod 4755 "$DESTDIR/bin/doas" """
 
 [depends]
 runtime = ["musl"]
