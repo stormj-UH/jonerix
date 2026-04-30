@@ -1,0 +1,65 @@
+#!/bin/openrc-run
+name="reboot-trace-shutdown"
+description="Capture shutdown diagnostics before reboot"
+
+depend() {
+    before killprocs savecache mount-ro
+}
+
+start() {
+    local dir log base
+    dir=/var/log/reboot-trace
+    mkdir -p "$dir"
+    base="shutdown-$(date -u +%Y%m%dT%H%M%SZ)-$(cut -d. -f1 /proc/uptime 2>/dev/null).log"
+    log="$dir/$base"
+
+    ebegin "Capturing shutdown trace"
+    {
+        echo "=== shutdown trace ==="
+        date -u
+        echo
+        echo "[boot id]"
+        cat /proc/sys/kernel/random/boot_id 2>/dev/null || true
+        echo
+        echo "[uptime]"
+        cat /proc/uptime 2>/dev/null || true
+        echo
+        echo "[cmdline]"
+        cat /proc/cmdline 2>/dev/null || true
+        echo
+        echo "[reboot mode]"
+        cat /sys/kernel/reboot/mode 2>/dev/null || true
+        echo
+        echo "[rc-status]"
+        rc-status -a 2>&1 || true
+        echo
+        echo "[processes]"
+        ps 2>&1 || true
+        echo
+        echo "[mounts]"
+        cat /proc/mounts 2>/dev/null || true
+        echo
+        echo "[open files under root-ish paths]"
+        for pid in /proc/[0-9]*; do
+            [ -d "$pid/fd" ] || continue
+            p=${pid##*/}
+            for fd in "$pid"/fd/*; do
+                target=$(readlink "$fd" 2>/dev/null) || continue
+                case "$target" in
+                    /var/*|/etc/*|/home/*|/root/*)
+                        printf 'pid=%s fd=%s target=%s cmd=' "$p" "${fd##*/}" "$target"
+                        tr '\0' ' ' < "$pid/cmdline" 2>/dev/null
+                        printf '\n'
+                        break
+                        ;;
+                esac
+            done
+        done
+        echo
+        echo "[dmesg]"
+        dmesg 2>&1 || true
+    } > "$log" 2>&1
+    ln -sf "$base" "$dir/latest-shutdown.log"
+    sync
+    eend 0
+}

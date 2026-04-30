@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r7"
+version = "10.1.0-r8"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -135,7 +135,7 @@ CONFD
 chmod 644 $DESTDIR/etc/conf.d/dhcpcd"""
 
 [hooks]
-# Register dhcpcd with OpenRC's default runlevel on install (idempotent).
+# Register dhcpcd with OpenRC's boot runlevel on install (idempotent).
 # Using `ln -sf` instead of `rc-update add` because rc-update requires
 # openrc to be in $PATH during package install, which isn't guaranteed
 # inside a chroot/container build.
@@ -144,9 +144,10 @@ chmod 644 $DESTDIR/etc/conf.d/dhcpcd"""
 # from pre-jonerix bootstrap images that launched its own dhcpcd and
 # raced with this service). Only removes it if it's not owned by any
 # installed jpkg -- packaged scripts are left alone.
-post_install = """# Register in default runlevel
-if [ -d /etc/runlevels/default ]; then
-    ln -sf /etc/init.d/dhcpcd /etc/runlevels/default/dhcpcd
+post_install = """# Register in boot runlevel
+rm -f /etc/runlevels/default/dhcpcd
+if [ -d /etc/runlevels/boot ]; then
+    ln -sf /etc/init.d/dhcpcd /etc/runlevels/boot/dhcpcd
 fi
 
 # Detect + disable the stray `networking` init script that fought with
@@ -171,7 +172,7 @@ exit 0"""
 
 # Unregister from runlevel on uninstall. The init script + conf.d are
 # manifest-tracked so jpkg removes them automatically.
-post_remove = """rm -f /etc/runlevels/default/dhcpcd
+post_remove = """rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/boot/dhcpcd
 exit 0"""
 
 [depends]

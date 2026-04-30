@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-ntp-http-bootstrap"
-version = "1.0.0"
+version = "1.0.1"
 license = "MIT"
 description = "HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service)"
 # Split out from jonerix-boot-helpers 2026-04-20. On a Pi 5 (or any
@@ -25,13 +25,14 @@ mksh -n $DESTDIR/etc/init.d/ntp-bootstrap
 install = ""
 
 [hooks]
-# Register ntp-bootstrap in the boot runlevel on install.
-post_install = """if [ -d /etc/runlevels/boot ]; then
-    ln -sf /etc/init.d/ntp-bootstrap /etc/runlevels/boot/ntp-bootstrap
+# Register ntp-bootstrap in default so OpenRC can order it before ntpd
+# in the same runlevel once networking is up.
+post_install = """if [ -d /etc/runlevels/default ]; then
+    ln -sf /etc/init.d/ntp-bootstrap /etc/runlevels/default/ntp-bootstrap
 fi
 exit 0"""
 
-post_remove = """rm -f /etc/runlevels/boot/ntp-bootstrap
+post_remove = """rm -f /etc/runlevels/boot/ntp-bootstrap /etc/runlevels/default/ntp-bootstrap
 exit 0"""
 
 [depends]

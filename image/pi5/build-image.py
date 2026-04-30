@@ -49,6 +49,7 @@ DEFAULT_PACKAGES = [
     "dropbear",   # SSH server
     "bsdtar",
     "openntpd",   # NTP client (no GPL coreutils)
+    "jonerix-ntp-http-bootstrap",  # HTTP Date fallback when RTC time is stale
     "sudo",
     "python3",    # raspi-config nonint shells out to it; cheap to include
     # anvil: MIT clean-room ext2/3/4 + FAT12/16/32 userland
@@ -715,6 +716,7 @@ def write_fstab(root: Path, boot_partuuid: str, root_partuuid: str) -> None:
         f"PARTUUID={boot_partuuid}  /boot       vfat    defaults,noatime                    0 2\n"
         "devpts                     /dev/pts    devpts  gid=5,mode=0620,ptmxmode=0666       0 0\n"
         "sysfs                      /sys        sysfs   defaults                            0 0\n"
+        "tracefs                    /sys/kernel/tracing  tracefs  nosuid,nodev,noexec,relatime  0 0\n"
         "proc                       /proc       proc    defaults                            0 0\n"
         "tmpfs                      /tmp        tmpfs   defaults,nosuid,nodev,size=20%      0 0\n"
         "tmpfs                      /run        tmpfs   defaults,nosuid,nodev,size=20%      0 0\n"
@@ -742,6 +744,11 @@ def enable_openrc_service(root: Path, svc: str, runlevel: str = "default") -> No
     if link.is_symlink() or link.exists():
         return
     link.symlink_to(f"/etc/init.d/{svc}")
+
+
+def disable_openrc_service(root: Path, svc: str, runlevel: str) -> None:
+    link = root / "etc" / "runlevels" / runlevel / svc
+    link.unlink(missing_ok=True)
 
 
 # ----------------------------------------------------------------------------
@@ -1016,18 +1023,41 @@ def write_boot_cmdline(boot_mnt: Path, root_partuuid: str) -> None:
 
 
 def enable_default_services(root: Path) -> None:
-    """Wire OpenRC services that every Pi image needs. Only enables the service
-    if its init script is actually present -- jpkg may not have installed it
-    (e.g. if the user's --packages list omits dropbear).
+    """Wire runlevels to match jonerix-tormenta's core Pi startup.
+
+    Host-specific apps such as Tailscale, sshd/dropbear variants, and syslog
+    forwarding are deliberately left out. Only enables services whose init
+    scripts are present.
     """
-    # boot runlevel
-    for svc in ("devfs", "sysctl", "hostname", "modules"):
+    for svc in ("devfs", "modules"):
+        disable_openrc_service(root, svc, "boot")
+    for svc in ("dhcpcd", "local"):
+        disable_openrc_service(root, svc, "default")
+
+    for svc in (
+        "boot-trace",
+        "dhcpcd",
+        "disable-eee",
+        "fan-control",
+        "hostname",
+        "hwclock",
+        "localmount",
+        "loopback",
+        "netfilter-nft-modules",
+        "pi5-cold-reboot",
+        "pi5-wifi",
+        "root",
+        "sysctl",
+    ):
         if (root / "etc" / "init.d" / svc).exists():
             enable_openrc_service(root, svc, runlevel="boot")
-    # default runlevel
-    for svc in ("dhcpcd", "dropbear", "local", "urandom"):
+
+    for svc in ("ntp-bootstrap", "ntpd", "shadow-login", "wpa_supplicant_wlan0"):
         if (root / "etc" / "init.d" / svc).exists():
             enable_openrc_service(root, svc, runlevel="default")
+
+    if (root / "etc" / "init.d" / "reboot-trace-shutdown").exists():
+        enable_openrc_service(root, "reboot-trace-shutdown", runlevel="shutdown")
 
 
 # ----------------------------------------------------------------------------

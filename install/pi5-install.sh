@@ -86,7 +86,7 @@ FIRMWARE_ONLY=0     # --firmware-only: skip partition/format/userland,
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd sudo python3 anvil raspi-config shadow jonerix-raspi5-fixups iproute-go zsh gitoxide ripgrep micro fastfetch"
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 anvil raspi-config shadow jonerix-raspi5-fixups iproute-go zsh gitoxide ripgrep micro fastfetch"
 # Kept identical to image/pi5/build-image.py's DEFAULT_PACKAGES so a
 # Pi installed by hand via this script lands at the same package set
 # as a CI-built jonerix-pi5.img. Beyond the minimal boot core (musl,
@@ -98,14 +98,14 @@ DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar ope
 # jonerix-raspi5-fixups is mandatory regardless of this list (Pi 5
 # hardware bring-up — EEE, fan, modprobe-shim, cold-reboot).
 
-# ── RTC battery pre-check: conditional jonerix-ntp-http-bootstrap ───
+# ── RTC battery pre-check: jonerix-ntp-http-bootstrap is default ─────
 # The Pi 5 carries an RTC whose SRAM keeps wall clock across power
 # cuts IF a coin cell is wired to J5. Cells dead or absent →
 # the kernel clock boots at UNIX epoch and openntpd refuses to
 # step time by more than a few seconds, so ntp won't converge
 # without a prior HTTP-date bootstrap. That bootstrap lives in
-# the split-out package jonerix-ntp-http-bootstrap; only include
-# it when the current board NEEDS it.
+# the split-out package jonerix-ntp-http-bootstrap. It is now in
+# the default image set; it no-ops when hwclock already made time sane.
 #
 # Thresholds match bin/pi5-rtc-battery-check in raspi5-fixups:
 #   ≥ 2.400 V → cell healthy (ML2032 rechargeable sweet spot);
@@ -135,7 +135,10 @@ _needs_http_time_bootstrap() {
     return 0                            # missing/weak → include
 }
 if _needs_http_time_bootstrap; then
-    DEFAULT_PACKAGES="$DEFAULT_PACKAGES jonerix-ntp-http-bootstrap"
+    case " $DEFAULT_PACKAGES " in
+        *" jonerix-ntp-http-bootstrap "*) ;;
+        *) DEFAULT_PACKAGES="$DEFAULT_PACKAGES jonerix-ntp-http-bootstrap" ;;
+    esac
 fi
 
 # ── Logging helpers ─────────────────────────────────────────────────
@@ -571,9 +574,28 @@ $_root_spec  /      ext4  defaults,noatime,errors=remount-ro  0 1
 $_boot_spec  /boot  vfat  defaults,noatime                    0 2
 devpts   /dev/pts   devpts   gid=5,mode=0620,ptmxmode=0666  0 0
 sysfs    /sys       sysfs    defaults                       0 0
+tracefs  /sys/kernel/tracing  tracefs  nosuid,nodev,noexec,relatime  0 0
 tmpfs    /run       tmpfs    defaults,size=20%              0 0
 tmpfs    /tmp       tmpfs    defaults,size=20%              0 0
 EOF
+
+msg "Wiring OpenRC runlevels"
+_enable_openrc_service() {
+    _svc="$1"
+    _runlevel="$2"
+    [ -f "$ROOT_MNT/etc/init.d/$_svc" ] || return 0
+    mkdir -p "$ROOT_MNT/etc/runlevels/$_runlevel"
+    ln -sf "/etc/init.d/$_svc" "$ROOT_MNT/etc/runlevels/$_runlevel/$_svc"
+}
+rm -f "$ROOT_MNT/etc/runlevels/boot/devfs" "$ROOT_MNT/etc/runlevels/boot/modules"
+rm -f "$ROOT_MNT/etc/runlevels/default/dhcpcd" "$ROOT_MNT/etc/runlevels/default/local"
+for _svc in boot-trace dhcpcd disable-eee fan-control hostname hwclock localmount loopback netfilter-nft-modules pi5-cold-reboot pi5-wifi root sysctl; do
+    _enable_openrc_service "$_svc" boot
+done
+for _svc in ntp-bootstrap ntpd shadow-login wpa_supplicant_wlan0; do
+    _enable_openrc_service "$_svc" default
+done
+_enable_openrc_service reboot-trace-shutdown shutdown
 
 # ── Verify ──────────────────────────────────────────────────────────
 msg "Verifying"

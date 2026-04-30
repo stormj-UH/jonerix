@@ -1,0 +1,66 @@
+#!/bin/openrc-run
+name="boot-trace"
+description="Capture early jonerix boot diagnostics"
+
+depend() {
+    need procfs sysfs root
+    after localmount
+    before dhcpcd network ntpd tailscaled tailscale-up sshd
+}
+
+start() {
+    local dir log base
+    dir=/var/log/reboot-trace
+    mkdir -p "$dir"
+    base="boot-$(date -u +%Y%m%dT%H%M%SZ)-$(cut -d. -f1 /proc/uptime 2>/dev/null).log"
+    log="$dir/$base"
+
+    ebegin "Capturing boot trace"
+    {
+        echo "=== boot trace ==="
+        date -u
+        echo
+        echo "[boot id]"
+        cat /proc/sys/kernel/random/boot_id 2>/dev/null || true
+        echo
+        echo "[uptime]"
+        cat /proc/uptime 2>/dev/null || true
+        echo
+        echo "[cmdline]"
+        cat /proc/cmdline 2>/dev/null || true
+        echo
+        echo "[reboot mode]"
+        cat /sys/kernel/reboot/mode 2>/dev/null || true
+        echo
+        echo "[printk]"
+        cat /proc/sys/kernel/printk 2>/dev/null || true
+        echo
+        echo "[pstore]"
+        ls -la /sys/fs/pstore 2>&1 || true
+        echo
+        echo "[rc-status]"
+        rc-status -a 2>&1 || true
+        echo
+        echo "[mounts]"
+        cat /proc/mounts 2>/dev/null || true
+        echo
+        echo "[network]"
+        for ifdir in /sys/class/net/*; do
+            [ -e "$ifdir" ] || continue
+            iface=${ifdir##*/}
+            printf '%s state=' "$iface"
+            cat "$ifdir/operstate" 2>/dev/null || printf '?'
+            printf ' carrier='
+            cat "$ifdir/carrier" 2>/dev/null || printf '?'
+            printf ' address='
+            cat "$ifdir/address" 2>/dev/null || printf '?'
+            printf '\n'
+        done
+        echo
+        echo "[dmesg]"
+        dmesg 2>&1 || true
+    } > "$log" 2>&1
+    ln -sf "$base" "$dir/latest-boot.log"
+    echo 4 > /proc/sys/kernel/printk 2>/dev/null || true
+    eend 0
+}

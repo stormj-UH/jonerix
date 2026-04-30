@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.11"
+version = "1.6.12"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -35,6 +35,9 @@ install -Dm755 bin/disable-eee $DESTDIR/bin/disable-eee
 install -Dm755 init.d/disable-eee $DESTDIR/etc/init.d/disable-eee
 install -Dm755 init.d/fan-control $DESTDIR/etc/init.d/fan-control
 install -Dm755 init.d/netfilter-nft-modules $DESTDIR/etc/init.d/netfilter-nft-modules
+install -Dm755 init.d/boot-trace $DESTDIR/etc/init.d/boot-trace
+install -Dm755 init.d/reboot-trace-shutdown $DESTDIR/etc/init.d/reboot-trace-shutdown
+install -Dm755 init.d/hwclock $DESTDIR/etc/init.d/hwclock
 # adduser-safe: safe replacement for toybox adduser, which truncates
 # /etc/passwd and /etc/shadow on failure (see bin/adduser-safe header).
 install -Dm755 bin/adduser-safe $DESTDIR/bin/adduser-safe
@@ -278,11 +281,16 @@ if [ -x /usr/local/bin/reboot-openrc ]; then
 fi
 
 # --- Pi 5 hardware fixups (only on a live Pi 5) ---
-ln -sf /etc/init.d/disable-eee     /etc/runlevels/boot/disable-eee     2>/dev/null || true
-ln -sf /etc/init.d/fan-control     /etc/runlevels/boot/fan-control     2>/dev/null || true
-ln -sf /etc/init.d/netfilter-nft-modules /etc/runlevels/boot/netfilter-nft-modules 2>/dev/null || true
-ln -sf /etc/init.d/pi5-wifi        /etc/runlevels/boot/pi5-wifi        2>/dev/null || true
-ln -sf /etc/init.d/pi5-cold-reboot /etc/runlevels/boot/pi5-cold-reboot 2>/dev/null || true
+mkdir -p /etc/runlevels/boot /etc/runlevels/default /etc/runlevels/shutdown
+rm -f /etc/runlevels/boot/devfs /etc/runlevels/boot/modules
+rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
+for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot; do
+    [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
+done
+for svc in ntp-bootstrap ntpd shadow-login wpa_supplicant_wlan0; do
+    [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/default/$svc" 2>/dev/null || true
+done
+[ -f /etc/init.d/reboot-trace-shutdown ] && ln -sf /etc/init.d/reboot-trace-shutdown /etc/runlevels/shutdown/reboot-trace-shutdown 2>/dev/null || true
 
 # --- shadow login defaults ---
 # shadow owns /etc/init.d/shadow-login and /etc/login.defs. Keep ownership
@@ -458,7 +466,7 @@ exit 0"""
 # Tear down the runlevel symlinks that post_install created.
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
 # Also restore the original /bin/adduser symlink if we have a record of it.
-post_remove = """rm -f /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console
+post_remove = """rm -f /etc/runlevels/boot/boot-trace /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/hwclock /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console /etc/runlevels/default/wpa_supplicant_wlan0 /etc/runlevels/shutdown/reboot-trace-shutdown
 if [ -f /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
     cp -p /etc/init.d/shadow-login.pre-raspi5-fixups /etc/init.d/shadow-login
     chmod 0755 /etc/init.d/shadow-login 2>/dev/null || true
