@@ -1,6 +1,6 @@
 [package]
 name = "ca-certificates"
-version = "20260211-r1"
+version = "20260211-r2"
 license = "MPL-2.0"
 description = "Mozilla CA certificate bundle for TLS verification (sourced from curl.se)"
 # Vital for every TLS client on jonerix (curl, openntpd-http-date,
@@ -45,11 +45,9 @@ head -5 cacert.pem | grep -q "Bundle of CA Root Certificates" || \
 install = """
 set -e
 install -Dm644 cacert.pem "$DESTDIR/etc/ssl/certs/ca-certificates.crt"
-# Note: do NOT ship /etc/ssl/cert.pem — libressl already ships
-# that path (as a symlink into its own CA chain). File-conflict
-# on docker:core stage-1 install otherwise. Apps that check
-# /etc/ssl/cert.pem see libressl's symlink; apps that check
-# /etc/ssl/certs/ca-certificates.crt see this file.
+# LibreSSL's OPENSSLDIR is /etc/ssl so libcurl/cargo look for
+# /etc/ssl/cert.pem by default. Symlink it to our bundle.
+ln -sf certs/ca-certificates.crt "$DESTDIR/etc/ssl/cert.pem"
 """
 
 [depends]

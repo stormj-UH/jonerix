@@ -103,7 +103,8 @@ RUN ln -sf toybox /jonerix/bin/sh && \
 
 # CA certificates (downloaded from curl.se)
 RUN curl -fsSL -o /jonerix/etc/ssl/certs/ca-certificates.crt \
-        https://curl.se/ca/cacert.pem
+        https://curl.se/ca/cacert.pem && \
+    ln -sf certs/ca-certificates.crt /jonerix/etc/ssl/cert.pem
 
 # --- Default config files ---
 COPY config/defaults/etc/hostname     /jonerix/etc/hostname
