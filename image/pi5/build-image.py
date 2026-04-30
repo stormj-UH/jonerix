@@ -121,8 +121,8 @@ ROLLING_TAG = "packages"
 
 # Firmware tarball for the Pi 5 boot partition (kernel_2712.img, DTBs, overlays,
 # start4.elf, fixup4.dat, etc). Pulled from raspberrypi/firmware at build time
-# unless --firmware-tarball is passed. License: Broadcom Redistributable (see
-# boot/LICENCE.broadcom in that repo).
+# when --firmware-cache is passed, or copied from --firmware-dir. License:
+# Broadcom Redistributable (see boot/LICENCE.broadcom in that repo).
 #
 # We pin a specific tag rather than tracking master so builds are reproducible.
 FIRMWARE_REPO_TAG = "1.20240306"  # Conservative pin; bump in a PR when needed.
@@ -634,6 +634,22 @@ def copy_local_firmware(src_dir: Path, boot_mnt: Path) -> None:
     log(f"copied {copied} firmware files from {src_dir}")
 
 
+def require_boot_firmware(boot_mnt: Path) -> None:
+    """Fail fast if a supposedly self-contained image lacks Pi 5 boot files."""
+    required = [
+        "kernel_2712.img",
+        "bcm2712-rpi-5-b.dtb",
+        "start4.elf",
+        "fixup4.dat",
+    ]
+    missing = [
+        name for name in required
+        if not (boot_mnt / name).is_file() or (boot_mnt / name).stat().st_size == 0
+    ]
+    if missing:
+        die("firmware payload missing required boot files: " + ", ".join(missing))
+
+
 # ----------------------------------------------------------------------------
 # Rootfs customization
 # ----------------------------------------------------------------------------
@@ -1105,23 +1121,21 @@ def build(args: argparse.Namespace) -> int:
                 # rootfs skeleton exists.
                 fetch_ca_bundle(mnt_root)
 
-                # Pi 5 firmware: NOT included by default. The
-                # raspberrypi/firmware tarball is non-permissive
-                # (Broadcom Redistributable + GPLv2 kernel). jonerix's
-                # userland-only policy means we ship a "userland blob"
-                # image: rootfs + jonerix-authored boot config files
-                # only. The user runs `pi5-install.sh --firmware-only
-                # -d /dev/sdX` after dd'ing this image; that script
-                # downloads the firmware tarball from raspberrypi/
-                # firmware and lays kernel_2712.img / DTBs / start4.elf
-                # / fixup4.dat into /boot.
-                #
-                # Override with --firmware-dir LOCAL to bake a pre-
-                # extracted firmware tree into the image (useful for
-                # offline / air-gapped installs).
+                # Pi 5 firmware/kernel. CI passes --firmware-cache so
+                # Raspi Imager artifacts are self-contained; local
+                # permissive-only builds can omit both firmware options
+                # and complete the boot partition later with:
+                #   pi5-install.sh --firmware-only -d /dev/sdX
                 if args.firmware_dir:
                     copy_local_firmware(Path(args.firmware_dir), mnt_boot)
                     log("firmware: included from --firmware-dir (override)")
+                    require_boot_firmware(mnt_boot)
+                elif args.firmware_cache:
+                    firmware_cache = Path(args.firmware_cache)
+                    fetch_firmware(firmware_cache)
+                    extract_firmware_to_boot(firmware_cache, mnt_boot)
+                    log("firmware: included from --firmware-cache")
+                    require_boot_firmware(mnt_boot)
                 else:
                     log("firmware: NOT included (run pi5-install.sh "
                         "--firmware-only after dd'ing this image)")
@@ -1213,7 +1227,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help="Local directory to copy firmware from (skips download). "
                         "Must contain kernel_2712.img and the bcm2712 DTB.")
     p.add_argument("--firmware-cache", default=None,
-                   help="Path to cache the downloaded firmware tarball.")
+                   help="Path to cache/download the raspberrypi/firmware "
+                        "tarball and include Pi 5 boot firmware in the image.")
     p.add_argument("--release-tag", default=DEFAULT_RELEASE_TAG,
                    help=(
                        "GitHub release tag whose pinned package set to install "

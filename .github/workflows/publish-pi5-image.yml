@@ -95,7 +95,7 @@ jobs:
           IMG_SIZE: ${{ inputs.size || '4G' }}
           IMG_HOSTNAME: ${{ inputs.hostname || 'jonerix-pi' }}
           IMG_PACKAGES: ${{ inputs.packages || '' }}
-          IMG_RELEASE_TAG: ${{ inputs.release_tag || '' }}
+          IMG_RELEASE_TAG: ${{ inputs.release_tag || 'packages' }}
         run: |
           # --privileged gives us losetup + loop partscan. Hosted runners do
           # not allow losetup from a non-privileged container.
@@ -107,6 +107,7 @@ jobs:
             -e IMG_SIZE \
             -e IMG_HOSTNAME \
             -e IMG_PACKAGES \
+            -e IMG_RELEASE_TAG \
             "$BUILDER_IMAGE_AARCH64" /bin/sh -euc '
               set -e
 
