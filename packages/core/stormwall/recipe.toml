@@ -8,7 +8,7 @@ description = "Drop-in firewall front-end — accepts both Linux nftables (nft) 
 # Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.0.0
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.0.0/stormwall-1.0.0.tar.gz"
-sha256 = "009c28c2bc239c989aa070f1d3387bc4ee0af69f4467e4cf39cca5838e972e0e"
+sha256 = "f239b2f6d110b5956661c9fb3be8455ca5aa6532dfb748f911c9146e965ab6ec"
 
 [build]
 system = "custom"
@@ -16,8 +16,9 @@ build = """
 set -e
 export CARGO_HOME=/tmp/stormwall-cargo
 export CARGO_TARGET_DIR="$PWD/target"
+export CARGO_NET_OFFLINE=true
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
-cargo build --release --bin stormwall --bin pfctl
+cargo build --release --frozen --bin stormwall --bin pfctl
 """
 install = """
 set -e
