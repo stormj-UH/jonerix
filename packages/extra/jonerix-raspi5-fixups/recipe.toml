@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.14"
+version = "1.6.15"
 arch = "aarch64"
 license = "MIT"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -263,6 +263,21 @@ if [ -e /etc/init.d/networking ] && [ ! -L /etc/init.d/networking ]; then
         echo "raspi5-fixups: removed orphan /etc/init.d/networking"
     fi
 fi
+
+# --- stale dhcpcd netconsole hook cleanup ---
+# raspi5-fixups 1.6.9 accidentally added a dhcpcd hook that tried to
+# start a local-only netconsole-trace service after each eth0 IPv4 lease
+# event. The hook was not wired into this package recipe and the service is
+# not shipped by jonerix, but systems that picked up the file from a local
+# image build can spin dhcpcd-run-hooks repeatedly when netconsole never
+# loads. Remove only that exact stale hook; leave user-authored hooks alone.
+for _hook in /lib/dhcpcd/dhcpcd-hooks/60-netconsole /libexec/dhcpcd-hooks/60-netconsole; do
+    [ -f "$_hook" ] || continue
+    if grep -q "service_command netconsole-trace start" "$_hook" 2>/dev/null; then
+        rm -f "$_hook"
+        echo "raspi5-fixups: removed stale dhcpcd netconsole hook: $_hook"
+    fi
+done
 
 # --- reboot command: use OpenRC native reboot ---
 # Reproduced on jonerix-tormenta 2026-04-19: toybox `reboot` cleanly

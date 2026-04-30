@@ -187,7 +187,7 @@ tmpfs      /tmp         tmpfs       defaults,size=512M                0 0
 
     # OpenRC service that parses the cmdline and mounts /var/state.
     svc = root / "etc" / "init.d" / "pi5-state"
-    svc.write_text("""#!/sbin/openrc-run
+    svc.write_text("""#!/bin/openrc-run
 # pi5-state — mount /var/state with size driven by kernel cmdline.
 #
 # Parses /proc/cmdline for `jonerix.state_size=<value>` and mounts a
@@ -277,7 +277,7 @@ def install_menu_and_init(root: pathlib.Path, release_tag: str):
     # Drop the OpenRC service-script header so init.d/pi5-netboot-menu
     # passes `rc-service ... start` correctly. The actual menu logic
     # is the body of netboot-menu.sh; we wrap it.
-    wrapper = """#!/sbin/openrc-run
+    wrapper = """#!/bin/openrc-run
 # pi5-netboot-menu — wraps image/pi5/netboot-menu.sh as an OpenRC
 # service that owns tty1 at first netboot. supervise-daemon respawns
 # it if the user picks "drop to shell" and exits.

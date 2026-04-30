@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r8"
+version = "10.1.0-r10"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 
@@ -74,6 +74,14 @@ install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
+# dhcpcd-run-hooks is a non-trivial POSIX shell script. On the Pi,
+# /bin/sh currently resolves to toybox and a hook run grew past 600 MiB
+# RSS. Pin the hook runner to mksh, matching OpenRC's script policy.
+if [ -f "$DESTDIR/lib/dhcpcd/dhcpcd-run-hooks" ]; then
+    sed '1s|^#!/bin/sh$|#!/bin/mksh|' "$DESTDIR/lib/dhcpcd/dhcpcd-run-hooks" > "$DESTDIR/lib/dhcpcd/dhcpcd-run-hooks.tmp"
+    mv "$DESTDIR/lib/dhcpcd/dhcpcd-run-hooks.tmp" "$DESTDIR/lib/dhcpcd/dhcpcd-run-hooks"
+    chmod 555 "$DESTDIR/lib/dhcpcd/dhcpcd-run-hooks"
+fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
 
@@ -82,7 +90,7 @@ find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} ';'
 # version directly. Tracked by jpkg so `jpkg verify dhcpcd` catches drift.
 mkdir -p $DESTDIR/etc/init.d $DESTDIR/etc/conf.d
 cat > $DESTDIR/etc/init.d/dhcpcd <<'INIT'
-#!/sbin/openrc-run
+#!/bin/openrc-run
 # dhcpcd -- RFC2131 DHCP client daemon.
 #
 # Shipped by the dhcpcd jpkg. Runs dhcpcd as a single foreground
@@ -176,5 +184,5 @@ post_remove = """rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/boot/dhcpcd
 exit 0"""
 
 [depends]
-runtime = ["musl", "openrc"]
+runtime = ["musl", "openrc", "mksh"]
 build = ["clang", "make", "jonerix-headers"]
