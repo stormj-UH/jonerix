@@ -1,47 +1,33 @@
 [package]
 name = "stormwall"
-version = "0.1.2-r2"
+version = "1.0.0"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts both Linux nftables (nft) and OpenBSD pf (pfctl) DSLs against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source of truth is the Forgejo repo jonerik/stormwall on
-# castle.great-morpho.ts.net:3000 at commit
-# 56a8cde414aa9ff64f8d89e3dab9f097f924bd79 (0.1.2 — adds dynset, ct
-# helper, flowtables, jhash/symhash/numgen, dup/fwd/synproxy, NAT
-# random/persistent flags, socket/cgroup/cpu/rt classid, nft -i REPL).
-# That host sits behind Tailscale and GitHub's runners cannot reach it,
-# so the tarball is mirrored to a jonerix GH release for CI to fetch.
-#
-# Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/stormwall/archive/56a8cde.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v0.1.2/stormwall-0.1.2.tar.gz"
-sha256 = "ca79a1019267e2ec6a1fc7fb1961cba6e72c3d57f9ee38cffbf064f302b58bf0"
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.0.0
+# Mirrored to GitHub for CI (castle is behind Tailscale).
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.0.0/stormwall-1.0.0.tar.gz"
+sha256 = "009c28c2bc239c989aa070f1d3387bc4ee0af69f4467e4cf39cca5838e972e0e"
 
 [build]
 system = "custom"
-# `cargo test --locked` was run here previously, but the test binary
-# pulls a wider kernel-constant surface (TCPOPT_MAXSEG, NFTA_SET_USERDATA,
-# ...) that the bootstrap builder image's headers don't ship — the test
-# binary fails to compile in that environment even though the production
-# `stormwall` binary builds and runs cleanly. The recipe's job is to
-# produce a shippable jpkg; test execution belongs in stormwall's own CI
-# (or jonerix's publish-packages run, where the headers are richer).
 build = """
 set -e
 export CARGO_HOME=/tmp/stormwall-cargo
 export CARGO_TARGET_DIR="$PWD/target"
 export CARGO_NET_OFFLINE=true
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
-cargo build --release --locked --bin stormwall
+cargo build --release --locked --bin stormwall --bin pfctl
 """
 install = """
 set -e
-BIN="$PWD/target/release/stormwall"
-install -Dm755 "$BIN" "$DESTDIR/bin/stormwall"
+install -Dm755 "$PWD/target/release/stormwall" "$DESTDIR/bin/stormwall"
+install -Dm755 "$PWD/target/release/pfctl" "$DESTDIR/bin/pfctl"
 ln -sf stormwall "$DESTDIR/bin/nft"
 install -Dm644 LICENSE "$DESTDIR/share/licenses/stormwall/LICENSE"
 llvm-strip --strip-all "$DESTDIR/bin/stormwall" 2>/dev/null || true
+llvm-strip --strip-all "$DESTDIR/bin/pfctl" 2>/dev/null || true
 """
 
 [depends]
