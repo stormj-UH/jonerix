@@ -43,7 +43,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`curl`** | `core` | 8.11.1-r1 | MIT | any | `musl`, `libressl`, `zlib` | `clang`, `cmake`, `samurai`, `libressl`, `zlib` | `docker:minimal`, `docker:core`, `docker:full` | Command-line tool and library for transferring data with URLs |
 | **`dhcpcd`** | `core` | 10.1.0-r4 | BSD-2-Clause | any | `musl`, `openrc` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:core`, `docker:full` | RFC2131-compliant DHCP client daemon |
 | **`doas`** | `core` | 6.8.2 | ISC | any | `musl` | `clang`, `make` | `docker:core`, `docker:full` | Lightweight privilege escalation tool (OpenDoas) |
-| **`dropbear`** | `core` | 2024.86-r3 | MIT | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight SSH server and client |
+| **`dropbear`** | `core` | 2025.89-r2 | MIT AND BSD-2-Clause AND Public-Domain | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | `pi5-install`, `pi5-image`, `docker:minimal`, `docker:core`, `docker:full` | Lightweight SSH server and client |
 | **`exproxide`** | `core` | 0.1.0 | MIT | any | `musl` | `rust` | `docker:core`, `docker:builder`, `docker:full` | Clean-room Rust implementation of expr for jonerix |
 | **`fastfetch`** | `core` | 2.36.1 | MIT | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | `docker:core`, `docker:full` | Feature-rich system information tool |
 | **`gitoxide`** | `core` | 0.52.0-r5 | MIT OR Apache-2.0 | any | `musl` | `rust` | `docker:core` | Pure Rust implementation of git (gix + ein) |

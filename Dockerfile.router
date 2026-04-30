@@ -12,7 +12,7 @@
 #   wpa_supplicant (BSD-3-Clause)  — wireless client
 #   nloxide        (BSD-2-Clause)  — clean-room libnl-3 / libnl-genl-3
 #                                    drop-in (Rust; replaces LGPL libnl)
-#   dropbear       (MIT)           — SSH (from core)
+#   dropbear       (permissive)    — SSH (from core)
 #
 # Build: docker build -f Dockerfile.router --tag jonerix:router .
 

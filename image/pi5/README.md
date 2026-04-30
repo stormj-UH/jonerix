@@ -32,7 +32,7 @@ from USB (`/dev/sda`) without modification.
 | `mksh` | login shell |
 | `openrc` | init (`/bin/openrc-init`) |
 | `dhcpcd` | DHCP client, runs by default at boot |
-| `dropbear` | SSH server (MIT) |
+| `dropbear` | SSH server (permissive) |
 | `ifupdown-ng` | interface config |
 | `bsdtar` | permissive tar |
 | `ca-certificates` | TLS trust |

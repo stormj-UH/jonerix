@@ -53,6 +53,7 @@ CC0-1.0
 CC0
 public-domain
 public domain
+BSD-2-Clause-Patent
 Zlib
 zlib
 curl
@@ -63,7 +64,11 @@ Unlicense
 WTFPL
 Artistic-2.0
 PSF-2.0
+BSL-1.0
 MPL-2.0
+Info-ZIP
+Ruby
+bzip2-1.0.6
 BSD-2-Clause AND Ruby
 MIT OR Apache-2.0
 "
@@ -117,28 +122,80 @@ status_skip() {
     printf "  \033[36mSKIP\033[0m  %-30s %s (exception)\n" "$1" "$2"
 }
 
-# Check if a license string is permissive
-is_permissive() {
-    local license="$1"
-    local normalized
+# Trim leading/trailing whitespace.
+trim_license() {
+    printf '%s' "$1" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//'
+}
 
-    # Normalize: lowercase, trim whitespace
-    normalized="$(printf '%s' "$license" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')"
+# Check if a single license identifier is permissive.
+license_atom_is_permissive() {
+    atom_normalized="$(trim_license "$1" | tr '[:upper:]' '[:lower:]')"
 
-    # Check against permissive list
     printf '%s\n' "$PERMISSIVE_LICENSES" | while IFS= read -r perm; do
         [ -z "$perm" ] && continue
-        local perm_lower
-        perm_lower="$(printf '%s' "$perm" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')"
+        perm_lower="$(trim_license "$perm" | tr '[:upper:]' '[:lower:]')"
         [ -z "$perm_lower" ] && continue
 
-        if [ "$normalized" = "$perm_lower" ]; then
+        if [ "$atom_normalized" = "$perm_lower" ]; then
             printf 'yes'
             return 0
         fi
     done
+    return 0
+}
 
-    # No match found in the loop output
+# Check if all AND-separated license identifiers are permissive.
+license_and_is_permissive() {
+    la_rest="$(trim_license "$1")"
+
+    while :; do
+        case "$la_rest" in
+            *" AND "*)
+                la_part="${la_rest%% AND *}"
+                la_rest="${la_rest#* AND }"
+                ;;
+            *)
+                la_part="$la_rest"
+                la_rest=""
+                ;;
+        esac
+
+        if [ "$(license_atom_is_permissive "$la_part")" != "yes" ]; then
+            return 0
+        fi
+
+        [ -z "$la_rest" ] && break
+    done
+
+    printf 'yes'
+    return 0
+}
+
+# Check if a license string is permissive. Handles simple SPDX AND/OR
+# expressions, matching jpkg's package license gate.
+is_permissive() {
+    li_rest="$(trim_license "$1")"
+
+    while :; do
+        case "$li_rest" in
+            *" OR "*)
+                li_part="${li_rest%% OR *}"
+                li_rest="${li_rest#* OR }"
+                ;;
+            *)
+                li_part="$li_rest"
+                li_rest=""
+                ;;
+        esac
+
+        if [ "$(license_and_is_permissive "$li_part")" = "yes" ]; then
+            printf 'yes'
+            return 0
+        fi
+
+        [ -z "$li_rest" ] && break
+    done
+
     return 0
 }
 

@@ -99,7 +99,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | Init system | OpenRC | BSD-2-Clause | systemd (LGPL) |
 | Privilege escalation | doas | ISC | sudo |
 | TLS library | LibreSSL | ISC | OpenSSL (Apache-2.0) |
-| SSH server | dropbear | MIT | OpenSSH (BSD, but depends on GPL OpenSSL historically) |
+| SSH server | dropbear | MIT/BSD/Public Domain | OpenSSH (BSD, but depends on GPL OpenSSL historically) |
 | HTTP client | curl | curl license (MIT-like) | wget (GPL) |
 | DNS resolver | unbound | BSD-3-Clause | — |
 | DHCP client | dhcpcd | BSD-2-Clause | — |
@@ -304,7 +304,7 @@ UEFI firmware
 | DHCP client | dhcpcd | BSD-2-Clause |
 | DNS resolver | unbound (recursive, DNSSEC) | BSD-3-Clause |
 | HTTP/HTTPS client | curl | curl (MIT-like) |
-| SSH | dropbear | MIT |
+| SSH | dropbear | MIT/BSD/Public Domain |
 | WiFi AP | hostapd | BSD-3-Clause |
 | WiFi client | wpa_supplicant | BSD-3-Clause |
 | VPN relay | derper (Tailscale DERP) | BSD-3-Clause |

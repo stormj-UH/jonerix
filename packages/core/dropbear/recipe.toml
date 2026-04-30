@@ -1,8 +1,12 @@
 [package]
 name = "dropbear"
-version = "2024.86-r4"
-license = "MIT"
+version = "2025.89-r2"
+license = "MIT AND BSD-2-Clause AND Public-Domain"
 description = "Lightweight SSH server and client"
+# 2025.89-r2: keep 2025.89 for post-quantum SSH key exchange
+# (sntrup761x25519-sha512 and mlkem768x25519-sha256), and backport
+# upstream fdec3c9 for the Ed25519 S < L verification check.
+#
 # r3: republish the clean recipe after jmake 1.1.4 fixed the remaining
 # dropbear blockers: TAB-indented assignments inside conditional blocks
 # and the `$(wildcard ./src/*.h)` prefix-duplication regression. The
@@ -19,8 +23,8 @@ description = "Lightweight SSH server and client"
 # usual dropbearkey/dropbearconvert/scp set with plain `make`.
 
 [source]
-url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.86.tar.bz2"
-sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
+url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2025.89.tar.bz2"
+sha256 = "0d1f7ca711cfc336dc8a85e672cab9cfd8223a02fe2da0a4a7aeb58c9e113634"
 
 [build]
 system = "autoconf"

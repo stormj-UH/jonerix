@@ -441,6 +441,10 @@ jobs:
           # jpkg
           jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
 
+          # Dropbear must come from the refreshed package release before
+          # container images are published.
+          dropbear -V 2>&1 | grep -q "Dropbear v2025.89" && pass "dropbear 2025.89" || fail "dropbear 2025.89"
+
           # bsdtar (must link against LibreSSL, not OpenSSL 3)
           bsdtar --version >/dev/null 2>&1 && pass "bsdtar" || fail "bsdtar"
 
@@ -461,6 +465,7 @@ jobs:
 
 
           # Networking daemons
+          dropbear -V 2>&1 | grep -q "Dropbear v2025.89" && pass "dropbear 2025.89" || fail "dropbear 2025.89"
           unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
           dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || echo "WARN: dhcpcd (known issue)"
           hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || fail "hostapd"
@@ -525,6 +530,10 @@ jobs:
           # jpkg
           jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
 
+          # Dropbear must come from the refreshed package release before
+          # container images are published.
+          dropbear -V 2>&1 | grep -q "Dropbear v2025.89" && pass "dropbear 2025.89" || fail "dropbear 2025.89"
+
           # bsdtar (must link against LibreSSL, not OpenSSL 3)
           bsdtar --version >/dev/null 2>&1 && pass "bsdtar" || fail "bsdtar"
 
@@ -545,6 +554,7 @@ jobs:
 
 
           # Networking daemons
+          dropbear -V 2>&1 | grep -q "Dropbear v2025.89" && pass "dropbear 2025.89" || fail "dropbear 2025.89"
           unbound -V 2>&1 | grep -qi "unbound" && pass "unbound" || fail "unbound"
           dhcpcd --version >/dev/null 2>&1 && pass "dhcpcd" || echo "WARN: dhcpcd (known issue)"
           hostapd -v 2>&1 | grep -qi "hostapd" && pass "hostapd" || fail "hostapd"

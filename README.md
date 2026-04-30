@@ -173,7 +173,7 @@ the rootfs is assembled in CI.
 | zsh | MIT | Default interactive shell in the larger container images |
 | jpkg | MIT | Package manager |
 | OpenRC | BSD-2-Clause | Init system |
-| dropbear | MIT | SSH server/client |
+| dropbear | MIT/BSD/Public Domain | SSH server/client |
 | bsdsed | BSD-2-Clause | sed (BSD implementation) |
 | onetrueawk | MIT | awk (one true awk) |
 | sudo | ISC | Privilege escalation (sudoers-based) |

@@ -7,7 +7,7 @@
 #   jpkg           (MIT)          — pre-built dynamic binary
 #   musl libc      (MIT)          — via jpkg
 #   toybox 0.8.11  (0BSD)         — via jpkg (includes /bin/sh)
-#   dropbear SSH   (MIT)          — via jpkg
+#   dropbear SSH   (permissive)   — via jpkg
 #   openrc         (BSD-2-Clause) — via jpkg
 #   libressl       (ISC)          — via jpkg
 #   curl           (MIT)          — via jpkg
