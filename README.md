@@ -41,7 +41,7 @@ The `jonerix:builder` image installs these tools from jpkg packages. It compiles
 docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, libressl, openrc
 docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh (/bin/sh), zsh, uutils, micro, ripgrep, networking
 docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, go, nodejs, python3
-docker pull ghcr.io/stormj-uh/jonerix:router     # appliance: core + hostapd, wpa_supplicant, nloxide
+docker pull ghcr.io/stormj-uh/jonerix:router     # appliance: core + hostapd, wpa_supplicant, nloxide, stormwall (nft/pf)
 
 # Per-arch tags: -amd64 and -arm64 are also available
 docker run -it ghcr.io/stormj-uh/jonerix:core
@@ -160,7 +160,7 @@ the rootfs is assembled in CI.
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh (/bin/sh), zsh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
-| `router` | core | hostapd, wpa_supplicant, nloxide (libnl replacement); home-router / AP / gateway appliance |
+| `router` | core | hostapd, wpa_supplicant, nloxide (libnl replacement), **stormwall** (single firewall front-end speaking both `nft` and BSD `pf.conf` syntax); home-router / AP / gateway appliance |
 
 ### Core System
 
@@ -279,7 +279,7 @@ These are written and maintained inside the jonerix project.
 | GNU m4 | `m4oxide` | MIT | Build-time only. Used by autoconf-generated `./configure` scripts (e.g. flex). Implements the GNU m4 surface used by autoconf macros — `divert`, `dnl`, `define`, `pushdef`/`popdef`, `m4exit`, frozen-state files. |
 | POSIX `expr(1)` | `exproxide` | MIT | Tiny but load-bearing — autoconf scripts call `expr` on every configure step. POSIX-strict integer / string / regex semantics. |
 | GNU libreadline / libhistory | `readlineoxide` | MIT | Drop-in shared library at `/lib/libreadline.so` and `/lib/libhistory.so`. Programs linked against readline (e.g. anvil's `debugfs`) get line editing, history, and Emacs/vi keybindings without pulling in GPL-3. |
-| `nft` CLI / nftables userland | `stormwall` | MIT | Reads and emits the upstream `nft` ruleset DSL. Covers `dynset`, ct helpers, flowtables, `jhash`/`symhash`/`numgen`, `dup`/`fwd`/`synproxy`, NAT random/persistent, socket/cgroup/cpu/rt classid expressions, and an `nft -i` REPL. Installs `/bin/stormwall` and a `/bin/nft` symlink. |
+| `nft` CLI / nftables userland **and** OpenBSD `pf(8)` (on Linux) | `stormwall` | MIT | The only firewall front-end on jonerix — and the only one anywhere that speaks both Linux's nftables DSL and OpenBSD's `pf` DSL against the same kernel backend. Reads/emits the upstream `nft` ruleset language (covers `dynset`, ct helpers, flowtables, `jhash`/`symhash`/`numgen`, `dup`/`fwd`/`synproxy`, NAT random/persistent, socket/cgroup/cpu/rt classid expressions, and an `nft -i` REPL). Also accepts `pf.conf` syntax — `pass`/`block`/`match`, anchors, tables, `quick`, `keep state`, `nat`, `rdr`, `set skip`, queue/altq remapping — and lowers it to the same in-kernel netfilter rules so a `pf.conf` carried over from a BSD box runs unmodified on a jonerix Linux host. Installs `/bin/stormwall` plus `/bin/nft` and `/bin/pfctl` symlinks (each binary chooses its parser by argv[0]). |
 | libnl-3 / libnl-genl-3 | `nloxide` | BSD-2-Clause | Netlink message construction + Generic Netlink for hostapd / wpa_supplicant. Derived from Ghidra binary analysis of the libnl shared objects — no LGPL source consulted. |
 | e2fsprogs (mkfs.ext4, e2fsck, tune2fs, debugfs, resize2fs, dumpe2fs, ...) | `anvil` | MIT | Full ext2/3/4 userland in pure Rust. Group descriptors, extent trees, journal replay, htree dirs, large-EA, encrypted-name handling. Replaces toybox's `blkid`, `chattr`, `lsattr` via `replaces = ["toybox"]` so jpkg transfers ownership cleanly. |
 | util-linux (lscpu, hwclock, ionice, nsenter, chsh) | `jonerix-util` | MIT | Surface-equivalent for the util-linux subset jonerix actually uses. `chsh` only allows shells listed in `/etc/shells`; `nsenter` covers the namespace flags container runtimes need; `hwclock` talks to `/dev/rtc0` directly. |

@@ -1,8 +1,8 @@
 [package]
 name = "stormwall"
-version = "0.1.2-r1"
+version = "0.1.2-r2"
 license = "MIT"
-description = "Drop-in replacement for the nft CLI"
+description = "Drop-in firewall front-end — accepts both Linux nftables (nft) and OpenBSD pf (pfctl) DSLs against the same in-kernel netfilter backend"
 
 [source]
 # Canonical source of truth is the Forgejo repo jonerik/stormwall on
