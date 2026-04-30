@@ -16,9 +16,8 @@ build = """
 set -e
 export CARGO_HOME=/tmp/stormwall-cargo
 export CARGO_TARGET_DIR="$PWD/target"
-export CARGO_NET_OFFLINE=true
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
-cargo build --release --locked --bin stormwall --bin pfctl
+cargo build --release --bin stormwall --bin pfctl
 """
 install = """
 set -e
