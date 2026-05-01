@@ -1,0 +1,99 @@
+[package]
+name = "chimerautils"
+version = "15.0.3-r1"
+license = "BSD-3-Clause"
+description = "Chimera Linux's FreeBSD-derived BSD coreutils — ls, cat, cp, mv, sed, grep, awk, find, tar, ed, ee, jot, nc, gzip, m4, patch, ... — installed under /share/chimerautils/ so it coexists with toybox + uutils + bsdsed + onetrueawk without clobbering /bin paths"
+
+# Coexistence model: chimerautils ships ~30+ binaries that overlap with
+# toybox / uutils / bsdsed / onetrueawk / pigz / m4oxide / ripgrep already
+# on jonerix. Rather than fight `replaces=[...]` ownership transfers across
+# all of them, this package installs everything under /share/chimerautils/
+# (bin + lib + share/man) so the default PATH continues to resolve
+# coreutils to whatever owns each /bin/<name> today. Users who want
+# chimerautils as their preferred coreutils can opt in per-shell:
+#
+#   export PATH=/share/chimerautils/bin:$PATH
+#
+# A disabled-by-default /etc/profile.d/chimerautils.sh.disabled is
+# shipped so a user with `mv chimerautils.sh.disabled chimerautils.sh`
+# gets the prefix-prepend on every login shell with no other state.
+#
+# The `chimerautils` shared library (libchimerautils.so) is also kept
+# under /share/chimerautils/lib so it doesn't pollute the global /lib
+# search path; the binaries link against it via meson's RPATH so they
+# resolve their own private libcompat.
+
+[source]
+url = "https://github.com/chimera-linux/chimerautils/archive/refs/tags/v15.0.3.tar.gz"
+sha256 = "183ad94242316cad014b54668e0b117ba4d8f6978b1229cde3fc5cd913020751"
+
+[build]
+system = "custom"
+configure = """meson setup build \
+    --prefix=/share/chimerautils \
+    --bindir=bin \
+    --sbindir=bin \
+    --libdir=lib \
+    --includedir=include \
+    --datadir=share \
+    --mandir=share/man \
+    --buildtype=release \
+    -Db_lto=true \
+    -Db_ndebug=true \
+    -Dopenssl=enabled \
+    -Dzlib=enabled \
+    -Dlzma=enabled \
+    -Dbzip2=enabled \
+    -Dzstd=enabled \
+    -Dlibedit=disabled \
+    -Dpam=disabled \
+    -Dselinux=disabled \
+    -Dcolor_ls=true \
+    -Dtiny=disabled \
+    -Dinstall-lib=true \
+    -Dchimera_realpath=enabled
+"""
+build = "samu -C build -j$(nproc)"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+# meson respects --prefix, so the payload lands at $DESTDIR/share/chimerautils/{bin,lib,share/man,include}
+# No /usr or /lib64 flatten needed (we never wrote to /usr).
+
+# Drop a disabled-by-default profile.d snippet so users can opt in by
+# renaming away the .disabled suffix. Keeping it shipped (instead of
+# requiring users to author it) means `jpkg verify chimerautils` notices
+# if it's tampered with.
+install -d "$DESTDIR/etc/profile.d"
+cat > "$DESTDIR/etc/profile.d/chimerautils.sh.disabled" <<'PROF'
+# /etc/profile.d/chimerautils.sh — opt-in PATH prepend for chimerautils.
+# Rename this file to drop the .disabled suffix to make chimerautils the
+# default coreutils for new login shells. By default jonerix's PATH
+# resolves to toybox + uutils for coreutils; this snippet flips it.
+case ":$PATH:" in
+    *":/share/chimerautils/bin:"*) ;;
+    *) PATH=/share/chimerautils/bin:$PATH ;;
+esac
+export PATH
+PROF
+chmod 0644 "$DESTDIR/etc/profile.d/chimerautils.sh.disabled"
+
+# Strip everything we built. Skip find -exec (TOML+sh escape headache —
+# see shadow recipe for the same workaround.).
+for f in "$DESTDIR"/share/chimerautils/bin/*; do
+    [ -f "$f" ] && llvm-strip --strip-all "$f" 2>/dev/null || true
+done
+for f in "$DESTDIR"/share/chimerautils/lib/*.so* "$DESTDIR"/share/chimerautils/lib/*.a; do
+    [ -f "$f" ] && llvm-strip --strip-unneeded "$f" 2>/dev/null || true
+done
+
+# Trim man pages — every binary ships its own page and they balloon the
+# package by ~3 MiB. Keep them: chimerautils' man pages are the FreeBSD
+# canonical ones and useful when users want to know what `jot -h` does.
+# (No-op kept here for documentation; if the package size becomes a
+# problem, uncomment to drop them.)
+# rm -rf "$DESTDIR/share/chimerautils/share/man"
+"""
+
+[depends]
+runtime = ["musl", "ncurses", "libressl", "zlib", "xz", "bzip2", "zstd"]
+build = ["clang", "samurai", "meson", "pkgconf", "ncurses", "libressl", "zlib", "xz", "bzip2", "zstd"]
