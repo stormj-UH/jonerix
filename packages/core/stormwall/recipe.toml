@@ -1,14 +1,14 @@
 [package]
 name = "stormwall"
-version = "1.0.2"
+version = "1.0.3"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts both Linux nftables (nft) and OpenBSD pf (pfctl) DSLs against the same in-kernel netfilter backend"
 
 [source]
 # Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.0.0
 # Mirrored to GitHub for CI (castle is behind Tailscale).
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.0.2/stormwall-1.0.2.tar.gz"
-sha256 = "25594e8e1a80c78967a4801d92a0c350299ac2cdc89c25df34b029f0ada92422"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.0.3/stormwall-1.0.3.tar.gz"
+sha256 = "ef6ab1fe3ca80664b576be36b486d34d0a57f2f94010870fed684eb7bce087e4"
 
 [build]
 system = "custom"
