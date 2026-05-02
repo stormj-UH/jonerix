@@ -1,7 +1,7 @@
 [package]
 name = "jonerix-ntp-http-bootstrap"
-version = "1.0.1"
-license = "MIT"
+version = "1.0.1-r1"
+license = "0BSD"
 description = "HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service)"
 # Split out from jonerix-boot-helpers 2026-04-20. On a Pi 5 (or any
 # board with a working coin-cell backed RTC) this package is a

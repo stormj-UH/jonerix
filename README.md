@@ -171,7 +171,7 @@ the rootfs is assembled in CI.
 | uutils | MIT | Extended coreutils (sort, wc, tr, ...) |
 | mksh | MirOS | Shell (/bin/sh) — POSIX-compliant, musl-safe |
 | zsh | MIT | Default interactive shell in the larger container images |
-| jpkg | MIT | Package manager |
+| jpkg | 0BSD | Package manager |
 | OpenRC | BSD-2-Clause | Init system |
 | dropbear | MIT | SSH server/client |
 | bsdsed | BSD-2-Clause | sed (BSD implementation) |
@@ -243,7 +243,7 @@ the rootfs is assembled in CI.
 | fastfetch | MIT | System information |
 | btop | Apache-2.0 | Terminal resource monitor |
 | tmux | ISC | Terminal multiplexer |
-| jonerix-raspi5-fixups | MIT | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control, DNS takeover opt-out, wake-on-power, cold-reboot) |
+| jonerix-raspi5-fixups | 0BSD | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control, DNS takeover opt-out, wake-on-power, cold-reboot) |
 
 ## Rust drop-in replacements
 
@@ -282,7 +282,7 @@ These are written and maintained inside the jonerix project.
 | `nft` CLI / nftables userland **and** OpenBSD `pf(8)` (on Linux) | `stormwall` | MIT | The only firewall front-end on jonerix — and the only one anywhere that speaks both Linux's nftables DSL and OpenBSD's `pf` DSL against the same kernel backend. Reads/emits the upstream `nft` ruleset language (covers `dynset`, ct helpers, flowtables, `jhash`/`symhash`/`numgen`, `dup`/`fwd`/`synproxy`, NAT random/persistent, socket/cgroup/cpu/rt classid expressions, and an `nft -i` REPL). Also accepts `pf.conf` syntax — `pass`/`block`/`match`, anchors, tables, `quick`, `keep state`, `nat`, `rdr`, `set skip`, queue/altq remapping — and lowers it to the same in-kernel netfilter rules so a `pf.conf` carried over from a BSD box runs unmodified on a jonerix Linux host. Installs `/bin/stormwall` plus `/bin/nft` and `/bin/pfctl` symlinks (each binary chooses its parser by argv[0]). |
 | libnl-3 / libnl-genl-3 | `nloxide` | BSD-2-Clause | Netlink message construction + Generic Netlink for hostapd / wpa_supplicant. Derived from Ghidra binary analysis of the libnl shared objects — no LGPL source consulted. |
 | e2fsprogs (mkfs.ext4, e2fsck, tune2fs, debugfs, resize2fs, dumpe2fs, ...) | `anvil` | MIT | Full ext2/3/4 userland in pure Rust. Group descriptors, extent trees, journal replay, htree dirs, large-EA, encrypted-name handling. Replaces toybox's `blkid`, `chattr`, `lsattr` via `replaces = ["toybox"]` so jpkg transfers ownership cleanly. |
-| util-linux (lscpu, hwclock, ionice, nsenter, chsh) | `jonerix-util` | MIT | Surface-equivalent for the util-linux subset jonerix actually uses. `chsh` only allows shells listed in `/etc/shells`; `nsenter` covers the namespace flags container runtimes need; `hwclock` talks to `/dev/rtc0` directly. |
+| util-linux (lscpu, hwclock, ionice, nsenter, chsh) | `jonerix-util` | 0BSD | Surface-equivalent for the util-linux subset jonerix actually uses. `chsh` only allows shells listed in `/etc/shells`; `nsenter` covers the namespace flags container runtimes need; `hwclock` talks to `/dev/rtc0` directly. |
 | e2fsck + fsck.fat (rescue scope) | `jfsck` | BSD-2-Clause | Scoped to Pi 5 boot recovery — ext4 journal replay + FAT32 boot-partition repair. Derived from Ghidra binary analysis of e2fsprogs and dosfstools. |
 | lsusb | `lsusb-rs` | MIT | Pure-sysfs lsusb (no libusb dependency). Reads `/sys/bus/usb/devices/*` and the bundled USB IDs database. |
 | jpkg (the jonerix package manager itself, 2.0+) | `jpkg` | MIT | Translation of the C jpkg 1.1.5 (~9.5K LOC) to Rust (~11.7K LOC). Byte-equivalent on every wire format the C tool defined: `JPKG\x00\x01\x00\x00` magic + LE32 header + TOML metadata + zstd(tar) payload, the `/var/db/jpkg/installed/<name>/{metadata.toml,files}` layout, the INDEX TOML grammar, the Ed25519 detached `.sig` flow, the merged-/usr layout audit, and the `replaces = […]` ownership-transfer semantics. 158 in-crate unit tests, plus an end-to-end smoke pass (build → install into a tempdir rootfs → info → verify clean → tamper-detect → remove). `#![forbid(unsafe_code)]` at the crate root keeps the safety budget at zero. The 2.0 release supersedes the C 1.1.5 series; `/bin/jpkg`, `/bin/jpkg-local`, and `/bin/jpkg-conform` continue to ship from the same `packages/jpkg/` recipe. |
@@ -320,7 +320,7 @@ scripts don't fall over with "exec format error".
 
 ## Package Manager (jpkg)
 
-jpkg is a custom, MIT-licensed package manager built for jonerix. Packages are zstd-compressed tarballs signed with Ed25519.
+jpkg is a custom, 0BSD-licensed package manager built for jonerix. Packages are zstd-compressed tarballs signed with Ed25519.
 
 ```sh
 jpkg update                      # fetch latest package index
@@ -662,4 +662,7 @@ but leave the `*.pre-pi5-fixups` backups untouched.
 
 ## License
 
-All original jonerix code is released under the **MIT License**.
+All original jonerix code is released under the **BSD Zero Clause License**
+([0BSD](https://opensource.org/licenses/0BSD)). 0BSD imposes no attribution,
+notice-retention, or sublicensing requirements — copy and paste freely.
+The full text is in [`LICENSE`](LICENSE).

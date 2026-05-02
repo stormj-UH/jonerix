@@ -50,7 +50,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | — | — | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
 | **`ifupdown-ng`** | `core` | 0.12.1 | ISC | any | `musl` | `clang`, `make`, `jonerix-headers` | `pi5-image`, `docker:core`, `docker:full` | Next-generation network interface configuration tool |
 | **`iproute-go`** | `core` | 0.16.0 | BSD-3-Clause | any | — | `go` | `docker:core` | u-root's ip command — Go reimplementation of iproute2's ip(8) |
-| **`jpkg`** | `core` | 2.0.0 | MIT | any | `musl` | `rust` | `docker:minimal`, `docker:core`, `docker:builder`, `docker:full` | jonerix package manager — Rust port (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
+| **`jpkg`** | `core` | 2.0.1-r1 | 0BSD | any | `musl` | `rust` | `docker:minimal`, `docker:core`, `docker:builder`, `docker:full` | jonerix package manager — Rust port (ships `jpkg`, `jpkg-local`, `jpkg-conform`) |
 | **`jq`** | `core` | 1.8.1 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Lightweight and flexible command-line JSON processor |
 | **`libarchive`** | `core` | 3.8.6-r5 | Apache-2.0 | any | `musl`, `zlib`, `xz`, `zstd`, `lz4`, `libressl` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `xz`, `zstd`, `lz4` | `docker:core` | Multi-format archive and compression library with bsdtar |
 | **`libffi`** | `core` | 3.4.6 | MIT | any | `musl` | `clang`, `make`, `jonerix-headers` | — | Foreign Function Interface library — dispatches to C ABI from dynamic callers |
@@ -82,7 +82,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`flex`** | `develop` | 2.6.4 | BSD-2-Clause | any | `musl` | `clang`, `make` | `docker:full`, `docker:builder` | Fast lexical analyzer generator |
 | **`go`** | `develop` | 1.26.1 | BSD-3-Clause | any | `musl`, `gnu-compat-symlinks` | `python3` | `docker:builder` | Go programming language compiler and tools |
 | **`jmake`** | `develop` | 1.1.4 | MIT | any | `musl` | `rust` | `docker:full`, `docker:builder` | Clean-room drop-in replacement for GNU Make, written in Rust |
-| **`jonerix-headers`** | `develop` | 4.19.88-r2 | MIT | any | — | — | — | Linux UAPI kernel headers for jonerix package builds |
+| **`jonerix-headers`** | `develop` | 4.19.88-r3 | 0BSD AND BSD-3-Clause | any | — | — | — | Linux UAPI kernel headers for jonerix package builds |
 | **`libcxx`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl` | `clang`, `cmake`, `samurai`, `python3` | `docker:core`, `docker:builder` | LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME |
 | **`lldb`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `llvm`, `libcxx`, `xz`, `zstd`, `zlib` | `llvm-all` | — | LLVM debugger — carved out of llvm-all (no separate compile) |
 | **`llvm`** | `develop` | 21.1.2-r1 | Apache-2.0 | any | `musl`, `libcxx`, `zstd`, `zlib` | `clang`, `cmake`, `samurai`, `python3`, `libcxx` | `docker:full`, `docker:builder` | Slim LLVM toolchain (toolchain-only: clang, lld, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc)… |
@@ -103,10 +103,10 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`headscale`** | `extra` | 0.28.0 | BSD-3-Clause | any | `musl` | `go` | — | Open-source self-hosted Tailscale control server |
 | **`hostapd`** | `extra` | 2.11-r1 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | `docker:router` | IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator |
 | **`jfsck`** | `extra` | 0.1.0-r0 | BSD-2-Clause | any | — | `rust` | — | Clean-room fsck for ext4 + FAT32 (Raspberry Pi scope) derived from Ghidra binary analysis of e2fsprogs and … |
-| **`jonerix-ext4-rescue`** | `extra` | 0.1.0 | MIT | any | — | `rust` | — | Reset a corrupted ext4 inode's extent header so the file can be rm'd |
-| **`jonerix-ntp-http-bootstrap`** | `extra` | 1.0.0 | MIT | any | `mksh`, `openrc`, `curl` | — | `pi5-install` | HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service) |
-| **`jonerix-raspi5-fixups`** | `extra` | 1.6.1 | MIT | aarch64 | `musl`, `openrc`, `python3` | `rust` | `pi5-install`, `pi5-image` | Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor, tty1 HDMI console) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro |
-| **`jonerix-util`** | `extra` | 0.1.0-r4 | MIT | any | `musl` | `clang`, `rust` | — | Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh) |
+| **`jonerix-ext4-rescue`** | `extra` | 0.1.0-r1 | 0BSD | any | — | `rust` | — | Reset a corrupted ext4 inode's extent header so the file can be rm'd |
+| **`jonerix-ntp-http-bootstrap`** | `extra` | 1.0.1-r1 | 0BSD | any | `mksh`, `openrc`, `curl` | — | `pi5-install` | HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service) |
+| **`jonerix-raspi5-fixups`** | `extra` | 1.6.15 | 0BSD | aarch64 | `musl`, `openrc`, `python3` | `rust` | `pi5-install`, `pi5-image` | Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor, tty1 HDMI console) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro |
+| **`jonerix-util`** | `extra` | 0.1.0-r5 | 0BSD | any | `musl` | `clang`, `rust` | — | Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh) |
 | **`libevent`** | `extra` | 2.1.12-stable | BSD-3-Clause | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers`, `libressl` | — | Event notification library (prerequisite for tmux) |
 | **`limine`** | `extra` | 11.2.1 | BSD-2-Clause | any | `musl` | — | — | Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-2-Clause) |
 | **`linux`** | `extra` | 6.14.2 | GPL-2.0-only | any | — | — | — | Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers. |

@@ -1,7 +1,7 @@
 [package]
 name = "jonerix-util"
-version = "0.1.0-r4"
-license = "MIT"
+version = "0.1.0-r5"
+license = "0BSD"
 description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh)"
 # Claim toybox's multicall symlinks for hwclock, ionice, and nsenter
 # (toybox doesn't ship lscpu so there's nothing to replace there).

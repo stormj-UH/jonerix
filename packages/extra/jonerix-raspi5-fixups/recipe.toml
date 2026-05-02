@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.14"
+version = "1.6.15"
 arch = "aarch64"
-license = "MIT"
+license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
 # 1.6.0: absorbs the tty1-console HDMI getty from the retired
 # jonerix-boot-helpers package (reboot-clean was already

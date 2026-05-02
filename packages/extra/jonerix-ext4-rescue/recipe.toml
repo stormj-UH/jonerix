@@ -1,7 +1,7 @@
 [package]
 name = "jonerix-ext4-rescue"
-version = "0.1.0"
-license = "MIT"
+version = "0.1.0-r1"
+license = "0BSD"
 description = "Reset a corrupted ext4 inode's extent header so the file can be rm'd"
 
 # No [source] — local-only build using $RECIPE_DIR contents.
