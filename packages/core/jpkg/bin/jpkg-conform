@@ -203,9 +203,18 @@ cat > "$jpkg_conf" <<EOF
 url = "${RELEASE_BASE}/${TAG}"
 EOF
 
-# Clear any stale INDEX cache pointing at the prior mirror.
+# Clear any stale INDEX cache pointing at the prior mirror, AND every
+# previously-downloaded *.jpkg blob. The rolling `packages` mirror and
+# tagged v* releases use the SAME filename for a given (name, version,
+# arch) tuple but the bytes can differ — a `libressl-4.0.0-aarch64.jpkg`
+# cached from the rolling mirror has a different sha256 than the same
+# filename on a v1.2.1 release if libressl was rebuilt between them.
+# Without this purge, jpkg's filename-keyed cache serves the wrong blob
+# and `jpkg install --force` errors with "sha256 mismatch" against the
+# release INDEX (reproduced 2026-05-03 jpkg conform 1.2.1).
 rm -f "${jpkg_cache}/INDEX" "${jpkg_cache}/INDEX.zst" \
-      "${jpkg_cache}/INDEX.zst.sig"
+      "${jpkg_cache}/INDEX.zst.sig" \
+      "${jpkg_cache}"/*.jpkg
 
 printf 'jpkg-conform: pointing jpkg at %s/%s\n' "$RELEASE_BASE" "$TAG"
 jpkg update
