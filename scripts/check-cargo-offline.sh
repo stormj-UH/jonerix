@@ -123,20 +123,72 @@ for recipe in "${RECIPES}"/core/*/recipe.toml \
     fi
 done
 
-# Tarball packages with registry dependencies must carry Cargo.lock,
-# vendor/, and source replacement config.
-check_vendor_tarball brash brash-1.0.10.tar.gz
-check_vendor_tarball exproxide exproxide-0.1.0.tar.gz
-check_vendor_tarball gitoxide gitoxide-0.52.0.tar.gz
-check_vendor_tarball jmake jmake-v1.1.14.tar.gz
-check_vendor_tarball ripgrep ripgrep-15.1.0.tar.gz
-check_vendor_tarball stormwall stormwall-1.0.4.tar.gz
-check_vendor_tarball uutils uutils-0.7.0-r1.tar.gz
+# Derive tarball filename from the recipe's version field: $pkg-$version.tar.gz.
+# Avoids hardcoded version strings that break on bumps.
+tarball_from_recipe() {
+    pkg=$1
+    recipe=$2
+    ver=$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$recipe" | head -n 1)
+    [ -n "$ver" ] || return 1
+    printf '%s\n' "${pkg}-${ver}.tar.gz"
+}
 
-check_path_only_tarball anvil anvil-0.2.1-r1.tar.gz
-check_path_only_tarball jfsck jfsck-0.1.0.tar.gz
-check_path_only_tarball lsusb-rs lsusb-rs-0.1.0-r0.tar.gz
-check_path_only_tarball m4oxide m4oxide-0.1.0-r0.tar.gz
+# Strip trailing -rN package revision from version (e.g. 0.7.0-r1 -> 0.7.0).
+strip_revision() {
+    case "$1" in
+        *-r[0-9]*)
+            base=${1%-r*}
+            suffix=${1##*-r}
+            case "$suffix" in
+                ''|*[!0-9]*) printf '%s\n' "$1" ;;
+                *) printf '%s\n' "$base" ;;
+            esac
+            ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+# Locate the source tarball for a package.  Tries:
+#   $pkg-$version.tar.gz         (with -rN)
+#   $pkg-$base_version.tar.gz   (without -rN)
+#   $pkg-v$base_version.tar.gz  (v-prefixed, e.g. jmake)
+find_source_tarball() {
+    pkg=$1
+    recipe=$2
+    ver=$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$recipe" | head -n 1)
+    [ -n "$ver" ] || return 1
+    base=$(strip_revision "$ver")
+    if [ -f "${SOURCES}/${pkg}-${ver}.tar.gz" ]; then
+        printf '%s\n' "${pkg}-${ver}.tar.gz"
+    elif [ -f "${SOURCES}/${pkg}-${base}.tar.gz" ]; then
+        printf '%s\n' "${pkg}-${base}.tar.gz"
+    elif [ -f "${SOURCES}/${pkg}-v${ver}.tar.gz" ]; then
+        printf '%s\n' "${pkg}-v${ver}.tar.gz"
+    elif [ -f "${SOURCES}/${pkg}-v${base}.tar.gz" ]; then
+        printf '%s\n' "${pkg}-v${base}.tar.gz"
+    else
+        printf '%s\n' "${pkg}-${ver}.tar.gz"
+    fi
+}
+
+# Tarball packages with registry dependencies must carry Cargo.lock,
+# vendor/, and source replacement config.  Filenames are derived from
+# each recipe's version field so version bumps propagate automatically.
+for pkg in brash exproxide gitoxide jmake ripgrep stormwall uutils; do
+    recipe=$(find "${RECIPES}" -path "*/${pkg}/recipe.toml" | head -n 1)
+    [ -f "$recipe" ] || continue
+    file=$(find_source_tarball "$pkg" "$recipe") || continue
+    check_vendor_tarball "$pkg" "$file"
+done
+
+# Path-only tarballs: no vendor/ required but Cargo.lock must not
+# reference external registries.
+for pkg in anvil jfsck lsusb-rs m4oxide; do
+    recipe=$(find "${RECIPES}" -path "*/${pkg}/recipe.toml" | head -n 1)
+    [ -f "$recipe" ] || continue
+    file=$(find_source_tarball "$pkg" "$recipe") || continue
+    check_path_only_tarball "$pkg" "$file"
+done
 
 # Local-only Cargo packages: path-only crates need no vendor tree; crates with
 # registry sources must carry vendor/ plus .cargo/config.toml.
