@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.10"
+version = "1.0.11"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -22,16 +22,14 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the v1.0.5 tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.10.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.11.tar.gz
 #
-# 1.0.10 ships drop-in bash-completion compatibility:
-# 1. O(n²) tokenization eliminated — bash-completion (3475 lines) sources in
-#    25ms instead of 31.8s.  Start-line metadata replaces newline padding.
-# 2. History expansion suppressed in sourced files — ${!var}, ${!arr[@]}, and
-#    !() extglob no longer trigger "event not found" during rc/profile load.
-# 3. Extglob !() patterns now parse correctly inside array assignments.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.10/brash-1.0.10.tar.gz"
-sha256 = "76d0b92ffdbac8f0c1b2dbb311ff154f4734a4c1926a66ccba21fd058cc56dff"
+# 1.0.11: 82/82 bash-5.3 test suite, 18/18 test corpora green.
+# Full readline feature set (vi mode, macros, menu-complete, dirspell,
+# colored-stats, mail checking, bind builtin), PS0 prompt, autocd, cdspell.
+# Incremental segmentation fixes aliased reserved words (for/if/while).
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.11/brash-1.0.11.tar.gz"
+sha256 = "9d50c3506b0376bf8966fe91df1eae29e10f1cd473d1620bee1a677291b94926"
 
 [build]
 system = "custom"
