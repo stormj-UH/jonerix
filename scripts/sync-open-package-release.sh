@@ -17,6 +17,7 @@ workspace="${GITHUB_WORKSPACE:-$(pwd)}"
 pkg_dir="${PKG_DIR:-/var/cache/jpkg}"
 recipes_root="${RECIPES_ROOT:-$workspace/packages}"
 stale_list="${STALE_LIST:-$pkg_dir/.stale-assets}"
+asset_list="${OPEN_RELEASE_ASSET_LIST:-}"
 pkg_input="${PKG_INPUT:-}"
 state_release="${PACKAGE_RELEASE_STATE_TAG:-package-release-state}"
 state_asset="${PACKAGE_RELEASE_STATE_ASSET:-active-package-release.env}"
@@ -63,7 +64,11 @@ for pkg in "$pkg_dir"/*.jpkg; do
     if [ -s "$stale_list" ] && grep -Fx "$base" "$stale_list" >/dev/null 2>&1; then
         continue
     fi
-    if [ -n "$pkg_input" ] && [ "$pkg_input" != "all" ]; then
+    if [ -n "$asset_list" ]; then
+        if [ ! -s "$asset_list" ] || ! grep -Fx "$base" "$asset_list" >/dev/null 2>&1; then
+            continue
+        fi
+    elif [ -n "$pkg_input" ] && [ "$pkg_input" != "all" ]; then
         case "$base" in
             "$pkg_input"-*) ;;
             *) continue ;;

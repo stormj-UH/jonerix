@@ -125,11 +125,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          manifest=/tmp/published-assets-x86_64.txt
+          : > "$manifest"
           count=0
-          for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          for pkg in /tmp/jpkg-output/*.jpkg; do
+            [ -f "$pkg" ] || continue
+            basename "$pkg" >> "$manifest"
+            count=$((count+1))
+          done
           [ "$count" -eq 0 ] && { echo "No new packages to upload."; exit 0; }
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (x86_64)."
+
+      - name: Upload published asset manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-assets-x86_64
+          path: /tmp/published-assets-x86_64.txt
+          if-no-files-found: warn
 
   build-aarch64:
     name: Build packages (aarch64)
@@ -194,11 +208,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          manifest=/tmp/published-assets-aarch64.txt
+          : > "$manifest"
           count=0
-          for pkg in /tmp/jpkg-output/*.jpkg; do [ -f "$pkg" ] && count=$((count+1)); done
+          for pkg in /tmp/jpkg-output/*.jpkg; do
+            [ -f "$pkg" ] || continue
+            basename "$pkg" >> "$manifest"
+            count=$((count+1))
+          done
           [ "$count" -eq 0 ] && { echo "No new packages to upload."; exit 0; }
           gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
           echo "Uploaded $count package(s) (aarch64)."
+
+      - name: Upload published asset manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-assets-aarch64
+          path: /tmp/published-assets-aarch64.txt
+          if-no-files-found: warn
 
   # ------ Generate combined INDEX from all uploaded packages ------------------------------------------------------------
   index:
@@ -239,6 +267,39 @@ jobs:
             --dir /tmp/jpkg-index 2>/dev/null || true
           echo "Downloaded packages:"
           ls -lh /tmp/jpkg-index/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Download published asset manifests
+        if: ${{ !inputs.index_only }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: published-assets-*
+          path: /tmp/published-assets
+          merge-multiple: true
+
+      - name: Build open release mirror list
+        env:
+          INDEX_ONLY_INPUT: ${{ inputs.index_only && 'true' || 'false' }}
+          PKG_INPUT: ${{ inputs.package }}
+        run: |
+          manifest=/tmp/jpkg-index/.open-release-assets
+          : > "$manifest"
+          if [ -d /tmp/published-assets ]; then
+            for list in /tmp/published-assets/*; do
+              [ -f "$list" ] || continue
+              cat "$list"
+            done | sort -u > "$manifest"
+          fi
+
+          if [ ! -s "$manifest" ] && [ "$INDEX_ONLY_INPUT" = "true" ] && [ -n "$PKG_INPUT" ] && [ "$PKG_INPUT" != "all" ]; then
+            for pkg in /tmp/jpkg-index/"$PKG_INPUT"-*.jpkg; do
+              [ -f "$pkg" ] || continue
+              basename "$pkg"
+            done | sort -u > "$manifest"
+          fi
+
+          echo "Open release mirror candidates:"
+          cat "$manifest"
+          echo "Candidate count: $(wc -l < "$manifest" | tr -d ' ')"
 
       - name: Generate INDEX.zst
         # scripts/gen-index.sh:
@@ -323,6 +384,7 @@ jobs:
           JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
           PKG_DIR: /tmp/jpkg-index
           STALE_LIST: /tmp/jpkg-index/.stale-assets
+          OPEN_RELEASE_ASSET_LIST: /tmp/jpkg-index/.open-release-assets
           RECIPES_ROOT: ${{ github.workspace }}/packages
           PKG_INPUT: ${{ inputs.package }}
           SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
