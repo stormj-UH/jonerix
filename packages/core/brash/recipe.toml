@@ -29,7 +29,7 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # colored-stats, mail checking, bind builtin), PS0 prompt, autocd, cdspell.
 # Incremental segmentation fixes aliased reserved words (for/if/while).
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.11/brash-1.0.11.tar.gz"
-sha256 = "9d50c3506b0376bf8966fe91df1eae29e10f1cd473d1620bee1a677291b94926"
+sha256 = "af4ede1bac7056b770b00aa40a1036ec9b1432ab2039052de24dd273d45998e2"
 
 [build]
 system = "custom"

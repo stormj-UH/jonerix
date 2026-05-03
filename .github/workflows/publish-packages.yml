@@ -211,28 +211,48 @@ jobs:
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: ${{ vars.BUILDER_IMAGE_X86_64 || 'ghcr.io/stormj-uh/jonerix:builder-amd64' }}
       options: --privileged
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     permissions:
       contents: write
 
     steps:
-      - name: Install checkout tools
-        # actions/checkout runs inside this Alpine container, so git and
-        # git-lfs must exist before the action starts.
-        run: apk add --no-cache git git-lfs
-
       - name: Checkout source
         uses: actions/checkout@v5
         with:
           lfs: false
 
-      - name: Install tools
-        # coreutils for GNU `sort -V` (version-sort) — used by gen-index.sh
-        # to deduplicate release assets by picking the highest version for
-        # each (name, arch) pair. Busybox sort mostly works but GNU is the
-        # reference implementation for -V semantics with -rN release suffixes.
-        run: apk add --no-cache curl github-cli zstd coreutils
+      - name: Install CI tools
+        # The builder image has git, zstd, clang, rust, cargo, python3.
+        # Only gh (GitHub CLI) and coreutils (GNU sort -V) are missing.
+        run: apk add --no-cache github-cli coreutils
+
+      - name: Restore jpkg binary cache
+        uses: actions/cache@v5
+        id: jpkg-cache
+        with:
+          path: /tmp/jpkg-bin-x86_64
+          key: jpkg-bin-x86_64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
+
+      - name: Build or restore jpkg
+        run: |
+          if [ -x /tmp/jpkg-bin-x86_64/jpkg ]; then
+            echo "Using cached jpkg binary."
+            install -m 755 /tmp/jpkg-bin-x86_64/jpkg /usr/local/bin/jpkg
+          else
+            echo "Cache miss — building jpkg from source."
+            cd "$GITHUB_WORKSPACE/packages/core/jpkg"
+            TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+            RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
+                cargo build --release --frozen --target "$TRIPLE" --bin jpkg
+            install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
+            mkdir -p /tmp/jpkg-bin-x86_64
+            cp /usr/local/bin/jpkg /tmp/jpkg-bin-x86_64/jpkg
+          fi
+          jpkg --version || true
 
       - name: Download all packages from release
         env:
@@ -294,20 +314,6 @@ jobs:
             fi
           done < "$STALE_LIST"
           echo "Removed $count stale asset(s)."
-
-      - name: Build jpkg from source for signing
-        run: |
-          # jpkg 2.0 is Rust; build via cargo + crt-static.  Pass --target
-          # $HOST_TRIPLE to keep proc-macros free of crt-static (they need
-          # dylibs).  Python null-pads any residual /lib64.
-          apk add --no-cache clang lld musl-dev rust cargo python3
-          cd "$GITHUB_WORKSPACE/packages/core/jpkg"
-          TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-          RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-              cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
-          python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" "target/$TRIPLE/release/jpkg" || true
-          install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
-          jpkg --version || true
 
       - name: Sign INDEX.zst
         env:
