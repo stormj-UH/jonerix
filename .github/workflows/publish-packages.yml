@@ -256,6 +256,11 @@ jobs:
       - name: Log in to GHCR for jpkg signer
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      - name: Build Rust jpkg signer
+        env:
+          SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
+        run: sh "$GITHUB_WORKSPACE/scripts/ci-build-jpkg-signer.sh"
+
       - name: Download all packages from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -371,18 +376,12 @@ jobs:
       - name: Sign INDEX.zst
         env:
           JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
-          SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
         run: |
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > "$tmp/jpkg-sign.sec"
           chmod 600 "$tmp/jpkg-sign.sec"
-          docker run --rm \
-            -v /tmp/jpkg-index:/work \
-            -v "$tmp:/key:ro" \
-            --entrypoint /bin/sh \
-            "$SIGNER_IMAGE" \
-            -c 'jpkg sign /work/INDEX.zst --key /key/jpkg-sign.sec'
+          jpkg sign /tmp/jpkg-index/INDEX.zst --key "$tmp/jpkg-sign.sec"
           echo "INDEX.zst.sig: $(wc -c < /tmp/jpkg-index/INDEX.zst.sig) bytes"
 
       - name: Upload INDEX.zst and signature

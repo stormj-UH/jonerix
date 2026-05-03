@@ -21,7 +21,6 @@ asset_list="${OPEN_RELEASE_ASSET_LIST:-}"
 pkg_input="${PKG_INPUT:-}"
 state_release="${PACKAGE_RELEASE_STATE_TAG:-package-release-state}"
 state_asset="${PACKAGE_RELEASE_STATE_ASSET:-active-package-release.env}"
-signer_image="${SIGNER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder-amd64}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT INT TERM
@@ -123,15 +122,8 @@ chmod 600 "$sign_dir/jpkg-sign.sec"
 
 if command -v jpkg >/dev/null 2>&1; then
     jpkg sign "$active_dir/INDEX.zst" --key "$sign_dir/jpkg-sign.sec"
-elif command -v docker >/dev/null 2>&1; then
-    docker run --rm \
-        -v "$active_dir:/work" \
-        -v "$sign_dir:/key:ro" \
-        --entrypoint /bin/sh \
-        "$signer_image" \
-        -c 'jpkg sign /work/INDEX.zst --key /key/jpkg-sign.sec'
 else
-    echo "Neither jpkg nor docker is available to sign INDEX.zst." >&2
+    echo "jpkg is required to sign INDEX.zst." >&2
     exit 1
 fi
 

@@ -27,6 +27,8 @@ jobs:
         with:
           lfs: false
       - name: Check Cargo builds are offline
+        env:
+          ALLOW_LFS_POINTER_SOURCES: "1"
         run: sh scripts/check-cargo-offline.sh
       - name: Check Go builds are offline
         run: sh scripts/check-go-offline.sh

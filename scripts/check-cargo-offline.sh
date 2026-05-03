@@ -56,6 +56,11 @@ check_vendor_tarball() {
         return
     fi
 
+    if is_lfs_pointer "$src" && [ "${ALLOW_LFS_POINTER_SOURCES:-0}" = 1 ]; then
+        printf 'CARGO: skipping LFS pointer tarball content check for %s: %s\n' "$label" "$file" >&2
+        return
+    fi
+
     if ! tar tf "$src" | grep '/Cargo.lock$' >/dev/null 2>&1; then
         fail "CARGO: $label tarball has no Cargo.lock: $file"
     fi
@@ -74,6 +79,11 @@ check_path_only_tarball() {
 
     if [ ! -f "$src" ]; then
         fail "CARGO: missing source tarball for $label: $file"
+        return
+    fi
+
+    if is_lfs_pointer "$src" && [ "${ALLOW_LFS_POINTER_SOURCES:-0}" = 1 ]; then
+        printf 'CARGO: skipping LFS pointer tarball content check for %s: %s\n' "$label" "$file" >&2
         return
     fi
 
@@ -146,6 +156,12 @@ strip_revision() {
             ;;
         *) printf '%s\n' "$1" ;;
     esac
+}
+
+is_lfs_pointer() {
+    file=$1
+    IFS= read -r first < "$file" || return 1
+    [ "$first" = "version https://git-lfs.github.com/spec/v1" ]
 }
 
 # Locate the source tarball for a package.  Tries:
