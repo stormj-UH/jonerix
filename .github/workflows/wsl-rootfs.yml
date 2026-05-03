@@ -32,6 +32,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Install checkout tools
+        run: apk add --no-cache git git-lfs
+
       - name: Checkout source
         uses: actions/checkout@v5
         with:
