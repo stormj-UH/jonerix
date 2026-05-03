@@ -123,6 +123,7 @@ jpkg
 # would otherwise alphabetically schedule `hostapd` before `nloxide`
 # (h < n) and the consumers' build-deps would WARN-and-skip nloxide.
 nloxide
+jcarp
 # Tier 11: brash-aware rebuilds. Recipes here use /bin/bash (= brash)
 # at build time to drive their upstream build scripts unmodified —
 # retiring local mksh-compat hacks. Each falls back to its previous

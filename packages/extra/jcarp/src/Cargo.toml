@@ -1,0 +1,22 @@
+[package]
+name = "jcarp"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-2-Clause"
+description = "Rust OpenBSD-CARP-compatible failover daemon for jonerix"
+authors = ["jonerix contributors"]
+
+[lib]
+name = "jcarp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jcarp"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

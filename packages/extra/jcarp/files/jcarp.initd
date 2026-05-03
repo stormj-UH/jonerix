@@ -1,0 +1,27 @@
+#!/bin/openrc-run
+# jcarp - Rust OpenBSD-CARP-compatible failover daemon.
+
+name="jcarp"
+description="Rust CARP failover daemon"
+
+: "${JCARP_CONF:=/etc/jcarp/jcarp.conf}"
+: "${JCARP_PIDFILE:=/run/jcarp.pid}"
+
+command="/bin/jcarp"
+command_args="--config ${JCARP_CONF} run"
+command_background="yes"
+pidfile="${JCARP_PIDFILE}"
+
+depend() {
+    need net
+    after dhcpcd
+    keyword -jail -prefix
+}
+
+start_pre() {
+    if [ ! -f "$JCARP_CONF" ]; then
+        eerror "missing $JCARP_CONF"
+        return 1
+    fi
+    /bin/jcarp --config "$JCARP_CONF" check
+}
