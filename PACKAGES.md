@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` — **91 recipes**. All jonerix-built packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception, `linux` (GPL-2.0), is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` — **92 recipes**. All jonerix-built packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception, `linux` (GPL-2.0), is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -19,7 +19,7 @@ Generated from tracked `packages/**/recipe.toml` — **91 recipes**. All jonerix
 | **`docker:core`** | `Dockerfile.core`      | Slim runtime base (Stage 1); parent of builder + router |
 | **`docker:full`** | `Dockerfile`           | The traditional all-in-one jonerix container (includes compilers, tools, editors) |
 | **`docker:builder`** | `Dockerfile.builder` | Core + toolchain used by every publish-packages CI run |
-| **`docker:router`** | `Dockerfile.router`   | Core + nloxide/hostapd/wpa_supplicant for BR-routers |
+| **`docker:router`** | `Dockerfile.router`   | Core + jcarp/nloxide/hostapd/wpa_supplicant for BR-routers |
 
 ### Packages shared across build targets
 
@@ -102,6 +102,7 @@ A package's "Used in" column lists every build that installs it. Spot-check of h
 | **`derper`** | `extra` | 1.96.5 | BSD-3-Clause | any | `musl` | `go` | — | Tailscale DERP relay server |
 | **`headscale`** | `extra` | 0.28.0 | BSD-3-Clause | any | `musl` | `go` | — | Open-source self-hosted Tailscale control server |
 | **`hostapd`** | `extra` | 2.11-r1 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | `docker:router` | IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator |
+| **`jcarp`** | `extra` | 0.1.0-r1 | BSD-2-Clause | any | `musl`, `openrc`, `stormwall` | `rust` | `docker:router` | Rust OpenBSD-CARP-compatible failover daemon for jonerix |
 | **`jfsck`** | `extra` | 0.1.0-r0 | BSD-2-Clause | any | — | `rust` | — | Clean-room fsck for ext4 + FAT32 (Raspberry Pi scope) derived from Ghidra binary analysis of e2fsprogs and … |
 | **`jonerix-ext4-rescue`** | `extra` | 0.1.0 | MIT | any | — | `rust` | — | Reset a corrupted ext4 inode's extent header so the file can be rm'd |
 | **`jonerix-ntp-http-bootstrap`** | `extra` | 1.0.0 | MIT | any | `mksh`, `openrc`, `curl` | — | `pi5-install` | HTTP Date-header clock bootstrap for RTC-less hosts (ships ntp-set-http + ntp-bootstrap OpenRC service) |

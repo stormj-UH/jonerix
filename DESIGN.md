@@ -55,7 +55,7 @@ minimal -> core -> builder   (compilers + dev tools)
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, ncurses, networking |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
-| `router` | core | hostapd, wpa_supplicant, btop, unbound DNS config, sysctl hardening |
+| `router` | core | jcarp, hostapd, wpa_supplicant, btop, unbound DNS config, sysctl hardening |
 
 ### Build Pipeline
 
@@ -307,6 +307,7 @@ UEFI firmware
 | SSH | dropbear | MIT |
 | WiFi AP | hostapd | BSD-3-Clause |
 | WiFi client | wpa_supplicant | BSD-3-Clause |
+| HA failover | jcarp | BSD-2-Clause |
 | VPN relay | derper (Tailscale DERP) | BSD-3-Clause |
 | Firewall | *see below* | — |
 
@@ -316,6 +317,7 @@ The `jonerix:router` image extends core with networking packages and ships defau
 
 - **Unbound**: recursive DNS with DNSSEC, listens on LAN, rebind protection
 - **nloxied** Rust-based replacement for libnl
+- **jcarp**: OpenBSD-CARP-compatible virtual IP failover
 - **Hostapd**: WiFi access point (WPA2, disabled by default — user must configure SSID/passphrase)
 - **Network interfaces**: WAN (eth0, DHCP) + LAN (eth1, static 192.168.1.1/24)
 - **Sysctl hardening**: IP forwarding enabled, SYN cookies, ICMP redirect rejection, reverse path filtering

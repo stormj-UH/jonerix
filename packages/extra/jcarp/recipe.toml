@@ -1,0 +1,43 @@
+[package]
+name = "jcarp"
+version = "0.1.0-r1"
+license = "BSD-2-Clause"
+description = "Rust OpenBSD-CARP-compatible failover daemon for jonerix"
+
+# No [source] - local-only Rust port under $RECIPE_DIR/src.
+
+[build]
+system = "custom"
+build = """
+mksh <<'EOF'
+set -e
+export CARGO_HOME=/tmp/jcarp-cargo
+export CARGO_TARGET_DIR=/tmp/jcarp-target
+export CARGO_NET_OFFLINE=true
+export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
+cd "$RECIPE_DIR/src"
+cargo test --frozen --offline --lib --bins --tests
+cargo build --release --frozen --bin jcarp --offline
+EOF
+"""
+install = """
+mksh <<'EOF'
+set -e
+BIN=/tmp/jcarp-target/release/jcarp
+install -Dm755 "$BIN" "$DESTDIR/bin/jcarp"
+install -Dm644 "$RECIPE_DIR/src/LICENSE" "$DESTDIR/share/licenses/jcarp/LICENSE"
+install -Dm644 "$RECIPE_DIR/files/jcarp.conf" "$DESTDIR/etc/jcarp/jcarp.conf.default"
+install -Dm755 "$RECIPE_DIR/files/jcarp.initd" "$DESTDIR/etc/init.d/jcarp"
+llvm-strip --strip-all "$DESTDIR/bin/jcarp" 2>/dev/null || true
+EOF
+"""
+
+[hooks]
+post_install = """if [ ! -e /etc/jcarp/jcarp.conf ] && [ -f /etc/jcarp/jcarp.conf.default ]; then
+    install -Dm644 /etc/jcarp/jcarp.conf.default /etc/jcarp/jcarp.conf
+fi
+exit 0"""
+
+[depends]
+runtime = ["musl", "openrc", "stormwall"]
+build = ["rust", "mksh"]
