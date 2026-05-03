@@ -43,6 +43,14 @@ fi
 
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
+# Provide crtbegin/crtend stubs for builds that expect GCC-style CRT objects.
+# On musl+compiler-rt, init/fini handling is done by musl's Scrt1.o / crti.o /
+# crtn.o — the GCC-style crtbegin/crtend objects are no-ops. Create empty
+# archives so the linker doesn't error on -shared / -pie / static builds.
+for crt in crtbeginS.o crtendS.o crtbegin.o crtend.o crtbeginT.o; do
+    [ -f /lib/$crt ] || printf '!<arch>\n' > /lib/$crt
+done
+
 # Ensure GCC compat symlinks exist (cargo/rustc need libgcc_s.so.1 for unwinding)
 [ -f /lib/libgcc_s.so.1 ] || ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true
 [ -f /lib/libstdc++.so.6 ] || ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
