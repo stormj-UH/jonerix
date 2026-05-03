@@ -1,18 +1,25 @@
 # nloxide
 
-A clean-room, BSD-2-Clause licensed drop-in replacement for `libnl-3` and
-`libnl-genl-3`.  Written in Rust, derived exclusively from Ghidra decompilation
-of the Alpine Linux `libnl3-3.11.0-r0.apk` binary.  No libnl source code was
-consulted at any point.
+A clean-room, BSD-2-Clause licensed compatibility layer for the subset of
+`libnl-3` and `libnl-genl-3` used by the `hostapd` and `wpa_supplicant`
+nl80211 paths in jonerix.  Written in Rust, derived exclusively from Ghidra
+decompilation of the Alpine Linux `libnl3-3.11.0-r0.apk` binary.  No libnl
+source code was consulted at any point.
 
 Built for the **jonerix** Linux distribution, where GPL and LGPL runtimes are
-prohibited.  Installs as both `libnl-3.so.200` and `libnl-genl-3.so.200` (one
-binary, two sonames) so that programs like `hostapd` and `wpa_supplicant` link
-against it without modifications.
+prohibited.  The `aarch64-jonerix-linux-musl` target builds a static archive for
+linking into jonerix `hostapd` and `wpa_supplicant` builds, with packaging
+responsible for exposing the expected libnl link names.  It is not intended to be
+a general drop-in replacement for arbitrary libnl consumers.
 
 ---
 
 ## What is implemented
+
+The implemented surface is the libnl core/generic-netlink behavior needed by
+the jonerix `hostapd`/`wpa_supplicant` nl80211 paths.  Symbols outside that
+contract may exist only for link compatibility and should not be treated as a
+supported libnl feature surface.
 
 ### Core socket (`socket.rs`)
 
@@ -173,7 +180,12 @@ All 35 `NLE_*` error codes (0–34) are defined.
 
 ---
 
-## What is NOT implemented (stubs only)
+## What is NOT implemented (link-compat stubs only)
+
+These symbols are exported so binaries that reference unused libnl helpers can
+link, but they are not functional implementations.  They return null, zero, or
+an error as noted below and do not extend nloxide into a general-purpose libnl
+replacement.
 
 ### nl_addr — network address objects
 
@@ -216,8 +228,9 @@ No-op stubs.  The dump infrastructure (`nl_dump_params`) is not implemented.
 ### nl_cache (route/link/addr cache)
 
 The full `libnl-route-3` object cache layer (`nl_cache_*`, `rtnl_*`) is absent.
-nloxide is not a replacement for `libnl-route-3` — only `libnl-3` and
-`libnl-genl-3`.
+nloxide is not a replacement for `libnl-route-3`, and its `libnl-3` /
+`libnl-genl-3` compatibility is limited to the jonerix nl80211 consumer paths
+described above.
 
 ### Variadic memberships
 
@@ -245,6 +258,10 @@ The verbose/debug output that libnl produces for these kinds is not replicated.
 ---
 
 ## ABI compatibility notes
+
+ABI compatibility is maintained for the narrow hostapd/wpa_supplicant nl80211
+contract.  Exported stubs are for link compatibility only and are not evidence
+of broader runtime compatibility with libnl applications.
 
 The `NlSock` struct field layout matches the offsets observed in the Ghidra
 decompilation of libnl3-3.11.0:

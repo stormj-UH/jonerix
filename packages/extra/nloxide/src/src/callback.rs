@@ -2,10 +2,10 @@
 // nl_cb_alloc: calloc(1, 0xe0); refcount at +0xd8; 11 cb types + err cb
 // ABI: opaque pointer, reference-counted
 
+use crate::message::NlMsg;
+use crate::types::*;
 use core::ffi::c_int;
 use core::sync::atomic::{AtomicI32, Ordering};
-use crate::types::*;
-use crate::message::NlMsg;
 
 pub type NlRecvMsgCb = unsafe extern "C" fn(*mut NlMsg, *mut core::ffi::c_void) -> c_int;
 pub type NlRecvMsgErrCb =
@@ -24,7 +24,10 @@ pub struct CbSlot {
 
 impl Default for CbSlot {
     fn default() -> Self {
-        CbSlot { func: None, arg: core::ptr::null_mut() }
+        CbSlot {
+            func: None,
+            arg: core::ptr::null_mut(),
+        }
     }
 }
 
@@ -41,7 +44,10 @@ pub struct NlErrCbSlot {
 
 impl Default for NlErrCbSlot {
     fn default() -> Self {
-        NlErrCbSlot { func: None, arg: core::ptr::null_mut() }
+        NlErrCbSlot {
+            func: None,
+            arg: core::ptr::null_mut(),
+        }
     }
 }
 
@@ -61,10 +67,16 @@ impl NlCb {
 
 impl Default for NlCb {
     fn default() -> Self {
-        const SLOT: CbSlot = CbSlot { func: None, arg: core::ptr::null_mut() };
+        const SLOT: CbSlot = CbSlot {
+            func: None,
+            arg: core::ptr::null_mut(),
+        };
         NlCb {
             cb: [SLOT; NL_CB_TYPE_MAX],
-            err_cb: NlErrCbSlot { func: None, arg: core::ptr::null_mut() },
+            err_cb: NlErrCbSlot {
+                func: None,
+                arg: core::ptr::null_mut(),
+            },
             refcount: AtomicI32::new(1),
         }
     }
@@ -123,7 +135,7 @@ pub unsafe extern "C" fn nl_cb_put(cb: *mut NlCb) {
 pub unsafe extern "C" fn nl_cb_set(
     cb: *mut NlCb,
     kind: c_int,
-    cb_type: u32,
+    _cb_type: u32,
     func: Option<NlRecvMsgCb>,
     arg: *mut core::ffi::c_void,
 ) -> c_int {
@@ -138,7 +150,7 @@ pub unsafe extern "C" fn nl_cb_set(
 #[no_mangle]
 pub unsafe extern "C" fn nl_cb_set_all(
     cb: *mut NlCb,
-    cb_type: u32,
+    _cb_type: u32,
     func: Option<NlRecvMsgCb>,
     arg: *mut core::ffi::c_void,
 ) -> c_int {
@@ -168,27 +180,18 @@ pub unsafe extern "C" fn nl_cb_err(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn nl_cb_overwrite_recvmsgs(
-    cb: *mut NlCb,
-    _func: *mut core::ffi::c_void,
-) {
+pub unsafe extern "C" fn nl_cb_overwrite_recvmsgs(cb: *mut NlCb, _func: *mut core::ffi::c_void) {
     // overwrite hooks not implemented; wpa_supplicant/hostapd do not use these
     let _ = cb;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn nl_cb_overwrite_recv(
-    cb: *mut NlCb,
-    _func: *mut core::ffi::c_void,
-) {
+pub unsafe extern "C" fn nl_cb_overwrite_recv(cb: *mut NlCb, _func: *mut core::ffi::c_void) {
     let _ = cb;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn nl_cb_overwrite_send(
-    cb: *mut NlCb,
-    _func: *mut core::ffi::c_void,
-) {
+pub unsafe extern "C" fn nl_cb_overwrite_send(cb: *mut NlCb, _func: *mut core::ffi::c_void) {
     let _ = cb;
 }
 

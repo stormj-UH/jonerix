@@ -14,6 +14,9 @@ on:
     paths:
       - 'image/pi5/**'
       - 'packages/extra/jonerix-raspi5-fixups/**'
+      - 'packages/extra/nloxide/**'
+      - 'packages/extra/hostapd/**'
+      - 'packages/extra/wpa_supplicant/**'
       - 'packages/core/**/recipe.toml'
       - '.github/workflows/publish-pi5-image.yml'
   workflow_dispatch:

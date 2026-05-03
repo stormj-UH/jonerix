@@ -122,12 +122,12 @@ pub unsafe extern "C" fn nl_perror(err: c_int, msg: *const c_char) {
     // write to fd 2 (stderr) directly to avoid libc::stderr portability issues
     if !msg.is_null() {
         libc::write(2, msg as _, libc::strlen(msg as _));
-        libc::write(2, b": \0".as_ptr() as _, 2);
+        libc::write(2, b": ".as_ptr() as _, 2);
         libc::write(2, estr as _, libc::strlen(estr as _));
-        libc::write(2, b"\n\0".as_ptr() as _, 1);
+        libc::write(2, b"\n".as_ptr() as _, 1);
     } else {
         libc::write(2, estr as _, libc::strlen(estr as _));
-        libc::write(2, b"\n\0".as_ptr() as _, 1);
+        libc::write(2, b"\n".as_ptr() as _, 1);
     }
 }
 

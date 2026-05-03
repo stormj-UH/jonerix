@@ -111,7 +111,7 @@ Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-
 | **`lua`** | `extra` | 5.4.7 | MIT | any | `musl` | `clang`, `make` | Lua programming language interpreter, compiler, and library |
 | **`nerdctl`** | `extra` | 2.2.1-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc`, `cni-plugins` | `go` | Docker-compatible CLI for containerd |
 | **`nginx`** | `extra` | 1.28.3-r3 | BSD-2-Clause | any | `musl`, `libressl`, `zlib`, `pcre2` | `clang`, `make`, `mksh`, `libressl`, `zlib`, `pcre2` | High-performance HTTP server and reverse proxy |
-| **`nloxide`** | `extra` | 0.1.0-r3 | BSD-2-Clause | any | `musl` | `clang`, `rust`, `jonerix-headers` | Clean-room netlink library (libnl-3 / libnl-genl-3 drop-in) written in Rust |
+| **`nloxide`** | `extra` | 1.2.1 | BSD-2-Clause | any | `musl` | `clang`, `rust`, `jonerix-headers` | Clean-room netlink library for jonerix hostapd/wpa_supplicant |
 | **`openrsync`** | `extra` | 0.5.0-git20250127 | ISC | any | `musl` | `clang`, `llvm` | BSD-licensed clean-room implementation of rsync (drop-in replacement, protocol 27 compatible) |
 | **`pcre2`** | `extra` | 10.47 | BSD-3-Clause | any | `musl` | `clang`, `cmake`, `samurai` | Perl Compatible Regular Expressions library (v2) |
 | **`pico`** | `extra` | 2.26 | Apache-2.0 | any | `ncurses`, `musl` | `clang`, `make`, `exproxide`, `python3`, `ncurses`, `jonerix-headers` | Stand-alone pico text editor (from alpine-2.26) |
