@@ -64,7 +64,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          lfs: true
+          lfs: false
 
       # GHCR login removed: we no longer pull a private builder image. The
       # Alpine public image needs no auth and the apk install below
