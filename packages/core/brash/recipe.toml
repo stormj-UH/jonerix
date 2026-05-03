@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.4"
+version = "1.0.5"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -19,19 +19,22 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 [source]
 # Canonical source: Forgejo jonerik/brash on castle.great-morpho.ts.net:3000.
 # That host is behind Tailscale and unreachable from GitHub-hosted runners,
-# so the v1.0.4 tarball is mirrored to a jonerix GH release tag for CI.
+# so the v1.0.5 tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.4.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.5.tar.gz
 #
-# Patch release fixes the bg-fork wrapper-shell bug: `cmd &`,
-# `( cmd ) &`, and `( exec cmd ) >LOG &` all now leave $! pointing at
-# the actual program (not a brash wrapper), via subshell-elision +
-# exec-in-place in the bg fork's child.  Also restores bash-compatible
-# startup-file sourcing under BRASH_TEST_MODE for the upstream bash
-# test suite's --login -c 'logout' fixture.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.4/brash-1.0.4.tar.gz"
-sha256 = "49d6cca21ffcfb72022e30cce9f5170ac46871ae71be152f9ce44fb1bae4187b"
+# Patch release fixes bash-completion: compgen -W "wordlist" -- prefix
+# was returning nothing because the wordlist path was unimplemented;
+# compgen -F func is now implemented so `_filedir`-style helpers work;
+# interactive `brash` falls back to ~/.bashrc when ~/.brashrc is absent
+# so existing bash users keep their NVM/fzf/bash-completion setup;
+# BRASH_TEST_MODE sources the bash startup chain unconditionally
+# (.bash_profile/.bash_login/.profile, .bashrc, .bash_logout); and
+# `brash --login -c CMD` sources /etc/profile + ~/.bash_profile,
+# matching bash's "non-interactive shell with --login" rule.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.5/brash-1.0.5.tar.gz"
+sha256 = "ce4ff9f5a0424f7a7892d5f0989dc38aa7977fdecb2ceddabe127e06f7acd35b"
 
 [build]
 system = "custom"
