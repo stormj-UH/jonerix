@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.6"
+version = "1.0.7"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -22,17 +22,17 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the v1.0.5 tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.6.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.7.tar.gz
 #
-# Patch release fixes SIGSTOP/SIGCONT race in the kill builtin: after
-# delivering a stop or continue signal to a background job, brash now
-# polls waitpid(WNOHANG|WUNTRACED|WCONTINUED) until the kernel reflects
-# the new state before returning from kill.  This makes `jobs -r` and
-# `jobs -s` immediately accurate after `kill -STOP`/`kill -CONT`, and
-# fixes the bash 5.3 upstream jobs.tests failure introduced by the 1.0.4
-# exec_in_place wrapper-shell fix.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.6/brash-1.0.6.tar.gz"
-sha256 = "a0181174b2e60e5fc83f8c2722af851ff97e8d7bb3833ee202ea8c49c5950746"
+# Patch release ships two color-prompt fixes:
+# 1. /etc/profile was called with hide_bash_identity=true for plain brash
+#    sessions, hiding BASH_VERSION.  Gentoo's /etc/profile gates the color
+#    PS1 setup on $BASH_VERSION; now always passes hide=false to /etc/profile.
+# 2. tput(1) exits 2 when TERM is unset; the old execute_command_sub parent
+#    treated any child exit-2 as a parse error and killed the outer shell.
+#    Fixed via had_parse_error flag + CMDSUB_PARSE_SENTINEL (253).
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.7/brash-1.0.7.tar.gz"
+sha256 = "39b3ac329608238ae01928daaf91fd4b9dfb5fcb11bb0ad09b7f92910f72fbd4"
 
 [build]
 system = "custom"
