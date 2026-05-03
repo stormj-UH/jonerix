@@ -8,7 +8,8 @@
 #   unbound        (BSD-3-Clause)  — validating DNS resolver
 #   dhcpcd         (BSD-2-Clause)  — DHCP client
 #   ifupdown-ng    (ISC)           — network interface management
-#   jcarp          (BSD-2-Clause)  — OpenBSD-CARP-compatible failover daemon
+#   stormwall      (MIT)           — nftables firewall CLI (replaces nft)
+#   jcarp          (BSD-2-Clause)  — CARP failover daemon (replaces ucarp)
 #   hostapd        (BSD-3-Clause)  — wireless access point
 #   wpa_supplicant (BSD-3-Clause)  — wireless client
 #   nloxide        (BSD-2-Clause)  — clean-room libnl-3 / libnl-genl-3
@@ -23,11 +24,9 @@ FROM ${CORE_IMAGE}
 
 # Install networking packages via jpkg
 # Core already provides: dropbear, dhcpcd, ifupdown-ng, unbound, doas
-# Router adds: jcarp for HA failover, nloxide (libnl replacement),
-# hostapd, wpa_supplicant, and btop for monitoring. nloxide is listed
-# explicitly (hostapd and wpa_supplicant pull it in transitively, but
-# naming it here makes the runtime dependency set obvious and survives
-# any recipe change).
+# Router adds: stormwall (nftables CLI), jcarp (CARP failover),
+# nloxide (libnl replacement), hostapd, wpa_supplicant, btop for
+# monitoring.
 #
 # Note: directories are created inline so this layer does not depend on any
 # optional coreutils replacement in the base image.
@@ -38,7 +37,7 @@ ARG CACHEBUST=0
 # duplicates stripped files on top of originals).
 RUN jpkg update && \
     for pkg in \
-      jcarp nloxide hostapd wpa_supplicant btop; \
+      stormwall jcarp nloxide hostapd wpa_supplicant btop; \
     do \
       echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
     done && \

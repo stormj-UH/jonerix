@@ -32,6 +32,31 @@ if grep -q "^${modu} " /proc/modules 2>/dev/null; then
     exit 0
 fi
 
+# Alias resolution. The kernel's request_module() often passes a
+# subsystem alias rather than the literal module name. Examples:
+#     "nft-expr-numgen"     -> nft_numgen          (nftables expr)
+#     "nft-set-rbtree"      -> nft_set_rbtree      (nftables set type)
+#     "sch_hfsc"            -> sch_hfsc            (tc qdisc — already real)
+#     "nfnetlink-subsys-12" -> nf_tables           (nfnetlink subsystem)
+# modules.alias has lines of the form `alias <pattern> <real-module>`.
+# Resolve the first exact match and rewrite $mod / $modu so the rest
+# of the script proceeds as if the caller had named the real module.
+# Falls through with no change if no alias hits — many drivers are
+# requested by their literal name.
+ALIASFILE=/lib/modules/$KVER/modules.alias
+if [ -f "$ALIASFILE" ]; then
+    real=$(awk -v want="$mod" -v wantu="$modu" '
+        $1 == "alias" && ($2 == want || $2 == wantu) { print $3; exit }
+    ' "$ALIASFILE")
+    if [ -n "$real" ]; then
+        mod=$real
+        modu=$(echo "$mod" | tr '-' '_')
+        # Re-check loaded state after alias resolution — the real
+        # module may already be loaded under its canonical name.
+        grep -q "^${modu} " /proc/modules 2>/dev/null && exit 0
+    fi
+fi
+
 # Find the .ko.xz entry. modules.dep uses paths ending in
 # /<name>.ko.xz — try both dash and underscore variants of the name.
 line=$(grep -E "/(${mod}|${modu})\.ko\.xz:" "$DEPFILE" | head -1) || exit 1
