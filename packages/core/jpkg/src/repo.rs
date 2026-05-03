@@ -119,6 +119,37 @@ pub fn parse_mirrors_conf(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Parse the legacy `repos.conf` format used by older jonerix image builders:
+///
+/// ```text
+/// [repo]
+/// url = "https://example.invalid/packages"
+/// ```
+///
+/// Rust jpkg's native config is `mirrors.conf`, but existing installers still
+/// emit this file. Treat it as a fallback so pinned image builds do not
+/// silently fall back to the rolling package release.
+pub fn parse_repos_conf(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') || line.starts_with('[') {
+                return None;
+            }
+            let (key, value) = line.split_once('=')?;
+            if key.trim() != "url" {
+                return None;
+            }
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            if value.is_empty() {
+                None
+            } else {
+                Some(value.to_owned())
+            }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Repo struct
 // ---------------------------------------------------------------------------
@@ -159,15 +190,20 @@ impl Repo {
     /// applied to all jpkg system paths (e.g. "/" in production, a tempdir in
     /// tests).
     ///
-    /// Reads mirrors from `rootfs/etc/jpkg/mirrors.conf`.
+    /// Reads mirrors from `rootfs/etc/jpkg/mirrors.conf`, falling back to the
+    /// legacy `rootfs/etc/jpkg/repos.conf` when needed.
     /// Loads keys from `rootfs/etc/jpkg/keys/`.
     /// Cache dir is `rootfs/var/cache/jpkg/`.
     pub fn from_rootfs(rootfs: &Path, arch: &str) -> Result<Self, RepoError> {
         // --- mirrors -------------------------------------------------------
         let mirrors_path = rootfs.join("etc/jpkg/mirrors.conf");
+        let legacy_repos_path = rootfs.join("etc/jpkg/repos.conf");
         let mirrors = if mirrors_path.exists() {
             let text = std::fs::read_to_string(&mirrors_path)?;
             parse_mirrors_conf(&text)
+        } else if legacy_repos_path.exists() {
+            let text = std::fs::read_to_string(&legacy_repos_path)?;
+            parse_repos_conf(&text)
         } else {
             // Default mirror matches the C fallback in repo_config_load.
             vec![
@@ -532,6 +568,54 @@ https://mirror2.example.com/packages
     fn test_parse_mirrors_conf_empty_input() {
         assert!(parse_mirrors_conf("").is_empty());
         assert!(parse_mirrors_conf("# only a comment\n").is_empty());
+    }
+
+    #[test]
+    fn test_parse_repos_conf_legacy_url() {
+        let conf = r#"
+# legacy jpkg config
+[repo]
+url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
+"#;
+        assert_eq!(
+            parse_repos_conf(conf),
+            vec!["https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"],
+        );
+    }
+
+    #[test]
+    fn test_from_rootfs_uses_legacy_repos_conf() {
+        let dir = TempDir::new().expect("tempdir");
+        let etc_jpkg = dir.path().join("etc/jpkg");
+        std::fs::create_dir_all(etc_jpkg.join("keys")).expect("mkdir keys");
+        std::fs::write(
+            etc_jpkg.join("repos.conf"),
+            "[repo]\nurl = \"https://example.invalid/v1.2.1\"\n",
+        )
+        .expect("write repos.conf");
+
+        let repo = Repo::from_rootfs(dir.path(), "aarch64").expect("repo");
+        assert_eq!(repo.mirrors, vec!["https://example.invalid/v1.2.1"]);
+    }
+
+    #[test]
+    fn test_from_rootfs_prefers_mirrors_conf() {
+        let dir = TempDir::new().expect("tempdir");
+        let etc_jpkg = dir.path().join("etc/jpkg");
+        std::fs::create_dir_all(etc_jpkg.join("keys")).expect("mkdir keys");
+        std::fs::write(
+            etc_jpkg.join("repos.conf"),
+            "[repo]\nurl = \"https://example.invalid/legacy\"\n",
+        )
+        .expect("write repos.conf");
+        std::fs::write(
+            etc_jpkg.join("mirrors.conf"),
+            "https://example.invalid/native\n",
+        )
+        .expect("write mirrors.conf");
+
+        let repo = Repo::from_rootfs(dir.path(), "aarch64").expect("repo");
+        assert_eq!(repo.mirrors, vec!["https://example.invalid/native"]);
     }
 
     // ── Test 2: fetch_index — no sig file, keys empty → warn-and-accept ───

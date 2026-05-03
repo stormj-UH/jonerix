@@ -39,7 +39,7 @@ Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-
 | **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | - | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
 | **`ifupdown-ng`** | `core` | 0.12.1-r2 | ISC | any | `musl` | `clang`, `make`, `jonerix-headers` | Next-generation network interface configuration tool |
 | **`iproute-go`** | `core` | 0.16.0 | BSD-3-Clause | any | - | `go` | u-root's ip command — Go reimplementation of iproute2's ip(8) |
-| **`jpkg`** | `core` | 2.0.2-r1 | 0BSD | any | `musl`, `mksh` | `rust` | jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5) |
+| **`jpkg`** | `core` | 2.0.2-r2 | 0BSD | any | `musl`, `mksh` | `rust` | jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5) |
 | **`jq`** | `core` | 1.8.1 | MIT | any | `musl` | `clang`, `make`, `exproxide`, `jonerix-headers` | Lightweight and flexible command-line JSON processor |
 | **`libarchive`** | `core` | 3.8.6-r5 | Apache-2.0 | any | `musl`, `zlib`, `xz`, `zstd`, `lz4`, `libressl` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `xz`, `zstd`, `lz4` | Multi-format archive and compression library with bsdtar |
 | **`libffi`** | `core` | 3.4.6 | MIT | any | `musl` | `clang`, `make`, `exproxide`, `jonerix-headers` | Foreign Function Interface library — dispatches to C ABI from dynamic callers |
