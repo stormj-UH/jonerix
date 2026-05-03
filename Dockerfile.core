@@ -115,7 +115,17 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     /bin/toybox ln -sf micro /bin/vi 2>/dev/null || true && \
     # GCC compat symlinks for Rust binaries (gix, etc.)
     /bin/toybox ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true && \
-    /bin/toybox ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
+    /bin/toybox ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true && \
+    # Re-assert /bin/sh -> mksh AFTER the install loop. The for-loop above
+    # transitively re-installs toybox (as a runtime dep of openrc, doas,
+    # snooze, etc.) with `--force`, and toybox.jpkg's payload includes a
+    # /bin/sh -> toybox symlink that overwrites mksh's earlier claim.
+    # Without this final symlink, /bin/sh ends up as toybox in the published
+    # core image and downstream Dockerfile.builder's RUN block (which calls
+    # `/usr/local/bin/bootstrap-meson` whose first line is `set -e` and uses
+    # `command -v python3`) fails: toybox sh implements neither `set -e`
+    # nor the `command` builtin, both of which mksh handles correctly.
+    /bin/toybox ln -sf mksh /bin/sh
 
 # Set SUID bits on login utilities (required for multi-user auth).
 # /bin/passwd + /bin/login are symlinks into /bin/shadow-passwd and
