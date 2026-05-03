@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.5"
+version = "1.0.6"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -22,19 +22,17 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the v1.0.5 tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.5.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.6.tar.gz
 #
-# Patch release fixes bash-completion: compgen -W "wordlist" -- prefix
-# was returning nothing because the wordlist path was unimplemented;
-# compgen -F func is now implemented so `_filedir`-style helpers work;
-# interactive `brash` falls back to ~/.bashrc when ~/.brashrc is absent
-# so existing bash users keep their NVM/fzf/bash-completion setup;
-# BRASH_TEST_MODE sources the bash startup chain unconditionally
-# (.bash_profile/.bash_login/.profile, .bashrc, .bash_logout); and
-# `brash --login -c CMD` sources /etc/profile + ~/.bash_profile,
-# matching bash's "non-interactive shell with --login" rule.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.5/brash-1.0.5.tar.gz"
-sha256 = "ce4ff9f5a0424f7a7892d5f0989dc38aa7977fdecb2ceddabe127e06f7acd35b"
+# Patch release fixes SIGSTOP/SIGCONT race in the kill builtin: after
+# delivering a stop or continue signal to a background job, brash now
+# polls waitpid(WNOHANG|WUNTRACED|WCONTINUED) until the kernel reflects
+# the new state before returning from kill.  This makes `jobs -r` and
+# `jobs -s` immediately accurate after `kill -STOP`/`kill -CONT`, and
+# fixes the bash 5.3 upstream jobs.tests failure introduced by the 1.0.4
+# exec_in_place wrapper-shell fix.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.6/brash-1.0.6.tar.gz"
+sha256 = "a0181174b2e60e5fc83f8c2722af851ff97e8d7bb3833ee202ea8c49c5950746"
 
 [build]
 system = "custom"
