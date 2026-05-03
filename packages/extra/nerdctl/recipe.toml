@@ -6,12 +6,11 @@ description = "Docker-compatible CLI for containerd"
 
 [source]
 url = "https://github.com/containerd/nerdctl/archive/refs/tags/v2.2.1.tar.gz"
-sha256 = "f39c34d3a285e087f2b2869f06fea343d8285ad9bfb9417b9c5b6dd4e78d6fad"
+sha256 = "9d4e0ebbcc5d15fa11df308ee6dcf8bdf097b115645644cf64248fcec3464d58"
 
 [build]
 system = "custom"
-build = """go mod download
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/nerdctl"""
+build = """CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags="-s -w" ./cmd/nerdctl"""
 install = """set -e
 install -Dm755 nerdctl $DESTDIR/bin/nerdctl
 ln -sf nerdctl $DESTDIR/bin/docker

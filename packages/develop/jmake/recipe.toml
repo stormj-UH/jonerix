@@ -137,20 +137,15 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.1.14/jmake-v1.1.14.tar.gz"
-sha256 = "1428631bb78785cd4d3593918cd87080dc3213804cfa45f4565acbf5ed7857b1"
+sha256 = "d8ec566d9868da1e9890ac4b39997401508857368bd48d04df0e7db4724303f8"
 
 [build]
 system = "custom"
 # Rust 1.94.1-r2 uses llvm-libunwind=system, so library/unwind emits
 # -lunwind instead of -lgcc_s. No cc-wrapper or gnu-compat dep needed.
-# Source /etc/profile.d/cargo.sh so CARGO_HTTP_CAINFO is set (cargo's
-# bundled libcurl needs the jonerix CA bundle path; jpkg build runs in a
-# non-login shell so profile.d isn't auto-sourced).
-build = """export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
-export OPENSSL_DIR=/
-export OPENSSL_INCLUDE_DIR=/include
-export OPENSSL_LIB_DIR=/lib
-cargo build --release"""
+# The source tarball in sources/ is repacked with Cargo.lock, vendor/,
+# and .cargo/config.toml, so the package build is fully offline.
+build = """cargo build --release --frozen --offline"""
 install = """install -Dm755 target/release/jmake "$DESTDIR/bin/jmake"
 llvm-strip --strip-all "$DESTDIR/bin/jmake" 2>/dev/null || true"""
 

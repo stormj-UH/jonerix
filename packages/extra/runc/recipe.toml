@@ -11,9 +11,8 @@ sha256 = "a09f5e2f5b3b5e488bd3ee45c0be8f1e9078692174411dc5193f56a7e0de8078"
 [build]
 system = "custom"
 build = """set -e
-go mod download
 # Build statically without GNU make — replaces 'make static'
-CGO_ENABLED=1 go build -trimpath \
+CGO_ENABLED=1 go build -mod=vendor -trimpath \
   -tags "netgo osusergo static_build" \
   -ldflags "-s -w -extldflags '-static'" \
   -o runc .

@@ -28,9 +28,9 @@
 //!   FIXME(integrator): replace `inline_flatten_merged_usr` with
 //!   `crate::cmd::common::flatten_merged_usr` once Worker L delivers it.
 //!
-//! * **JPKG_SOURCE_CACHE** and **remote recipe fetch** are omitted for
-//!   Phase-3 (the C code has them; they are not in the task spec for this
-//!   worker).
+//! * **JPKG_SOURCE_CACHE** is supported for offline package builds.  The cache
+//!   lookup accepts exact URL basenames plus package-version basenames with or
+//!   without a packaging release suffix (`-rN`).
 
 use std::env;
 use std::fs;
@@ -219,7 +219,7 @@ fn fetch_source(
     let basename = url.rsplit('/').next().unwrap_or(url);
     let tarball = src_dir.join(basename);
 
-    // Try JPKG_SOURCE_CACHE first (colon-separated dirs, URL basename match).
+    // Try JPKG_SOURCE_CACHE first (colon-separated dirs).
     let cached = try_source_cache(url, name, version, &tarball);
     if !cached {
         eprintln!("  downloading source: {url}");
@@ -269,6 +269,12 @@ fn try_source_cache(url: &str, name: &str, version: &str, dest: &Path) -> bool {
 
     let url_base = url.rsplit('/').next().unwrap_or(url);
     let prefix = format!("{name}-{version}.");
+    let base_version = strip_release_suffix(version);
+    let base_prefix = if base_version == version {
+        None
+    } else {
+        Some(format!("{name}-{base_version}."))
+    };
 
     for dir in cache.split(':') {
         // Exact basename match.
@@ -280,12 +286,16 @@ fn try_source_cache(url: &str, name: &str, version: &str, dest: &Path) -> bool {
             }
         }
 
-        // Fuzzy: name-version.* in dir.
+        // Fuzzy: name-version.* or name-upstream_version.* in dir.
         if let Ok(rd) = fs::read_dir(dir) {
             for entry in rd.flatten() {
                 let fname = entry.file_name();
                 let fname = fname.to_string_lossy();
-                if fname.starts_with(&prefix) {
+                if fname.starts_with(&prefix)
+                    || base_prefix
+                        .as_deref()
+                        .is_some_and(|p| fname.starts_with(p))
+                {
                     let src = entry.path();
                     if fs::copy(&src, dest).is_ok() {
                         eprintln!("  source from cache: {}", src.display());
@@ -296,6 +306,17 @@ fn try_source_cache(url: &str, name: &str, version: &str, dest: &Path) -> bool {
         }
     }
     false
+}
+
+fn strip_release_suffix(version: &str) -> &str {
+    let Some((base, suffix)) = version.rsplit_once("-r") else {
+        return version;
+    };
+    if !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()) {
+        base
+    } else {
+        version
+    }
 }
 
 /// Extract `tarball` into `src_dir`.  Uses toybox→bsdtar→tar fallback
@@ -691,6 +712,35 @@ arch = "x86_64"
         let p = dir.join("recipe.toml");
         fs::write(&p, toml).unwrap();
         p
+    }
+
+    #[test]
+    fn test_strip_release_suffix() {
+        assert_eq!(strip_release_suffix("1.2.3-r4"), "1.2.3");
+        assert_eq!(strip_release_suffix("1.2.3"), "1.2.3");
+        assert_eq!(strip_release_suffix("1.2.3-rx"), "1.2.3-rx");
+        assert_eq!(strip_release_suffix("1.2.3-r"), "1.2.3-r");
+    }
+
+    #[test]
+    fn test_source_cache_matches_release_stripped_name() {
+        let tmp = TempDir::new().unwrap();
+        let cache = tmp.path().join("cache");
+        let dest = tmp.path().join("source").join("upstream.tar.gz");
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        fs::write(cache.join("pkg-1.2.3.tar.gz"), b"vendored").unwrap();
+
+        std::env::set_var("JPKG_SOURCE_CACHE", cache.as_os_str());
+        assert!(try_source_cache(
+            "https://example.invalid/upstream.tar.gz",
+            "pkg",
+            "1.2.3-r4",
+            &dest
+        ));
+        std::env::remove_var("JPKG_SOURCE_CACHE");
+
+        assert_eq!(fs::read(&dest).unwrap(), b"vendored");
     }
 
     // ── 1. Recipe loading + validation ───────────────────────────────────────

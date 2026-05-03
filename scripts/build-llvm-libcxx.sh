@@ -42,7 +42,7 @@ cd /workspace/packages/core/jpkg
 # jpkg 2.0 = Rust port. The jonerix:all image already has rust + cargo.
 TRIPLE=$(rustc -vV | sed -n "s/^host: //p")
 RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-    cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+    cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
 install -m 755 "target/$TRIPLE/release/jpkg" /bin/jpkg
 install -m 755 "target/$TRIPLE/release/jpkg-local" /bin/jpkg-local
 cd /

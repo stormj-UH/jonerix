@@ -37,7 +37,7 @@ COPY packages/core/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && \
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-    cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
+    cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
     cp -f "target/$TRIPLE/release/jpkg" jpkg && \
     cp -f "target/$TRIPLE/release/jpkg-local" jpkg-local && \
     # Null-pad /lib64 via Python (the jonerix builder image already has python3).

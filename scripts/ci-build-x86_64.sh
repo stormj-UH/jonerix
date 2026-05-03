@@ -7,8 +7,10 @@ set -e
 # Get jpkg binary: prefer host cache, then compile from source.
 # Always build from source on cache miss so the binary matches the current
 # repo checkout (important for new features like RECIPE_DIR).
-if [ -f /jpkg-bin/jpkg ]; then
+if [ -f /jpkg-bin/jpkg ] && [ -f /jpkg-bin/jpkg-local ]; then
     install -m 755 /jpkg-bin/jpkg /bin/jpkg
+    install -m 755 /jpkg-bin/jpkg-local /bin/jpkg-local
+    install -m 755 /workspace/packages/core/jpkg/bin/jpkg-conform /bin/jpkg-conform
     echo "jpkg: using cached binary"
 else
     cd /workspace/packages/core/jpkg
@@ -17,7 +19,7 @@ else
     # in the produced binaries.
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-        cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+        cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
     for b in "target/$TRIPLE/release/jpkg" "target/$TRIPLE/release/jpkg-local"; do
         python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled', file=sys.stderr)" "$b" || true
     done
@@ -25,6 +27,7 @@ else
     install -m 755 "target/$TRIPLE/release/jpkg-local" /bin/jpkg-local
     install -m 755 bin/jpkg-conform /bin/jpkg-conform
     cp "target/$TRIPLE/release/jpkg" /jpkg-bin/jpkg
+    cp "target/$TRIPLE/release/jpkg-local" /jpkg-bin/jpkg-local
     cd /workspace
 fi
 

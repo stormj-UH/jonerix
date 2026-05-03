@@ -78,7 +78,7 @@ docker run --rm \
         cd /workspace/packages/core/jpkg
         TRIPLE=$(rustc -vV | sed -n "s/^host: //p")
         RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-            cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+            cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
         install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
         echo "jpkg version: $(jpkg --version 2>/dev/null || echo unknown)"
 

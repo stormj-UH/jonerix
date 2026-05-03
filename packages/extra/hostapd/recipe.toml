@@ -20,7 +20,7 @@ system = "custom"
 #   2. `CFLAGS += $(EXTRA_CFLAGS)` and the post-include `CFLAGS +=`
 #      additions don't thread through to `$(CFLAGS)` at recipe-
 #      expansion time when CFLAGS is pre-set via jpkg's environment
-#      (always set by cmd_build.c). Inject -I paths into the CFLAGS
+#      (always set by the Rust build sandbox). Inject -I paths into the CFLAGS
 #      env directly.
 #
 # Same pair of fixes as wpa_supplicant 2.11-r2 — see that recipe's

@@ -78,13 +78,15 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v5
+        with:
+          lfs: true
 
       - name: Restore jpkg binary cache (x86_64)
         uses: actions/cache@v5
         id: jpkg-cache-x86_64
         with:
           path: /tmp/jpkg-bin-x86_64
-          key: jpkg-bin-x86_64-${{ hashFiles('packages/core/jpkg/src/**') }}
+          key: jpkg-bin-x86_64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
 
       - name: Download existing x86_64 packages
         env:
@@ -140,13 +142,15 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v5
+        with:
+          lfs: true
 
       - name: Restore jpkg binary cache (aarch64)
         uses: actions/cache@v5
         id: jpkg-cache-aarch64
         with:
           path: /tmp/jpkg-bin-aarch64
-          key: jpkg-bin-aarch64-${{ hashFiles('packages/core/jpkg/src/**') }}
+          key: jpkg-bin-aarch64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
 
       - name: Download existing aarch64 packages
         env:
@@ -215,6 +219,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v5
+        with:
+          lfs: true
 
       - name: Install tools
         # coreutils for GNU `sort -V` (version-sort) — used by gen-index.sh
@@ -293,7 +299,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/packages/core/jpkg"
           TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
           RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-              cargo build --release --locked --target "$TRIPLE" --bin jpkg
+              cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
           python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" "target/$TRIPLE/release/jpkg" || true
           install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
           jpkg --version || true

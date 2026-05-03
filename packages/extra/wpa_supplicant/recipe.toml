@@ -24,7 +24,7 @@ system = "custom"
 #   2. `CFLAGS += …` inside the Makefile. Both `CFLAGS += $(EXTRA_CFLAGS)`
 #      (line 49) AND the `-I$(abspath …)` additions silently drop on
 #      the floor under jmake when CFLAGS is set via the environment
-#      (jpkg's cmd_build.c always sets CFLAGS). We sidestep by writing
+#      (jpkg's Rust build sandbox always sets CFLAGS). We sidestep by writing
 #      the -I paths directly into CFLAGS in the build shell, so jmake
 #      sees them already when it reads the environment. V=1 is left on
 #      so future regressions surface with a concrete CC command line.

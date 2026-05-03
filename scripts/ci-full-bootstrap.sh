@@ -35,7 +35,7 @@ if [ -f /workspace/packages/core/jpkg/Cargo.toml ]; then
         cd /workspace/packages/core/jpkg
         TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
         RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-            cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+            cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
         for b in "target/$TRIPLE/release/jpkg" "target/$TRIPLE/release/jpkg-local"; do
             python3 -c "
 import sys
@@ -309,7 +309,7 @@ for name in $(cat "$ORDER_FILE"); do
     # CRITICAL: --build-jpkg makes jpkg actually produce a .jpkg in
     # --output. Without this flag, `jpkg build` installs directly to the
     # builder's live / filesystem (DESTDIR=/), corrupting the host and
-    # producing zero .jpkg files. See cmd_build.c line 894.
+    # producing zero .jpkg files.
     if timeout -k 30 1200 jpkg build "$recipe_dir" \
             --build-jpkg --output "$OUT/jpkgs" >>"$log" 2>&1; then
         version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \

@@ -35,8 +35,8 @@ export CARGO_HOME=/tmp/exproxide-cargo
 export CARGO_TARGET_DIR="$PWD/target"
 export CARGO_NET_OFFLINE=true
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
-cargo test --locked
-cargo build --release --locked --bin exproxide
+cargo test --frozen --offline
+cargo build --release --frozen --offline --bin exproxide
 """
 install = """
 set -e

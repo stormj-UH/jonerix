@@ -11,11 +11,10 @@ sha256 = "d6e8e6424c544cdab9b51cae320c3a9aa5590e8e1ffbd1f862eb395fd8c5bc28"
 [build]
 system = "custom"
 build = """set -e
-go mod download
 # Build all containerd binaries without GNU make
 for cmd in containerd containerd-shim-runc-v2 ctr; do
   echo "Building: $cmd"
-  go build -trimpath -ldflags "-s -w" -o "bin/$cmd" "./cmd/$cmd"
+  go build -mod=vendor -trimpath -ldflags "-s -w" -o "bin/$cmd" "./cmd/$cmd"
 done
 """
 install = """set -e

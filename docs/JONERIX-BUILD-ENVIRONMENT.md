@@ -141,10 +141,11 @@ DESTDIR=$DESTDIR cmake --install build
 
 ### Rust packages (cargo)
 ```sh
-# Disable LTO to prevent OOM on link
+# Cargo packages must build from vendored dependencies. Source tarballs
+# with registry deps carry Cargo.lock, vendor/, and .cargo/config.toml.
 export CARGO_PROFILE_RELEASE_LTO=false
 export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
-cargo build --release
+cargo build --release --frozen --offline
 ```
 
 ### Go packages
@@ -167,13 +168,10 @@ go build -trimpath -ldflags "-s -w" -o binary ./cmd/...
 
 ### toybox
 ```sh
-# Needs bash for genconfig.sh and scripts/make.sh
-bash scripts/genconfig.sh defconfig
-# Enable pending commands (sh, getty, login, etc.)
-for opt in SH GETTY LOGIN PASSWD SU; do
-    sed -i "s/# CONFIG_${opt} is not set/CONFIG_${opt}=y/" .config
-done
-CC=clang CFLAGS="-Os -fomit-frame-pointer" bash scripts/make.sh
+# Uses brash as /bin/bash when available; otherwise the recipe applies
+# its mksh-compat patch and runs the build under mksh.
+cp "$RECIPE_DIR/toybox.config" .config
+CC=clang CFLAGS="-Os -fomit-frame-pointer" /bin/bash scripts/make.sh
 ```
 
 ### musl (from source)
@@ -188,7 +186,7 @@ make DESTDIR=$DESTDIR install
 
 ## 8. jpkg Build Sandbox
 
-jpkg's `run_build_step()` (cmd_build.c) automatically sets:
+jpkg's `run_build_step()` (`packages/core/jpkg/src/cmd/build.rs`) automatically sets:
 - `CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm RANLIB=llvm-ranlib`
 - `C_INCLUDE_PATH=/include`
 - `LIBRARY_PATH=/lib`
@@ -205,7 +203,8 @@ These can be overridden by recipe.toml build commands.
 - **toybox tar**: Can't handle symlinks in archives. bsdtar is the default
   (`/bin/tar -> bsdtar`).
 - **Large Rust builds**: Disable LTO, limit codegen-units. 4GB+ RAM needed.
-- **GNU make projects**: Ruby, hostapd, wpa_supplicant require GNU make
-  (not available on jonerix). Build these in Alpine containers.
+- **GNU make projects**: Prefer `jmake` first. Some upstream makefiles still
+  need recipe-specific patches or environment overrides; do not assume an
+  Alpine build path unless the recipe explicitly documents one.
 - **autoconf grep**: Always pass `GREP=/bin/grep` to configure — autoconf
   rejects toybox grep.

@@ -12,7 +12,7 @@
 
 **A fully self-hosting Linux distribution with zero GPL in userland.**
 
-Current release: **[v1.2.0](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.0)** (`jpkg conform 1.2.0` to pin a host to this tag). 1.2.0 is the first release shipping **jpkg 2.0** — the from-scratch Rust port of the C jpkg 1.1.5 (~11.7K LOC, zero `unsafe`, 160 in-crate tests, byte-equivalent `.jpkg` / INDEX / `/var/db/jpkg/installed/` wire formats). See [PACKAGES.md](PACKAGES.md) for the full package inventory and the README's [Rust drop-in replacements](#rust-drop-in-replacements) section for the port's design.
+Current release: **[v1.2.1](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.1)** (`jpkg conform 1.2.1` to pin a host to this tag). The 1.2.x release line ships **jpkg 2.0** — the from-scratch Rust port of the C jpkg 1.1.5 (~11.7K LOC, zero `unsafe`, 160 in-crate tests, byte-equivalent `.jpkg` / INDEX / `/var/db/jpkg/installed/` wire formats). See [PACKAGES.md](PACKAGES.md) for the full package inventory and the README's [Rust drop-in replacements](#rust-drop-in-replacements) section for the port's design.
 
 ## Overview
 
@@ -80,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jone
 
 # Pin to a specific jonerix release for a reproducible package set:
 curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
-  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.0
+  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.1
 
 # Complete an install on a USB you already dd'd a CI jonerix-pi5.img to
 # (the CI image deliberately ships without firmware):
@@ -141,7 +141,7 @@ iwr -useb https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/wsl/i
 & $env:TEMP\jonerix-install.ps1 -InstallDir "D:\WSL\jonerix" -DistroName "jonerix-dev"
 
 # Pin to a specific release tag (defaults to "packages", which rolls):
-& $env:TEMP\jonerix-install.ps1 -Release "v1.2.0"
+& $env:TEMP\jonerix-install.ps1 -Release "v1.2.1"
 
 # Install from a local rootfs tarball you've already downloaded:
 & $env:TEMP\jonerix-install.ps1 -RootfsUrl "C:\Downloads\jonerix-rootfs-x86_64.tar.gz"
@@ -329,7 +329,7 @@ jpkg install fastfetch           # install a package
 jpkg list                        # list installed packages
 jpkg local install ./pkg.jpkg    # install a .jpkg from a local file, URL, or stdin
 jpkg local build ./recipe-dir    # build a recipe.toml and either emit a .jpkg or install it
-jpkg conform 1.2.0               # pin the host to a specific jonerix release tag
+jpkg conform 1.2.1               # pin the host to a specific jonerix release tag
 ```
 
 `jpkg local` and `jpkg conform` are external subcommands shipped inside the jpkg package (`/bin/jpkg-local`, `/bin/jpkg-conform`); jpkg's main dispatcher falls through to them via PATH.
@@ -647,7 +647,7 @@ but leave the `*.pre-pi5-fixups` backups untouched.
 ```
                                     root@jonerix-tormenta
    _                       _        ---------------------
-  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.2.0 aarch64
+  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.2.1 aarch64
   | |/ _ \| '_ \ / _ \ '__| \ \/ /  Kernel -> Linux 6.18.22-v8-16k+
   | | (_) | | | |  __/ |  | |>  <   Uptime -> 16 hours, 28 mins
  _/ |\___/|_| |_|\___|_|  |_/_/\_\  Packages -> 44 (jpkg)

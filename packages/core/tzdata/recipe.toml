@@ -5,9 +5,10 @@ license = "Public-Domain"
 description = "IANA time zone database (zoneinfo data plus zic/zdump tools)"
 
 # Upstream ships two tarballs: tzcode (zic/zdump/Makefile) and tzdata (zone
-# source files). jpkg only supports a single [source] URL, so we let jpkg
-# fetch+verify the code tarball and fetch the data tarball inside the build
-# script with a pinned sha256. Both tarballs extract into the same directory.
+# source files). jpkg only supports a single [source] URL, so jpkg
+# fetches+verifies the code tarball and the recipe consumes the vendored
+# data tarball from JPKG_SOURCE_CACHE or the repo's sources/ directory.
+# Both tarballs extract into the same directory.
 #
 # We intentionally do NOT invoke the upstream Makefile — it uses a
 # multi-line variable assignment (SET_TIMESTAMP_N = sh -c '\) that jmake
@@ -20,10 +21,34 @@ sha256 = "f80a17a2eddd2b54041f9c98d75b0aa8038b016d7c5de72892a146d9938740e1"
 [build]
 system = "custom"
 build = """set -e
-# Fetch and verify the tzdata source, then extract it alongside tzcode.
-TZDATA_URL="https://data.iana.org/time-zones/releases/tzdata2026a.tar.gz"
+find_vendored_file() {
+    want=$1
+    oldifs=$IFS
+    IFS=:
+    for dir in ${JPKG_SOURCE_CACHE:-}; do
+        [ -n "$dir" ] || continue
+        if [ -f "$dir/$want" ]; then
+            IFS=$oldifs
+            printf '%s\n' "$dir/$want"
+            return 0
+        fi
+    done
+    IFS=$oldifs
+    dir="$RECIPE_DIR/../../../sources"
+    if [ -f "$dir/$want" ]; then
+        printf '%s\n' "$dir/$want"
+        return 0
+    fi
+    return 1
+}
+
+# Verify the vendored tzdata source, then extract it alongside tzcode.
 TZDATA_SHA="77b541725937bb53bd92bd484c0b43bec8545e2d3431ee01f04ef8f2203ba2b7"
-curl -fsSL -o /tmp/tzdata.tar.gz "$TZDATA_URL"
+TZDATA_SRC=$(find_vendored_file tzdata2026a.tar.gz) || {
+    echo "tzdata: missing vendored tzdata2026a.tar.gz" >&2
+    exit 1
+}
+cp "$TZDATA_SRC" /tmp/tzdata.tar.gz
 echo "$TZDATA_SHA  /tmp/tzdata.tar.gz" | sha256sum -c -
 tar xf /tmp/tzdata.tar.gz
 rm -f /tmp/tzdata.tar.gz

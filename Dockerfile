@@ -28,7 +28,7 @@ COPY packages/core/jpkg/ /src/
 RUN cd /src && \
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-    cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
+    cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
     # Surface the artefacts at the unsuffixed target/release/ path so the
     # downstream COPYs don't have to know the host triple.
     mkdir -p target/release && \

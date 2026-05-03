@@ -6,19 +6,23 @@ description = "Fast line-oriented search tool (grep replacement)"
 
 [source]
 url = "https://github.com/BurntSushi/ripgrep/archive/refs/tags/15.1.0.tar.gz"
-sha256 = "046fa01a216793b8bd2750f9d68d4ad43986eb9c0d6122600f993906012972e8"
+sha256 = "20ba4124303d46ba19b32d5212dc064f7c549252492084bdfbb4dbd0a9d82b7f"
 
 [build]
 system = "custom"
 build = """# ripgrep hardcodes tikv-jemallocator on 64-bit musl (Cargo.toml + main.rs).
 # jemalloc's default 4K page size fails on 16K page systems (RPi5).
 # Strip both the dependency and the #[global_allocator] use.
-sed -i "/tikv-jemallocator/,+1d" Cargo.toml
-# Replace the 4-line jemallocator static with a comment (keeps line count stable)
-sed -i '/cfg(all(target_env = "musl", target_pointer_width = "64"))/,/static ALLOC: tikv_jemallocator/d' crates/core/main.rs
-sed -i '/tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;/d' crates/core/main.rs
-cargo fetch
-RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release"""
+tmp=Cargo.toml.tmp
+sed '/tikv-jemallocator/{N;d;}' Cargo.toml > "$tmp"
+cat "$tmp" > Cargo.toml
+rm -f "$tmp"
+# Replace the 4-line jemallocator static with a comment (keeps line count stable).
+tmp=crates/core/main.rs.tmp
+sed '/cfg(all(target_env = "musl", target_pointer_width = "64"))/,/static ALLOC: tikv_jemallocator/d; /tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;/d' crates/core/main.rs > "$tmp"
+cat "$tmp" > crates/core/main.rs
+rm -f "$tmp"
+RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release --frozen --offline"""
 install = """install -Dm755 target/release/rg $DESTDIR/bin/rg
 ln -sf rg $DESTDIR/bin/ripgrep
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

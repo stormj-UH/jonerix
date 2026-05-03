@@ -25,31 +25,17 @@ else
     BUILD_SHELL=/bin/mksh
     echo "toybox: brash unavailable — applying patches.optional/0001-mksh-compat.patch"
     patch -p1 < "$RECIPE_DIR/patches.optional/0001-mksh-compat.patch"
-    sed -i 's|#!/bin/bash|#!/bin/mksh|' scripts/*.sh configure
+    for f in scripts/*.sh configure; do
+        tmp=${f}.tmp
+        sed 's|#!/bin/bash|#!/bin/mksh|' "$f" > "$tmp"
+        cat "$tmp" > "$f"
+        rm -f "$tmp"
+    done
 fi
 # Kernel UAPI headers: needed by blockdev, ip, brctl, fdisk, losetup, etc.
 # Install into ./linux/ etc so -I. resolves linux/fs.h during compilation.
 if [ ! -f linux/fs.h ]; then
-  # Try apk first (Alpine builder), then fall back to fetching the .apk directly.
-  apk add --no-cache linux-headers >/dev/null 2>&1 || true
-  if [ ! -d /usr/include/linux ] && [ ! -d /include/linux ]; then
-    # jonerix builder has no apk -- fetch Alpine linux-headers .apk directly.
-    _ARCH=$(uname -m)
-    _KH_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/main/${_ARCH}/linux-headers-6.6-r1.apk"
-    _KH_TMP=/tmp/_toybox_kh
-    mkdir -p "$_KH_TMP"
-    wget -q -O "$_KH_TMP/kh.apk" "$_KH_URL" 2>/dev/null || \
-      curl -fsSL -o "$_KH_TMP/kh.apk" "$_KH_URL"
-    (cd "$_KH_TMP" && tar xzf kh.apk 2>/dev/null || tar xf kh.apk 2>/dev/null; true)
-    if [ -d "$_KH_TMP/usr/include/linux" ]; then
-      mkdir -p /include
-      cp -a "$_KH_TMP/usr/include/linux" /include/linux
-      cp -a "$_KH_TMP/usr/include/asm-generic" /include/asm-generic 2>/dev/null || true
-      [ -d "$_KH_TMP/usr/include/asm" ] && cp -a "$_KH_TMP/usr/include/asm" /include/asm || true
-    fi
-    rm -rf "$_KH_TMP"
-  fi
-  # Copy from system include to toybox source tree (needed because -I. only)
+  # Copy from jonerix-headers to the toybox source tree (needed because -I. only).
   _KH_SRCDIR=/include
   [ -d /usr/include/linux ] && _KH_SRCDIR=/usr/include
   if [ -d "${_KH_SRCDIR}/linux" ]; then
@@ -99,4 +85,4 @@ runtime = ["musl"]
 # brash is best-effort: install_target_build_deps WARNs and continues if
 # brash isn't yet built (first-pass bootstrap), so the recipe falls back
 # to mksh+patch via the build-time check above.
-build = ["clang", "brash"]
+build = ["clang", "brash", "jonerix-headers"]

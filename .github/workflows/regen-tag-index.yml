@@ -88,7 +88,7 @@ jobs:
           # Dockerfiles + wsl-rootfs + publish-pi5-image.
           TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
           RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-            cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+            cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
           install -m 755 "target/$TRIPLE/release/jpkg" jpkg
           # Null-pad /lib64 refs (audit_layout_tree gate; sed can't emit NUL).
           python3 -c "import sys; p=sys.argv[1]; d=open(p,'rb').read(); n=d.count(b'/lib64'); open(p,'wb').write(d.replace(b'/lib64', b'/lib\x00\x00')); print(f'{p}: {n} /lib64 refs nulled')" jpkg

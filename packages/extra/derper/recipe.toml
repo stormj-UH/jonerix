@@ -5,19 +5,18 @@ license = "BSD-3-Clause"
 description = "Tailscale DERP relay server"
 
 [source]
-url = "local"
+url = "https://github.com/tailscale/tailscale/archive/refs/tags/v1.96.5.tar.gz"
+sha256 = "1f0a56b077b7ea8ad272d34273a23873bbc534a6f272731654a3522b7080f0b4"
 
 [build]
 system = "custom"
-build = """
-export GOPATH=/tmp/go
+build = """set -e
 export GOCACHE=/tmp/go-cache
-export GOMODCACHE=/tmp/go/pkg/mod
 export CGO_ENABLED=0
-go install tailscale.com/cmd/derper@v1.96.5
-install -Dm755 $GOPATH/bin/derper $DESTDIR/bin/derper
+go build -mod=vendor -trimpath -ldflags="-s -w" -o derper ./cmd/derper
 """
-install = ""
+install = """install -Dm755 derper "$DESTDIR/bin/derper"
+llvm-strip --strip-all "$DESTDIR/bin/derper" 2>/dev/null || true"""
 
 [depends]
 runtime = ["musl"]

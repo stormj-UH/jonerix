@@ -68,18 +68,43 @@ def open(*a, **kw): raise NotImplementedError()
 PYEOF
 export PYTHONPATH=/tmp/py-shim:${PYTHONPATH:-}
 
+find_vendored_file() {
+    for want in "$@"; do
+        oldifs=$IFS
+        IFS=:
+        for dir in ${JPKG_SOURCE_CACHE:-}; do
+            [ -n "$dir" ] || continue
+            if [ -f "$dir/$want" ]; then
+                IFS=$oldifs
+                printf '%s\n' "$dir/$want"
+                return 0
+            fi
+        done
+        IFS=$oldifs
+        dir="$RECIPE_DIR/../../../sources"
+        if [ -f "$dir/$want" ]; then
+            printf '%s\n' "$dir/$want"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Pre-expand deps/icu-small's bzipped ICU data file. The
 # builder's libarchive 3.8.6 was compiled without bzip2
 # support and there's no bzip2/bunzip2 binary available
 # either, so bsdcat refuses to touch .bz2. Compile a tiny
-# bzcat from upstream bzip2 1.0.8 in-place — it's ~6 kB of
-# BSD-style C that builds in a couple of seconds, used only
-# at recipe build time and thrown away.
+# bzcat from the vendored upstream bzip2 1.0.8 tarball in-place.
+# It is used only at recipe build time and thrown away.
 (
   set -e
   mkdir -p /tmp/bzip2-build
   cd /tmp/bzip2-build
-  curl -sL https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz -o bz.tgz
+  BZIP2_SRC=$(find_vendored_file bzip2-1.0.8.tar.gz bzip2-1.0.8-r1.tar.gz) || {
+    printf '%s\n' "nodejs: missing vendored bzip2-1.0.8.tar.gz" >&2
+    exit 1
+  }
+  cp "$BZIP2_SRC" bz.tgz
   echo "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269  bz.tgz" \
     | sha256sum -c -
   bsdtar -xzf bz.tgz
@@ -99,8 +124,13 @@ done
 
 # Strip explicit -latomic injections that GYP adds for Linux+Clang.
 # compiler-rt builtins provide the same symbols.
-sed -i "s/'-latomic',//g" node.gyp tools/v8_gypfiles/v8.gyp 2>/dev/null || true
-sed -i 's/-latomic//g' node.gyp tools/v8_gypfiles/v8.gyp 2>/dev/null || true
+for f in node.gyp tools/v8_gypfiles/v8.gyp; do
+  [ -f "$f" ] || continue
+  tmp=${f}.tmp
+  sed "s/'-latomic',//g; s/-latomic//g" "$f" > "$tmp"
+  cat "$tmp" > "$f"
+  rm -f "$tmp"
+done
 
 CC=clang \
 CXX=clang++ \

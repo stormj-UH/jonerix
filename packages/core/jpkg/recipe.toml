@@ -27,7 +27,7 @@ description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5
 
 [build]
 system = "custom"
-configure = "cp -a $RECIPE_DIR/Cargo.toml $RECIPE_DIR/Cargo.lock $RECIPE_DIR/src $RECIPE_DIR/.cargo ."
+configure = "cp -a $RECIPE_DIR/Cargo.toml $RECIPE_DIR/Cargo.lock $RECIPE_DIR/src $RECIPE_DIR/.cargo $RECIPE_DIR/vendor ."
 build = """set -e
 export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
 export OPENSSL_DIR=/
@@ -39,7 +39,7 @@ export OPENSSL_LIB_DIR=/lib
 # crt-static while the target binaries link statically against musl.
 TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
-cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local
+cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local
 mkdir -p target/release
 cp -f "target/$TRIPLE/release/jpkg" target/release/jpkg
 cp -f "target/$TRIPLE/release/jpkg-local" target/release/jpkg-local

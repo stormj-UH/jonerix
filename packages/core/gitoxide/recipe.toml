@@ -6,7 +6,7 @@ description = "Pure Rust implementation of git (gix + ein)"
 
 [source]
 url = "https://github.com/Byron/gitoxide/archive/refs/tags/v0.52.0.tar.gz"
-sha256 = "8c4edd66f19e9c672040f8a4f76de5f3feafff5c443fc54554ae142a36bc10af"
+sha256 = "4982d5be80005456bef2074b9c15a2c4451aff56d3d3bf5395e27ee9ba236282"
 
 [build]
 system = "custom"
@@ -47,10 +47,8 @@ build = """export OPENSSL_DIR=/
 export OPENSSL_INCLUDE_DIR=/include
 export OPENSSL_LIB_DIR=/lib
 export PKG_CONFIG_ALLOW_CROSS=1
-export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
 export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
-cargo fetch
-cargo build --release --no-default-features --features max-pure --bin gix --bin ein"""
+cargo build --release --frozen --offline --no-default-features --features max-pure --bin gix --bin ein"""
 install = """install -Dm755 target/release/gix $DESTDIR/bin/gix
 install -Dm755 target/release/ein $DESTDIR/bin/ein
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

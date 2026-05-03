@@ -11,20 +11,45 @@ description = "Mozilla CA certificate bundle for TLS verification (sourced from 
 # can extract, and this is a single PEM file. The previous recipe
 # declared [source].url = cacert.pem and silently failed at extract
 # ("failed to extract source", reproduced CI run 24686782348).
-# Instead fetch the PEM in the build step, verify its sha256
-# inline, and drop it straight into $DESTDIR.
+# Instead consume the PEM from JPKG_SOURCE_CACHE or the repo's
+# sources/ directory, verify its sha256 inline, and drop it straight
+# into $DESTDIR.
 
 [build]
 system = "custom"
 configure = ""
 build = """
 set -e
+find_vendored_file() {
+    want=$1
+    oldifs=$IFS
+    IFS=:
+    for dir in ${JPKG_SOURCE_CACHE:-}; do
+        [ -n "$dir" ] || continue
+        if [ -f "$dir/$want" ]; then
+            IFS=$oldifs
+            printf '%s\n' "$dir/$want"
+            return 0
+        fi
+    done
+    IFS=$oldifs
+    dir="$RECIPE_DIR/../../../sources"
+    if [ -f "$dir/$want" ]; then
+        printf '%s\n' "$dir/$want"
+        return 0
+    fi
+    return 1
+}
+
 # Pinned upstream hash — bump both this and [package].version when
 # Mozilla's CA list changes. curl.se updates cacert.pem in place,
 # so the hash is the authoritative integrity check.
-PEM_URL="https://curl.se/ca/cacert.pem"
 PEM_SHA256="b6e66569cc3d438dd5abe514d0df50005d570bfc96c14dca8f768d020cb96171"
-curl -fsSL -o cacert.pem "$PEM_URL"
+PEM_SRC=$(find_vendored_file cacert.pem) || {
+    echo "ca-certificates: missing vendored cacert.pem" >&2
+    exit 1
+}
+cp "$PEM_SRC" cacert.pem
 if command -v sha256sum >/dev/null 2>&1; then
     GOT=$(sha256sum cacert.pem | awk '{print $1}')
 else
@@ -52,4 +77,4 @@ ln -sf certs/ca-certificates.crt "$DESTDIR/etc/ssl/cert.pem"
 
 [depends]
 runtime = []
-build = ["curl"]
+build = []

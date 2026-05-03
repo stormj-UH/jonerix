@@ -4,8 +4,9 @@ version = "1.94.1-r3"
 license = "MIT"
 description = "Systems programming language (jonerix-linux-musl triple, no GNU runtime)"
 
-# No [source] section: the build step fetches the arch-appropriate dist
-# tarball (self-built, jonerix-linux-musl triple) and verifies its sha256.
+# No [source] section: the build step consumes the arch-appropriate
+# vendored dist tarball (self-built, jonerix-linux-musl triple) and
+# verifies its sha256.
 # These tarballs are produced by the rust-build pipeline on castle (x86_64)
 # and m4ni (aarch64) using llvm-libunwind=system, so -lunwind replaces
 # -lgcc_s in proc-macro .so link lines — zero GCC runtime dependency.
@@ -13,18 +14,43 @@ description = "Systems programming language (jonerix-linux-musl triple, no GNU r
 [build]
 system = "custom"
 build = """
+find_vendored_file() {
+    want=$1
+    oldifs=$IFS
+    IFS=:
+    for dir in ${JPKG_SOURCE_CACHE:-}; do
+        [ -n "$dir" ] || continue
+        if [ -f "$dir/$want" ]; then
+            IFS=$oldifs
+            printf '%s\n' "$dir/$want"
+            return 0
+        fi
+    done
+    IFS=$oldifs
+    dir="$RECIPE_DIR/../../../sources"
+    if [ -f "$dir/$want" ]; then
+        printf '%s\n' "$dir/$want"
+        return 0
+    fi
+    return 1
+}
+
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
-  URL="https://github.com/stormj-UH/jonerix/releases/download/packages/rust-1.94.1-aarch64-jonerix-linux-musl.tar.gz"
+  FILE="rust-1.94.1-aarch64-jonerix-linux-musl.tar.gz"
   SHA="30097dc070c4806935e7a777148be9d094655594249cab1b46f9be7e34cd111d"
   TRIPLE="aarch64-jonerix-linux-musl"
 else
-  URL="https://github.com/stormj-UH/jonerix/releases/download/packages/rust-1.94.1-x86_64-jonerix-linux-musl.tar.gz"
+  FILE="rust-1.94.1-x86_64-jonerix-linux-musl.tar.gz"
   SHA="23988d5dde206a685d03dd2606554c441247652f1e98944380791887c2c70f48"
   TRIPLE="x86_64-jonerix-linux-musl"
 fi
 
-curl -fsSL "$URL" -o rust.tar.gz
+RUST_SRC=$(find_vendored_file "$FILE") || {
+  printf '%s\n' "rust: missing vendored $FILE" >&2
+  exit 1
+}
+cp "$RUST_SRC" rust.tar.gz
 printf '%s  rust.tar.gz\n' "$SHA" | sha256sum -c
 tar xf rust.tar.gz --strip-components=1
 

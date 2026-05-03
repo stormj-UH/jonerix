@@ -26,7 +26,7 @@ COPY packages/core/jpkg/ /build/jpkg/
 RUN cd /build/jpkg && \
     TRIPLE=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-    cargo build --release --locked --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
+    cargo build --release --frozen --target "$TRIPLE" --bin jpkg --bin jpkg-local && \
     mkdir -p target/release && \
     cp -f "target/$TRIPLE/release/jpkg" target/release/jpkg && \
     cp -f "target/$TRIPLE/release/jpkg-local" target/release/jpkg-local && \

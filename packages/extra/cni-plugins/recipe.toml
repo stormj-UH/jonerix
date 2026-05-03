@@ -10,12 +10,11 @@ sha256 = "34bd82d47e981940751619c9cc44c095bb90bfcaf8d71865cbb822c37690a764"
 
 [build]
 system = "custom"
-build = """go mod download
-mkdir -p $DESTDIR/opt/cni/bin
+build = """mkdir -p $DESTDIR/opt/cni/bin
 for d in plugins/main/* plugins/meta/* plugins/ipam/*; do
   [ -d "$d" ] || continue
   name=$(basename "$d")
-  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$DESTDIR/opt/cni/bin/$name" "./$d" 2>/dev/null || true
+  CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags="-s -w" -o "$DESTDIR/opt/cni/bin/$name" "./$d" 2>/dev/null || true
 done"""
 install = """if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi

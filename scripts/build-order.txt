@@ -46,6 +46,10 @@ ifupdown-ng
 # /bin/pkg-config are in /out/jpkgs/ before any of those recipes try
 # to install_target_build_deps.
 pkgconf
+# Kernel UAPI headers for packages that need /include/linux and
+# /include/asm during their build. Keep early so recipes do not fetch
+# distro headers opportunistically.
+jonerix-headers
 # Tier 3: depends on musl only (medium)
 # (toybox was here pre-2026-04-26; moved to Tier 11 so it can build under
 # /bin/bash → brash and skip the local mksh-compat patch.)

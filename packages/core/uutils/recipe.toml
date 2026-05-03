@@ -10,7 +10,7 @@ replaces = ["toybox"]
 
 [source]
 url = "https://github.com/uutils/coreutils/archive/refs/tags/0.7.0.tar.gz"
-sha256 = "dc56a3c4632742357d170d60a7dcecb9693de710daeaafa3ad925750b1905522"
+sha256 = "adf555817bd13f9600dd6f86e4087c46c4bd47876f732646110e36c8e00c1db1"
 
 [build]
 system = "custom"
@@ -21,14 +21,13 @@ system = "custom"
 # (see uutils drill-down 2026-04-15).
 build = """export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
 export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
-cargo fetch --locked
 # feat_os_unix bundles all 80+ applets for a unix-platform multicall.
 # Using MULTICALL=y via feature, not the upstream GNUmakefile, since we
 # drive cargo directly (see header comment). The previous `grep PROGS :=`
 # hack silently produced a 720 KB stub because upstream defines PROGS as
 # a multi-line sed extraction, not a single-line assignment — our grep
 # matched nothing and `--features "" --no-default-features` built empty.
-cargo build --release --features feat_os_unix --no-default-features"""
+cargo build --release --frozen --offline --features feat_os_unix --no-default-features"""
 install = """set -e
 install -Dm755 target/release/coreutils "$DESTDIR/bin/uutils"
 

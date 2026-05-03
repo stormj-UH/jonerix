@@ -33,10 +33,9 @@ sha256 = "a7f46aebc37f9628ef750f97f40fcfa17027e5897076ef9669907367ffb137c9"
 
 [build]
 system = "custom"
-# Workspace-wide release build. Cargo.lock is committed in the
-# upstream tree so the build is reproducible; --offline + --frozen
-# would also work once the vendor dir lands, but for the first-pass
-# recipe we let cargo fetch normally (same pattern as ripgrep).
+# Workspace-wide release build. The upstream tree is path-only with no
+# registry dependencies, so --offline + --frozen asserts that cargo does
+# not touch the network.
 #
 # -crt-static matches gitoxide / lsusb-rs: we dynamically link
 # against musl so the ext4 tools use /lib/ld-musl-*.so.1 at runtime
@@ -44,8 +43,7 @@ system = "custom"
 build = """
 set -e
 export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
-cargo fetch
-cargo build --workspace --release
+cargo build --workspace --release --offline --frozen
 """
 install = """
 set -e

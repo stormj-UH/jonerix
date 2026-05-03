@@ -9,14 +9,35 @@ system = "custom"
 build = """
 set -e
 
+find_vendored_file() {
+    want=$1
+    oldifs=$IFS
+    IFS=:
+    for dir in ${JPKG_SOURCE_CACHE:-}; do
+        [ -n "$dir" ] || continue
+        if [ -f "$dir/$want" ]; then
+            IFS=$oldifs
+            printf '%s\n' "$dir/$want"
+            return 0
+        fi
+    done
+    IFS=$oldifs
+    dir="$RECIPE_DIR/../../../sources"
+    if [ -f "$dir/$want" ]; then
+        printf '%s\n' "$dir/$want"
+        return 0
+    fi
+    return 1
+}
+
 ARCH=$(uname -m)
 case "$ARCH" in
   aarch64)
-    URL="https://go.dev/dl/go1.26.1.linux-arm64.tar.gz"
+    FILE="go1.26.1.linux-arm64.tar.gz"
     SHA="a290581cfe4fe28ddd737dde3095f3dbeb7f2e4065cab4eae44dfc53b760c2f7"
     ;;
   x86_64)
-    URL="https://go.dev/dl/go1.26.1.linux-amd64.tar.gz"
+    FILE="go1.26.1.linux-amd64.tar.gz"
     SHA="031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a"
     ;;
   *)
@@ -25,7 +46,11 @@ case "$ARCH" in
     ;;
 esac
 
-curl -fsSL "$URL" -o go.tar.gz
+GO_SRC=$(find_vendored_file "$FILE") || {
+  printf '%s\n' "go: missing vendored $FILE" >&2
+  exit 1
+}
+cp "$GO_SRC" go.tar.gz
 printf '%s  go.tar.gz\n' "$SHA" | sha256sum -c
 
 mkdir -p stage "$DESTDIR/lib" "$DESTDIR/bin"
@@ -41,12 +66,18 @@ find "$DESTDIR/lib/go/src" -type d -name testdata -exec rm -rf {} +
 # for glibc, then normalize any remaining /lib64 paths in the whole tree.
 case "$ARCH" in
   x86_64)
-    sed -i 's#/lib64/ld-linux-x86-64.so.2#/lib/ld-musl-x86_64.so.1#' \
-      "$DESTDIR/lib/go/src/cmd/link/internal/amd64/obj.go"
+    f="$DESTDIR/lib/go/src/cmd/link/internal/amd64/obj.go"
+    tmp=${f}.tmp
+    sed 's#/lib64/ld-linux-x86-64.so.2#/lib/ld-musl-x86_64.so.1#' "$f" > "$tmp"
+    cat "$tmp" > "$f"
+    rm -f "$tmp"
     ;;
   aarch64)
-    sed -i 's#/lib/ld-linux-aarch64.so.1#/lib/ld-musl-aarch64.so.1#' \
-      "$DESTDIR/lib/go/src/cmd/link/internal/arm64/obj.go"
+    f="$DESTDIR/lib/go/src/cmd/link/internal/arm64/obj.go"
+    tmp=${f}.tmp
+    sed 's#/lib/ld-linux-aarch64.so.1#/lib/ld-musl-aarch64.so.1#' "$f" > "$tmp"
+    cat "$tmp" > "$f"
+    rm -f "$tmp"
     ;;
 esac
 python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" "$DESTDIR/lib/go"

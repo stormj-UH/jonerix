@@ -31,7 +31,7 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 #    !() extglob no longer trigger "event not found" during rc/profile load.
 # 3. Extglob !() patterns now parse correctly inside array assignments.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.10/brash-1.0.10.tar.gz"
-sha256 = "60c0b9e60efca51905e68e1be5ec53cfdabb6cd8646e81d09253af54d5d5cc37"
+sha256 = "76d0b92ffdbac8f0c1b2dbb311ff154f4734a4c1926a66ccba21fd058cc56dff"
 
 [build]
 system = "custom"
@@ -39,16 +39,10 @@ build = """
 set -e
 export CARGO_HOME=/tmp/brash-cargo
 export CARGO_TARGET_DIR="$PWD/target"
-# brash's source tarball doesn't ship a `vendor/` directory, so cargo
-# must reach crates.io to resolve `glob`/`nix`/`libc`/`bitflags`. Match
-# the jmake recipe pattern (online cargo + jonerix CA bundle) instead
-# of stormwall's offline+vendored pattern.
-export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
-export OPENSSL_DIR=/
-export OPENSSL_INCLUDE_DIR=/include
-export OPENSSL_LIB_DIR=/lib
+# The source tarball in sources/ is repacked with Cargo vendor/ plus
+# .cargo/config.toml, so this build must not touch crates.io.
 export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
-cargo build --release --locked --bin brash
+cargo build --release --frozen --offline --bin brash
 """
 install = """
 set -e

@@ -19,20 +19,15 @@ replaces = ["toybox"]
 # Upstream URL (primary):
 #   https://github.com/u-root/u-root/archive/refs/tags/v0.16.0.tar.gz
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-iproute-go-v0.16.0/iproute-go-0.16.0.tar.gz"
-sha256 = "66ce4c51b9d8371af0e0788bc7f5eeaf07428c41c9a9cab0893664696e5a691c"
+sha256 = "33bf3361d9815b7533e4ef742d446a105963f313e07d3ae5d0de64715c3b3ce7"
 
 [build]
 system = "custom"
-# The mirrored snapshot contains only go.mod/go.sum, LICENSE,
-# cmds/core/ip, and pkg/uroot/unixflag. `go build` still pulls in
-# exactly the external module graph that package needs
-# (vishvananda/netlink et al.) and nothing else.
+# The mirrored snapshot contains go.mod/go.sum, vendor/, LICENSE,
+# cmds/core/ip, and pkg/uroot/unixflag.
 # CGO_ENABLED=0 + -trimpath -ldflags "-s -w" gives a static musl binary
 # (~5-8MB) with no runtime deps.
-build = """export GOPROXY=https://proxy.golang.org,direct
-export GOSUMDB=sum.golang.org
-go mod download
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ip ./cmds/core/ip"""
+build = """CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags="-s -w" -o ip ./cmds/core/ip"""
 install = """install -Dm755 ip $DESTDIR/bin/ip
 # Keep the binary itself; u-root's ip is a single-binary command.
 # No stripping pass — go -ldflags -s -w already drops the debug symbols.
