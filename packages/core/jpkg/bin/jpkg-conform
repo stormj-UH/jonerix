@@ -1,5 +1,14 @@
-#!/bin/sh
+#!/bin/mksh
 # jpkg-conform <release-version> [--nopkgs]
+#
+# Shebang note: this script REQUIRES mksh, not /bin/sh. On older jonerix
+# hosts /bin/sh is toybox sh which (a) rejects `set -e` with "set: bad -e",
+# (b) has no `trap` builtin, and (c) has no `command` builtin — every one
+# of which this script uses. mksh is a guaranteed runtime dep of jpkg
+# (declared in packages/core/jpkg/recipe.toml's [depends].runtime), so
+# /bin/mksh is always present anywhere jpkg runs. Hardcoding the path
+# rather than relying on /bin/sh sidesteps the broken-toybox-sh class of
+# bug that bit `jpkg conform 1.2.1` on jonerix-tormenta 2026-05-03.
 #
 # Bring this host into conformance with a jonerix release tag.
 #
@@ -19,9 +28,11 @@
 #
 # Invoked as either `jpkg conform <ver>` (via jpkg's fallthrough to
 # jpkg-<name> external subcommands, see main.c) or directly as
-# `jpkg-conform <ver>`. POSIX sh; no bashisms, no GNU-isms.
+# `jpkg-conform <ver>`. mksh-compatible (POSIX + a few mksh extras like
+# `set -eu`, `trap`, and `command -v` that toybox sh lacks). No bash arrays,
+# brace expansion, or process substitution — those would still need brash.
 #
-# Part of jpkg (MIT, jonerix core jpkg).
+# Part of jpkg (0BSD, jonerix core jpkg).
 
 set -eu
 

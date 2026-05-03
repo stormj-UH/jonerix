@@ -1,6 +1,6 @@
 [package]
 name = "jpkg"
-version = "2.0.1-r1"
+version = "2.0.1-r2"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
 # jpkg 2.0 is the from-scratch Rust port of the C jpkg 1.1.5 — same wire
@@ -75,5 +75,12 @@ install -d "$DESTDIR/var/cache/jpkg"
 """
 
 [depends]
-runtime = ["musl"]
+# mksh is required at runtime: /bin/jpkg-conform has `#!/bin/mksh` because
+# toybox sh (jonerix's other /bin/sh provider) rejects `set -e`, has no
+# `trap` builtin, and has no `command` builtin — all of which jpkg-conform
+# uses. Without this dep, `jpkg conform <ver>` on a host whose /bin/sh is
+# toybox dies with "set: bad -e" / "sh: trap: No such file or directory"
+# / "curl not found" (the latter from `command -v curl` returning
+# command-not-found because toybox sh has no `command` builtin).
+runtime = ["musl", "mksh"]
 build = ["rust"]
