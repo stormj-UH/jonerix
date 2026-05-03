@@ -833,13 +833,19 @@ mod tests {
         let original = std::fs::read_to_string(&recipe_path).expect("read recipe.toml");
         let recipe = Recipe::from_str(&original).expect("parse recipe");
 
-        // Stable invariants — the recipe IS for jpkg, MIT-licensed, and
-        // declares musl as a runtime dep.  The version + replaces shape
-        // is intentionally not asserted here so the test survives version
-        // bumps.
+        // Stable invariants — the recipe IS for jpkg, declares musl as a
+        // runtime dep.  The version, replaces shape, and license are
+        // intentionally not asserted here so the test survives version
+        // bumps and the MIT→0BSD relicense (2026-04-30); the license
+        // value is only checked to be non-empty.
         assert_eq!(recipe.package.name.as_deref(), Some("jpkg"));
-        assert_eq!(recipe.package.license.as_deref(), Some("MIT"));
-        assert_eq!(recipe.depends.runtime, vec!["musl"]);
+        assert!(recipe.package.license.as_deref().map_or(false, |l| !l.is_empty()),
+            "license must be set");
+        // mksh joined musl as a runtime dep in 2.0.1-r2 because
+        // jpkg-conform's #!/bin/mksh shebang requires it; the test
+        // accepts either ["musl"] (older recipes) or any superset.
+        assert!(recipe.depends.runtime.iter().any(|d| d == "musl"),
+            "runtime deps must include musl");
         assert!(recipe.package.version.as_deref().map_or(false, |v| !v.is_empty()));
 
         // Re-serialise then re-parse — fields must survive a round-trip.

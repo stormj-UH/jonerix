@@ -165,20 +165,51 @@ pub(crate) fn install_packages(
 
         log::info!("jpkg: installing {}-{}...", name, entry.version);
 
-        // Download.
-        let jpkg_path = repo
-            .fetch_package(name, &entry.version)
-            .map_err(|e| InstallError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("fetch failed: {e}"),
-            )))?;
-
-        // Verify sha256.
-        Repo::verify_package(&jpkg_path, &entry.sha256)
-            .map_err(|e| InstallError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("verification failed: {e}"),
-            )))?;
+        // Download + verify.  When a cached `.jpkg` fails sha256 verification,
+        // it's almost always because the cache holds a same-filename blob from
+        // a different mirror (rolling `packages` vs a tagged release like
+        // v1.2.1, both shipping `libressl-4.0.0-aarch64.jpkg` with different
+        // bytes when libressl was rebuilt between them).  Treat that as a
+        // cache miss: delete the bad blob and re-fetch from the configured
+        // mirror.  If the freshly-downloaded blob ALSO mismatches, that's a
+        // real corrupted-mirror or man-in-the-middle situation and we error
+        // hard.  Reproduced on jonerix-tormenta 2026-05-03 with a stale
+        // libressl jpkg cached from `packages` and `jpkg conform 1.2.1`
+        // expecting v1.2.1's sha256.
+        let jpkg_path = {
+            let path = repo
+                .fetch_package(name, &entry.version)
+                .map_err(|e| InstallError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("fetch failed: {e}"),
+                )))?;
+            match Repo::verify_package(&path, &entry.sha256) {
+                Ok(()) => path,
+                Err(first_err) => {
+                    log::warn!(
+                        "cached {} sha256 mismatch ({first_err}) — purging and re-fetching",
+                        path.display()
+                    );
+                    // Remove the bad file so fetch_package's cache check
+                    // misses and goes to the network.
+                    let _ = std::fs::remove_file(&path);
+                    let path = repo
+                        .fetch_package(name, &entry.version)
+                        .map_err(|e| InstallError::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("re-fetch after cache invalidation failed: {e}"),
+                        )))?;
+                    Repo::verify_package(&path, &entry.sha256)
+                        .map_err(|e| InstallError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "verification failed even after re-fetch (corrupted mirror?): {e}"
+                            ),
+                        )))?;
+                    path
+                }
+            }
+        };
 
         // Open archive + parse metadata.
         let archive = JpkgArchive::open(&jpkg_path)?;
