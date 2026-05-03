@@ -404,7 +404,9 @@ check-sources → minimal (arm64 + amd64) → core → builder → smoke tests
                                                → router  →
 ```
 
-Package builds (`publish-packages.yml`) compile recipes inside `jonerix:all` containers and upload `.jpkg` files to GitHub Releases. The INDEX is regenerated and Ed25519-signed after each build.
+Package builds (`publish-packages.yml`) compile recipes inside `jonerix:builder` containers and upload `.jpkg` files to the rolling `packages` GitHub Release. The rolling INDEX is regenerated and Ed25519-signed after each build.
+
+Versioned package releases are controlled by `package-release-state.yml`. Opening a release writes the active tag to the internal `package-release-state` release; while that marker exists, every package publish also mirrors matching updated `.jpkg` assets into the open tag and rebuilds that tag's signed INDEX. Closing the release deletes the marker, so later package publishes only update the rolling `packages` release.
 
 ---
 

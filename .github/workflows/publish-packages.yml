@@ -210,14 +210,9 @@ jobs:
     if: ${{ always() && needs.build-x86_64.result != 'cancelled' && needs.build-aarch64.result != 'cancelled' }}
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
-    container:
-      image: ${{ vars.BUILDER_IMAGE_X86_64 || 'ghcr.io/stormj-uh/jonerix:builder-amd64' }}
-      options: --privileged
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     permissions:
       contents: write
+      packages: read
 
     steps:
       - name: Checkout source
@@ -226,45 +221,24 @@ jobs:
           lfs: false
 
       - name: Install CI tools
-        # The builder image has git, zstd, clang, rust, cargo, python3.
-        # Only gh (GitHub CLI) and coreutils (GNU sort -V) are missing.
-        run: apk add --no-cache github-cli coreutils
-
-      - name: Restore jpkg binary cache
-        uses: actions/cache@v5
-        id: jpkg-cache
-        with:
-          path: /tmp/jpkg-bin-x86_64
-          key: jpkg-bin-x86_64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
-
-      - name: Build or restore jpkg
         run: |
-          if [ -x /tmp/jpkg-bin-x86_64/jpkg ]; then
-            echo "Using cached jpkg binary."
-            install -m 755 /tmp/jpkg-bin-x86_64/jpkg /usr/local/bin/jpkg
-          else
-            echo "Cache miss — building jpkg from source."
-            cd "$GITHUB_WORKSPACE/packages/core/jpkg"
-            TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-            RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" \
-                cargo build --release --frozen --target "$TRIPLE" --bin jpkg
-            install -m 755 "target/$TRIPLE/release/jpkg" /usr/local/bin/jpkg
-            mkdir -p /tmp/jpkg-bin-x86_64
-            cp /usr/local/bin/jpkg /tmp/jpkg-bin-x86_64/jpkg
-          fi
-          jpkg --version || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+
+      - name: Log in to GHCR for jpkg signer
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Download all packages from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p /var/cache/jpkg
+          mkdir -p /tmp/jpkg-index
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.jpkg" \
-            --dir /var/cache/jpkg 2>/dev/null || true
+            --dir /tmp/jpkg-index 2>/dev/null || true
           echo "Downloaded packages:"
-          ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"
+          ls -lh /tmp/jpkg-index/*.jpkg 2>/dev/null || echo "(none)"
 
       - name: Generate INDEX.zst
         # scripts/gen-index.sh:
@@ -275,16 +249,16 @@ jobs:
         # version per package name. If we ever need two versions, the newer
         # one should get a distinct package name (e.g. python313 vs python3).
         env:
-          PKG_DIR: /var/cache/jpkg
-          OUT_INDEX: /var/cache/jpkg/INDEX
-          STALE_LIST: /var/cache/jpkg/.stale-assets
+          PKG_DIR: /tmp/jpkg-index
+          OUT_INDEX: /tmp/jpkg-index/INDEX
+          STALE_LIST: /tmp/jpkg-index/.stale-assets
           RECIPES_ROOT: ${{ github.workspace }}/packages
         run: |
           set -e
           "$GITHUB_WORKSPACE/scripts/gen-index.sh"
           echo "Generated INDEX:"
           cat "$OUT_INDEX"
-          INDEX_ZST=/var/cache/jpkg/INDEX.zst
+          INDEX_ZST=/tmp/jpkg-index/INDEX.zst
           zstd -19 -f -o "$INDEX_ZST" "$OUT_INDEX"
           echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
 
@@ -297,7 +271,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STALE_LIST: /var/cache/jpkg/.stale-assets
+          STALE_LIST: /tmp/jpkg-index/.stale-assets
         run: |
           if [ ! -s "$STALE_LIST" ]; then
             echo "No stale assets to delete."
@@ -318,12 +292,19 @@ jobs:
       - name: Sign INDEX.zst
         env:
           JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
+          SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
         run: |
-          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > /tmp/jpkg-sign.sec
-          chmod 600 /tmp/jpkg-sign.sec
-          jpkg sign /var/cache/jpkg/INDEX.zst --key /tmp/jpkg-sign.sec
-          rm -f /tmp/jpkg-sign.sec
-          echo "INDEX.zst.sig: $(wc -c < /var/cache/jpkg/INDEX.zst.sig) bytes"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > "$tmp/jpkg-sign.sec"
+          chmod 600 "$tmp/jpkg-sign.sec"
+          docker run --rm \
+            -v /tmp/jpkg-index:/work \
+            -v "$tmp:/key:ro" \
+            --entrypoint /bin/sh \
+            "$SIGNER_IMAGE" \
+            -c 'jpkg sign /work/INDEX.zst --key /key/jpkg-sign.sec'
+          echo "INDEX.zst.sig: $(wc -c < /tmp/jpkg-index/INDEX.zst.sig) bytes"
 
       - name: Upload INDEX.zst and signature
         env:
@@ -332,6 +313,17 @@ jobs:
           gh release upload packages \
             --repo "$GITHUB_REPOSITORY" \
             --clobber \
-            /var/cache/jpkg/INDEX.zst \
-            /var/cache/jpkg/INDEX.zst.sig
+            /tmp/jpkg-index/INDEX.zst \
+            /tmp/jpkg-index/INDEX.zst.sig
           echo "INDEX.zst and INDEX.zst.sig uploaded."
+
+      - name: Mirror open package release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
+          PKG_DIR: /tmp/jpkg-index
+          STALE_LIST: /tmp/jpkg-index/.stale-assets
+          RECIPES_ROOT: ${{ github.workspace }}/packages
+          PKG_INPUT: ${{ inputs.package }}
+          SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
+        run: sh "$GITHUB_WORKSPACE/scripts/sync-open-package-release.sh"

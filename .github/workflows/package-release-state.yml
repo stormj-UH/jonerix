@@ -1,0 +1,247 @@
+name: Manage package release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Release state action'
+        required: true
+        default: 'status'
+        type: choice
+        options:
+          - status
+          - open
+          - close
+      tag:
+        description: 'Release tag for open/close, with or without v prefix'
+        required: false
+        default: ''
+        type: string
+      seed_from_packages:
+        description: 'On open, copy the current rolling package set before rebuilding the release INDEX'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: package-release-state
+  cancel-in-progress: false
+
+env:
+  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder-amd64
+  PACKAGE_RELEASE_STATE_TAG: package-release-state
+  PACKAGE_RELEASE_STATE_ASSET: active-package-release.env
+
+jobs:
+  manage:
+    name: ${{ inputs.action }} package release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          lfs: false
+
+      - name: Install CI tools
+        if: ${{ inputs.action == 'open' }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+
+      - name: Log in to GHCR for jpkg signer
+        if: ${{ inputs.action == 'open' }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Normalize request
+        id: request
+        env:
+          ACTION_INPUT: ${{ inputs.action }}
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          set -eu
+          case "$ACTION_INPUT" in
+            open|close|status) ;;
+            *)
+              echo "Unsupported action: $ACTION_INPUT" >&2
+              exit 1
+              ;;
+          esac
+
+          tag="$TAG_INPUT"
+          if [ "$ACTION_INPUT" = "open" ] && [ -z "$tag" ]; then
+            echo "Opening a package release requires a tag." >&2
+            exit 1
+          fi
+
+          if [ -n "$tag" ]; then
+            case "$tag" in
+              v*) ;;
+              *) tag="v$tag" ;;
+            esac
+            if ! printf '%s\n' "$tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null 2>&1; then
+              echo "Release tag must look like vX.Y.Z: $tag" >&2
+              exit 1
+            fi
+          fi
+
+          {
+            printf 'MANAGE_ACTION=%s\n' "$ACTION_INPUT"
+            printf 'MANAGE_TAG=%s\n' "$tag"
+          } >> "$GITHUB_ENV"
+          {
+            printf 'action=%s\n' "$ACTION_INPUT"
+            printf 'tag=%s\n' "$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure state release exists
+        if: ${{ steps.request.outputs.action != 'status' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          if ! gh release view "$PACKAGE_RELEASE_STATE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release create "$PACKAGE_RELEASE_STATE_TAG" \
+              --repo "$GH_REPO" \
+              --title "Package release state" \
+              --notes "Internal marker for the currently open jonerix package release." \
+              --prerelease
+          fi
+
+      - name: Show current release state
+        if: ${{ steps.request.outputs.action == 'status' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          if gh release download "$PACKAGE_RELEASE_STATE_TAG" \
+              --repo "$GH_REPO" \
+              --pattern "$PACKAGE_RELEASE_STATE_ASSET" \
+              --dir "$tmp" >/dev/null 2>&1; then
+            echo "Open package release:"
+            cat "$tmp/$PACKAGE_RELEASE_STATE_ASSET"
+          else
+            echo "No package release is currently open."
+          fi
+
+      - name: Open release
+        if: ${{ steps.request.outputs.action == 'open' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          if gh release download "$PACKAGE_RELEASE_STATE_TAG" \
+              --repo "$GH_REPO" \
+              --pattern "$PACKAGE_RELEASE_STATE_ASSET" \
+              --dir "$tmp" >/dev/null 2>&1; then
+            active_tag="$(sed -n 's/^tag=//p' "$tmp/$PACKAGE_RELEASE_STATE_ASSET" | tr -d '\r' | sed -n '1p')"
+            if [ -n "$active_tag" ] && [ "$active_tag" != "$MANAGE_TAG" ]; then
+              echo "Refusing to open $MANAGE_TAG; $active_tag is already open." >&2
+              echo "Close $active_tag first." >&2
+              exit 1
+            fi
+          fi
+
+          if ! gh release view "$MANAGE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release create "$MANAGE_TAG" \
+              --repo "$GH_REPO" \
+              --title "jonerix ${MANAGE_TAG#v}" \
+              --notes "Open jonerix package release ${MANAGE_TAG}." \
+              --prerelease
+          fi
+
+          rm -f "$tmp/$PACKAGE_RELEASE_STATE_ASSET"
+          {
+            printf 'tag=%s\n' "$MANAGE_TAG"
+            printf 'opened_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'opened_by=%s\n' "$GITHUB_ACTOR"
+            printf 'workflow_run=%s\n' "$GITHUB_RUN_ID"
+          } > "$tmp/$PACKAGE_RELEASE_STATE_ASSET"
+
+          gh release upload "$PACKAGE_RELEASE_STATE_TAG" \
+            --repo "$GH_REPO" \
+            --clobber \
+            "$tmp/$PACKAGE_RELEASE_STATE_ASSET"
+          echo "Opened package release $MANAGE_TAG."
+
+      - name: Seed from rolling packages
+        if: ${{ steps.request.outputs.action == 'open' && inputs.seed_from_packages }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          mkdir -p /tmp/jpkg-open-release
+          gh release download packages \
+            --repo "$GH_REPO" \
+            --pattern "*.jpkg" \
+            --dir /tmp/jpkg-open-release 2>/dev/null || true
+          echo "Rolling packages staged for release:"
+          ls -lh /tmp/jpkg-open-release/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Rebuild open release INDEX
+        if: ${{ steps.request.outputs.action == 'open' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY }}
+          PKG_DIR: /tmp/jpkg-open-release
+          RECIPES_ROOT: ${{ github.workspace }}/packages
+          SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
+        run: |
+          set -eu
+          mkdir -p "$PKG_DIR"
+          sh "$GITHUB_WORKSPACE/scripts/sync-open-package-release.sh"
+
+      - name: Close release
+        if: ${{ steps.request.outputs.action == 'close' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          if ! gh release download "$PACKAGE_RELEASE_STATE_TAG" \
+              --repo "$GH_REPO" \
+              --pattern "$PACKAGE_RELEASE_STATE_ASSET" \
+              --dir "$tmp" >/dev/null 2>&1; then
+            echo "No package release is currently open."
+            exit 0
+          fi
+
+          active_tag="$(sed -n 's/^tag=//p' "$tmp/$PACKAGE_RELEASE_STATE_ASSET" | tr -d '\r' | sed -n '1p')"
+          if [ -z "$active_tag" ]; then
+            echo "State asset has no tag= line." >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$active_tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null 2>&1; then
+            echo "State asset has invalid release tag: $active_tag" >&2
+            exit 1
+          fi
+          if [ -n "$MANAGE_TAG" ] && [ "$MANAGE_TAG" != "$active_tag" ]; then
+            echo "Refusing to close $MANAGE_TAG; currently open release is $active_tag." >&2
+            exit 1
+          fi
+
+          gh release delete-asset "$PACKAGE_RELEASE_STATE_TAG" \
+            "$PACKAGE_RELEASE_STATE_ASSET" \
+            --yes \
+            --repo "$GH_REPO" || true
+
+          gh release edit "$active_tag" \
+            --repo "$GH_REPO" \
+            --prerelease=false \
+            --latest=false
+          echo "Closed package release $active_tag; future package publishes update rolling packages only."
