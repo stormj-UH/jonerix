@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.3"
+version = "1.0.4"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -19,15 +19,19 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 [source]
 # Canonical source: Forgejo jonerik/brash on castle.great-morpho.ts.net:3000.
 # That host is behind Tailscale and unreachable from GitHub-hosted runners,
-# so the v1.0.3 tarball is mirrored to a jonerix GH release tag for CI.
+# so the v1.0.4 tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.3.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.4.tar.gz
 #
-# Patch release fixes interactive startup-file sourcing so bash-compatible
-# Debian/Gentoo dotfiles see `$-` with `i` set and can `return` from rc files.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.3/brash-1.0.3.tar.gz"
-sha256 = "49207a5cf07eea3e4204222c41589364211bb72ae2cc7dd048eb05ad43a3e329"
+# Patch release fixes the bg-fork wrapper-shell bug: `cmd &`,
+# `( cmd ) &`, and `( exec cmd ) >LOG &` all now leave $! pointing at
+# the actual program (not a brash wrapper), via subshell-elision +
+# exec-in-place in the bg fork's child.  Also restores bash-compatible
+# startup-file sourcing under BRASH_TEST_MODE for the upstream bash
+# test suite's --login -c 'logout' fixture.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.4/brash-1.0.4.tar.gz"
+sha256 = "49d6cca21ffcfb72022e30cce9f5170ac46871ae71be152f9ce44fb1bae4187b"
 
 [build]
 system = "custom"
