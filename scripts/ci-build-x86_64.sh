@@ -46,12 +46,18 @@ fi
 
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
-# Provide crtbegin/crtend stubs for builds that expect GCC-style CRT objects.
-# On musl+compiler-rt, init/fini handling is done by musl's Scrt1.o / crti.o /
-# crtn.o — the GCC-style crtbegin/crtend objects are no-ops.
-for crt in crtbeginS.o crtendS.o crtbegin.o crtend.o crtbeginT.o; do
-    [ -f /lib/$crt ] || printf '!<arch>\n' > /lib/$crt
-done
+# Provide GCC-style crtbegin/crtend names by symlinking LLVM's compiler-rt
+# CRT objects.  The linker searches /lib for these; compiler-rt ships them
+# under /lib/clang/21/lib/linux/ with arch-suffixed names.
+ARCH=$(uname -m)
+RT_DIR="/lib/clang/21/lib/linux"
+if [ -f "$RT_DIR/clang_rt.crtbegin-${ARCH}.o" ]; then
+    [ -f /lib/crtbegin.o ]  || ln -s "$RT_DIR/clang_rt.crtbegin-${ARCH}.o" /lib/crtbegin.o
+    [ -f /lib/crtbeginS.o ] || ln -s "$RT_DIR/clang_rt.crtbegin-${ARCH}.o" /lib/crtbeginS.o
+    [ -f /lib/crtbeginT.o ] || ln -s "$RT_DIR/clang_rt.crtbegin-${ARCH}.o" /lib/crtbeginT.o
+    [ -f /lib/crtend.o ]    || ln -s "$RT_DIR/clang_rt.crtend-${ARCH}.o"   /lib/crtend.o
+    [ -f /lib/crtendS.o ]   || ln -s "$RT_DIR/clang_rt.crtend-${ARCH}.o"   /lib/crtendS.o
+fi
 
 # Ensure GCC compat symlinks exist (cargo/rustc need libgcc_s.so.1 for unwinding)
 [ -f /lib/libgcc_s.so.1 ] || ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true
