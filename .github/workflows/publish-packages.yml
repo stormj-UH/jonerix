@@ -291,8 +291,26 @@ jobs:
           fi
 
           if [ ! -s "$manifest" ] && [ "$INDEX_ONLY_INPUT" = "true" ] && [ -n "$PKG_INPUT" ] && [ "$PKG_INPUT" != "all" ]; then
-            for pkg in /tmp/jpkg-index/"$PKG_INPUT"-*.jpkg; do
+            read_meta_len() {
+              dd if="$1" bs=1 skip=8 count=4 2>/dev/null | od -An -tu4 | tr -d ' \n'
+            }
+
+            read_meta() {
+              _len="$(read_meta_len "$1")"
+              [ -n "$_len" ] && [ "$_len" -gt 0 ] 2>/dev/null || return 1
+              dd if="$1" bs=1 skip=12 count="$_len" 2>/dev/null
+            }
+
+            meta_field() {
+              printf '%s' "$1" | grep "^$2 " | head -1 | sed 's/.*= *"\(.*\)"/\1/'
+            }
+
+            for pkg in /tmp/jpkg-index/*.jpkg; do
               [ -f "$pkg" ] || continue
+              meta="$(read_meta "$pkg" || true)"
+              [ -n "$meta" ] || continue
+              name="$(meta_field "$meta" name)"
+              [ "$name" = "$PKG_INPUT" ] || continue
               basename "$pkg"
             done | sort -u > "$manifest"
           fi
