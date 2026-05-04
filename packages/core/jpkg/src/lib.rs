@@ -35,6 +35,7 @@ pub mod util;
 pub mod recipe;
 pub mod archive;
 pub mod sign;
+pub mod canon;
 
 pub mod db;
 pub mod fetch;

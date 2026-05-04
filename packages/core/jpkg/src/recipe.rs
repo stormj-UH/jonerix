@@ -652,6 +652,27 @@ impl Recipe {
     }
 }
 
+// ─── Signature ───────────────────────────────────────────────────────────────
+
+/// `[signature]` section — per-package Ed25519 signature embedded in metadata.
+///
+/// The `algorithm` field must be `"ed25519"` in jpkg 2.x.
+/// The `sig` field holds the base64-encoded raw 64-byte signature over the
+/// canonical bytes produced by `canon::canonical_bytes`.
+///
+/// This section is optional (`skip_serializing_if = "Option::is_none"`) so
+/// that older recipes without a `[signature]` block round-trip cleanly, and so
+/// that the canonical-bytes serialisation can strip it before signing.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Signature {
+    /// Signing algorithm identifier.  Must be `"ed25519"` in jpkg 2.x.
+    pub algorithm: String,
+    /// Human-readable key identifier, e.g. `"jonerix-2026"`.
+    pub key_id: String,
+    /// Base64-encoded raw 64-byte Ed25519 signature.
+    pub sig: String,
+}
+
 // ─── Metadata ────────────────────────────────────────────────────────────────
 
 /// Metadata embedded inside a `.jpkg` archive, and also written to
@@ -669,6 +690,9 @@ pub struct Metadata {
     pub hooks: HooksSection,
     #[serde(default)]
     pub files: FilesSection,
+    /// Per-package Ed25519 signature.  Absent on unsigned packages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Signature>,
 }
 
 impl Metadata {
@@ -699,6 +723,8 @@ impl Metadata {
                 sha256: Some(payload_sha256),
                 size: Some(payload_size),
             },
+            // Signature is not set by the build step; Worker B will handle signing.
+            signature: None,
         }
     }
 }
@@ -1287,6 +1313,69 @@ build-depends = ["rust"]
         assert!(idx.get("brash", "aarch64").is_some());
         // [meta] must NOT have leaked through as a package
         assert!(!idx.entries.contains_key("meta"));
+    }
+
+    // ── Signature roundtrip tests ────────────────────────────────────────────
+
+    /// Parse TOML containing `[signature]`, serialise it back, re-parse:
+    /// fields must survive the round-trip intact.
+    #[test]
+    fn metadata_signature_roundtrip_with_sig() {
+        let toml_str = r#"
+[package]
+name = "testsig"
+version = "1.0.0"
+license = "MIT"
+arch = "x86_64"
+
+[files]
+sha256 = "aaaa"
+size = 1
+
+[signature]
+algorithm = "ed25519"
+key_id = "jonerix-2026"
+sig = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+"#;
+        let meta = Metadata::from_str(toml_str).expect("parse metadata with signature");
+        let sig = meta.signature.as_ref().expect("signature should be present");
+        assert_eq!(sig.algorithm, "ed25519");
+        assert_eq!(sig.key_id, "jonerix-2026");
+        assert_eq!(sig.sig, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+
+        // Re-serialise and re-parse — fields must match.
+        let serialised = meta.to_string().expect("serialise");
+        assert!(serialised.contains("[signature]"), "serialised form must contain [signature]");
+        let meta2 = Metadata::from_str(&serialised).expect("re-parse");
+        assert_eq!(meta2.signature, meta.signature);
+    }
+
+    /// Parse TOML WITHOUT `[signature]`: signature is None; serialised form
+    /// must NOT emit a `[signature]` section at all.
+    #[test]
+    fn metadata_signature_roundtrip_without_sig() {
+        let toml_str = r#"
+[package]
+name = "nosig"
+version = "1.0.0"
+license = "MIT"
+arch = "x86_64"
+
+[files]
+sha256 = "bbbb"
+size = 2
+"#;
+        let meta = Metadata::from_str(toml_str).expect("parse metadata without signature");
+        assert!(meta.signature.is_none(), "signature should be None when absent from TOML");
+
+        let serialised = meta.to_string().expect("serialise");
+        assert!(
+            !serialised.contains("[signature]"),
+            "serialised form must omit [signature] when None; got:\n{serialised}"
+        );
+
+        let meta2 = Metadata::from_str(&serialised).expect("re-parse");
+        assert!(meta2.signature.is_none(), "re-parsed signature should still be None");
     }
 
     /// And section keys without an `-arch` suffix (e.g. a stray legacy
