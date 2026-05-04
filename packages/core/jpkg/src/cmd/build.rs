@@ -620,15 +620,6 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 fn build_inner(opts: &BuildOpts) -> Result<(), String> {
-    // ── Phase 0 sign-key stub ────────────────────────────────────────────────
-    // Worker B will replace this with real Ed25519 signing using canon::canonical_bytes.
-    if opts.sign_key.is_some() {
-        eprintln!(
-            "INFO: signing requested but unimplemented in this build \
-             (waiting for Phase 0 worker B)"
-        );
-    }
-
     // ── 1. Resolve recipe ────────────────────────────────────────────────────
     let (recipe, recipe_dir) = load_recipe_from_arg(&opts.recipe_arg)?;
 
@@ -695,7 +686,21 @@ fn build_inner(opts: &BuildOpts) -> Result<(), String> {
     // ── 8. Build the archive ─────────────────────────────────────────────────
     let out_path = create_archive(&recipe, &dest_dir, &opts.output_dir)?;
 
-    // ── 9. Report ────────────────────────────────────────────────────────────
+    // ── 9. Sign the archive (optional) ──────────────────────────────────────
+    if let Some(ref key_path) = opts.sign_key {
+        let sk = crate::sign::read_secret_key(key_path)
+            .map_err(|e| format!("--sign-key: failed to load {}: {e}", key_path.display()))?;
+        // Derive key_id from the key file's stem (e.g. "jonerix-2026" from "jonerix-2026.sec").
+        let key_id = key_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "unknown".to_string());
+        crate::cmd::sign::sign_jpkg_in_place(&out_path, &sk, &key_id)
+            .map_err(|e| format!("signing: {e}"))?;
+        eprintln!("  signed with key_id={key_id}");
+    }
+
+    // ── 10. Report ───────────────────────────────────────────────────────────
     let file_size = fs::metadata(&out_path)
         .map(|m| m.len())
         .unwrap_or(0);

@@ -1,51 +1,184 @@
-//! `jpkg verify` — re-hash installed files against the manifest SHA-256.
+//! `jpkg verify` — two modes:
+//!
+//! ## .jpkg archive signature verification (Phase 0 / Worker B)
+//!
+//! ```text
+//! jpkg verify <pkg.jpkg> [--keys-dir <dir>]
+//! ```
+//!
+//! Reads the embedded `[signature]` block, looks up the public key by
+//! `key_id` in `--keys-dir` (default `/etc/jpkg/keys/`), computes canonical
+//! bytes via `canon::canonical_bytes`, and calls
+//! `sign::PublicKeySet::verify_detached`.
+//!
+//! Prints `OK <name>-<version> verified by <key_id>` on success.
+//! Returns exit 1 on verification failure or missing signature.
+//!
+//! The exported helper `verify_jpkg_signature` is available to tests and
+//! future workers.
+//!
+//! ## Installed-file integrity verification (original behaviour)
 //!
 //! C reference: `jpkg/src/cmd_verify.c` (120 lines).
 //!
-//! Usage: `jpkg verify [--quiet|-q] [<pkg>...]`
+//! ```text
+//! jpkg verify [--quiet|-q] [<pkg>...]
+//! ```
 //!   - No package names → verify ALL installed packages.
 //!   - With package names → verify only those packages.
 //!
-//! For each package:
-//!   - Walk `InstalledPkg.files`.
-//!   - Regular files (`!is_dir && symlink_target.is_none()`):
-//!       call `sha256_file(rootfs/path)` and compare to manifest sha256.
-//!   - Symlinks (`symlink_target.is_some()`):
-//!       call `std::fs::read_link(rootfs/path)` and compare to manifest target.
-//!   - Directories: skipped.
-//!
-//! Mismatch output (one line each):
-//!   `<pkg>:<path>  expected=<sha>  got=<sha>`   (regular file)
-//!   `<pkg>:<path>  expected=<target>  got=<target>` (symlink)
-//!
-//! Summary line:
-//!   `<N> packages verified, <M> mismatches`
-//!
-//! Exit codes:
-//!   0 — no mismatches
-//!   1 — at least one mismatch
-//!   2 — db read failure or unknown package (matches C's db-error path)
-//!
-//! Divergences from C:
-//! - The C `cmd_verify.c` uses `db_verify_files` (a callback-based helper in
-//!   db.c); the Rust DB does not expose that callback.  We inline the same
-//!   logic: open file → sha256 → compare.
-//! - The C counts "missing", "modified", "errors" separately and prints
-//!   verbose per-file lines for single-package mode.  We replicate this
-//!   distinction: missing files (ENOENT) are counted separately and printed
-//!   as `got=(missing)`.  I/O errors are counted as errors and printed as
-//!   `got=(error)`.
-//! - The C default is `verbose = true`; we follow that (verbose unless -q).
-//! - For multi-package ("verify all") mode: the C suppresses per-file detail
-//!   and only prints one "Checking <name>-<ver>... OK/FAIL" line per package.
-//!   We replicate that behaviour.
+//! Dispatch: if the first non-flag argument ends with `.jpkg`, the archive
+//! signature path is used; otherwise the installed-files path is used.
 
+use crate::archive::JpkgArchive;
+use crate::canon::{canonical_bytes, compute_payload_sha256};
+use crate::cmd::sign::b64_decode;
 use crate::db::InstalledDb;
+use crate::recipe::Metadata;
+use crate::sign::PublicKeySet;
 use crate::util::sha256_file;
 use std::path::Path;
 
-/// Run `jpkg verify [--quiet|-q] [<pkg>...]`.
+// ── .jpkg signature verification ─────────────────────────────────────────────
+
+/// Verify the Ed25519 signature embedded in a `.jpkg` archive.
+///
+/// Looks up public keys from `keys_dir` (any `*.pub` files; the key named
+/// `<key_id>.pub` where key_id is the one stored in the archive's signature
+/// block will match if present).  Returns `Ok(message)` on success where
+/// message is `"OK <name>-<version> verified by <key_id>.pub"`, or
+/// `Err(description)` on failure.
+///
+/// This is the core helper shared between the `run()` dispatcher and tests.
+pub fn verify_jpkg_signature(jpkg_path: &Path, keys_dir: &Path) -> Result<String, String> {
+    // ── 1. Open archive ───────────────────────────────────────────────────────
+    let archive = JpkgArchive::open(jpkg_path)
+        .map_err(|e| format!("failed to open {}: {e}", jpkg_path.display()))?;
+
+    let meta_str = archive
+        .metadata_str()
+        .map_err(|e| format!("metadata UTF-8 error: {e}"))?;
+
+    let metadata = Metadata::from_str(meta_str)
+        .map_err(|e| format!("failed to parse metadata: {e}"))?;
+
+    // ── 2. Check signature section ────────────────────────────────────────────
+    let sig_block = metadata
+        .signature
+        .as_ref()
+        .ok_or_else(|| "no signature: package is unsigned".to_string())?;
+
+    if sig_block.algorithm != "ed25519" {
+        return Err(format!(
+            "unsupported signature algorithm: {}",
+            sig_block.algorithm
+        ));
+    }
+
+    // ── 3. Decode the base64 signature ────────────────────────────────────────
+    let sig_bytes = b64_decode(&sig_block.sig)
+        .map_err(|e| format!("failed to decode signature base64: {e}"))?;
+    if sig_bytes.len() != 64 {
+        return Err(format!(
+            "bad signature length: expected 64 bytes, got {}",
+            sig_bytes.len()
+        ));
+    }
+
+    // ── 4. Compute canonical bytes ────────────────────────────────────────────
+    let payload_sha256 = compute_payload_sha256(archive.payload());
+    let canon = canonical_bytes(&metadata, &payload_sha256);
+
+    // ── 5. Load public keys and verify ────────────────────────────────────────
+    let keyset = PublicKeySet::load_dir(keys_dir)
+        .map_err(|e| format!("failed to load keys from {}: {e}", keys_dir.display()))?;
+
+    if keyset.is_empty() {
+        return Err(format!(
+            "no public keys found in {}",
+            keys_dir.display()
+        ));
+    }
+
+    let matched_key = keyset
+        .verify_detached(&canon, &sig_bytes)
+        .map_err(|e| format!("signature verification failed: {e}"))?;
+
+    // ── 6. Build success message ──────────────────────────────────────────────
+    let name = metadata.package.name.as_deref().unwrap_or("(unknown)");
+    let version = metadata.package.version.as_deref().unwrap_or("(unknown)");
+
+    Ok(format!("OK {}-{} verified by {}", name, version, matched_key))
+}
+
+fn run_jpkg_sig_verify(args: &[String]) -> i32 {
+    // Parse: jpkg verify <pkg.jpkg> [--keys-dir <dir>]
+    let mut keys_dir: Option<String> = None;
+    let mut jpkg_path: Option<String> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--keys-dir" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("jpkg verify: --keys-dir requires an argument");
+                return 2;
+            }
+            keys_dir = Some(args[i].clone());
+        } else if let Some(rest) = a.strip_prefix("--keys-dir=") {
+            keys_dir = Some(rest.to_string());
+        } else if !a.starts_with('-') {
+            jpkg_path = Some(a.clone());
+        }
+        i += 1;
+    }
+
+    let jpkg_str = match jpkg_path {
+        Some(p) => p,
+        None => {
+            eprintln!("jpkg verify: missing <pkg.jpkg> argument");
+            return 2;
+        }
+    };
+
+    let default_keys_dir = "/etc/jpkg/keys".to_string();
+    let keys_dir_str = keys_dir.as_deref().unwrap_or(&default_keys_dir);
+
+    let jpkg = Path::new(&jpkg_str);
+    let kdir = Path::new(keys_dir_str);
+
+    match verify_jpkg_signature(jpkg, kdir) {
+        Ok(msg) => {
+            println!("{msg}");
+            0
+        }
+        Err(e) => {
+            eprintln!("jpkg verify: {e}");
+            1
+        }
+    }
+}
+
+// ── Installed-file integrity verification (original) ─────────────────────────
+
+/// Run `jpkg verify [--quiet|-q] [<pkg>...]`  or  `jpkg verify <pkg.jpkg> [--keys-dir <dir>]`.
+///
+/// Dispatches to .jpkg signature verification when the first non-flag argument
+/// ends with `.jpkg`; otherwise falls through to the installed-file integrity path.
 pub fn run(args: &[String]) -> i32 {
+    // Peek at first non-flag argument to decide dispatch.
+    let first_pos = args.iter().find(|a| !a.starts_with('-'));
+    if let Some(arg) = first_pos {
+        if arg.ends_with(".jpkg") {
+            return run_jpkg_sig_verify(args);
+        }
+    }
+
+    run_installed_verify(args)
+}
+
+fn run_installed_verify(args: &[String]) -> i32 {
     let mut quiet = false;
     let mut pkg_names: Vec<&str> = Vec::new();
 
