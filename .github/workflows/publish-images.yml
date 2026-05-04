@@ -19,19 +19,27 @@ env:
 
 jobs:
   # ── Check vendored sources ──────────────────────────────────────────────
+  # Gates run with `lfs: false` checkouts so they don't burn LFS bandwidth on
+  # every push.  ALLOW_LFS_POINTER_SOURCES=1 tells the per-tarball checkers
+  # (cargo offline + vendored-sources sha256) to skip CONTENT verification on
+  # files that are present only as LFS pointers — the version is still pinned
+  # via the LFS oid embedded in the pointer.  Everything that ISN'T LFS-backed
+  # is still strictly verified.
   check-sources:
     name: Verify vendored sources
     runs-on: ubuntu-latest
+    env:
+      ALLOW_LFS_POINTER_SOURCES: "1"
     steps:
       - uses: actions/checkout@v5
         with:
           lfs: false
       - name: Check Cargo builds are offline
-        env:
-          ALLOW_LFS_POINTER_SOURCES: "1"
         run: sh scripts/check-cargo-offline.sh
       - name: Check Go builds are offline
         run: sh scripts/check-go-offline.sh
+      - name: Check every recipe source has a matching vendored tarball
+        run: sh scripts/check-vendored-sources.sh
 
   # ── Minimal image (both architectures) ──────────────────────────────────
   minimal-arm64:

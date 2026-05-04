@@ -16,6 +16,20 @@ SOURCES=${ROOT}/sources
 
 failures=0
 
+# When running under a checkout that didn't fetch LFS objects (e.g. the LFS
+# bandwidth quota is exhausted, or the runner deliberately skipped `lfs:
+# true`), the LFS-tracked source tarballs are present only as small pointer
+# files.  Their sha256 doesn't match the recipe-pinned tarball hash, but the
+# file IS still version-pinned via the LFS oid in the pointer.  When
+# ALLOW_LFS_POINTER_SOURCES=1, treat the pointer file as an exemption: skip
+# the content-side check for that one entry rather than failing the whole
+# gate. Mirrors the same pattern in check-cargo-offline.sh.
+is_lfs_pointer() {
+    file=$1
+    IFS= read -r first < "$file" || return 1
+    [ "$first" = "version https://git-lfs.github.com/spec/v1" ]
+}
+
 strip_release_suffix() {
     case "$1" in
         *-r[0-9]*)
@@ -81,6 +95,11 @@ check_cached_file() {
         return
     fi
 
+    if is_lfs_pointer "$src" && [ "${ALLOW_LFS_POINTER_SOURCES:-0}" = 1 ]; then
+        printf 'SKIP: %s is an LFS pointer; sha256 check exempt (%s)\n' "$label" "$file" >&2
+        return
+    fi
+
     if [ -n "$expected" ]; then
         got=$(sha256sum "$src" | awk '{print $1}')
         if [ "$got" != "$expected" ]; then
@@ -108,6 +127,11 @@ for recipe in "${RECIPES}"/core/*/recipe.toml \
     if ! src=$(first_match "$pkg" "$version" "$url"); then
         printf 'MISSING: %s %s source for %s\n' "$pkg" "$version" "$url" >&2
         failures=$((failures + 1))
+        continue
+    fi
+
+    if is_lfs_pointer "$src" && [ "${ALLOW_LFS_POINTER_SOURCES:-0}" = 1 ]; then
+        printf 'SKIP: %s is an LFS pointer; sha256 check exempt (%s)\n' "$pkg" "$src" >&2
         continue
     fi
 
