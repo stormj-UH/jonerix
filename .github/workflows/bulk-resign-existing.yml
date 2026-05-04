@@ -159,13 +159,24 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # GITHUB_TOKEN cannot dispatch other workflows (HTTP 403:
+        # "Resource not accessible by integration") — that requires a PAT
+        # with `workflow` scope. Try the dispatch but never fail the run on
+        # it: the resign + upload above are the actual deliverable. If the
+        # auto-dispatch is denied the workflow summary tells the operator
+        # to fire publish-packages by hand, which is one click in the UI.
         run: |
-          gh workflow run publish-packages.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f index_only=true
-          echo "INDEX refresh dispatched. Watch with:"
-          echo "  gh run list --repo $GITHUB_REPOSITORY --workflow publish-packages.yml --limit 1"
+          if gh workflow run publish-packages.yml \
+                --repo "$GITHUB_REPOSITORY" \
+                --ref main \
+                -f index_only=true; then
+            echo "INDEX refresh dispatched. Watch with:"
+            echo "  gh run list --repo $GITHUB_REPOSITORY --workflow publish-packages.yml --limit 1"
+          else
+            echo "::warning::auto-dispatch of publish-packages.yml denied (GITHUB_TOKEN lacks workflow:write)."
+            echo "::warning::Resign + upload completed successfully — run publish-packages.yml with index_only=true manually:"
+            echo "  gh workflow run publish-packages.yml --repo $GITHUB_REPOSITORY --ref main -f index_only=true"
+          fi
 
       - name: Summary
         run: |
