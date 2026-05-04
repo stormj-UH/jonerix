@@ -1,6 +1,6 @@
 [package]
 name = "jpkg"
-version = "2.1.0"
+version = "2.1.1"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
 # jpkg 2.0 is the from-scratch Rust port of the C jpkg 1.1.5 — same wire

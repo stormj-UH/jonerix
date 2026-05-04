@@ -314,8 +314,17 @@ pub(crate) fn install_packages(
         // Per-package signature verification (Phase 0).
         // Always runs after sha256 passes.  A present-but-invalid signature is
         // always an error; only the missing-signature case branches on policy.
+        //
+        // keys_dir derivation: cache_dir is `<rootfs>/var/cache/jpkg`, so we
+        // need three `.parent()` hops to climb back to `<rootfs>`, then append
+        // `etc/jpkg/keys`. (A two-hop walk lands at `<rootfs>/var`, yielding
+        // `<rootfs>/var/etc/jpkg/keys` — which doesn't exist, producing an
+        // empty keyset and a spurious "unknown signing key" install failure
+        // for every signed package even when /etc/jpkg/keys/jonerix.pub is
+        // present and correct.)
         let keys_dir = repo.cache_dir
             .parent()
+            .and_then(|p| p.parent())
             .and_then(|p| p.parent())
             .map(|p| p.join("etc/jpkg/keys"))
             .unwrap_or_else(|| std::path::PathBuf::from("/etc/jpkg/keys"));
@@ -348,12 +357,24 @@ pub(crate) fn install_packages(
                     reason: msg,
                 });
             }
-            Err(SignatureError::UnknownKey(key_id)) => {
-                return Err(InstallError::UnknownSigningKey {
-                    name: name.to_string(),
-                    key_id,
-                });
-            }
+            Err(SignatureError::UnknownKey(key_id)) => match repo.signature_policy {
+                SignaturePolicy::Require => {
+                    return Err(InstallError::UnknownSigningKey {
+                        name: name.to_string(),
+                        key_id,
+                    });
+                }
+                SignaturePolicy::Warn => {
+                    log::warn!(
+                        "no trusted key for {}-{} (signed by {}) — accepting under signature_policy=warn; \
+                         add the matching .pub to /etc/jpkg/keys to silence this",
+                        name, entry.version, key_id
+                    );
+                }
+                SignaturePolicy::Ignore => {
+                    // ignore mode — silent
+                }
+            },
         }
 
         // Open archive + parse metadata.
