@@ -33,6 +33,12 @@ pub enum InstallError {
     Recipe(RecipeError),
     HookFailed { hook: &'static str, status: i32 },
     Conflict { path: String, owned_by: String },
+    /// Package has no signature but `signature_policy = require`.
+    SignatureMissing { name: String, version: String },
+    /// Package carries a signature but it did not verify.
+    SignatureInvalid { name: String, version: String, reason: String },
+    /// Package carries a signature referencing an unknown key.
+    UnknownSigningKey { name: String, key_id: String },
 }
 
 impl fmt::Display for InstallError {
@@ -47,6 +53,15 @@ impl fmt::Display for InstallError {
             }
             InstallError::Conflict { path, owned_by } => {
                 write!(f, "file conflict: {path} is owned by {owned_by}")
+            }
+            InstallError::SignatureMissing { name, version } => {
+                write!(f, "signature missing for {name}-{version} (policy=require)")
+            }
+            InstallError::SignatureInvalid { name, version, reason } => {
+                write!(f, "signature invalid for {name}-{version}: {reason}")
+            }
+            InstallError::UnknownSigningKey { name, key_id } => {
+                write!(f, "unknown signing key {key_id} for package {name}")
             }
         }
     }

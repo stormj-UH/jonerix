@@ -574,6 +574,7 @@ name = "jpkg"
 version = "2.0.2"
 dependencies = [
  "assert_cmd",
+ "base64",
  "ed25519-dalek",
  "env_logger",
  "hex",
