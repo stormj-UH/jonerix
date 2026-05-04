@@ -1,6 +1,6 @@
 [package]
 name = "llvm"
-version = "21.1.2-r3"
+version = "21.1.2-r4"
 license = "Apache-2.0"
 description = "Slim LLVM toolchain (toolchain-only: clang, lld, lldb, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc). See llvm-all for the full 80+ tool set."
 
@@ -117,7 +117,12 @@ cmake -S llvm -B build -G Ninja \
     -DLLVM_ENABLE_FFI=OFF \
     -DLLVM_ENABLE_ZLIB=ON \
     -DLLVM_ENABLE_ZSTD=ON \
-    -DLLVM_PARALLEL_LINK_JOBS=2
+    -DLLVM_PARALLEL_LINK_JOBS=2 \
+    -DCLANG_DEFAULT_RTLIB=compiler-rt \
+    -DCLANG_DEFAULT_UNWINDLIB=libunwind \
+    -DCLANG_DEFAULT_LINKER=lld \
+    -DCLANG_DEFAULT_CXX_STDLIB=libc++ \
+    -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang
 
 # --- Step 3: Build ---
 # The default 'all' target includes libclang-cpp.so which may fail to
@@ -198,24 +203,29 @@ printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
 
 # Clang default-flag config files
 # ─────────────────────────────────────────────────────────────────────
-# clang auto-loads two files from the system config dir (pinned to
-# /etc/clang at LLVM build time via CLANG_CONFIG_FILE_SYSTEM_DIR):
+# r4 bakes jonerix's toolchain choices directly into clang at build time
+# via CLANG_DEFAULT_RTLIB, CLANG_DEFAULT_UNWINDLIB, CLANG_DEFAULT_LINKER,
+# and CLANG_DEFAULT_CXX_STDLIB.  Those four CMake flags make compiler-rt /
+# libunwind / lld / libc++ the internal defaults — no cfg file or explicit
+# recipe flag is required for the toolchain to pick the right libs.
+#
+# CLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang wires up the system config dir so
+# that clang actually loads these files at invocation time:
 #
 #   /etc/clang/<triple>.cfg   — every invocation that resolves to this triple
 #   /etc/clang/<driver>.cfg   — per driver: clang.cfg for C, clang++.cfg for C++
 #
-# These are additive — clang++ on jonerix loads BOTH. Putting toolchain
-# choices that are language-agnostic (rtlib, unwindlib, linker) in the
-# triple cfg keeps them in one place; clang++.cfg carries C++-only flags
-# (stdlib) that would emit "argument unused" warnings if applied to clang.
+# The cfg files are an additive override layer on top of the baked defaults.
+# clang++ on jonerix loads both.  The shipped lines are redundant with the
+# baked defaults — their real value is as human-readable documentation of
+# what is active, and as a lightweight user-editable override point (e.g.
+# drop -stdlib=libc++ from clang++.cfg if you ever bring libstdc++ in, or
+# swap -fuse-ld=lld for -fuse-ld=mold without recompiling clang).
 #
-# Both files are plain text, intended to be human-edited. Comments start
-# with `#`. The shipped lines reflect jonerix's permissive-license-only
-# runtime envelope (LLVM compiler-rt / libunwind / lld / libc++; never
-# libgcc/libstdc++ which are GPL-3.0). Override notes are at the top of
-# each generated file. This is the closest jonerix has to Gentoo-style
-# USE flags today: a small set of plainly-named toggles in a text file
-# the user can read end-to-end in five seconds.
+# Both files are plain text; comments start with `#`. The shipped lines
+# reflect jonerix's permissive-license-only runtime envelope (compiler-rt /
+# libunwind / lld / libc++; never libgcc/libstdc++ which are GPL-3.0).
+# Override notes are at the top of each generated file.
 mkdir -p "$DESTDIR/etc/clang"
 
 cat > "$DESTDIR/etc/clang/$LLVM_TRIPLE.cfg" << CLANGCFG
