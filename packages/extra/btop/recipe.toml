@@ -1,6 +1,6 @@
 [package]
 name = "btop"
-version = "1.4.5-r4"
+version = "1.4.5-r5"
 license = "Apache-2.0"
 description = "Terminal resource monitor with CPU, memory, disk, network, and process views"
 
@@ -32,7 +32,7 @@ system = "cmake"
 # try_compile uses the compiler default (clang 21 still defaults to
 # gnu++17). Without this override, the check fails with "The compiler
 # doesn't support <ranges>" even though libcxx definitely has it.
-configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && python3 \"$RECIPE_DIR/proc-stream-race-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_FLAGS=-stdlib=libc++ -DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBTOP_GPU=OFF"
+configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && python3 \"$RECIPE_DIR/proc-stream-race-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBTOP_GPU=OFF"
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR cmake --install build
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
