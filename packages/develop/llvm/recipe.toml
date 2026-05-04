@@ -1,6 +1,6 @@
 [package]
 name = "llvm"
-version = "21.1.2-r2"
+version = "21.1.2-r3"
 license = "Apache-2.0"
 description = "Slim LLVM toolchain (toolchain-only: clang, lld, lldb, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc). See llvm-all for the full 80+ tool set."
 
@@ -196,13 +196,61 @@ fi
 # Empty libssp_nonshared.a in DESTDIR (musl provides __stack_chk_fail)
 printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
 
-# Clang config: default flags for this triple
+# Clang default-flag config files
+# ─────────────────────────────────────────────────────────────────────
+# clang auto-loads two files from the system config dir (pinned to
+# /etc/clang at LLVM build time via CLANG_CONFIG_FILE_SYSTEM_DIR):
+#
+#   /etc/clang/<triple>.cfg   — every invocation that resolves to this triple
+#   /etc/clang/<driver>.cfg   — per driver: clang.cfg for C, clang++.cfg for C++
+#
+# These are additive — clang++ on jonerix loads BOTH. Putting toolchain
+# choices that are language-agnostic (rtlib, unwindlib, linker) in the
+# triple cfg keeps them in one place; clang++.cfg carries C++-only flags
+# (stdlib) that would emit "argument unused" warnings if applied to clang.
+#
+# Both files are plain text, intended to be human-edited. Comments start
+# with `#`. The shipped lines reflect jonerix's permissive-license-only
+# runtime envelope (LLVM compiler-rt / libunwind / lld / libc++; never
+# libgcc/libstdc++ which are GPL-3.0). Override notes are at the top of
+# each generated file. This is the closest jonerix has to Gentoo-style
+# USE flags today: a small set of plainly-named toggles in a text file
+# the user can read end-to-end in five seconds.
 mkdir -p "$DESTDIR/etc/clang"
-cat > "$DESTDIR/etc/clang/$LLVM_TRIPLE.cfg" << 'CLANGCFG'
+
+cat > "$DESTDIR/etc/clang/$LLVM_TRIPLE.cfg" << CLANGCFG
+# /etc/clang/$LLVM_TRIPLE.cfg — jonerix default toolchain selection.
+#
+# Applies to every clang AND clang++ invocation that resolves to the
+# $LLVM_TRIPLE target triple. To override a flag here:
+#
+#   1) Edit this file in place (simplest; jpkg upgrade of llvm WILL
+#      overwrite, so re-apply your edits after upgrade), or
+#   2) Pass the overriding flag explicitly on the command line; later
+#      flags win against earlier flags from the cfg.
+#
+# Removing any of the lines below is supported but is rarely what you
+# want — every flag is here because the GPL-3.0 alternative (libgcc /
+# libgcc_s / GNU ld) is excluded from jonerix's runtime envelope.
+
 --rtlib=compiler-rt
 --unwindlib=libunwind
 -fuse-ld=lld
 CLANGCFG
+
+cat > "$DESTDIR/etc/clang/clang++.cfg" << 'CLANGXXCFG'
+# /etc/clang/clang++.cfg — jonerix default C++ stdlib selection.
+#
+# Applies to every clang++ invocation, on top of the triple cfg above.
+# jonerix ships libc++ (LLVM, Apache-2.0) only — libstdc++ is GPL-3.0
+# and excluded from our runtime envelope. Without this flag, CMake
+# probes like check_include_file_cxx(<ranges>) fail because clang's
+# default header search omits /include/c++/v1.
+#
+# Override notes: same as the triple cfg above.
+
+-stdlib=libc++
+CLANGXXCFG
 
 # --- Step 8: Strip and clean up ---
 # Remove static libs (dev-only, ~400MB uncompressed) and headers.
