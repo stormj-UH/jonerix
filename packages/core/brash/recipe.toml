@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.12"
+version = "1.0.12-r2"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -90,6 +90,21 @@ if [ -d /home ]; then
         seed_brash_rc "$home" "$user:$user"
     done
 fi
+
+# Register brash (and its /bin/bash alias) in /etc/shells so chsh,
+# login(1), and any sshd that consults the file accept them as valid
+# login shells. Mirrors zsh's pattern.
+ensure_in_shells() {
+    target=$1
+    if [ -f /etc/shells ]; then
+        grep -qx "$target" /etc/shells 2>/dev/null || printf '%s\n' "$target" >> /etc/shells
+    else
+        printf '%s\n' '# /etc/shells -- valid login shells' '/bin/sh' '/bin/mksh' "$target" > /etc/shells
+    fi
+}
+ensure_in_shells /bin/brash
+ensure_in_shells /bin/bash
+ensure_in_shells /bin/rash
 exit 0
 """
 
@@ -101,6 +116,17 @@ exit 0
 # toybox.  If neither is available we leave /bin/bash absent — better
 # an honest "command not found" than silently running the wrong shell.
 post_remove = """
+# Drop brash entries from /etc/shells. Leave /bin/bash alone --- the
+# next block may reinstate it as a symlink to mksh/toybox, in which
+# case it's still a valid login shell and chsh-eligible.
+if [ -f /etc/shells ]; then
+    tmp=$(mktemp /etc/shells.XXXXXX) && {
+        grep -vxE '/bin/brash|/bin/rash' /etc/shells > "$tmp"
+        cat "$tmp" > /etc/shells
+        rm -f "$tmp"
+    }
+fi
+
 if [ -e /bin/bash ] || [ -L /bin/bash ]; then
     exit 0
 fi

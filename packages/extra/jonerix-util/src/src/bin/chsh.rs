@@ -182,13 +182,15 @@ fn resolve_shell(token: &str) -> Result<String, String> {
     let candidate = if token.contains('/') {
         PathBuf::from(token)
     } else {
-        match token {
-            "sh" | "toybox" | "toybox-sh" => PathBuf::from("/bin/sh"),
-            "mksh" => PathBuf::from("/bin/mksh"),
-            "zsh" => PathBuf::from("/bin/zsh"),
-            other => search_shell(other).ok_or_else(|| format!("shell '{}' not found", token))?,
-        }
+        Path::new("/bin").join(token)
     };
+
+    if candidate.parent() != Some(Path::new("/bin")) {
+        return Err(format!(
+            "{} is outside /bin; jonerix login shells must live in /bin",
+            candidate.display()
+        ));
+    }
 
     if !is_executable(&candidate) {
         return Err(format!(
@@ -198,20 +200,6 @@ fn resolve_shell(token: &str) -> Result<String, String> {
     }
 
     Ok(candidate.to_string_lossy().into_owned())
-}
-
-fn search_shell(name: &str) -> Option<PathBuf> {
-    for base in ["/bin", "/usr/bin"] {
-        let path = Path::new(base).join(name);
-        if is_executable(&path) {
-            return Some(path);
-        }
-    }
-    env::var_os("PATH").and_then(|value| {
-        env::split_paths(&value)
-            .map(|dir| dir.join(name))
-            .find(|path| is_executable(path))
-    })
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -237,10 +225,7 @@ fn list_shells(shells_path: &str) -> Vec<PathBuf> {
         }
     }
 
-    for base in ["/bin", "/usr/bin"] {
-        let Ok(entries) = fs::read_dir(base) else {
-            continue;
-        };
+    if let Ok(entries) = fs::read_dir("/bin") {
         for entry in entries.flatten() {
             let path = entry.path();
             let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
@@ -252,7 +237,10 @@ fn list_shells(shells_path: &str) -> Vec<PathBuf> {
         }
     }
 
-    shells.into_iter().collect()
+    shells
+        .into_iter()
+        .filter(|p| p.parent() == Some(Path::new("/bin")))
+        .collect()
 }
 
 fn looks_like_shell(name: &str) -> bool {
@@ -261,6 +249,8 @@ fn looks_like_shell(name: &str) -> bool {
         "sh" | "ash"
             | "dash"
             | "bash"
+            | "brash"
+            | "rash"
             | "mksh"
             | "lksh"
             | "ksh"

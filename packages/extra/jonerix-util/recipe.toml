@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-util"
-version = "0.1.0-r5"
+version = "0.1.0-r6"
 license = "0BSD"
 description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh)"
 # Claim toybox's multicall symlinks for hwclock, ionice, and nsenter
