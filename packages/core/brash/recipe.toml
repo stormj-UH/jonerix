@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.11"
+version = "1.0.12"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -22,14 +22,18 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the v1.0.5 tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.11.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.12.tar.gz
 #
-# 1.0.11: 82/82 bash-5.3 test suite, 18/18 test corpora green.
-# Full readline feature set (vi mode, macros, menu-complete, dirspell,
-# colored-stats, mail checking, bind builtin), PS0 prompt, autocd, cdspell.
-# Incremental segmentation fixes aliased reserved words (for/if/while).
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.11/brash-1.0.11.tar.gz"
-sha256 = "af4ede1bac7056b770b00aa40a1036ec9b1432ab2039052de24dd273d45998e2"
+# 1.0.12: 82/82 bash-5.3 test suite, 18/18 test corpora green.
+# Tab on a fresh empty line now rings the bell on the first press and only
+# lists completions on the second consecutive Tab (matches readline's
+# show-all-if-unmodified=off default), instead of immediately prompting
+# "Display all N possibilities?" or dumping the whole command list.
+# 1.0.11: full readline feature set (vi mode, macros, menu-complete,
+# dirspell, colored-stats, mail checking, bind builtin), PS0 prompt,
+# autocd, cdspell. Incremental segmentation fixes aliased reserved words.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.12/brash-1.0.12.tar.gz"
+sha256 = "9fcf610c727d8131244c900e14f7419647950ddd97cc587a091d880f40bd3ce3"
 
 [build]
 system = "custom"
