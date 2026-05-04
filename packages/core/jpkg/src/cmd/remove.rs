@@ -326,6 +326,7 @@ mod tests {
                 ..Default::default()
             },
             files: FilesSection::default(),
+            signature: None,
         };
 
         let db = InstalledDb::open(&rootfs).unwrap();

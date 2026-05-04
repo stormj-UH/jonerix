@@ -106,18 +106,25 @@ struct BuildOpts {
     recipe_arg: String,
     /// Directory into which to write the .jpkg artifact.
     output_dir: PathBuf,
+    /// Path to the Ed25519 secret key for signing the built package.
+    ///
+    /// Phase 0 stub: stored but not used for signing.  Worker B will implement
+    /// the actual signing logic.  When set, a notice is printed and the build
+    /// proceeds unsigned.
+    sign_key: Option<PathBuf>,
 }
 
 fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
     if args.is_empty() {
         return Err(
-            "usage: jpkg build <recipe-dir|recipe.toml|-> [--output <dir>] [--build-jpkg]"
+            "usage: jpkg build <recipe-dir|recipe.toml|-> [--output <dir>] [--build-jpkg] [--sign-key <path>]"
                 .to_owned(),
         );
     }
 
     let mut recipe_arg: Option<String> = None;
     let mut output_dir = PathBuf::from(".");
+    let mut sign_key: Option<PathBuf> = None;
     let mut i = 0usize;
 
     while i < args.len() {
@@ -132,6 +139,16 @@ fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
             "--build-jpkg" => {
                 // accepted, no-op (see divergence note above)
             }
+            "--sign-key" => {
+                // Phase 0 stub: accept the flag and store the path.
+                // Worker B will implement the actual signing; for now we
+                // store the path so Worker D can wire CI plumbing in parallel.
+                i += 1;
+                if i >= args.len() {
+                    return Err("--sign-key requires an argument".to_owned());
+                }
+                sign_key = Some(PathBuf::from(&args[i]));
+            }
             other => {
                 if recipe_arg.is_some() {
                     return Err(format!("unexpected argument: {other}"));
@@ -145,6 +162,7 @@ fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
     Ok(BuildOpts {
         recipe_arg: recipe_arg.ok_or_else(|| "missing <recipe> argument".to_owned())?,
         output_dir,
+        sign_key,
     })
 }
 
@@ -602,6 +620,15 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 fn build_inner(opts: &BuildOpts) -> Result<(), String> {
+    // ── Phase 0 sign-key stub ────────────────────────────────────────────────
+    // Worker B will replace this with real Ed25519 signing using canon::canonical_bytes.
+    if opts.sign_key.is_some() {
+        eprintln!(
+            "INFO: signing requested but unimplemented in this build \
+             (waiting for Phase 0 worker B)"
+        );
+    }
+
     // ── 1. Resolve recipe ────────────────────────────────────────────────────
     let (recipe, recipe_dir) = load_recipe_from_arg(&opts.recipe_arg)?;
 

@@ -549,6 +549,7 @@ pub(crate) mod tests {
             depends: DependsSection::default(),
             hooks: HooksSection::default(),
             files: FilesSection::default(),
+            signature: None,
         }
     }
 
@@ -582,6 +583,7 @@ pub(crate) mod tests {
             depends: DependsSection::default(),
             hooks: HooksSection::default(),
             files: FilesSection::default(),
+            signature: None,
         };
         let meta_toml = meta.to_string().unwrap();
 
@@ -612,6 +614,7 @@ pub(crate) mod tests {
                 ..Default::default()
             },
             files: FilesSection::default(),
+            signature: None,
         };
         let meta_toml = meta.to_string().unwrap();
         let out = tmp.join(format!("{name}-{version}-x86_64.jpkg"));
@@ -643,6 +646,7 @@ pub(crate) mod tests {
             depends: DependsSection::default(),
             hooks: HooksSection::default(),
             files: FilesSection::default(),
+            signature: None,
         };
         let meta_toml = meta.to_string().unwrap();
         let out = tmp.join(format!("{name}-{version}-x86_64.jpkg"));
