@@ -1,6 +1,6 @@
 [package]
 name = "btop"
-version = "1.4.5-r3"
+version = "1.4.5-r4"
 license = "Apache-2.0"
 description = "Terminal resource monitor with CPU, memory, disk, network, and process views"
 
@@ -10,12 +10,20 @@ sha256 = "0ffe03d3e26a3e9bbfd5375adf34934137757994f297d6b699a46edd43c3fc02"
 
 [build]
 system = "cmake"
-# Pre-configure step: rewrite get_cpuName() so the /sys fallback also
+# Pre-configure step 1: rewrite get_cpuName() so the /sys fallback also
 # checks /sys/bus/event_source/devices/ (where 6.x aarch64 kernels put
 # the PMU node — the upstream /sys/devices/ shallow scan misses it on
 # the Pi 5). Done as a Python text substitution instead of a patch(1)
 # hunk because the CI builder's toybox patch 0.8.11 rejects hunks with
 # heavy context re-indentation. See cpuname-patch.py for the full story.
+#
+# Pre-configure step 2: mitigate aristocratos/btop#619 — libc++'s
+# basic_streambuf::uflow() chases a stale streambuf pointer when an
+# istream::ignore(SSmax, …) call's underlying /proc file is invalidated
+# mid-read (e.g. the PID exits between readdir and open). Rewriting
+# SSmax to SSmax-1 sidesteps the buggy numeric_limits::max() fast-path
+# in libc++. Manifests as occasional crashes on the Pi 5's HDMI tty1
+# (busier process churn than SSH). See proc-stream-race-patch.py.
 #
 # CMAKE_CXX_STANDARD=20 must be set at the command line (not just via
 # the target property the upstream CMakeLists sets later). btop's
@@ -24,7 +32,7 @@ system = "cmake"
 # try_compile uses the compiler default (clang 21 still defaults to
 # gnu++17). Without this override, the check fails with "The compiler
 # doesn't support <ranges>" even though libcxx definitely has it.
-configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBTOP_GPU=OFF"
+configure = "python3 \"$RECIPE_DIR/cpuname-patch.py\" && python3 \"$RECIPE_DIR/proc-stream-race-patch.py\" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_FLAGS=-stdlib=libc++ -DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=lib -DBTOP_GPU=OFF"
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR cmake --install build
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
