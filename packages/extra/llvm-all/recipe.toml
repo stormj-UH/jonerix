@@ -1,6 +1,6 @@
 [package]
 name = "llvm-all"
-version = "21.1.2-r1"
+version = "21.1.2-r4"
 license = "Apache-2.0"
 description = "Full LLVM toolchain with all 80+ clang/llvm/lldb tools — pairs with slim llvm"
 
@@ -20,6 +20,12 @@ description = "Full LLVM toolchain with all 80+ clang/llvm/lldb tools — pairs 
 #
 # r1: lldb added to LLVM_ENABLE_PROJECTS in the upstream llvm recipe.
 #     /bin/lldb, /bin/lldb-server, and /lib/liblldb.so now ship.
+# r4: tracks llvm-r4 — clang now picks compiler-rt / libunwind / lld /
+#     libc++ as built-in defaults via CLANG_DEFAULT_RTLIB / UNWINDLIB /
+#     LINKER / CXX_STDLIB, and CLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang
+#     makes /etc/clang/<triple>.cfg + /etc/clang/clang++.cfg work as a
+#     real user-editable override layer. Same payload as llvm-r4, just
+#     repacked with the llvm-all manifest.
 
 [source]
 url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
