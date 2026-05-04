@@ -36,6 +36,7 @@ BUILT-IN COMMANDS:
     license-audit         Show installed-package licenses
     keygen  [<dir>]       Generate an Ed25519 keypair (default: /etc/jpkg/keys)
     sign    <key> <file>  Sign <file> with Ed25519 secret key <key>
+    resign  <pkg>...      Bulk re-sign existing .jpkg archives
     build   <recipe>      Build a recipe.toml into a .jpkg
     build-world           Rebuild every package in scripts/build-order.txt
 
@@ -123,6 +124,7 @@ fn main() -> ExitCode {
         "license-audit" => cmd::license_audit::run(&verb_args),
         "keygen" => cmd::keygen::run(&verb_args),
         "sign" => cmd::sign::run(&verb_args),
+        "resign" => cmd::resign::run(&verb_args),
         "build" => cmd::build::run(&verb_args),
         "build-world" => cmd::build_world::run(&verb_args),
         other => {

@@ -9,6 +9,7 @@ pub mod info;
 pub mod license_audit;
 pub mod keygen;
 pub mod sign;
+pub mod resign;
 pub mod update;
 pub mod verify;
 pub mod install;
