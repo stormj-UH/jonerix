@@ -1,6 +1,6 @@
 [package]
 name = "jmake"
-version = "1.1.14"
+version = "1.1.14-r1"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # 1.1.14: escape spaces/backslashes/dollars in MAKEFLAGS variable values so
@@ -147,6 +147,7 @@ system = "custom"
 # and .cargo/config.toml, so the package build is fully offline.
 build = """cargo build --release --frozen --offline"""
 install = """install -Dm755 target/release/jmake "$DESTDIR/bin/jmake"
+ln -sf jmake "$DESTDIR/bin/make"
 llvm-strip --strip-all "$DESTDIR/bin/jmake" 2>/dev/null || true"""
 
 [depends]
