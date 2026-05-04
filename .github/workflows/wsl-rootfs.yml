@@ -38,13 +38,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          lfs: true
-
-      - name: Restore apk cache
-        uses: actions/cache@v5
-        with:
-          path: /var/cache/apk
-          key: apk-wsl-x86_64-${{ hashFiles('.github/workflows/wsl-rootfs.yml', 'install/wsl/build-rootfs.sh') }}
+          # WSL rootfs builds jpkg from in-tree code and then `jpkg install`s
+          # prebuilt packages from the release INDEX — none of the LFS-tracked
+          # source tarballs (linux/llvm/rust/node/gitoxide) are read here.
+          # `lfs: true` would burn LFS bandwidth on every push and fail when
+          # the repo's LFS quota is exhausted; only full-bootstrap.yml needs
+          # them and it's a manual-only workflow.
+          lfs: false
           restore-keys: apk-wsl-x86_64-
 
       - name: Install build dependencies
@@ -153,7 +153,9 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          lfs: true
+          # See lfs-quota note above on the x86_64 job — the WSL rootfs build
+          # path never reads /workspace/sources, so LFS data is dead weight.
+          lfs: false
 
       - name: Restore apk cache (aarch64)
         uses: actions/cache@v5
