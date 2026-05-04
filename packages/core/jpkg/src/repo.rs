@@ -26,11 +26,35 @@
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::recipe::Index;
 use crate::sign::PublicKeySet;
 
 // Real fetch layer (Worker F):
 use crate::fetch::{download_via_mirrors, download_via_mirrors_to, FetchError};
+
+// ---------------------------------------------------------------------------
+// SignaturePolicy
+// ---------------------------------------------------------------------------
+
+/// Policy for per-package signature verification at install time (Phase 0).
+///
+/// Applied by `cmd::install` after the sha256 check passes.  Controls what
+/// happens when a package has no `[signature]` section in its metadata.
+/// A present-but-invalid signature is ALWAYS an error regardless of policy.
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SignaturePolicy {
+    /// (Default during transition) Missing signature → log WARN, accept.
+    /// Present-but-invalid signature → ERROR.
+    #[default]
+    Warn,
+    /// Missing OR invalid signature → ERROR.
+    Require,
+    /// Missing signature → silently accept. Present-but-invalid still ERRORs.
+    Ignore,
+}
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -165,6 +189,9 @@ pub struct Repo {
     pub cache_dir: PathBuf,
     /// Architecture string (e.g. "x86_64", "aarch64").
     pub arch: String,
+    /// Install-time per-package signature policy.  Defaults to `Warn` during
+    /// the Phase-0 rollout; the orchestrator will flip to `Require` later.
+    pub signature_policy: SignaturePolicy,
 }
 
 impl Repo {
@@ -183,6 +210,7 @@ impl Repo {
             keys,
             cache_dir,
             arch,
+            signature_policy: SignaturePolicy::default(),
         }
     }
 
@@ -219,11 +247,20 @@ impl Repo {
         // --- cache dir -----------------------------------------------------
         let cache_dir = rootfs.join("var/cache/jpkg");
 
+        // --- signature policy (from repos.conf or default) -----------------
+        // Read `signature_policy = "warn|require|ignore"` from
+        // `etc/jpkg/repos.conf` if it exists.  Fall back to the enum default
+        // (Warn) when absent — matches the Phase-0 rollout plan.
+        let signature_policy = read_signature_policy_from_conf(
+            &rootfs.join("etc/jpkg/repos.conf"),
+        );
+
         Ok(Self {
             mirrors,
             keys,
             cache_dir,
             arch: arch.to_owned(),
+            signature_policy,
         })
     }
 
@@ -390,6 +427,34 @@ impl Repo {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Read `signature_policy = "warn|require|ignore"` from a repos.conf-style
+/// file.  Returns `SignaturePolicy::default()` (Warn) when the file is absent,
+/// the key is absent, or the value is unrecognised.
+fn read_signature_policy_from_conf(path: &Path) -> SignaturePolicy {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(_) => return SignaturePolicy::default(),
+    };
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with('[') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            if key.trim() == "signature_policy" {
+                let v = value.trim().trim_matches('"').trim_matches('\'');
+                match v {
+                    "warn" => return SignaturePolicy::Warn,
+                    "require" => return SignaturePolicy::Require,
+                    "ignore" => return SignaturePolicy::Ignore,
+                    _ => {}
+                }
+            }
+        }
+    }
+    SignaturePolicy::default()
+}
 
 /// Decompress zstd-compressed bytes.  Accepts plain-text input that lacks the
 /// zstd magic (matches the C fallback at repo.c:381-453).
