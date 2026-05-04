@@ -1,6 +1,6 @@
 [package]
 name = "llvm-all"
-version = "21.1.2-r4"
+version = "21.1.2-r5"
 license = "Apache-2.0"
 description = "Full LLVM toolchain with all 80+ clang/llvm/lldb tools — pairs with slim llvm"
 
@@ -26,6 +26,11 @@ description = "Full LLVM toolchain with all 80+ clang/llvm/lldb tools — pairs 
 #     makes /etc/clang/<triple>.cfg + /etc/clang/clang++.cfg work as a
 #     real user-editable override layer. Same payload as llvm-r4, just
 #     repacked with the llvm-all manifest.
+# r5: pairs with llvm-r5 (the actual slim split). llvm-all carries the
+#     unfiltered build payload — every binary the source build produces
+#     (~120 real bins, ~30 symlinks) — while llvm-r5 keeps only the
+#     toolchain core listed in packages/develop/llvm/slim-keep-bins.txt.
+#     Same source build for both; differ only at the repack step.
 
 [source]
 url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
