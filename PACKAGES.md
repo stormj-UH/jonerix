@@ -46,7 +46,6 @@ Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-
 | **`libressl`** | `core` | 4.0.0 | ISC | any | `musl` | `clang`, `cmake`, `samurai` | Free TLS/crypto stack from OpenBSD (provides libssl, libcrypto, libtls) |
 | **`lz4`** | `core` | 1.10.0 | BSD-2-Clause | any | `musl` | `clang`, `cmake`, `samurai` | Extremely fast lossless compression library and tool |
 | **`mandoc`** | `core` | 1.14.6 | ISC | any | `musl` | `clang`, `make` | UNIX manpage compiler and viewer |
-| **`micro`** | `core` | 2.0.15 | MIT | any | - | `go` | Modern terminal text editor (intuitive keybindings, syntax highlighting) |
 | **`mksh`** | `core` | R59c-r3 | MirOS | any | `musl`, `toybox` | `clang` | MirBSD Korn Shell — POSIX shell for /bin/sh |
 | **`musl`** | `core` | 1.2.6 | MIT | any | - | `clang`, `make` | Lightweight, fast, and standards-conformant C library |
 | **`ncurses`** | `core` | 6.5-r3 | MIT | any | - | `clang`, `make` | Terminal handling library |

@@ -39,7 +39,7 @@ The `jonerix:builder` image installs these tools from jpkg packages. It compiles
 ```sh
 # Pull from GHCR (fastest)
 docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, libressl, openrc
-docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh (/bin/sh), zsh, uutils, micro, ripgrep, networking
+docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh (/bin/sh), zsh, uutils, pico, ripgrep, networking
 docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, go, nodejs, python3
 docker pull ghcr.io/stormj-uh/jonerix:router     # appliance: core + jcarp, hostapd, wpa_supplicant, nloxide, stormwall (nft/pf)
 
@@ -158,7 +158,7 @@ the rootfs is assembled in CI.
 | Image | Based on | Contents |
 |-------|----------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
-| `core` | minimal | mksh (/bin/sh), zsh, uutils, micro, fastfetch, ripgrep, gitoxide, networking tools |
+| `core` | minimal | mksh (/bin/sh), zsh, uutils, pico, fastfetch, ripgrep, gitoxide, networking tools |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | jcarp, hostapd, wpa_supplicant, nloxide (libnl replacement), **stormwall** (single firewall front-end speaking both `nft` and BSD `pf.conf` syntax); home-router / AP / gateway appliance |
 
@@ -233,7 +233,7 @@ the rootfs is assembled in CI.
 
 | Component | License | Role |
 |-----------|---------|------|
-| micro | MIT | Terminal text editor |
+| pico | Apache-2.0 | Terminal text editor (alpine) |
 | gitoxide | MIT/Apache-2.0 | Git implementation in Rust |
 | ripgrep | MIT | Fast recursive grep |
 | mandoc | ISC | Man page tools |
@@ -653,7 +653,7 @@ but leave the `*.pre-pi5-fixups` backups untouched.
  _/ |\___/|_| |_|\___|_|  |_/_/\_\  Packages -> 44 (jpkg)
 |__/                                 Shell -> mksh
 ======= permissive + linux =======   Terminal -> dropbear
-                                     Editor -> micro
+                                     Editor -> pico
                                      CPU -> BCM2712 (4) @ 2.40 GHz
                                      Memory -> 150.14 MiB / 3.95 GiB (4%)
                                      Disk (/) -> 8.87 GiB / 29.03 GiB (31%) - ext4

@@ -7,7 +7,7 @@
 #   jonerix-rootfs-x86_64.tar.gz
 #
 # The resulting rootfs mirrors what a fresh Pi install would see: mksh as
-# /bin/sh, toybox coreutils, dropbear, micro, fastfetch, libressl, curl,
+# /bin/sh, toybox coreutils, dropbear, pico, fastfetch, libressl, curl,
 # ripgrep, mandoc — everything a user expects on first login. WSL-specific
 # bits (wsl.conf, no-unbound resolv.conf) are layered on top.
 #
@@ -154,7 +154,7 @@ for pkg in \
     libarchive bsdtar openrsync \
     pigz mandoc onetrueawk \
     anvil exproxide \
-    micro libcxx fastfetch ripgrep gitoxide \
+    pico libcxx fastfetch ripgrep gitoxide \
     iproute-go zsh
 do
     echo "=== Installing: $pkg ==="
@@ -203,8 +203,8 @@ ln -sf bsdtar  "${STAGING}/bin/tar"  2>/dev/null || true
 # dropbear ssh client
 ln -sf dbclient "${STAGING}/bin/ssh" 2>/dev/null || true
 # editor aliases
-ln -sf micro   "${STAGING}/bin/editor" 2>/dev/null || true
-ln -sf micro   "${STAGING}/bin/vi"     2>/dev/null || true
+ln -sf pico    "${STAGING}/bin/editor" 2>/dev/null || true
+ln -sf pico    "${STAGING}/bin/vi"     2>/dev/null || true
 
 # SUID bits on login utilities (if present)
 chmod 4755 "${STAGING}/bin/su" "${STAGING}/bin/passwd" "${STAGING}/bin/login" "${STAGING}/bin/doas" 2>/dev/null || true

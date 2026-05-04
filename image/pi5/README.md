@@ -65,7 +65,7 @@ sudo python3 image/pi5/build-image.py \
     --output jonerix-pi5.img \
     --size 8G \
     --hostname jonerix-tormenta \
-    --packages micro,btop,tmux,nerdctl,containerd,runc,cni-plugins \
+    --packages pico,btop,tmux,nerdctl,containerd,runc,cni-plugins \
     --ssh-key "$(cat ~/.ssh/id_ed25519.pub)" \
     --tailscale-authkey tskey-auth-xxxx
 ```

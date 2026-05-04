@@ -76,7 +76,6 @@ for recipe in "${RECIPES}"/core/*/recipe.toml \
 done
 
 check_vendor_tarball iproute-go iproute-go-0.16.0.tar.gz
-check_vendor_tarball micro micro-2.0.15.tar.gz
 check_vendor_tarball containerd containerd-2.2.2.tar.gz
 check_vendor_tarball cni-plugins cni-plugins-1.9.1.tar.gz
 check_vendor_tarball derper derper-1.96.5.tar.gz

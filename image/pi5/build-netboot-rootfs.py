@@ -68,7 +68,7 @@ NETBOOT_ROOTFS_PACKAGES = [
     "libressl", "ca-certificates", "curl",
 
     # Interactive niceties (parity with the SD/USB image)
-    "zsh", "gitoxide", "ripgrep", "micro", "fastfetch",
+    "zsh", "gitoxide", "ripgrep", "pico", "fastfetch",
 
     # Pi-specific fixups
     "jonerix-raspi5-fixups",

@@ -53,7 +53,7 @@ if n:
 fi
 
 # Point jpkg at the vendored source cache. /workspace/sources/ contains
-# pre-fetched tarballs for ~88 packages (musl, micro, ifupdown-ng, etc).
+# pre-fetched tarballs for ~88 packages (musl, pico, ifupdown-ng, etc).
 # Without this, jpkg falls through to network downloads which fail or
 # stall on slow upstreams (musl.libc.org timed out at 134s in earlier
 # CI runs). Same pattern as scripts/ci-build-{x86_64,aarch64}.sh.

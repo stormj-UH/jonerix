@@ -104,7 +104,7 @@ RUN jpkg --root /jonerix update && \
       snooze dhcpcd ifupdown-ng unbound \
       shadow \
       mandoc pigz fastfetch \
-      micro \
+      pico \
       strace zsh; \
     do \
       echo "=== Installing: $pkg ===" && \
@@ -150,8 +150,8 @@ RUN \
     ln -sf samu /jonerix/bin/ninja 2>/dev/null || true && \
     ln -sf python3 /jonerix/bin/python 2>/dev/null || true && \
     ln -sf flex /jonerix/bin/lex 2>/dev/null || true && \
-    ln -sf micro /jonerix/bin/editor 2>/dev/null || true && \
-    ln -sf micro /jonerix/bin/vi 2>/dev/null || true
+    ln -sf pico /jonerix/bin/editor 2>/dev/null || true && \
+    ln -sf pico /jonerix/bin/vi 2>/dev/null || true
 
 # --- Default config files ---
 COPY config/defaults/etc/hostname     /jonerix/etc/hostname
@@ -183,8 +183,8 @@ ENV PATH=/bin
 ENV HOME=/root
 ENV SHELL=/bin/zsh
 ENV TERM=xterm
-ENV EDITOR=micro
-ENV VISUAL=micro
+ENV EDITOR=pico
+ENV VISUAL=pico
 ENV LANG=C.UTF-8
 
 WORKDIR /root

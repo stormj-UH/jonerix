@@ -94,7 +94,6 @@ go-bootstrap
 go
 go-current
 # Tier 8: Go-based packages (requires go-current)
-micro
 runc
 containerd
 nerdctl

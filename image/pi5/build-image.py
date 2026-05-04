@@ -83,7 +83,7 @@ DEFAULT_PACKAGES = [
     "zsh",        # interactive shell w/ prompt
     "gitoxide",   # git in pure Rust (no GPL git userland)
     "ripgrep",    # fast recursive grep
-    "micro",      # text editor (mit, single Go binary)
+    "pico",       # text editor (apache-2.0, alpine-2.26)
     "fastfetch",  # system-info banner; pleasant on first login
 
     # Intentionally NOT in the default set: ca-certificates.

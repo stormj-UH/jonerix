@@ -53,7 +53,7 @@ minimal -> core -> builder   (compilers + dev tools)
 | Image | Base | Contents |
 |-------|------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
-| `core` | minimal | mksh, uutils, micro, fastfetch, ripgrep, gitoxide, ncurses, networking |
+| `core` | minimal | mksh, uutils, pico, fastfetch, ripgrep, gitoxide, ncurses, networking |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | jcarp, hostapd, wpa_supplicant, btop, unbound DNS config, sysctl hardening |
 
@@ -117,7 +117,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | JavaScript runtime | Node.js | MIT | — |
 | Build tool (ninja) | samurai | Apache-2.0 | GNU make (GPL) |
 | Build tool (make) | jmake | MIT | GNU make (GPL) |
-| Text editor | micro | MIT | vim |
+| Text editor | pico | Apache-2.0 | vim |
 | Grep | ripgrep | MIT | GNU grep (GPL) |
 | Git | gitoxide | MIT/Apache-2.0 | git (GPL) |
 | System info | fastfetch | MIT | neofetch |
@@ -359,7 +359,7 @@ New code where feasible is written in Rust. All uses of "unsafe" are audited.
 ```sh
 # Pull from GHCR
 docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, openrc
-docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh, micro, ripgrep, networking
+docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh, pico, ripgrep, networking
 docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang, rust, go, python3
 docker pull ghcr.io/stormj-uh/jonerix:router     # networking: core + hostapd, unbound config
 
