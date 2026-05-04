@@ -1,6 +1,6 @@
 [package]
 name = "bzip2"
-version = "1.0.8-r1"
+version = "1.0.8-r2"
 # bzip2's own licence is a 4-clause-BSD-style "bzip2 and libbzip2
 # licence". Compatible with every other permissive licence we
 # ship and explicitly not GPL. SPDX id: bzip2-1.0.6 (same wording
@@ -37,6 +37,15 @@ make -j$(nproc) -f Makefile-libbz2_so CC="$CC" CFLAGS="$CFLAGS"
 install = """
 set -e
 make install PREFIX=$DESTDIR
+# bzip2's Makefile creates symlinks using absolute $(PREFIX)/bin/...
+# paths.  With PREFIX=$DESTDIR the symlink targets embed the build
+# directory (e.g. /tmp/jpkg-build-bzip2-*/dest/bin/bzdiff) which is
+# dangling on the installed system.  Fix them to relative basenames.
+for link in $DESTDIR/bin/*; do
+    [ -L "$link" ] || continue
+    target=$(readlink "$link")
+    case "$target" in "$DESTDIR"*) ln -sf "$(basename "$target")" "$link" ;; esac
+done
 # The -libbz2_so Makefile produces libbz2.so.1.0.8 in the source
 # dir but doesn't install it; replicate what Debian / Alpine do.
 install -Dm755 libbz2.so.1.0.8 $DESTDIR/lib/libbz2.so.1.0.8

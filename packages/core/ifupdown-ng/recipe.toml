@@ -1,6 +1,6 @@
 [package]
 name = "ifupdown-ng"
-version = "0.12.1-r2"
+version = "0.12.1-r3"
 license = "ISC"
 description = "Next-generation network interface configuration tool"
 
@@ -15,6 +15,13 @@ install = """make PREFIX=/ DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
+# ifupdown-ng's Makefile creates symlinks targeting /sbin/ifupdown.
+# After the sbin-to-bin merge above those dangle; fix to relative.
+for link in $DESTDIR/bin/*; do
+    [ -L "$link" ] || continue
+    target=$(readlink "$link")
+    case "$target" in /sbin/*) ln -sf "$(basename "$target")" "$link" ;; esac
+done
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
