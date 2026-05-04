@@ -1,0 +1,176 @@
+name: Bulk-resign existing .jpkg release assets
+
+# Phase-1 helper: retroactively sign every .jpkg currently published on the
+# `packages` release tag with the jonerix Ed25519 signing key, then trigger
+# the regular publish-packages INDEX-only refresh so the new sha256s land in
+# INDEX.zst. Idempotent — uses `jpkg resign --keep-existing` so re-runs skip
+# already-signed packages.
+#
+# Run-once after Phase 0 (jpkg 2.1.0+) ships and BEFORE Phase 2 flips
+# RepoConfig::signature_policy default to Require.
+#
+# Trigger:
+#   workflow_dispatch  (manual via GitHub UI or `gh workflow run`)
+
+on:
+  workflow_dispatch:
+    inputs:
+      key_id:
+        description: 'Key identifier embedded in [signature].key_id (default: jonerix-2026)'
+        required: false
+        default: 'jonerix-2026'
+      dry_run:
+        description: 'If true, run jpkg resign --dry-run and skip uploads'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/stormj-uh/jonerix
+  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder-amd64
+
+jobs:
+  resign:
+    name: Bulk-resign every .jpkg on packages release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          lfs: false
+
+      - name: Install CI tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build host jpkg (2.1.0+) for resign
+        # We need the resign subcommand which lives in jpkg 2.1.0+. Build
+        # from the in-tree source rather than downloading a release blob, so
+        # the running jpkg matches the source state of this branch exactly.
+        run: |
+          cd packages/core/jpkg
+          # Build directly on the runner (Ubuntu) without crt-static — the
+          # binary stays on the runner and never ships, so we can use the
+          # default toolchain.
+          cargo build --release --bin jpkg
+          install -m 755 target/release/jpkg /usr/local/bin/jpkg
+          jpkg --version
+
+      - name: Verify jpkg has resign subcommand
+        run: |
+          if ! jpkg --help 2>&1 | grep -qE '^[[:space:]]*resign'; then
+            echo "FATAL: jpkg $(jpkg --version) does not support resign — check 2.1.0 baked correctly" >&2
+            exit 1
+          fi
+
+      - name: Materialise signing key
+        env:
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY || '' }}
+        run: |
+          if [ -z "$JPKG_SIGNING_KEY" ]; then
+            echo "FATAL: JPKG_SIGNING_KEY secret not configured. See docs/signing-keys.md." >&2
+            exit 1
+          fi
+          mkdir -p /tmp/sign
+          chmod 700 /tmp/sign
+          printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > /tmp/sign/jonerix.sec
+          chmod 600 /tmp/sign/jonerix.sec
+          stat -c '%a %n' /tmp/sign/jonerix.sec
+
+      - name: Download every .jpkg from packages release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/jpkgs
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.jpkg' \
+            --dir /tmp/jpkgs \
+            --skip-existing
+          count=$(find /tmp/jpkgs -maxdepth 1 -name '*.jpkg' | wc -l | tr -d ' ')
+          echo "downloaded=$count" >> "$GITHUB_OUTPUT"
+          echo "$count .jpkg files downloaded"
+          if [ "$count" -eq 0 ]; then
+            echo "FATAL: no .jpkg files on packages release — nothing to resign" >&2
+            exit 1
+          fi
+        id: download
+
+      - name: Run jpkg resign on every file
+        env:
+          KEY_ID: ${{ inputs.key_id }}
+          DRY_RUN_FLAG: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          # `jpkg resign` accepts a list of paths and processes them sequentially.
+          # --keep-existing makes re-runs idempotent (skips already-signed pkgs).
+          jpkg resign \
+            --key /tmp/sign/jonerix.sec \
+            --key-id "$KEY_ID" \
+            --keep-existing \
+            ${DRY_RUN_FLAG} \
+            /tmp/jpkgs/*.jpkg
+
+      - name: Re-upload signed .jpkgs
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Upload in batches of 50 to stay well under any single-call asset
+          # limit (gh has been observed to drop later items when uploading
+          # 200+ files in one call).
+          batch=50
+          i=0
+          batch_files=""
+          for f in /tmp/jpkgs/*.jpkg; do
+              batch_files="$batch_files $f"
+              i=$((i + 1))
+              if [ $((i % batch)) = 0 ]; then
+                  # shellcheck disable=SC2086
+                  gh release upload packages \
+                      --repo "$GITHUB_REPOSITORY" \
+                      --clobber \
+                      $batch_files
+                  batch_files=""
+              fi
+          done
+          if [ -n "$batch_files" ]; then
+              # shellcheck disable=SC2086
+              gh release upload packages \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --clobber \
+                  $batch_files
+          fi
+          echo "all $i .jpkg files re-uploaded"
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf /tmp/sign
+
+      - name: Trigger publish-packages INDEX refresh
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run publish-packages.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f index_only=true
+          echo "INDEX refresh dispatched. Watch with:"
+          echo "  gh run list --repo $GITHUB_REPOSITORY --workflow publish-packages.yml --limit 1"
+
+      - name: Summary
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry-run complete — no uploads, no INDEX refresh"
+          else
+            echo "every .jpkg on packages release is now signed by ${{ inputs.key_id }}"
+          fi

@@ -104,16 +104,16 @@ jobs:
 
       - name: Materialise signing key (x86_64)
         env:
-          JPKG_SIGNING_KEY_PEM: ${{ secrets.JPKG_SIGNING_KEY_PEM || '' }}
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY || '' }}
         run: |
-          if [ -n "$JPKG_SIGNING_KEY_PEM" ]; then
+          if [ -n "$JPKG_SIGNING_KEY" ]; then
             _key_file="$(mktemp /tmp/jpkg-signing-XXXXXX.sec)"
-            printf '%s' "$JPKG_SIGNING_KEY_PEM" | base64 -d > "$_key_file"
+            printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > "$_key_file"
             chmod 600 "$_key_file"
             echo "JPKG_SIGN_KEY=$_key_file" >> "$GITHUB_ENV"
             echo "jpkg signing key materialised."
           else
-            echo "::warning::JPKG_SIGNING_KEY_PEM secret not configured — packages will be unsigned. See docs/signing-keys.md for setup."
+            echo "::warning::JPKG_SIGNING_KEY secret not configured — packages will be unsigned. See docs/signing-keys.md for setup."
           fi
 
       - name: Build packages in jonerix:builder container
@@ -206,16 +206,16 @@ jobs:
 
       - name: Materialise signing key (aarch64)
         env:
-          JPKG_SIGNING_KEY_PEM: ${{ secrets.JPKG_SIGNING_KEY_PEM || '' }}
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY || '' }}
         run: |
-          if [ -n "$JPKG_SIGNING_KEY_PEM" ]; then
+          if [ -n "$JPKG_SIGNING_KEY" ]; then
             _key_file="$(mktemp /tmp/jpkg-signing-XXXXXX.sec)"
-            printf '%s' "$JPKG_SIGNING_KEY_PEM" | base64 -d > "$_key_file"
+            printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > "$_key_file"
             chmod 600 "$_key_file"
             echo "JPKG_SIGN_KEY=$_key_file" >> "$GITHUB_ENV"
             echo "jpkg signing key materialised."
           else
-            echo "::warning::JPKG_SIGNING_KEY_PEM secret not configured — packages will be unsigned. See docs/signing-keys.md for setup."
+            echo "::warning::JPKG_SIGNING_KEY secret not configured — packages will be unsigned. See docs/signing-keys.md for setup."
           fi
 
       - name: Build packages in jonerix:builder container

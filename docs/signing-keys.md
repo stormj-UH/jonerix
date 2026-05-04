@@ -9,11 +9,11 @@ jonerix uses Ed25519 detached signatures for package integrity.
   `/etc/jpkg/keys/jonerix-2026.pub` on every jonerix host via the
   `jonerix-keys` package (or equivalent).
 - The secret key (64-byte raw binary: seed[32] || pubkey[32]) lives
-  **only** in the GitHub Actions secret `JPKG_SIGNING_KEY_PEM`.
+  **only** in the GitHub Actions secret `JPKG_SIGNING_KEY`.
 - Signature files are written as `<package>.jpkg.sig` (64 bytes raw
   binary, Ed25519 R‖S).
 
-> Note on naming: the secret is called `JPKG_SIGNING_KEY_PEM` for
+> Note on naming: the secret is called `JPKG_SIGNING_KEY` for
 > historical reasons but the value is **base64-encoded raw binary**,
 > not a PEM-armoured key. `jpkg`'s `read_secret_key` function accepts
 > only the 64-byte raw format.
@@ -24,7 +24,7 @@ jonerix uses Ed25519 detached signatures for package integrity.
 
 - Signatures are **optional**. `jpkg install` logs a WARN if a `.sig`
   file is absent; it does not refuse to install the package.
-- Once `JPKG_SIGNING_KEY_PEM` is set in the repository secrets, every
+- Once `JPKG_SIGNING_KEY` is set in the repository secrets, every
   `jpkg build` call in CI will pass `--sign-key` and produce a signed
   `.jpkg`.
 - Existing unsigned packages can be retroactively signed with
@@ -37,7 +37,7 @@ jonerix uses Ed25519 detached signatures for package integrity.
 ## How the key flows through CI
 
 ```
-GitHub secret JPKG_SIGNING_KEY_PEM (base64 raw 64-byte key)
+GitHub secret JPKG_SIGNING_KEY (base64 raw 64-byte key)
   │
   │  "Materialise signing key" step in publish-packages.yml
   │  (runs on the Ubuntu host runner, before docker)
@@ -76,7 +76,7 @@ warning and skips the file-write. The build step runs without
 
    ```sh
    # From a file containing the raw 64-byte binary secret key:
-   gh secret set JPKG_SIGNING_KEY_PEM \
+   gh secret set JPKG_SIGNING_KEY \
      --repo <owner>/<repo> \
      --body "$(base64 < /path/to/jonerix-2026.sec)"
    ```
@@ -84,7 +84,7 @@ warning and skips the file-write. The build step runs without
    Or interactively (gh will prompt for the value):
 
    ```sh
-   gh secret set JPKG_SIGNING_KEY_PEM --repo <owner>/<repo>
+   gh secret set JPKG_SIGNING_KEY --repo <owner>/<repo>
    ```
 
 3. Verify the secret appears (value is redacted):
@@ -138,10 +138,10 @@ rm -P jonerix-2026.sec   # or shred(1) if available
    overlap window — jpkg verifies against all keys in
    `/etc/jpkg/keys/`.
 
-3. Update `JPKG_SIGNING_KEY_PEM` in GitHub to the new secret key:
+3. Update `JPKG_SIGNING_KEY` in GitHub to the new secret key:
 
    ```sh
-   gh secret set JPKG_SIGNING_KEY_PEM \
+   gh secret set JPKG_SIGNING_KEY \
      --repo <owner>/<repo> \
      --body "$(base64 < jonerix-2027.sec)"
    ```
