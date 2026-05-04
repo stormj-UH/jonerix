@@ -102,6 +102,20 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
+      - name: Materialise signing key (x86_64)
+        env:
+          JPKG_SIGNING_KEY_PEM: ${{ secrets.JPKG_SIGNING_KEY_PEM || '' }}
+        run: |
+          if [ -n "$JPKG_SIGNING_KEY_PEM" ]; then
+            _key_file="$(mktemp /tmp/jpkg-signing-XXXXXX.sec)"
+            printf '%s' "$JPKG_SIGNING_KEY_PEM" | base64 -d > "$_key_file"
+            chmod 600 "$_key_file"
+            echo "JPKG_SIGN_KEY=$_key_file" >> "$GITHUB_ENV"
+            echo "jpkg signing key materialised."
+          else
+            echo "::warning::JPKG_SIGNING_KEY_PEM secret not configured — packages will be unsigned. See docs/signing-keys.md for setup."
+          fi
+
       - name: Build packages in jonerix:builder container
         env:
           PKG_INPUT: ${{ inputs.package }}
@@ -113,10 +127,20 @@ jobs:
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
             -v "/tmp/jpkg-bin-x86_64:/jpkg-bin" \
+            ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
             -e REBUILD_INPUT="$REBUILD_INPUT" \
+            ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
             "$BUILDER_IMAGE_X86_64" /bin/sh /workspace/scripts/ci-build-x86_64.sh
+
+      - name: Remove signing key (x86_64)
+        if: always()
+        run: |
+          if [ -n "${JPKG_SIGN_KEY:-}" ]; then
+            rm -f "$JPKG_SIGN_KEY"
+            echo "Signing key removed."
+          fi
 
       - name: Upload packages to release
         # Run even on partial build failure — see aarch64 sibling
@@ -180,6 +204,20 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
+      - name: Materialise signing key (aarch64)
+        env:
+          JPKG_SIGNING_KEY_PEM: ${{ secrets.JPKG_SIGNING_KEY_PEM || '' }}
+        run: |
+          if [ -n "$JPKG_SIGNING_KEY_PEM" ]; then
+            _key_file="$(mktemp /tmp/jpkg-signing-XXXXXX.sec)"
+            printf '%s' "$JPKG_SIGNING_KEY_PEM" | base64 -d > "$_key_file"
+            chmod 600 "$_key_file"
+            echo "JPKG_SIGN_KEY=$_key_file" >> "$GITHUB_ENV"
+            echo "jpkg signing key materialised."
+          else
+            echo "::warning::JPKG_SIGNING_KEY_PEM secret not configured — packages will be unsigned. See docs/signing-keys.md for setup."
+          fi
+
       - name: Build packages in jonerix:builder container
         env:
           PKG_INPUT: ${{ inputs.package }}
@@ -191,10 +229,20 @@ jobs:
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
             -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
+            ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
             -e REBUILD_INPUT="$REBUILD_INPUT" \
+            ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
             "$BUILDER_IMAGE_AARCH64" /bin/sh /workspace/scripts/ci-build-aarch64.sh
+
+      - name: Remove signing key (aarch64)
+        if: always()
+        run: |
+          if [ -n "${JPKG_SIGN_KEY:-}" ]; then
+            rm -f "$JPKG_SIGN_KEY"
+            echo "Signing key removed."
+          fi
 
       - name: Upload packages to release
         # Run even when the preceding Build step exits 1 — a single

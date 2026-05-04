@@ -394,7 +394,13 @@ build_one() {
     install_target_build_deps "$pkg_dir"
 
     echo "=== Building ${pkg_name} ==="
-    if ! timeout "$(package_timeout "$pkg_name")" jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg; then
+    if [ -n "${JPKG_SIGN_KEY:-}" ] && [ -r "$JPKG_SIGN_KEY" ]; then
+        _sign_args="--sign-key $JPKG_SIGN_KEY"
+    else
+        _sign_args=""
+    fi
+    # shellcheck disable=SC2086
+    if ! timeout "$(package_timeout "$pkg_name")" jpkg build "${pkg_dir}" --build-jpkg --output /var/cache/jpkg ${_sign_args}; then
         echo "FAILED: ${pkg_name}"
         failures=$((failures + 1))
     fi
@@ -414,7 +420,13 @@ if [ -n "$PKG_INPUT" ]; then
         echo "=== Skipping ${PKG_INPUT}-${pkg_ver} (already published) ==="
     else
         [ "${REBUILD_INPUT:-false}" = "true" ] && echo "=== Rebuilding ${PKG_INPUT} ===" || echo "=== Building ${PKG_INPUT} ==="
-        if ! timeout "$(package_timeout "$PKG_INPUT")" jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg; then
+        if [ -n "${JPKG_SIGN_KEY:-}" ] && [ -r "$JPKG_SIGN_KEY" ]; then
+            _sign_args="--sign-key $JPKG_SIGN_KEY"
+        else
+            _sign_args=""
+        fi
+        # shellcheck disable=SC2086
+        if ! timeout "$(package_timeout "$PKG_INPUT")" jpkg build "${recipe_dir}" --build-jpkg --output /var/cache/jpkg ${_sign_args}; then
             echo "FAILED: ${PKG_INPUT}"
             failures=$((failures + 1))
         fi
