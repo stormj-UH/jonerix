@@ -1,12 +1,11 @@
 [package]
 name = "shadow"
-version = "4.19.4-r5"
+version = "4.19.4-r6"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
-# Specifically, installing this package redirects these /bin
-# entries away from their original owners (toybox multicall
-# symlinks, plus /bin/chsh which lives in jonerix-util) to the
-# shadow-maint implementation at /bin/shadow-<name>:
+# Installing this package redirects these /bin entries away from
+# their toybox multicall symlinks to the shadow-maint binaries at
+# /bin/shadow-<name>:
 #
 #     /bin/passwd        (was: toybox)
 #     /bin/login         (was: toybox)
@@ -16,13 +15,17 @@ license = "BSD-3-Clause"
 #     /bin/groupadd      (was: toybox)
 #     /bin/groupdel      (was: toybox)
 #     /bin/groupmod      (was: toybox)
-#     /bin/chsh          (was: jonerix-util)
 #     /bin/chpasswd /bin/chage /bin/chfn /bin/chgpasswd
 #     /bin/gpasswd /bin/newgrp /bin/newusers /bin/nologin
 #     /bin/vipw /bin/pwck /bin/grpck /bin/pwconv /bin/pwunconv
 #     /bin/grpconv /bin/grpunconv /bin/expiry /bin/logoutd
 #     /bin/newgidmap /bin/newuidmap /bin/faillog /bin/lastlog
 #     /bin/sulogin
+#
+# /bin/chsh stays with jonerix-util for the friendlier list-and-pick
+# UX; the shadow chsh implementation is still installed at
+# /bin/shadow-chsh and jonerix-util's chsh execs it as the privileged
+# backend when called by a non-root user.
 #
 # The original targets are snapshotted to
 #   /etc/jpkg/shadow/toybox-prev/
@@ -36,7 +39,7 @@ license = "BSD-3-Clause"
 # /sbin/agetty is a mksh auto-login script that gives a root
 # shell without auth. shadow-maint gives us real login(1) +
 # passwd(1) + useradd(8), BSD-3-Clause, static-musl.
-description = "shadow-utils (login, passwd, user/group management) — REPLACES toybox's passwd / login / useradd / userdel / usermod / groupadd / groupdel / groupmod and jonerix-util's chsh. Originals snapshotted under /etc/jpkg/shadow/toybox-prev/ and restored on remove."
+description = "shadow-utils (login, passwd, user/group management) — REPLACES toybox's passwd / login / useradd / userdel / usermod / groupadd / groupdel / groupmod. /bin/chsh is owned by jonerix-util; shadow's chsh is at /bin/shadow-chsh and jonerix-util's chsh execs it for the privileged passwd write."
 
 [source]
 url = "https://github.com/shadow-maint/shadow/releases/download/4.19.4/shadow-4.19.4.tar.xz"
@@ -188,7 +191,7 @@ post_install = """set -e
 backup_dir=/etc/jpkg/shadow/toybox-prev
 mkdir -p "$backup_dir"
 
-SHADOW_BINS="passwd login chpasswd chage chfn chsh chgpasswd useradd userdel usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd newgidmap newuidmap faillog lastlog sulogin"
+SHADOW_BINS="passwd login chpasswd chage chfn chgpasswd useradd userdel usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd newgidmap newuidmap faillog lastlog sulogin"
 for bin in $SHADOW_BINS
 do
     src=/bin/shadow-$bin
@@ -209,6 +212,16 @@ do
 
     ln -sf "shadow-$bin" "$dst"
 done
+
+# r6: /bin/chsh moved back to jonerix-util. On upgrade from r5,
+# /bin/chsh is still our `shadow-chsh` symlink — drop it so jpkg
+# can install jonerix-util's chsh binary in its place. The snapshot
+# at $backup_dir/chsh (if any) is irrelevant now and removed here so
+# post_remove doesn't try to restore the wrong layout.
+if [ -L /bin/chsh ] && [ "$(readlink /bin/chsh 2>/dev/null)" = "shadow-chsh" ]; then
+    rm -f /bin/chsh
+fi
+rm -f "$backup_dir/chsh" "$backup_dir/chsh.bin"
 
 # login.defs: ship if the system doesn't already have one, but
 # never clobber the operator's edited copy.

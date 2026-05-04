@@ -1,15 +1,15 @@
 [package]
 name = "jonerix-util"
-version = "0.1.0-r6"
+version = "0.1.0-r7"
 license = "0BSD"
-description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh)"
-# Claim toybox's multicall symlinks for hwclock, ionice, and nsenter
-# (toybox doesn't ship lscpu so there's nothing to replace there).
-# Without this, `jpkg install jonerix-util` errors out on each of
-# those paths already owned by toybox. The post_remove hook below
-# hands the names back to toybox if jonerix-util is uninstalled.
+description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh). chsh ships a list-and-pick UX with --select-number and falls back to /bin/shadow-chsh as the privileged backend for non-root callers."
+# Claim toybox's multicall symlinks for hwclock, ionice, and nsenter,
+# and shadow's /bin/chsh symlink (which points at /bin/shadow-chsh).
+# Without `replaces`, jpkg refuses to clobber paths owned by another
+# installed package. shadow's chsh stays intact at /bin/shadow-chsh
+# and our chsh execs it for the privileged passwd write.
 # Requires jpkg >= 1.0.4.
-replaces = ["toybox"]
+replaces = ["toybox", "shadow"]
 
 # No [source] — local-only build from $RECIPE_DIR/src.
 

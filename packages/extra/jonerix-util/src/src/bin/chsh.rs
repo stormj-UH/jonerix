@@ -1,24 +1,31 @@
-//! chsh — change a user's login shell by editing /etc/passwd.
-//! Clean-room implementation for jonerix with a small scope:
-//!   - list installed/login shells (`-l`, `--list`)
-//!   - change the caller's shell or, as root, another user's shell
-//!   - accept either a shell path or a short name such as `mksh`
+//! chsh — change a user's login shell.
+//! Clean-room implementation for jonerix:
+//!   - run with no args: prints a numbered list of /bin shells and prompts
+//!   - `-l`, `--list`: just list the shells
+//!   - `-n N`, `--select-number N`: pick the Nth shell from the list
+//!   - `-s SHELL` or bare SHELL: pick by path or short name
+//!   - jonerix only allows shells that live in /bin
+//!   - falls back to /bin/shadow-chsh for the privileged passwd write
+//!     when run as a non-root user (we are not setuid)
 //! No util-linux source consulted.
 
 use std::collections::BTreeSet;
 use std::env;
 use std::ffi::CString;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 extern "C" {
     fn geteuid() -> u32;
     fn getuid() -> u32;
     fn chown(path: *const std::os::raw::c_char, owner: u32, group: u32) -> i32;
 }
+
+const SHADOW_CHSH: &str = "/bin/shadow-chsh";
 
 fn main() -> ExitCode {
     let passwd_path = env::var("JONERIX_PASSWD_FILE").unwrap_or_else(|_| "/etc/passwd".to_string());
@@ -27,6 +34,7 @@ fn main() -> ExitCode {
     let mut list_only = false;
     let mut shell_arg: Option<String> = None;
     let mut user_arg: Option<String> = None;
+    let mut number: Option<usize> = None;
 
     let args: Vec<String> = env::args().skip(1).collect();
     let mut i = 0;
@@ -48,9 +56,33 @@ fn main() -> ExitCode {
                 };
                 shell_arg = Some(value.clone());
             }
+            "-n" | "--select-number" => {
+                i += 1;
+                let Some(value) = args.get(i) else {
+                    eprintln!("chsh: missing argument for {}", arg);
+                    return ExitCode::FAILURE;
+                };
+                match value.parse::<usize>() {
+                    Ok(n) if n >= 1 => number = Some(n),
+                    _ => {
+                        eprintln!("chsh: --select-number wants a positive integer, got {}", value);
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
             _ if arg.starts_with("--shell=") => {
                 shell_arg = Some(arg[8..].to_string());
             }
+            _ if arg.starts_with("--select-number=") => match arg[16..].parse::<usize>() {
+                Ok(n) if n >= 1 => number = Some(n),
+                _ => {
+                    eprintln!(
+                        "chsh: --select-number wants a positive integer, got {}",
+                        &arg[16..]
+                    );
+                    return ExitCode::FAILURE;
+                }
+            },
             _ if shell_arg.is_none() => {
                 shell_arg = Some(arg.clone());
             }
@@ -65,17 +97,14 @@ fn main() -> ExitCode {
         i += 1;
     }
 
+    let shells = list_shells(&shells_path);
+
     if list_only {
-        for shell in list_shells(&shells_path) {
+        for shell in &shells {
             println!("{}", shell.display());
         }
         return ExitCode::SUCCESS;
     }
-
-    let Some(shell_token) = shell_arg else {
-        print_usage();
-        return ExitCode::FAILURE;
-    };
 
     let euid = unsafe { geteuid() };
     let uid = unsafe { getuid() };
@@ -87,15 +116,12 @@ fn main() -> ExitCode {
         }
     };
 
-    let current = match current_user(&entries, uid) {
-        Some(entry) => entry,
-        None => {
-            eprintln!("chsh: current uid {} not found in {}", uid, passwd_path);
-            return ExitCode::FAILURE;
-        }
+    let Some(current) = current_user(&entries, uid) else {
+        eprintln!("chsh: current uid {} not found in {}", uid, passwd_path);
+        return ExitCode::FAILURE;
     };
 
-    let target_user = user_arg.unwrap_or_else(|| current.name.clone());
+    let target_user = user_arg.clone().unwrap_or_else(|| current.name.clone());
     if euid != 0 && target_user != current.name {
         eprintln!("chsh: only root can change another user's shell");
         return ExitCode::FAILURE;
@@ -106,6 +132,33 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
+    // Resolve the requested shell. Three paths:
+    //   --select-number N -> shells[N-1]
+    //   shell_arg / bare positional -> resolve_shell()
+    //   nothing -> interactive prompt with the numbered list
+    let shell_token = if let Some(n) = number {
+        let Some(picked) = shells.get(n - 1) else {
+            eprintln!(
+                "chsh: --select-number {} is out of range (have {} shell(s)); run `chsh -l` to see them",
+                n,
+                shells.len()
+            );
+            return ExitCode::FAILURE;
+        };
+        picked.to_string_lossy().into_owned()
+    } else if let Some(s) = shell_arg.clone() {
+        s
+    } else {
+        match interactive_pick(&shells, &target_entry.shell) {
+            Ok(Some(token)) => token,
+            Ok(None) => return ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("chsh: {}", err);
+                return ExitCode::FAILURE;
+            }
+        }
+    };
+
     let shell_path = match resolve_shell(&shell_token) {
         Ok(path) => path,
         Err(err) => {
@@ -114,31 +167,119 @@ fn main() -> ExitCode {
         }
     };
 
-    if let Err(err) = ensure_shells_contains(&shells_path, &shell_path) {
-        eprintln!("chsh: cannot update {}: {}", shells_path, err);
-        return ExitCode::FAILURE;
-    }
-
     if target_entry.shell == shell_path {
         println!("{} already uses {}", target_user, shell_path);
         return ExitCode::SUCCESS;
     }
 
-    if let Err(err) = write_passwd(&passwd_path, &entries, &target_user, &shell_path) {
-        eprintln!("chsh: cannot update {}: {}", passwd_path, err);
+    // Run as root: write directly. Otherwise hand off to shadow-chsh for
+    // the privileged write. We deliberately don't ship setuid because
+    // shadow-chsh is already audited for that.
+    if euid == 0 {
+        if let Err(err) = ensure_shells_contains(&shells_path, &shell_path) {
+            eprintln!("chsh: cannot update {}: {}", shells_path, err);
+            return ExitCode::FAILURE;
+        }
+        if let Err(err) = write_passwd(&passwd_path, &entries, &target_user, &shell_path) {
+            eprintln!("chsh: cannot update {}: {}", passwd_path, err);
+            return ExitCode::FAILURE;
+        }
+        println!("{}: {} -> {}", target_user, target_entry.shell, shell_path);
+        ExitCode::SUCCESS
+    } else {
+        delegate_to_shadow_chsh(&shell_path, &target_user, &current.name)
+    }
+}
+
+/// Show the numbered list of shells, mark the user's current shell, and prompt.
+/// Returns Ok(None) if the user cancels.
+fn interactive_pick(shells: &[PathBuf], current_shell: &str) -> io::Result<Option<String>> {
+    if shells.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "no login shells available under /bin",
+        ));
+    }
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    writeln!(out, "Available login shells (jonerix accepts only /bin):")?;
+    writeln!(out)?;
+    for (idx, shell) in shells.iter().enumerate() {
+        let path = shell.to_string_lossy();
+        let suffix = symlink_target_note(shell);
+        let marker = if path == current_shell { " *" } else { "" };
+        writeln!(out, "  {:>2}) {}{}{}", idx + 1, path, suffix, marker)?;
+    }
+    writeln!(out)?;
+    writeln!(out, "* = your current shell")?;
+    writeln!(out)?;
+    write!(
+        out,
+        "Pick by number (1-{}), name (e.g. brash), or absolute path. Press Enter or 'q' to cancel: ",
+        shells.len()
+    )?;
+    out.flush()?;
+    drop(out);
+
+    let stdin = io::stdin();
+    let mut line = String::new();
+    stdin.lock().read_line(&mut line)?;
+    let answer = line.trim();
+    if answer.is_empty() || answer.eq_ignore_ascii_case("q") {
+        return Ok(None);
+    }
+    if let Ok(n) = answer.parse::<usize>() {
+        let Some(picked) = shells.get(n.saturating_sub(1)) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("'{}' is out of range; have {} shell(s)", n, shells.len()),
+            ));
+        };
+        return Ok(Some(picked.to_string_lossy().into_owned()));
+    }
+    Ok(Some(answer.to_string()))
+}
+
+/// Best-effort " -> target" annotation when the entry is a symlink (e.g. /bin/bash -> brash).
+fn symlink_target_note(path: &Path) -> String {
+    match fs::read_link(path) {
+        Ok(target) => format!(" -> {}", target.display()),
+        Err(_) => String::new(),
+    }
+}
+
+/// We are not setuid, so a non-root caller cannot rewrite /etc/passwd directly.
+/// Hand off to shadow-chsh, which is the audited setuid backend.
+fn delegate_to_shadow_chsh(shell_path: &str, target_user: &str, caller: &str) -> ExitCode {
+    if !is_executable(Path::new(SHADOW_CHSH)) {
+        eprintln!(
+            "chsh: cannot rewrite /etc/passwd as a non-root user, and {} is not installed.\n\
+             Run `doas chsh -s {}` (or rerun this command as root).",
+            SHADOW_CHSH, shell_path
+        );
         return ExitCode::FAILURE;
     }
 
-    println!("{}: {} -> {}", target_user, target_entry.shell, shell_path);
-    ExitCode::SUCCESS
+    let mut cmd = Command::new(SHADOW_CHSH);
+    cmd.arg("-s").arg(shell_path);
+    if target_user != caller {
+        cmd.arg(target_user);
+    }
+    let err = cmd.exec();
+    eprintln!("chsh: failed to exec {}: {}", SHADOW_CHSH, err);
+    ExitCode::FAILURE
 }
 
 fn print_usage() {
-    println!("Usage: chsh [-l] [-s SHELL] [USER]");
-    println!("       chsh SHELL [USER]");
+    println!("Usage: chsh                          # interactive: list shells, prompt to pick");
+    println!("       chsh -l | --list              # list available login shells");
+    println!("       chsh -n N | --select-number N # pick the Nth shell from the list");
+    println!("       chsh -s SHELL [USER]          # set USER's shell (default: caller)");
+    println!("       chsh SHELL [USER]             # same as -s");
     println!();
-    println!("  -l, --list          list available login shells");
-    println!("  -s, --shell SHELL   select a shell by path or short name");
+    println!("Login shells must live in /bin. Common picks: brash, bash, mksh, zsh, sh.");
+    println!("Run as root (or via doas) to change other users' shells.");
 }
 
 #[derive(Clone)]
