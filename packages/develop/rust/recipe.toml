@@ -1,6 +1,6 @@
 [package]
 name = "rust"
-version = "1.94.1-r3"
+version = "1.94.1-r4"
 license = "MIT"
 description = "Systems programming language (jonerix-linux-musl triple, no GNU runtime)"
 
@@ -79,18 +79,78 @@ else
     done
 fi
 
-# --- cargo CA + openssl-sys env (system-wide) ---
-# Without this, cargo's bundled libcurl can't find CAs on jonerix and
-# every 'cargo fetch' errors with:
-#   error: download of config.json failed
+# --- /etc/cargo/config.toml: jonerix-wide cargo defaults ---
+# Cargo doesn't auto-load files from /etc/cargo (it only walks
+# .cargo/config.toml from the workspace upward, plus the per-user
+# $CARGO_HOME/config.toml), so this file isn't picked up on its own.
+# Per-user configs include it via:
+#   include = ["/etc/cargo/config.toml"]
+# That makes /etc/cargo/config.toml the single editable source of
+# truth for system-wide cargo defaults: TLS via the system CA bundle,
+# openssl-sys env pointing at LibreSSL, git-fetch-with-cli to keep
+# build chains off libgit2 (and its transitive openssl-sys dep).
+#
+# This is the cargo-side equivalent of /etc/clang/<triple>.cfg —
+# plain text, edit-in-place, jpkg-owned (re-applied on upgrade).
+# User-specific overrides go in ~/.cargo/config.toml AFTER the
+# include line so they win.
+install -d "$DESTDIR/etc/cargo"
+cat > "$DESTDIR/etc/cargo/config.toml" <<'CFG'
+# /etc/cargo/config.toml — jonerix system-wide cargo defaults.
+#
+# Loaded indirectly: per-user /root/.cargo/config.toml and
+# /home/*/.cargo/config.toml carry an `include = ["/etc/cargo/config.toml"]`
+# line that pulls these defaults into every cargo invocation. To override
+# any of these, append the override to ~/.cargo/config.toml AFTER the
+# include line — later sections in the merged config win.
+
+[http]
+# cargo's HTTPS client (used for crates.io downloads, registry lookups,
+# git+https deps) honors a CA bundle via this config key. Without it,
+# every `cargo fetch` errors with:
 #   [60] SSL peer certificate or SSH remote key was not OK
 #     (SSL certificate problem: unable to get local issuer certificate)
-# Ship a /etc/profile.d fragment that points cargo at the system CA
-# bundle + exposes LibreSSL paths for openssl-sys detection.
+# because cargo's bundled libcurl has no compiled-in CA path.
+cainfo = "/etc/ssl/certs/ca-certificates.crt"
+
+[net]
+# IMPORTANT: stay on cargo's built-in libgit2 fetcher (the default).
+# jonerix's `git` is gitoxide (gix), not the GNU git CLI — gix doesn't
+# implement the same flag surface (`--no-tags`, `--depth`, etc), so
+# `git-fetch-with-cli = true` would have cargo invoke gix expecting GNU
+# git semantics and most fetches would fail. libgit2 itself is
+# permissive (MIT-style with linking exception), so staying off the
+# CLI shell-out keeps us inside the license envelope.
+git-fetch-with-cli = false
+
+[env]
+# openssl-sys's pkg-config-free fallback uses these env vars to locate
+# OpenSSL / LibreSSL headers + libs. jonerix ships LibreSSL with the
+# merged-/usr layout (headers /include, libs /lib), so /=root works.
+# Cargo applies this [env] table to subprocesses it spawns (build.rs,
+# proc macros, rustc) — that's the only context where openssl-sys
+# detection runs.
+OPENSSL_DIR         = "/"
+OPENSSL_INCLUDE_DIR = "/include"
+OPENSSL_LIB_DIR     = "/lib"
+
+# pkg-config probes cross-compile cleanly on jonerix (single-arch host).
+# Some build.rs files refuse to call pkg-config without this when they
+# detect a "cross-compile" because they see CARGO_CFG_TARGET_ARCH set.
+PKG_CONFIG_ALLOW_CROSS = "1"
+CFG
+chmod 0644 "$DESTDIR/etc/cargo/config.toml"
+
+# --- /etc/profile.d/cargo.sh: shell env for non-cargo openssl users ---
+# /etc/cargo/config.toml's [env] table only applies inside cargo
+# subprocesses. For shell users running raw ./configure / pkg-config /
+# openssl directly (i.e. NOT through cargo), the env vars need to be
+# in the login environment. Keep this fragment as a thin compat layer.
 install -d "$DESTDIR/etc/profile.d"
 cat > "$DESTDIR/etc/profile.d/cargo.sh" <<'PROF'
-# cargo + openssl-sys defaults for jonerix.
-# /etc/profile.d/cargo.sh — shipped by the rust jpkg.
+# /etc/profile.d/cargo.sh — jonerix openssl-sys env (shipped by rust jpkg).
+# Inside cargo invocations, /etc/cargo/config.toml's [env] table covers
+# the same ground; these exports are for shell + non-cargo build tools.
 export CARGO_HTTP_CAINFO="/etc/ssl/certs/ca-certificates.crt"
 export OPENSSL_DIR="/"
 export OPENSSL_INCLUDE_DIR="/include"
@@ -98,19 +158,19 @@ export OPENSSL_LIB_DIR="/lib"
 PROF
 chmod 0644 "$DESTDIR/etc/profile.d/cargo.sh"
 
-# --- cargo config for root (non-login shells, direct runs) ---
-# /etc/profile is only sourced by login shells, so also drop a
-# /root/.cargo/config.toml. Users get their own via the post_install
-# hook (see [hooks] below).
+# --- per-user cargo config: include the system-wide file, no more ---
+# Cargo's config-file walk reaches user $HOME/.cargo/config.toml but
+# not /etc/cargo/config.toml. Each per-user config is a one-liner that
+# pulls in the system defaults via cargo's `include` directive
+# (stabilised in cargo 1.84 — well below our 1.94 floor). Users can
+# add their own overrides AFTER the include so user config wins.
 install -d "$DESTDIR/root/.cargo"
 cat > "$DESTDIR/root/.cargo/config.toml" <<'CFG'
-# Shipped by the rust jpkg. Safe to edit; pristine version at
-# /usr/share/rust/skel/.cargo/config.toml.
-[http]
-cainfo = "/etc/ssl/certs/ca-certificates.crt"
-
-[net]
-git-fetch-with-cli = true
+# /root/.cargo/config.toml — shipped by the rust jpkg.
+# Pulls in /etc/cargo/config.toml (system-wide jonerix defaults).
+# Add your overrides below the include line; they win against the
+# system config on conflict.
+include = ["/etc/cargo/config.toml"]
 CFG
 
 # --- skeleton copy for new users ---
@@ -141,17 +201,40 @@ fi
 PROF
 fi
 
-# seed existing user homes (/home/*) with the cargo skel, skipping
-# homes that already have a cargo config.
+# Seed / migrate per-user cargo configs:
+#
+#   * No ~/.cargo/config.toml yet: drop the skel (one-liner that
+#     includes /etc/cargo/config.toml).
+#   * Has a config but doesn't reference /etc/cargo/config.toml:
+#     prepend the `include` line so the user picks up the system
+#     defaults without losing their custom edits. A backup of the
+#     pre-migration file is written to .cargo/config.toml.bak-<date>
+#     in case the user wants to roll back.
+#   * Already has the `include` line: leave it alone.
+SYSTEM_INCLUDE='include = ["/etc/cargo/config.toml"]'
 if [ -d /home ]; then
     for home in /home/*; do
         [ -d "$home" ] || continue
         user=$(basename "$home")
         id -u "$user" >/dev/null 2>&1 || continue
-        [ -f "$home/.cargo/config.toml" ] && continue
-        install -d "$home/.cargo"
-        cp /usr/share/rust/skel/.cargo/config.toml "$home/.cargo/config.toml"
-        chown -R "$user:$user" "$home/.cargo" 2>/dev/null || true
+        cfg="$home/.cargo/config.toml"
+        if [ ! -f "$cfg" ]; then
+            install -d "$home/.cargo"
+            cp /usr/share/rust/skel/.cargo/config.toml "$cfg"
+            chown -R "$user:$user" "$home/.cargo" 2>/dev/null || true
+            continue
+        fi
+        if grep -qF "/etc/cargo/config.toml" "$cfg" 2>/dev/null; then
+            continue
+        fi
+        bak="$cfg.bak-$(date +%Y%m%d%H%M%S)"
+        cp -p "$cfg" "$bak"
+        {
+            printf '%s\n' "$SYSTEM_INCLUDE"
+            printf '\n'
+            cat "$cfg"
+        } > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+        chown "$user:$user" "$cfg" "$bak" 2>/dev/null || true
     done
 fi
 exit 0"""
