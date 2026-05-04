@@ -79,7 +79,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          lfs: true
+          lfs: false
 
       - name: Restore jpkg binary cache (x86_64)
         uses: actions/cache@v5
@@ -157,7 +157,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          lfs: true
+          lfs: false
 
       - name: Restore jpkg binary cache (aarch64)
         uses: actions/cache@v5
