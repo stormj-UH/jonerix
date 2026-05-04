@@ -153,11 +153,32 @@ def filter_tar(tar_bytes, keep_bins=None, drop_globs=None):
 def update_meta(meta_bytes, *, new_sha256, new_size, new_name=None, new_version=None, new_description=None):
     """Parse meta as text lines, rewrite specific fields. jpkg's TOML subset
     is simple — line-based key/value, no nested inline tables — so we can
-    do surgical replacement."""
+    do surgical replacement.
+
+    Drops any pre-existing [signature] table on the way out: a signature
+    in the input file covers the input's payload bytes, and after we
+    rewrite payload + metadata it's stale. Leaving it in place misleads
+    `jpkg resign --keep-existing` into treating the repack as already
+    signed, so the stale signature persists into the published artifact
+    and `jpkg upgrade` rejects it with "Verification equation was not
+    satisfied". Stripping forces a true resign on every repack — `jpkg
+    resign` sees an unsigned file and produces a fresh signature over
+    the new bytes."""
     text = meta_bytes.decode()
     out_lines = []
+    in_signature_block = False
     for line in text.splitlines():
         s = line.strip()
+        if s.startswith("[signature]"):
+            in_signature_block = True
+            continue
+        if in_signature_block:
+            # Inside [signature]: drop until the next table header (or EOF).
+            if s.startswith("[") and not s.startswith("[["):
+                in_signature_block = False
+                # Fall through to handle this header in the regular branch.
+            else:
+                continue
         if s.startswith("sha256 = "):
             out_lines.append(f'sha256 = "{new_sha256}"')
         elif s.startswith("size = "):
@@ -170,6 +191,9 @@ def update_meta(meta_bytes, *, new_sha256, new_size, new_name=None, new_version=
             out_lines.append(f'description = "{new_description}"')
         else:
             out_lines.append(line)
+    # Drop trailing blank lines the [signature] strip may have left behind.
+    while out_lines and not out_lines[-1].strip():
+        out_lines.pop()
     return ("\n".join(out_lines) + "\n").encode()
 
 
