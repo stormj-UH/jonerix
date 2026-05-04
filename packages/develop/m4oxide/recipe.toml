@@ -1,12 +1,12 @@
 [package]
 name = "m4oxide"
-version = "0.1.0-r0"
+version = "0.1.2-r0"
 license = "MIT"
 description = "Clean-room Rust implementation of m4 for jonerix"
 
 [source]
-url = "https://github.com/stormj-UH/jonerix/releases/download/packages/m4oxide-63a4efe221c8fb0f2fac1936a3bf0367161edf72.tar.gz"
-sha256 = "18eb60a78da00329439aa637aa68b0e09e5ae559090810877174c3c813d8ae09"
+url = "https://github.com/stormj-UH/jonerix/releases/download/packages/m4oxide-40573c872ea5f076a70a78c51946d938ed80ae9c.tar.gz"
+sha256 = "b221199f000cf2b22547c56c3c60bb7c4be2a20c27b4c21ae8e0dee5cb65a3cd"
 
 [build]
 system = "custom"
@@ -14,7 +14,10 @@ build = """
 set -e
 export CARGO_HOME=/tmp/m4oxide-cargo
 export CARGO_TARGET_DIR="$PWD/target"
-export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
+# Repo policy: zero rustc warnings (also enforced by #![deny(warnings)] at the
+# crate root). crt-static for a fully musl-static binary. Cargo.toml ships a
+# fat-LTO release profile so cargo build --release just consumes it.
+export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static -D warnings"
 cargo test --frozen --offline
 cargo build --release --frozen --offline --bin m4oxide
 """
