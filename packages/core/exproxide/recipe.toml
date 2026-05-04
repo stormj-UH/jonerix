@@ -6,7 +6,7 @@
 # ./configure scripts resolve `expr` to the Rust implementation
 # instead of toybox's multicall.
 name = "exproxide"
-version = "0.1.0"
+version = "0.1.1-r0"
 license = "MIT"
 description = "Clean-room Rust implementation of expr for jonerix"
 # Claim /bin/expr from whichever package was previously providing it
@@ -23,9 +23,10 @@ replaces = ["toybox", "uutils"]
 # to a jonerix GH release tag for CI to fetch.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/exproxide/archive/bb31ea6.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-exproxide-v0.1.0/exproxide-0.1.0.tar.gz"
-sha256 = "68860948092e82764295afb2407bf22fb6f866c1db367721de30253177556012"
+#   https://castle.great-morpho.ts.net:3000/jonerik/exproxide/archive/v0.1.1.tar.gz
+#   (or commit ed9ddcf which the v0.1.1 tag points to)
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-exproxide-v0.1.1/exproxide-0.1.1.tar.gz"
+sha256 = "c59a941317b69d9330368a004ee7ba958956aed7025b0af75f96c40394b145d9"
 
 [build]
 system = "custom"
@@ -34,7 +35,10 @@ set -e
 export CARGO_HOME=/tmp/exproxide-cargo
 export CARGO_TARGET_DIR="$PWD/target"
 export CARGO_NET_OFFLINE=true
-export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static"
+# Repo policy: zero rustc warnings (also enforced by #![deny(warnings)] +
+# #![forbid(unsafe_code)] at the crate root). crt-static for a fully
+# musl-static binary. Cargo.toml ships a fat-LTO release profile.
+export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static -D warnings"
 cargo test --frozen --offline
 cargo build --release --frozen --offline --bin exproxide
 """
