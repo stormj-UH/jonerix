@@ -8,7 +8,7 @@ description = "Drop-in firewall front-end — accepts both Linux nftables (nft) 
 # Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.0.0
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.0.5/stormwall-1.0.5.tar.gz"
-sha256 = "2af5e527813486e591dd8699aa47429dc347c6ff0f6e60a3380473655173195b"
+sha256 = "d38446914b82ef70609bfaa2d742410e6556997cffa7b4e23f73c45de4c07a07"
 
 [build]
 system = "custom"
