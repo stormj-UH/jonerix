@@ -48,6 +48,9 @@ check_go_flags() {
     done
 }
 
+# See check-cargo-offline.sh for why tar stderr is dropped here — same
+# `LIBARCHIVE.xattr.com.apple.provenance` warning flood from macOS-created
+# vendor tarballs, same workaround.
 check_vendor_tarball() {
     label=$1
     file=$2
@@ -58,10 +61,10 @@ check_vendor_tarball() {
         return
     fi
 
-    if ! tar tf "$src" | grep '/go\.mod$' >/dev/null 2>&1; then
+    if ! tar tf "$src" 2>/dev/null | grep '/go\.mod$' >/dev/null 2>&1; then
         fail "GO: $label tarball has no go.mod: $file"
     fi
-    if ! tar tf "$src" | grep '/vendor/modules\.txt$' >/dev/null 2>&1; then
+    if ! tar tf "$src" 2>/dev/null | grep '/vendor/modules\.txt$' >/dev/null 2>&1; then
         fail "GO: $label tarball has no vendor/modules.txt: $file"
     fi
 }

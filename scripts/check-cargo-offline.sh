@@ -46,6 +46,13 @@ check_cargo_flags() {
     done
 }
 
+# tar invocations below use `2>/dev/null` to drop stderr noise — chiefly the
+# GNU-tar warning flood that fires once per file when reading tarballs created
+# on macOS, which leak `LIBARCHIVE.xattr.com.apple.provenance` PAX headers.
+# A vendor tarball can have tens of thousands of entries and the warnings
+# would otherwise dominate the CI logs and time the job out. Existence of the
+# tarball is checked separately via `[ -f "$src" ]`, so silencing tar's
+# stderr here does not hide real "file missing" errors.
 check_vendor_tarball() {
     label=$1
     file=$2
@@ -61,13 +68,13 @@ check_vendor_tarball() {
         return
     fi
 
-    if ! tar tf "$src" | grep '/Cargo.lock$' >/dev/null 2>&1; then
+    if ! tar tf "$src" 2>/dev/null | grep '/Cargo.lock$' >/dev/null 2>&1; then
         fail "CARGO: $label tarball has no Cargo.lock: $file"
     fi
-    if ! tar tf "$src" | grep '/vendor/' >/dev/null 2>&1; then
+    if ! tar tf "$src" 2>/dev/null | grep '/vendor/' >/dev/null 2>&1; then
         fail "CARGO: $label tarball has no vendor/: $file"
     fi
-    if ! tar tf "$src" | grep '/\.cargo/config\.toml$' >/dev/null 2>&1; then
+    if ! tar tf "$src" 2>/dev/null | grep '/\.cargo/config\.toml$' >/dev/null 2>&1; then
         fail "CARGO: $label tarball has no .cargo/config.toml: $file"
     fi
 }
@@ -87,10 +94,10 @@ check_path_only_tarball() {
         return
     fi
 
-    lock_path=$(tar tf "$src" | grep '/Cargo\.lock$' | head -n 1 || true)
+    lock_path=$(tar tf "$src" 2>/dev/null | grep '/Cargo\.lock$' | head -n 1 || true)
     [ -n "$lock_path" ] || return 0
 
-    if tar xOf "$src" "$lock_path" | grep '^source = ' >/dev/null 2>&1; then
+    if tar xOf "$src" "$lock_path" 2>/dev/null | grep '^source = ' >/dev/null 2>&1; then
         fail "CARGO: $label has external Cargo.lock sources but no vendor/: $file"
     fi
 }
@@ -164,10 +171,12 @@ is_lfs_pointer() {
     [ "$first" = "version https://git-lfs.github.com/spec/v1" ]
 }
 
-# Locate the source tarball for a package.  Tries:
-#   $pkg-$version.tar.gz         (with -rN)
-#   $pkg-$base_version.tar.gz   (without -rN)
-#   $pkg-v$base_version.tar.gz  (v-prefixed, e.g. jmake)
+# Locate the source tarball for a package.  Tries, in order:
+#   $pkg-$version.tar.gz          (with -rN)
+#   $pkg-$base_version.tar.gz     (without -rN)
+#   $pkg-v$base_version.tar.gz    (v-prefixed, e.g. jmake)
+#   <recipe url basename>         (commit-hash-pinned, e.g.
+#                                  m4oxide-40573c872ea5f076a70a78c51946d938ed80ae9c.tar.gz)
 find_source_tarball() {
     pkg=$1
     recipe=$2
@@ -176,15 +185,32 @@ find_source_tarball() {
     base=$(strip_revision "$ver")
     if [ -f "${SOURCES}/${pkg}-${ver}.tar.gz" ]; then
         printf '%s\n' "${pkg}-${ver}.tar.gz"
-    elif [ -f "${SOURCES}/${pkg}-${base}.tar.gz" ]; then
-        printf '%s\n' "${pkg}-${base}.tar.gz"
-    elif [ -f "${SOURCES}/${pkg}-v${ver}.tar.gz" ]; then
-        printf '%s\n' "${pkg}-v${ver}.tar.gz"
-    elif [ -f "${SOURCES}/${pkg}-v${base}.tar.gz" ]; then
-        printf '%s\n' "${pkg}-v${base}.tar.gz"
-    else
-        printf '%s\n' "${pkg}-${ver}.tar.gz"
+        return 0
     fi
+    if [ -f "${SOURCES}/${pkg}-${base}.tar.gz" ]; then
+        printf '%s\n' "${pkg}-${base}.tar.gz"
+        return 0
+    fi
+    if [ -f "${SOURCES}/${pkg}-v${ver}.tar.gz" ]; then
+        printf '%s\n' "${pkg}-v${ver}.tar.gz"
+        return 0
+    fi
+    if [ -f "${SOURCES}/${pkg}-v${base}.tar.gz" ]; then
+        printf '%s\n' "${pkg}-v${base}.tar.gz"
+        return 0
+    fi
+    # Fall back to the recipe URL's basename. Catches commit-hash-pinned
+    # tarballs whose filename doesn't follow $pkg-$version naming.
+    url=$(sed -n 's/^url *= *"\(.*\)"/\1/p' "$recipe" | head -n 1)
+    if [ -n "$url" ]; then
+        url_no_query=${url%%\?*}
+        url_base=${url_no_query##*/}
+        if [ -n "$url_base" ] && [ -f "${SOURCES}/${url_base}" ]; then
+            printf '%s\n' "${url_base}"
+            return 0
+        fi
+    fi
+    printf '%s\n' "${pkg}-${ver}.tar.gz"
 }
 
 # Tarball packages with registry dependencies must carry Cargo.lock,
