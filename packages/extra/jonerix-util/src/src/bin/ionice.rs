@@ -6,15 +6,8 @@
 //!   - ioprio_set(2), ioprio_get(2) man pages (behavioural spec)
 //!   - linux/ioprio.h UAPI constants (class/data bit packing)
 //!   - Documentation/block/ioprio.rst
-//!
-//! ABI recap (matches the man page):
-//!   ioprio_set(which, who, ioprio):  ioprio = (class << 13) | data
-//!   which: IOPRIO_WHO_PROCESS=1, PGRP=2, USER=3
-//!   class: NONE=0, RT=1, BE=2, IDLE=3     data (level): 0-7 for RT/BE
-//!
-//! Usage, kept close to util-linux:
-//!   ionice [-c CLASS] [-n LEVEL] [-p PID] ...
-//!   ionice [options] COMMAND [ARGS...]
+
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use jxutil::syscall::*;
 use std::ffi::CString;
@@ -35,38 +28,51 @@ fn class_name(c: i32) -> &'static str {
     match c { 0 => "none", 1 => "realtime", 2 => "best-effort", 3 => "idle", _ => "?" }
 }
 
-fn show_pid(pid: i32) -> ExitCode {
+/// Show ioprio for a given PID. Returns true on success, false on error.
+fn show_pid(pid: i32) -> bool {
     let v = ioprio_get(IOPRIO_WHO_PROCESS, pid);
     if v < 0 {
         eprintln!("ionice: ioprio_get: {}", std::io::Error::last_os_error());
-        return ExitCode::FAILURE;
+        return false;
     }
     let v = v as i32;
     let c = ioprio_class(v);
     let d = ioprio_data(v);
-    // util-linux prints just "none" when class=NONE; else "class: prio"
-    if c == IOPRIO_CLASS_NONE {
-        println!("none: prio {}", d);
-    } else {
-        println!("{}: prio {}", class_name(c), d);
+    // B08 fix: util-linux prints just "none" or "idle" (no prio) for those classes.
+    match c {
+        IOPRIO_CLASS_NONE => println!("none"),
+        IOPRIO_CLASS_IDLE => println!("idle"),
+        _ => println!("{}: prio {}", class_name(c), d),
     }
-    ExitCode::SUCCESS
+    true
 }
 
 fn apply_and_exec(class: Option<i32>, level: Option<i32>, argv: &[String]) -> ExitCode {
     let c = class.unwrap_or(IOPRIO_CLASS_BE);
-    let d = level.unwrap_or(4);       // BE default midpoint
+    let d = if c == IOPRIO_CLASS_IDLE { 0 } else { level.unwrap_or(4) };
     let packed = ioprio_pack(c, d);
     if ioprio_set(IOPRIO_WHO_PROCESS, 0, packed) < 0 {
         eprintln!("ionice: ioprio_set: {}", std::io::Error::last_os_error());
         return ExitCode::FAILURE;
     }
-    // exec replacement
     let prog = match argv.first() { Some(s) => s, None => return ExitCode::SUCCESS };
-    let cprog = CString::new(prog.as_str()).unwrap();
-    let cargs: Vec<CString> = argv.iter().map(|s| CString::new(s.as_str()).unwrap()).collect();
+    let cprog = match CString::new(prog.as_str()) {
+        Ok(c) => c,
+        Err(_) => { eprintln!("ionice: NUL byte in command"); return ExitCode::FAILURE; }
+    };
+    let cargs: Vec<CString> = match argv.iter()
+        .map(|s| CString::new(s.as_str()).map_err(|_| ()))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(v) => v,
+        Err(_) => { eprintln!("ionice: NUL byte in argument"); return ExitCode::FAILURE; }
+    };
     let mut ptrs: Vec<*const c_char> = cargs.iter().map(|c| c.as_ptr()).collect();
     ptrs.push(std::ptr::null());
+    // SAFETY:
+    //   - cprog.as_ptr() is non-null, NUL-terminated (CString invariant).
+    //   - ptrs is NULL-terminated array of valid C string pointers.
+    //   - All CStrings remain alive until execvp returns on error.
     unsafe { execvp(cprog.as_ptr(), ptrs.as_ptr()); }
     eprintln!("ionice: cannot exec '{}': {}", prog, std::io::Error::last_os_error());
     ExitCode::from(127)
@@ -74,12 +80,16 @@ fn apply_and_exec(class: Option<i32>, level: Option<i32>, argv: &[String]) -> Ex
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("Usage:");
         println!("  ionice [-c CLASS] [-n LEVEL] -p PID...");
         println!("  ionice [-c CLASS] [-n LEVEL] COMMAND [ARGS...]");
         println!("Classes: 1 realtime, 2 best-effort, 3 idle, 0 none");
-        return if args.is_empty() { ExitCode::FAILURE } else { ExitCode::SUCCESS };
+        return ExitCode::SUCCESS;
+    }
+    if args.is_empty() {
+        if !show_pid(0) { return ExitCode::FAILURE; }
+        return ExitCode::SUCCESS;
     }
 
     let mut class: Option<i32> = None;
@@ -107,21 +117,20 @@ fn main() -> ExitCode {
                 if let Some(v) = args.get(i).and_then(|s| s.parse::<i32>().ok()) { pids.push(v); }
                 else { eprintln!("ionice: bad pid"); return ExitCode::FAILURE; }
             }
-            "-t" | "--ignore" => {}, // informational
+            "-t" | "--ignore" => {},
             _ => { cmd.extend_from_slice(&args[i..]); break; }
         }
         i += 1;
     }
 
     if !pids.is_empty() {
-        // No class/level given → query; else set each.
         if class.is_none() && level.is_none() {
             let mut rc = ExitCode::SUCCESS;
-            for p in &pids { if matches!(show_pid(*p), ExitCode::FAILURE) { rc = ExitCode::FAILURE; } }
+            for p in &pids { if !show_pid(*p) { rc = ExitCode::FAILURE; } }
             return rc;
         }
         let c = class.unwrap_or(IOPRIO_CLASS_BE);
-        let d = level.unwrap_or(4);
+        let d = if c == IOPRIO_CLASS_IDLE { 0 } else { level.unwrap_or(4) };
         let packed = ioprio_pack(c, d);
         let mut rc = ExitCode::SUCCESS;
         for p in &pids {
@@ -137,6 +146,5 @@ fn main() -> ExitCode {
         return apply_and_exec(class, level, &cmd);
     }
 
-    // No pid, no command, no args → show self.
-    show_pid(0)
+    if !show_pid(0) { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }

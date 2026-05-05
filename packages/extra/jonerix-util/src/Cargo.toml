@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-util"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 description = "Clean-room permissive-licensed replacement for the GPL util-linux suite"
@@ -26,9 +26,13 @@ path = "src/bin/ionice.rs"
 name = "nsenter"
 path = "src/bin/nsenter.rs"
 
-[[bin]]
-name = "chsh"
-path = "src/bin/chsh.rs"
+[dev-dependencies]
+# Kani model checker — only present when running `cargo kani`.
+# Under normal `cargo test` / `cargo build` the kani crate is absent;
+# all proof harnesses are gated behind `#[cfg(kani)]` so they compile
+# away to nothing without it.
+# kani = "0.57"   # pin when Kani toolchain is installed; kept commented
+                  # so the project builds with stock rustc.
 
 [profile.release]
 opt-level = "s"

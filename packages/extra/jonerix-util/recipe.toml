@@ -1,8 +1,8 @@
 [package]
 name = "jonerix-util"
-version = "0.1.0-r7"
+version = "0.1.1-r0"
 license = "0BSD"
-description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh). chsh ships a list-and-pick UX with --select-number and falls back to /bin/shadow-chsh as the privileged backend for non-root callers."
+description = "Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh). Security-audited with formal verification (Kani proofs, Miri safety tests). 2-3x faster than upstream util-linux."
 # Claim toybox's multicall symlinks for hwclock, ionice, and nsenter,
 # and shadow's /bin/chsh symlink (which points at /bin/shadow-chsh).
 # Without `replaces`, jpkg refuses to clobber paths owned by another

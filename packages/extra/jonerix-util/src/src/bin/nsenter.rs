@@ -41,16 +41,34 @@ struct NsWant {
 }
 
 fn open_path(p: &str) -> std::io::Result<i32> {
-    let c = CString::new(p).unwrap();
-    // O_RDONLY|O_CLOEXEC
+    let c = CString::new(p).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "NUL byte in path")
+    })?;
+    // SAFETY:
+    //   - `c.as_ptr()` is non-null and NUL-terminated (CString guarantees this).
+    //   - `c` remains alive (in scope) until after `open` returns, so the
+    //     pointer is valid for the entire duration of the syscall.
+    //   - Flags: O_RDONLY (0) | O_CLOEXEC (0x80000). O_CLOEXEC ensures the fd
+    //     does not leak into processes launched after fork+exec.
+    //   - mode=0 is ignored for non-creating opens.
     let fd = unsafe { open(c.as_ptr(), 0 | 0x80000, 0) };
     if fd < 0 { Err(std::io::Error::last_os_error()) } else { Ok(fd) }
 }
 
 fn enter_ns(path: &str, nstype: i32) -> std::io::Result<()> {
     let fd = open_path(path)?;
+    // SAFETY:
+    //   - `fd` is >= 0 (checked by open_path) and refers to a namespace inode
+    //     under /proc/PID/ns/ (or an explicit file).
+    //   - `nstype` is one of the CLONE_NEW* constants, which the kernel
+    //     validates against the actual ns type of the fd. On mismatch
+    //     the kernel returns EINVAL, not UB.
+    //   - After setns the fd is no longer needed — we close it immediately.
     let rc = unsafe { setns(fd, nstype) };
     let err = if rc < 0 { Some(std::io::Error::last_os_error()) } else { None };
+    // SAFETY:
+    //   - `fd` is >= 0 and was not previously closed. This is the unique close
+    //     point — the fd is never stored elsewhere, so no double-close risk.
     unsafe { close(fd); }
     if let Some(e) = err { Err(e) } else { Ok(()) }
 }
@@ -140,7 +158,8 @@ fn main() -> ExitCode {
         break;
     }
 
-    if target.is_none() && !any_file(&want) {
+    // B11 fix: check if ANY namespace was requested (not just explicit files).
+    if target.is_none() && !any_ns_requested(&want) {
         eprintln!("nsenter: --target or at least one --NS=FILE is required");
         return ExitCode::FAILURE;
     }
@@ -154,6 +173,8 @@ fn main() -> ExitCode {
         if want.pid.is_none()    { want.pid    = Some(None); }
         if want.user.is_none()   { want.user   = Some(None); }
         if want.cgroup.is_none() { want.cgroup = Some(None); }
+        // B13 fix: --all should include time namespace too.
+        if want.time.is_none()   { want.time   = Some(None); }
     }
 
     // Kernel ordering note: user NS must be entered first if present,
@@ -186,6 +207,13 @@ fn main() -> ExitCode {
     // process (setns on PID ns only takes effect in children).
     let needs_fork = want.pid.is_some() && !no_fork;
     if needs_fork {
+        // SAFETY:
+        //   - fork() has no arguments and is always safe to call.
+        //   - Returns: child PID (>0) in the parent, 0 in the child, -1 on error.
+        //   - Between fork() and exec_command() in the child, we only call
+        //     async-signal-safe functions (eprintln uses write(2) which is safe;
+        //     CString construction allocates but is acceptable since we're the
+        //     only thread in the child post-fork).
         let pid = unsafe { fork() };
         if pid < 0 {
             eprintln!("nsenter: fork: {}", std::io::Error::last_os_error());
@@ -193,20 +221,36 @@ fn main() -> ExitCode {
         }
         if pid > 0 {
             let mut status: i32 = 0;
-            unsafe { waitpid(pid, &mut status, 0); }
-            let code = (status >> 8) & 0xff;
-            return ExitCode::from(code as u8);
+            // SAFETY:
+            //   - `pid` is > 0 (a valid child PID we just forked).
+            //   - `&mut status` is a non-null, aligned, writable *mut i32.
+            //   - options=0 means block until the child exits or is signalled.
+            let wret = unsafe { waitpid(pid, &mut status, 0) };
+            // B12 fix: properly decode wait status for signal exits.
+            if wret < 0 {
+                eprintln!("nsenter: waitpid: {}", std::io::Error::last_os_error());
+                return ExitCode::from(1);
+            }
+            let exit_code: u8 = if (status & 0x7f) == 0 {
+                // WIFEXITED: child called exit() or returned from main.
+                ((status >> 8) & 0xff) as u8
+            } else {
+                // WIFSIGNALED: child killed by signal. Shell convention: 128+signum.
+                let sig = (status & 0x7f) as u8;
+                128u8.saturating_add(sig)
+            };
+            return ExitCode::from(exit_code);
         }
     }
 
     exec_command(&cmd)
 }
 
-fn any_file(w: &NsWant) -> bool {
-    matches!(&w.mount, Some(Some(_))) || matches!(&w.uts, Some(Some(_)))
-        || matches!(&w.ipc, Some(Some(_))) || matches!(&w.net, Some(Some(_)))
-        || matches!(&w.pid, Some(Some(_))) || matches!(&w.user, Some(Some(_)))
-        || matches!(&w.cgroup, Some(Some(_))) || matches!(&w.time, Some(Some(_)))
+/// B11 fix: check if ANY namespace was requested (Some(None) or Some(Some(file))).
+fn any_ns_requested(w: &NsWant) -> bool {
+    w.mount.is_some() || w.uts.is_some() || w.ipc.is_some()
+        || w.net.is_some() || w.pid.is_some() || w.user.is_some()
+        || w.cgroup.is_some() || w.time.is_some()
 }
 
 fn exec_command(cmd: &[String]) -> ExitCode {
@@ -220,6 +264,16 @@ fn exec_command(cmd: &[String]) -> ExitCode {
     let cargs: Vec<CString> = argv.iter().map(|s| CString::new(s.as_str()).unwrap()).collect();
     let mut ptrs: Vec<*const c_char> = cargs.iter().map(|c| c.as_ptr()).collect();
     ptrs.push(std::ptr::null());
+    // SAFETY:
+    //   - `cprog.as_ptr()` is non-null and NUL-terminated (CString invariant).
+    //   - `ptrs` is a NULL-terminated array of non-null, NUL-terminated C
+    //     string pointers.  The pointed-to `CString` values (`cargs`) remain
+    //     alive for the entire duration of the call because they are still in
+    //     scope (the Vec is not dropped until after execvp returns on error).
+    //   - `cprog` and `cargs` all outlive the `unsafe` block.
+    //   - On success, execvp replaces the address space and never returns.
+    //   - On error (file not found, permission denied, etc.) execvp returns -1
+    //     and we report via last_os_error().
     unsafe { execvp(cprog.as_ptr(), ptrs.as_ptr()); }
     eprintln!("nsenter: exec {}: {}", prog, std::io::Error::last_os_error());
     ExitCode::from(127)
