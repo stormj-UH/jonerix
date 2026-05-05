@@ -1,0 +1,160 @@
+# Seed matrix for jonerix UNIX V7 / SUSv4 conformance.
+#
+# This file is intentionally incomplete. It establishes the shape that
+# tools/uni7-audit validates and will grow toward the full SUSv4 surface.
+
+schema_version = 1
+
+[[interface]]
+name = "sh"
+class = "utility"
+required_by = "posix"
+provider = "mksh"
+status = "partial"
+probe = "path"
+paths = ["/bin/sh"]
+verification = "needs VSC shell run"
+notes = "/bin/sh is mksh; conformance must be proven by the shell suite, not presence alone."
+
+[[interface]]
+name = "awk"
+class = "utility"
+required_by = "posix"
+provider = "onetrueawk"
+status = "unknown"
+probe = "path"
+paths = ["/bin/awk"]
+verification = "needs VSC awk coverage"
+notes = "Provider exists in core package inventory; exact SUSv4 behavior needs suite evidence."
+
+[[interface]]
+name = "c99"
+class = "utility"
+required_by = "c-language-development"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/c99"]
+verification = "missing"
+notes = "Plan: Rust c99 wrapper around clang with validated option mapping."
+
+[[interface]]
+name = "pax"
+class = "utility"
+required_by = "posix"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/pax"]
+verification = "missing"
+notes = "Plan: paxoxide; archive extraction must be hardened against path traversal and link attacks."
+
+[[interface]]
+name = "ed"
+class = "utility"
+required_by = "posix"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/ed"]
+verification = "missing"
+notes = "Plan: edoxide before any ex/vi work."
+
+[[interface]]
+name = "ex"
+class = "utility"
+required_by = "user-portability"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/ex"]
+verification = "missing"
+notes = "Do not start until ed command language and regex behavior are under control."
+
+[[interface]]
+name = "vi"
+class = "utility"
+required_by = "user-portability"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/vi"]
+verification = "missing"
+notes = "Current /bin/vi may be a pico alias in core; that is not SUSv4 vi conformance."
+
+[[interface]]
+name = "localedef"
+class = "utility"
+required_by = "posix"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/localedef"]
+verification = "missing"
+notes = "Plan: localeoxide; large central compatibility surface."
+
+[[interface]]
+name = "locale"
+class = "utility"
+required_by = "posix"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/locale"]
+verification = "missing"
+notes = "Plan: localeoxide; start with C, POSIX, C.UTF-8, and en_US.UTF-8."
+
+[[interface]]
+name = "gencat"
+class = "utility"
+required_by = "posix"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/gencat"]
+verification = "missing"
+notes = "Plan: catmsgoxide with message catalog ABI tests."
+
+[[interface]]
+name = "ipcrm"
+class = "utility"
+required_by = "xsi"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/ipcrm"]
+verification = "missing"
+notes = "Plan: ipcutils; Linux kernel config already enables SYSVIPC in fixed configs."
+
+[[interface]]
+name = "ipcs"
+class = "utility"
+required_by = "xsi"
+provider = "missing"
+status = "missing"
+probe = "path"
+paths = ["/bin/ipcs"]
+verification = "missing"
+notes = "Plan: ipcutils; must test with real SysV IPC objects."
+
+[[interface]]
+name = "<curses.h>"
+class = "header"
+required_by = "xcurses"
+provider = "ncurses"
+status = "partial"
+probe = "header"
+paths = ["/include/ncursesw/curses.h"]
+verification = "needs X/Open Curses validation"
+notes = "Header presence is not enough; XCURSES APIs and utility behavior need tests."
+
+[[interface]]
+name = "_XOPEN_SOURCE=700"
+class = "system"
+required_by = "xsi"
+provider = "musl"
+status = "unknown"
+probe = "compile"
+paths = []
+verification = "needs feature-test macro compile/link probes"
+notes = "Audit _XOPEN_UNIX, _XOPEN_VERSION, namespace exposure, and option macros."

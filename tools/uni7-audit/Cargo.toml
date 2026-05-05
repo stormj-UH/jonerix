@@ -1,0 +1,14 @@
+[package]
+name = "uni7-audit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "0BSD"
+description = "jonerix UNIX V7/SUSv4 interface matrix audit tool"
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+unsafe_op_in_unsafe_fn = "deny"
+warnings = "deny"
