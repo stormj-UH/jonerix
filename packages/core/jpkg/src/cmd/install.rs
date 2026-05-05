@@ -336,8 +336,10 @@ pub(crate) fn install_packages(
                 );
             }
             Ok(VerifyOutcome::UnsignedAccepted) => {
+                // Reached only when repos.conf overrides the default to `warn`.
+                // jpkg 2.2.0+ defaults to `require` and would have errored above.
                 log::warn!(
-                    "no signature for {}-{} — accepting under signature_policy=warn (legacy package)",
+                    "no signature for {}-{} — accepting under signature_policy=warn (set signature_policy=require in /etc/jpkg/repos.conf to reject)",
                     name, entry.version
                 );
             }
@@ -365,9 +367,10 @@ pub(crate) fn install_packages(
                     });
                 }
                 SignaturePolicy::Warn => {
+                    // Reached only when repos.conf opts back to `warn`.
                     log::warn!(
                         "no trusted key for {}-{} (signed by {}) — accepting under signature_policy=warn; \
-                         add the matching .pub to /etc/jpkg/keys to silence this",
+                         drop the matching .pub into /etc/jpkg/keys/ or set signature_policy=require to reject",
                         name, entry.version, key_id
                     );
                 }

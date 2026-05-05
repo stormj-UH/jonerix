@@ -38,21 +38,35 @@ use crate::fetch::{download_via_mirrors, download_via_mirrors_to, FetchError};
 // SignaturePolicy
 // ---------------------------------------------------------------------------
 
-/// Policy for per-package signature verification at install time (Phase 0).
+/// Policy for per-package signature verification at install time.
 ///
-/// Applied by `cmd::install` after the sha256 check passes.  Controls what
-/// happens when a package has no `[signature]` section in its metadata.
-/// A present-but-invalid signature is ALWAYS an error regardless of policy.
+/// Applied by `cmd::install` (the network install path) after the sha256
+/// check passes.  Controls what happens when a package has no
+/// `[signature]` section, has a signature signed by a key not in the local
+/// keyring, or is otherwise unverifiable.  A present-but-invalid signature
+/// is ALWAYS an error regardless of policy — that's tampering.
+///
+/// Note: `jpkg-local install <file.jpkg>` and `jpkg build` deliberately
+/// bypass this verification entirely.  Local files and freshly-built
+/// recipes are trusted by virtue of being on the local filesystem; only
+/// the network-fetched install path enforces the policy.
+///
+/// Phase 2 (jpkg 2.2.0+, after a transition period during which every
+/// .jpkg in INDEX was bulk-resigned) flipped the default from `Warn`
+/// to `Require`. `etc/jpkg/repos.conf` can still set `signature_policy =
+/// "warn"` or `"ignore"` to opt out per-host.
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SignaturePolicy {
-    /// (Default during transition) Missing signature → log WARN, accept.
-    /// Present-but-invalid signature → ERROR.
+    /// Missing OR unknown-key signature → ERROR. Present-but-invalid → ERROR.
+    /// This is the default in jpkg 2.2.0+.
     #[default]
-    Warn,
-    /// Missing OR invalid signature → ERROR.
     Require,
-    /// Missing signature → silently accept. Present-but-invalid still ERRORs.
+    /// Missing signature → log WARN, accept. Unknown key → log WARN, accept.
+    /// Present-but-invalid signature → ERROR. Default in jpkg 2.0.x–2.1.x.
+    Warn,
+    /// Missing signature → silently accept. Unknown key → silently accept.
+    /// Present-but-invalid still ERRORs.
     Ignore,
 }
 
