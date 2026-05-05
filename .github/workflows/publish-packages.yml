@@ -72,6 +72,7 @@ jobs:
     if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'x86_64') }}
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: write
 
@@ -174,6 +175,7 @@ jobs:
     if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'aarch64') }}
     needs: create-release
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
     permissions:
       contents: write
 
@@ -286,6 +288,7 @@ jobs:
     if: ${{ always() && needs.build-x86_64.result != 'cancelled' && needs.build-aarch64.result != 'cancelled' }}
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       packages: read
