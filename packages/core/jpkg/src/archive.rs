@@ -11,48 +11,35 @@
 //!    with `ArchiveError::BadMagic` before any further parsing.
 //!
 //! 2. **Header-length bound**: the LE32 `hdr_len` field at bytes `[8..12]`
-//!    must satisfy `12 + hdr_len ≤ file_length`.  A value that points past
-//!    EOF is rejected with `ArchiveError::BadHeaderLen`.  Callers must not
-//!    pass a `hdr_len` value that would overflow a `usize`.
+//!    must satisfy `12 + hdr_len <= file_length`.  A value that points past
+//!    EOF is rejected with `ArchiveError::BadHeaderLen`.
 //!
-//! 3. **Metadata is UTF-8 TOML**: the metadata block (`bytes[12..12+hdr_len]`)
-//!    contains valid UTF-8.  [`JpkgArchive::metadata`] panics if non-UTF-8
-//!    bytes are present; use [`JpkgArchive::metadata_str`] for a fallible
-//!    alternative.  The C writer never emits non-UTF-8, but callers that
-//!    construct synthetic archives must ensure UTF-8 conformance.
+//! 3. **Metadata is UTF-8 TOML**: the metadata block contains valid UTF-8.
+//!    [`JpkgArchive::metadata`] panics if non-UTF-8 bytes are present; use
+//!    [`JpkgArchive::metadata_str`] for a fallible alternative.
 //!
 //! 4. **Flattened layout on write**: [`create`] and
 //!    [`create_with_metadata_factory`] reject any `payload_root` that contains
-//!    a top-level `usr/` or `lib64/` directory.  Callers (typically `cmd_build`)
-//!    are responsible for running the `jpkg flatten` pass before calling these
-//!    functions; violating this assumption produces an
-//!    `ArchiveError::UnflatLayout` error and no archive is written.
+//!    a top-level `usr/` or `lib64/` directory.
 //!
-//! 5. **Atomic writes**: output archives are written to `{out_path}.tmp` and
-//!    then renamed into place.  A concurrent reader therefore never observes a
-//!    partially written archive.  If the rename fails the `.tmp` file is left
-//!    on disk; callers that care about cleanup should remove it.
+//! 5. **Atomic writes**: output archives are written to a randomly-named temp
+//!    file in the same directory as `out_path`, then renamed into place.  This
+//!    prevents both torn-write exposure and symlink-based temp-file hijacking
+//!    by local attackers (the old `{out_path}.tmp` was predictable).
 //!
 //! 6. **Deterministic payload order**: [`build_compressed_tar`] sorts entries
-//!    by path before adding them to the tar stream.  Given the same input tree,
-//!    the compressed payload bytes are identical across runs (modulo zstd
-//!    frame-level timestamp differences, which zstd level 0 does not embed).
-//!    This is required by `canon::canonical_bytes` which signs the payload hash.
+//!    by path before adding them to the tar stream.
 //!
-//! # Wire format (verified against pkg.c:173-200 and pkg.h:17-20)
+//! # Wire format
 //!
 //! ```text
-//! [MAGIC      8 bytes]  "JPKG\x00\x01\x00\x00"   — JPKG_MAGIC
-//! [HDR_LEN    4 bytes]  u32 little-endian          — byte count of the TOML block
-//! [METADATA   variable] UTF-8 TOML, NOT NUL-terminated (pkg.c:141 adds '\0' only
-//!                        after copying into a local C buffer, never writes it to disk)
+//! [MAGIC      8 bytes]  "JPKG\x00\x01\x00\x00"
+//! [HDR_LEN    4 bytes]  u32 little-endian
+//! [METADATA   variable] UTF-8 TOML, NOT NUL-terminated
 //! [PAYLOAD    rest]     zstd-compressed tar archive
 //! ```
-//!
-//! Minimum valid file: 12 bytes (magic + hdr_len with `hdr_len == 0` and no payload).
-//! See `JPKG_HEADER_MIN` in pkg.h:20.
 
-use std::fs::{self, File};
+use std::fs::{self};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -63,7 +50,6 @@ pub use crate::JPKG_MAGIC;
 /// Byte width of the LE32 header-length field.
 pub const JPKG_HDR_LEN_BYTES: usize = 4;
 
-// Derived constants matching pkg.h:20.
 const MAGIC_LEN: usize = JPKG_MAGIC.len(); // 8
 const HEADER_MIN: usize = MAGIC_LEN + JPKG_HDR_LEN_BYTES; // 12
 
@@ -73,20 +59,12 @@ const HEADER_MIN: usize = MAGIC_LEN + JPKG_HDR_LEN_BYTES; // 12
 
 #[derive(Debug)]
 pub enum ArchiveError {
-    /// Underlying I/O failure.
     Io(io::Error),
-    /// The first 8 bytes do not match `JPKG_MAGIC`.
     BadMagic { got: [u8; 8] },
-    /// The LE32 header-length field points past the end of the file.
     BadHeaderLen(u32),
-    /// zstd decompression error (wrapped as an I/O error by the `zstd` crate).
     Zstd(io::Error),
-    /// `tar` crate reported an error while reading or writing the tar stream.
     Tar(io::Error),
-    /// `payload_root` contains a top-level `usr/` or `lib64/` directory that
-    /// should have been flattened before calling `create`.
     UnflatLayout(PathBuf),
-    /// The metadata block is not valid UTF-8.
     Utf8(std::str::Utf8Error),
 }
 
@@ -94,22 +72,16 @@ impl std::fmt::Display for ArchiveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ArchiveError::Io(e) => write!(f, "I/O error: {e}"),
-            ArchiveError::BadMagic { got } => {
-                write!(f, "invalid .jpkg magic: {:?}", got)
-            }
-            ArchiveError::BadHeaderLen(n) => {
-                write!(f, "header_len {n} exceeds file size")
-            }
+            ArchiveError::BadMagic { got } => write!(f, "invalid .jpkg magic: {:?}", got),
+            ArchiveError::BadHeaderLen(n) => write!(f, "header_len {n} exceeds file size"),
             ArchiveError::Zstd(e) => write!(f, "zstd error: {e}"),
             ArchiveError::Tar(e) => write!(f, "tar error: {e}"),
-            ArchiveError::UnflatLayout(p) => {
-                write!(
-                    f,
-                    "unflattened layout: top-level '{}' found in payload_root; \
-                     flatten before calling create()",
-                    p.display()
-                )
-            }
+            ArchiveError::UnflatLayout(p) => write!(
+                f,
+                "unflattened layout: top-level '{}' found in payload_root; \
+                 flatten before calling create()",
+                p.display()
+            ),
             ArchiveError::Utf8(e) => write!(f, "metadata UTF-8 error: {e}"),
         }
     }
@@ -135,59 +107,34 @@ impl From<io::Error> for ArchiveError {
 // JpkgArchive (read side)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// A parsed `.jpkg` archive held entirely in memory.
-///
-/// For large packages the caller may prefer `extract` directly from a path
-/// rather than going through `open` + `extract`, but the API keeps both for
-/// symmetry with the C `pkg_parse_file` / `pkg_extract` pair.
 #[derive(Debug)]
 pub struct JpkgArchive {
-    // Raw bytes of the TOML metadata block (not NUL-terminated — see pkg.c:141).
     metadata_raw: Vec<u8>,
-    // Raw zstd(tar) payload bytes.
     payload_raw: Vec<u8>,
 }
 
 impl JpkgArchive {
-    // ── constructors ──────────────────────────────────────────────────────────
-
-    /// Open and parse a `.jpkg` file from disk.
     pub fn open(path: &Path) -> Result<Self, ArchiveError> {
         let bytes = fs::read(path)?;
         Self::from_bytes(bytes)
     }
 
-    /// Parse a `.jpkg` archive from an in-memory byte vector.
-    ///
-    /// Layout validated against `pkg_parse_buffer` (pkg.c:120-155):
-    /// 1. Check length ≥ 12 (`JPKG_HEADER_MIN`).
-    /// 2. Compare first 8 bytes to `JPKG_MAGIC` (memcmp).
-    /// 3. Read `hdr_len` as LE32 from bytes[8..12].
-    /// 4. Ensure `12 + hdr_len ≤ len` (header overflow guard, pkg.c:135).
-    /// 5. Metadata = bytes[12 .. 12+hdr_len] — NOT NUL-terminated on disk.
-    /// 6. Payload   = bytes[12+hdr_len ..]    — zstd(tar) to EOF.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, ArchiveError> {
         if bytes.len() < HEADER_MIN {
-            // Map to Io(UnexpectedEof) — matches pkg.c:122-124 ("package too small")
             return Err(ArchiveError::Io(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 format!("file is only {} bytes (minimum {})", bytes.len(), HEADER_MIN),
             )));
         }
 
-        // Magic check (pkg.c:22-25, pkg.h:17-20)
         let mut got = [0u8; 8];
         got.copy_from_slice(&bytes[..8]);
         if got != JPKG_MAGIC {
             return Err(ArchiveError::BadMagic { got });
         }
 
-        // LE32 header length (pkg.c:132, uses util.c `read_le32`)
-        // SAFETY: the `bytes.len() < HEADER_MIN` guard above ensures
-        // bytes.len() >= 12, so bytes[8..12] is exactly 4 bytes.
-        // The try_into() cannot fail for a fixed-size slice of the right length.
         let hdr_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
-        let meta_start = HEADER_MIN; // 12
+        let meta_start = HEADER_MIN;
         let meta_end = meta_start
             .checked_add(hdr_len as usize)
             .filter(|&e| e <= bytes.len())
@@ -196,61 +143,26 @@ impl JpkgArchive {
         let metadata_raw = bytes[meta_start..meta_end].to_vec();
         let payload_raw = bytes[meta_end..].to_vec();
 
-        Ok(JpkgArchive {
-            metadata_raw,
-            payload_raw,
-        })
+        Ok(JpkgArchive { metadata_raw, payload_raw })
     }
 
-    // ── accessors ─────────────────────────────────────────────────────────────
-
-    /// Raw TOML metadata block as a UTF-8 string slice.
-    ///
-    /// This is the verbatim on-disk bytes — not NUL-terminated.  The caller
-    /// should parse with `crate::recipe::Metadata::from_str`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata block is not valid UTF-8.  This is a
-    /// programming error: every valid `.jpkg` archive written by this codebase
-    /// or by C jpkg 1.1.5 contains only UTF-8 TOML.  Callers that handle
-    /// untrusted on-disk data should call [`Self::metadata_str`] instead to
-    /// get a `Result` rather than a potential panic.
     pub fn metadata(&self) -> &str {
-        // The C writer (pkg.c) always emits valid UTF-8 TOML, so valid archives
-        // never reach this branch.  The expect message is left for debugging.
         std::str::from_utf8(&self.metadata_raw)
-            .expect("metadata block is not valid UTF-8; use metadata_str() for error handling")
+            .expect("metadata block is not valid UTF-8; use metadata_bytes() for raw access")
     }
 
-    /// Raw TOML metadata bytes (for callers that need to validate UTF-8
-    /// themselves or handle legacy packages with non-UTF-8 metadata).
     pub fn metadata_bytes(&self) -> &[u8] {
         &self.metadata_raw
     }
 
-    /// Validated UTF-8 metadata, returning an error instead of panicking.
     pub fn metadata_str(&self) -> Result<&str, ArchiveError> {
         std::str::from_utf8(&self.metadata_raw).map_err(ArchiveError::Utf8)
     }
 
-    /// The raw zstd-compressed tar payload (everything after the header).
     pub fn payload(&self) -> &[u8] {
         &self.payload_raw
     }
 
-    // ── extraction ────────────────────────────────────────────────────────────
-
-    /// Decompress and extract the payload into `dest`, returning every path
-    /// created (for the installed-file manifest).
-    ///
-    /// Unlike the C `pkg_extract` (pkg.c:213-369) we do NOT:
-    /// - shell out to bsdtar / toybox tar / tar (no `Command::new`)
-    /// - write a temp .tar file to `/tmp`
-    /// - flatten `usr/` (that is the caller's job, matching the audit note)
-    ///
-    /// The `tar` crate handles symlinks natively (the reason the C code
-    /// preferred bsdtar over toybox tar — audit §1 "Symlink handling").
     pub fn extract(&self, dest: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
         fs::create_dir_all(dest)?;
         extract_zstd_tar(&self.payload_raw, dest)
@@ -263,53 +175,18 @@ impl JpkgArchive {
 
 /// Build a `.jpkg` archive at `out_path`.
 ///
-/// Wire format written (pkg.c:173-209):
-/// ```text
-/// MAGIC(8) | hdr_len_LE32(4) | toml_bytes(hdr_len) | zstd(tar(payload_root/**))
-/// ```
-///
-/// The TOML string is written verbatim — without a trailing NUL — matching the
-/// C `pkg_create` which copies `strlen(toml_metadata)` bytes (pkg.c:178, 193).
-///
-/// # Layout assertion
-/// Returns `ArchiveError::UnflatLayout` if `payload_root` has a top-level
-/// `usr/` or `lib64/` directory (mirroring `audit_layout_tree` from util.c).
-/// Callers (cmd_build) are responsible for flattening before calling this fn.
-///
-/// # Atomicity
-/// Written to `{out_path}.tmp` then renamed into place so a concurrent reader
-/// never sees a partial archive.
+/// Uses a randomly-named tempfile for the write so that a local attacker
+/// cannot pre-place a symlink at a predictable path to redirect the output.
 pub fn create(
     out_path: &Path,
     metadata_toml: &str,
     payload_root: &Path,
 ) -> Result<(), ArchiveError> {
-    // Thin shim over create_with_metadata_factory for callers that already
-    // have a fixed metadata blob and don't need the payload-sha-and-size
-    // chicken-and-egg fix.  Most production callers should use the factory
-    // form so files.sha256 / files.size land filled-in instead of empty.
     create_with_metadata_factory(out_path, payload_root, |_sha, _size| {
         Ok(metadata_toml.to_string())
     })
 }
 
-/// Like [`create`], but lets the caller plug in the
-/// `files.sha256` / `files.size` of the (zstd-compressed) payload AFTER it
-/// has been built.  Resolves the chicken-and-egg in cmd_build.c (and Worker
-/// M's previous FIXME): the metadata block is written BEFORE the payload in
-/// the .jpkg file, but the payload's sha256/size are part of the metadata.
-///
-/// The closure receives the 64-char lowercase hex sha256 of the compressed
-/// payload and its byte length, and must return the full metadata TOML text
-/// to embed.  Typical usage:
-///
-/// ```ignore
-/// archive::create_with_metadata_factory(&out_path, &dest_dir, |sha, size| {
-///     let meta = Metadata::from_recipe(recipe, sha.to_string(), size);
-///     meta.to_string().map_err(|e| ArchiveError::Io(io::Error::new(
-///         io::ErrorKind::Other, e.to_string())))
-/// })?;
-/// ```
 pub fn create_with_metadata_factory<F>(
     out_path: &Path,
     payload_root: &Path,
@@ -318,7 +195,7 @@ pub fn create_with_metadata_factory<F>(
 where
     F: FnOnce(&str, u64) -> Result<String, ArchiveError>,
 {
-    // ── layout audit (mirrors audit_layout_tree in util.c) ──────────────────
+    // Layout audit
     for banned in &["usr", "lib64"] {
         let candidate = payload_root.join(banned);
         if candidate.exists() {
@@ -326,41 +203,41 @@ where
         }
     }
 
-    // ── build tar in memory (streaming zstd encoder) ─────────────────────────
     let compressed_payload = build_compressed_tar(payload_root)?;
-
-    // ── compute sha256 + size of the compressed payload ────────────────────
     let payload_sha256 = sha256_hex_of(&compressed_payload);
     let payload_size = compressed_payload.len() as u64;
 
-    // ── caller plugs sha+size into the metadata TOML ───────────────────────
     let metadata_toml = metadata_factory(&payload_sha256, payload_size)?;
     let meta_bytes = metadata_toml.as_bytes();
-    let hdr_len = meta_bytes.len() as u32; // pkg.c:178 uses strlen()
+    let hdr_len = meta_bytes.len() as u32;
 
-    // ── assemble .jpkg header + payload ─────────────────────────────────────
-    // Atomic write: write to .tmp then rename (pkg.c uses file_write directly
-    // but on POSIX that is not atomic; we improve on the C behaviour here).
-    let tmp_path = out_path.with_extension("tmp");
+    // Security fix: use a randomly-named tempfile instead of the predictable
+    // `{out_path}.tmp`.  A predictable name lets a local attacker pre-place a
+    // symlink at that path to redirect the write to an arbitrary destination.
+    // tempfile::Builder creates the file with O_EXCL, guaranteeing uniqueness.
+    let out_dir = out_path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp_file = tempfile::Builder::new()
+        .prefix(".jpkg-write-")
+        .suffix(".tmp")
+        .tempfile_in(out_dir)
+        .map_err(ArchiveError::Io)?;
+
     {
-        let mut f = File::create(&tmp_path)?;
-        // MAGIC (8 bytes) — pkg.c:185-186
+        let mut f = tmp_file.as_file();
         f.write_all(&JPKG_MAGIC)?;
-        // HDR_LEN LE32 (4 bytes) — pkg.c:189-190
         f.write_all(&hdr_len.to_le_bytes())?;
-        // TOML metadata (variable, NOT NUL-terminated) — pkg.c:193-194
         f.write_all(meta_bytes)?;
-        // zstd payload — pkg.c:197-199
         f.write_all(&compressed_payload)?;
         f.flush()?;
     }
-    fs::rename(&tmp_path, out_path)?;
+
+    tmp_file
+        .persist(out_path)
+        .map_err(|e| ArchiveError::Io(e.error))?;
 
     Ok(())
 }
 
-/// 64-char lowercase hex sha256 of `bytes`.  Local helper to avoid a
-/// `crate::util` dependency from `archive` (keeps the module self-contained).
 fn sha256_hex_of(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
@@ -372,85 +249,210 @@ fn sha256_hex_of(bytes: &[u8]) -> String {
 // Internal helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Walk `root` in sorted deterministic order, build a tar stream, zstd-compress
-/// it, and return the compressed bytes.
 fn build_compressed_tar(root: &Path) -> Result<Vec<u8>, ArchiveError> {
     let out_buf: Vec<u8> = Vec::new();
-
-    // zstd::stream::Encoder<W> — default compression level (3).
-    let zstd_enc = zstd::stream::Encoder::new(out_buf, 0)
-        .map_err(ArchiveError::Zstd)?;
-
-    // tar::Builder<zstd::Encoder<Vec<u8>>>
+    let zstd_enc = zstd::stream::Encoder::new(out_buf, 0).map_err(ArchiveError::Zstd)?;
     let mut tar_builder = tar::Builder::new(zstd_enc);
-    // Preserve mtime and permission bits (default in the tar crate).
     tar_builder.follow_symlinks(false);
 
-    // Collect entries sorted for deterministic output.
     let mut entries: Vec<PathBuf> = WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
         .map(|e| e.into_path())
-        .filter(|p| p != root) // skip root itself
+        .filter(|p| p != root)
         .collect();
     entries.sort();
 
     for abs_path in &entries {
-        // SAFETY: every entry came from WalkDir::new(root) with the root itself
-        // filtered out, so strip_prefix always succeeds.  The unwrap is
-        // unreachable in production because WalkDir only yields descendants.
-        let rel = abs_path
-            .strip_prefix(root)
-            .expect("walkdir yields children of root");
-
-        let meta = abs_path.symlink_metadata()?;
-        if meta.is_symlink() {
-            // tar crate appends a symlink entry preserving the target.
-            tar_builder
-                .append_path_with_name(abs_path, rel)
-                .map_err(ArchiveError::Tar)?;
-        } else if meta.is_dir() {
-            tar_builder
-                .append_path_with_name(abs_path, rel)
-                .map_err(ArchiveError::Tar)?;
-        } else {
-            // Regular file (or other).
-            tar_builder
-                .append_path_with_name(abs_path, rel)
-                .map_err(ArchiveError::Tar)?;
-        }
+        let rel = abs_path.strip_prefix(root).expect("walkdir yields children of root");
+        tar_builder
+            .append_path_with_name(abs_path, rel)
+            .map_err(ArchiveError::Tar)?;
     }
 
-    // Finish the tar stream.
     let zstd_enc = tar_builder.into_inner().map_err(ArchiveError::Tar)?;
-    // Finish the zstd stream.
     let compressed = zstd_enc.finish().map_err(ArchiveError::Zstd)?;
-
     Ok(compressed)
 }
 
 /// Decompress `zstd_tar_bytes` and extract the embedded tar into `dest`.
-/// Returns the list of paths extracted.
+///
+/// # Security
+///
+/// Before any filesystem I/O, two attacks are blocked:
+///
+/// 1. **Path traversal**: entry paths containing `..` that escape `dest`, or
+///    absolute paths (e.g. `../../etc/shadow`, `/etc/shadow`).
+///
+/// 2. **Symlink-through-extraction-root**: a symlink entry whose target, when
+///    resolved relative to its parent directory inside `dest`, escapes `dest`.
+///    Absolute symlink targets are always rejected.
 fn extract_zstd_tar(zstd_tar_bytes: &[u8], dest: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
-    // zstd::stream::Decoder<&[u8]>
-    let decoder =
-        zstd::stream::Decoder::new(zstd_tar_bytes).map_err(ArchiveError::Zstd)?;
-
+    let decoder = zstd::stream::Decoder::new(zstd_tar_bytes).map_err(ArchiveError::Zstd)?;
     let mut archive = tar::Archive::new(decoder);
-    // preserve_mtime is true by default in the tar crate.
-    // preserve_permissions is true by default.
-    // unpack() handles symlinks, directories, and regular files.
 
     let mut created: Vec<PathBuf> = Vec::new();
 
     for entry in archive.entries().map_err(ArchiveError::Tar)? {
         let mut entry = entry.map_err(ArchiveError::Tar)?;
         let entry_path = entry.path().map_err(ArchiveError::Tar)?.into_owned();
+
+        // Security check 1: path traversal
+        validate_entry_path(dest, &entry_path).map_err(|msg| {
+            ArchiveError::Io(io::Error::new(io::ErrorKind::InvalidData, msg))
+        })?;
+
+        // Security check 2: symlink target must stay within dest
+        if entry.header().entry_type().is_symlink() {
+            let link_target = entry
+                .link_name()
+                .map_err(ArchiveError::Tar)?
+                .ok_or_else(|| {
+                    ArchiveError::Io(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("symlink entry {:?} has no link name", entry_path),
+                    ))
+                })?
+                .into_owned();
+
+            let symlink_parent = dest.join(
+                entry_path.parent().unwrap_or_else(|| std::path::Path::new("")),
+            );
+
+            validate_symlink_target(&symlink_parent, &link_target, dest).map_err(|msg| {
+                ArchiveError::Io(io::Error::new(io::ErrorKind::InvalidData, msg))
+            })?;
+        }
+
         entry.unpack_in(dest).map_err(ArchiveError::Tar)?;
-        created.push(dest.join(entry_path));
+        created.push(dest.join(&entry_path));
     }
 
     Ok(created)
+}
+
+// ── Path-arithmetic security helpers ─────────────────────────────────────────
+
+/// Validate that `entry_path`, when resolved inside `dest`, stays within `dest`.
+///
+/// Pure path arithmetic — no filesystem calls.
+pub(crate) fn validate_entry_path(dest: &Path, entry_path: &Path) -> Result<(), String> {
+    if entry_path.is_absolute() {
+        return Err(format!(
+            "archive entry has absolute path: {:?}",
+            entry_path
+        ));
+    }
+
+    let mut depth: i64 = 0;
+    for component in entry_path.components() {
+        use std::path::Component;
+        match component {
+            Component::ParentDir => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(format!(
+                        "archive entry path escapes extraction root: {:?}",
+                        entry_path
+                    ));
+                }
+            }
+            Component::CurDir => {}
+            Component::Normal(part) => {
+                if part.as_encoded_bytes().contains(&0u8) {
+                    return Err(format!(
+                        "archive entry path contains NUL byte: {:?}",
+                        entry_path
+                    ));
+                }
+                depth += 1;
+            }
+            _ => {
+                return Err(format!(
+                    "archive entry path has unexpected component: {:?}",
+                    entry_path
+                ));
+            }
+        }
+    }
+
+    // Belt-and-suspenders: compare the lexically-normalised final path against
+    // the canonical dest.  We use lexical normalisation of the entry path (not
+    // canonicalize of the final resolved path) to avoid following symlinks
+    // already placed by earlier entries in this extraction.
+    //
+    // We must root `lexical` at `canon_dest` (not raw `dest`) because on some
+    // systems (e.g. macOS where /tmp → /private/tmp) `dest` may contain
+    // symlink components; starts_with would spuriously fail if both sides are
+    // not in the same canonical namespace.
+    if dest.exists() {
+        if let Ok(canon_dest) = std::fs::canonicalize(dest) {
+            let mut lexical = canon_dest.clone();
+            for component in entry_path.components() {
+                use std::path::Component;
+                match component {
+                    Component::Normal(p) => lexical.push(p),
+                    Component::ParentDir => { lexical.pop(); }
+                    Component::CurDir => {}
+                    _ => {}
+                }
+            }
+            if !lexical.starts_with(&canon_dest) {
+                return Err(format!(
+                    "archive entry {:?} resolves outside extraction root {:?}",
+                    entry_path, dest
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate that `link_target`, resolved relative to `symlink_parent` inside
+/// `dest`, stays within `dest`.  Absolute targets are always rejected.
+///
+/// Pure depth arithmetic — no filesystem calls.
+pub(crate) fn validate_symlink_target(
+    symlink_parent: &Path,
+    link_target: &Path,
+    dest: &Path,
+) -> Result<(), String> {
+    if link_target.is_absolute() {
+        return Err(format!(
+            "symlink target is absolute and would escape extraction root: {:?}",
+            link_target
+        ));
+    }
+
+    let dest_depth = dest.components().count();
+    let parent_depth = symlink_parent.components().count();
+    let mut depth = parent_depth.saturating_sub(dest_depth) as i64;
+
+    for component in link_target.components() {
+        use std::path::Component;
+        match component {
+            Component::ParentDir => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(format!(
+                        "symlink target {:?} escapes extraction root {:?}",
+                        link_target, dest
+                    ));
+                }
+            }
+            Component::CurDir => {}
+            Component::Normal(_) => depth += 1,
+            _ => {
+                return Err(format!(
+                    "symlink target has unexpected component: {:?}",
+                    link_target
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -464,15 +466,6 @@ mod tests {
     use std::os::unix::fs::symlink;
     use tempfile::TempDir;
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    /// Build a synthetic DESTDIR tree:
-    /// ```
-    /// bin/hello        (regular file, "hello world\n")
-    /// lib/libx.so.1    (regular file, "\x7fELF")
-    /// lib/libx.so      (symlink → libx.so.1)
-    /// share/doc/x.txt  (regular file, "docs\n")
-    /// ```
     fn make_synthetic_destdir(dir: &Path) {
         fs::create_dir_all(dir.join("bin")).unwrap();
         fs::create_dir_all(dir.join("lib")).unwrap();
@@ -484,10 +477,7 @@ mod tests {
         fs::write(dir.join("share/doc/x.txt"), b"docs\n").unwrap();
     }
 
-    const SYNTHETIC_TOML: &str = r#"[package]
-name = "synthetic"
-version = "0.1.0"
-"#;
+    const SYNTHETIC_TOML: &str = "[package]\nname = \"synthetic\"\nversion = \"0.1.0\"\n";
 
     // ── 1. Round-trip ─────────────────────────────────────────────────────────
 
@@ -500,49 +490,33 @@ version = "0.1.0"
         let out = tmp.path().join("synthetic-0.1.0.jpkg");
         create(&out, SYNTHETIC_TOML, &destdir).expect("create() failed");
 
-        // Open and inspect.
         let arch = JpkgArchive::open(&out).expect("open() failed");
         assert_eq!(arch.metadata().trim(), SYNTHETIC_TOML.trim());
 
-        // Extract to a fresh dir.
         let extract_dir = tmp.path().join("extracted");
         let paths = arch.extract(&extract_dir).expect("extract() failed");
         assert!(!paths.is_empty(), "expected at least one extracted path");
 
-        // Verify regular file contents.
-        let hello = fs::read(extract_dir.join("bin/hello")).unwrap();
-        assert_eq!(hello, b"hello world\n");
+        assert_eq!(fs::read(extract_dir.join("bin/hello")).unwrap(), b"hello world\n");
+        assert_eq!(fs::read(extract_dir.join("lib/libx.so.1")).unwrap(), b"\x7fELF");
+        assert_eq!(fs::read(extract_dir.join("share/doc/x.txt")).unwrap(), b"docs\n");
 
-        let libx1 = fs::read(extract_dir.join("lib/libx.so.1")).unwrap();
-        assert_eq!(libx1, b"\x7fELF");
-
-        let doc = fs::read(extract_dir.join("share/doc/x.txt")).unwrap();
-        assert_eq!(doc, b"docs\n");
-
-        // Verify symlink is a symlink and has the right target.
         let symlink_path = extract_dir.join("lib/libx.so");
         let meta = symlink_path.symlink_metadata().unwrap();
         assert!(meta.file_type().is_symlink(), "lib/libx.so should be a symlink");
-        let target = fs::read_link(&symlink_path).unwrap();
-        assert_eq!(target.to_str().unwrap(), "libx.so.1");
+        assert_eq!(fs::read_link(&symlink_path).unwrap().to_str().unwrap(), "libx.so.1");
     }
 
     // ── 2. Magic check ────────────────────────────────────────────────────────
 
     #[test]
     fn test_bad_magic() {
-        // First 8 bytes are wrong ("XXXX\x00\x01\x00\x00"), rest is a valid
-        // LE32 hdr_len=0 so the buffer is at least 12 bytes.
         let mut buf = vec![0u8; 12];
         buf[..4].copy_from_slice(b"XXXX");
         buf[4..8].copy_from_slice(b"\x00\x01\x00\x00");
-        // hdr_len = 0 (already zero)
-
         let err = JpkgArchive::from_bytes(buf).unwrap_err();
         match err {
-            ArchiveError::BadMagic { got } => {
-                assert_eq!(&got[..4], b"XXXX");
-            }
+            ArchiveError::BadMagic { got } => assert_eq!(&got[..4], b"XXXX"),
             other => panic!("expected BadMagic, got: {other}"),
         }
     }
@@ -551,25 +525,20 @@ version = "0.1.0"
 
     #[test]
     fn test_truncated_header_too_short() {
-        // Only 4 bytes — less than HEADER_MIN (12).
         let buf = vec![b'J', b'P', b'K', b'G'];
         let err = JpkgArchive::from_bytes(buf).unwrap_err();
-        assert!(
-            matches!(err, ArchiveError::Io(_)),
-            "expected Io(UnexpectedEof) for 4-byte input, got: {err}"
-        );
+        assert!(matches!(err, ArchiveError::Io(_)), "expected Io(UnexpectedEof): {err}");
     }
 
     #[test]
     fn test_truncated_header_hdr_len_overflow() {
-        // Valid magic + hdr_len=0xFFFF_FFFF, but no metadata follows.
         let mut buf = vec![0u8; 12];
         buf[..8].copy_from_slice(&JPKG_MAGIC);
         buf[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
         let err = JpkgArchive::from_bytes(buf).unwrap_err();
         assert!(
             matches!(err, ArchiveError::BadHeaderLen(u32::MAX)),
-            "expected BadHeaderLen, got: {err}"
+            "expected BadHeaderLen: {err}"
         );
     }
 
@@ -579,19 +548,13 @@ version = "0.1.0"
     fn test_unflat_layout_usr() {
         let tmp = TempDir::new().unwrap();
         let destdir = tmp.path().join("destdir");
-        // Create a usr/ subdirectory — this should be rejected.
         fs::create_dir_all(destdir.join("usr/bin")).unwrap();
         fs::write(destdir.join("usr/bin/foo"), b"foo").unwrap();
 
         let out = tmp.path().join("bad.jpkg");
         let err = create(&out, SYNTHETIC_TOML, &destdir).unwrap_err();
         match err {
-            ArchiveError::UnflatLayout(p) => {
-                assert!(
-                    p.ends_with("usr"),
-                    "expected path ending in 'usr', got: {p:?}"
-                );
-            }
+            ArchiveError::UnflatLayout(p) => assert!(p.ends_with("usr")),
             other => panic!("expected UnflatLayout, got: {other}"),
         }
     }
@@ -605,10 +568,7 @@ version = "0.1.0"
 
         let out = tmp.path().join("bad.jpkg");
         let err = create(&out, SYNTHETIC_TOML, &destdir).unwrap_err();
-        assert!(
-            matches!(err, ArchiveError::UnflatLayout(_)),
-            "expected UnflatLayout for lib64, got: {err}"
-        );
+        assert!(matches!(err, ArchiveError::UnflatLayout(_)), "expected UnflatLayout: {err}");
     }
 
     // ── 5. Real .jpkg sniff (skip if none present) ───────────────────────────
@@ -616,42 +576,25 @@ version = "0.1.0"
     #[test]
     fn test_real_jpkg_sniff() {
         use std::ffi::OsStr;
-
-        // Search common output locations relative to the workspace root.
         let search_roots = [
             Path::new("/Users/jonerik/Desktop/jonerix/target/release"),
             Path::new("/Users/jonerik/Desktop/jonerix/out/jpkgs"),
             Path::new("/Users/jonerik/Desktop/jonerix/packages"),
         ];
-
         let jpkg_file: Option<PathBuf> = search_roots.iter().find_map(|root| {
-            if !root.exists() {
-                return None;
-            }
-            WalkDir::new(root)
-                .max_depth(4)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .map(|e| e.into_path())
+            if !root.exists() { return None; }
+            WalkDir::new(root).max_depth(4).into_iter()
+                .filter_map(|e| e.ok()).map(|e| e.into_path())
                 .find(|p| p.extension() == Some(OsStr::new("jpkg")))
         });
-
         match jpkg_file {
-            None => {
-                eprintln!("test_real_jpkg_sniff: no .jpkg found in search roots — skipping");
-            }
+            None => eprintln!("test_real_jpkg_sniff: no .jpkg found — skipping"),
             Some(path) => {
-                eprintln!("test_real_jpkg_sniff: found {}", path.display());
                 let arch = JpkgArchive::open(&path)
                     .unwrap_or_else(|e| panic!("failed to open {}: {e}", path.display()));
                 let meta = arch.metadata_str().expect("metadata not valid UTF-8");
-                assert!(!meta.is_empty(), "metadata should be non-empty TOML");
-                assert!(
-                    meta.contains('[') || meta.contains('='),
-                    "metadata doesn't look like TOML: {meta:?}"
-                );
-                // Payload may legitimately be empty for meta-packages; just
-                // check that we can access the slice.
+                assert!(!meta.is_empty());
+                assert!(meta.contains('[') || meta.contains('='));
                 let _ = arch.payload();
             }
         }
@@ -676,15 +619,275 @@ version = "0.1.0"
 
         let sym_path = extract_dir.join("lib/real.so");
         let sym_meta = sym_path.symlink_metadata().expect("real.so not found after extract");
-        assert!(
-            sym_meta.file_type().is_symlink(),
-            "lib/real.so should be a symlink after extraction"
-        );
-        let target = fs::read_link(&sym_path).expect("read_link failed");
-        assert_eq!(target.to_str().unwrap(), "real.so.1");
+        assert!(sym_meta.file_type().is_symlink());
+        assert_eq!(fs::read_link(&sym_path).unwrap().to_str().unwrap(), "real.so.1");
+        assert_eq!(fs::read(&sym_path).unwrap(), b"\x7fELF stub");
+    }
 
-        // The symlink target should be readable.
-        let contents = fs::read(&sym_path).expect("reading through symlink failed");
-        assert_eq!(contents, b"\x7fELF stub");
+    // ─────────────────────────────────────────────────────────────────────────
+    // Security regression tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Helper: craft a raw ustar tar entry (regular file).
+    fn append_tar_file_entry(buf: &mut Vec<u8>, path: &str, content: &[u8]) {
+        let mut hdr = [0u8; 512];
+        let name_bytes = path.as_bytes();
+        hdr[..name_bytes.len().min(100)].copy_from_slice(&name_bytes[..name_bytes.len().min(100)]);
+        hdr[100..108].copy_from_slice(b"0000644\0");
+        hdr[108..116].copy_from_slice(b"0000000\0");
+        hdr[116..124].copy_from_slice(b"0000000\0");
+        let size_octal = format!("{:011o}\0", content.len());
+        hdr[124..136].copy_from_slice(size_octal.as_bytes());
+        hdr[136..148].copy_from_slice(b"00000000000\0");
+        hdr[148..156].copy_from_slice(b"        ");
+        hdr[156] = b'0'; // regular file
+        hdr[257..263].copy_from_slice(b"ustar ");
+        hdr[263] = b' ';
+        let cksum: u32 = hdr.iter().map(|&b| b as u32).sum();
+        let cksum_str = format!("{:06o}\0 ", cksum);
+        hdr[148..156].copy_from_slice(cksum_str.as_bytes());
+        buf.extend_from_slice(&hdr);
+        buf.extend_from_slice(content);
+        let pad = (512 - (content.len() % 512)) % 512;
+        buf.extend(std::iter::repeat(0u8).take(pad));
+    }
+
+    // Helper: craft a raw ustar tar entry (symlink).
+    fn append_tar_symlink_entry(buf: &mut Vec<u8>, path: &str, link_target: &str) {
+        let mut hdr = [0u8; 512];
+        let name_bytes = path.as_bytes();
+        hdr[..name_bytes.len().min(100)].copy_from_slice(&name_bytes[..name_bytes.len().min(100)]);
+        hdr[100..108].copy_from_slice(b"0000777\0");
+        hdr[108..116].copy_from_slice(b"0000000\0");
+        hdr[116..124].copy_from_slice(b"0000000\0");
+        hdr[124..136].copy_from_slice(b"00000000000\0");
+        hdr[136..148].copy_from_slice(b"00000000000\0");
+        hdr[148..156].copy_from_slice(b"        ");
+        hdr[156] = b'2'; // symlink
+        let tgt = link_target.as_bytes();
+        hdr[157..157 + tgt.len().min(100)].copy_from_slice(&tgt[..tgt.len().min(100)]);
+        hdr[257..263].copy_from_slice(b"ustar ");
+        hdr[263] = b' ';
+        let cksum: u32 = hdr.iter().map(|&b| b as u32).sum();
+        let cksum_str = format!("{:06o}\0 ", cksum);
+        hdr[148..156].copy_from_slice(cksum_str.as_bytes());
+        buf.extend_from_slice(&hdr);
+    }
+
+    /// Wrap a raw tar byte stream into a minimal .jpkg envelope (zstd payload).
+    fn make_malicious_jpkg(tar_bytes: &[u8]) -> Vec<u8> {
+        let mut full_tar = tar_bytes.to_vec();
+        full_tar.extend(std::iter::repeat(0u8).take(1024)); // end-of-archive blocks
+        let compressed = zstd::encode_all(full_tar.as_slice(), 1).unwrap();
+        let meta = b"[package]\nname = \"evil\"\nversion = \"0.0.0\"\n";
+        let hdr_len = meta.len() as u32;
+        let mut jpkg = Vec::new();
+        jpkg.extend_from_slice(&JPKG_MAGIC);
+        jpkg.extend_from_slice(&hdr_len.to_le_bytes());
+        jpkg.extend_from_slice(meta);
+        jpkg.extend_from_slice(&compressed);
+        jpkg
+    }
+
+    // SEC-1: path traversal via `../../` in entry name must be rejected.
+    //
+    // A malicious .jpkg containing `../../etc/shadow` must be rejected before
+    // any bytes reach the filesystem.
+    #[test]
+    fn test_sec_path_traversal_dotdot_rejected() {
+        let mut tar_buf = Vec::new();
+        append_tar_file_entry(&mut tar_buf, "../../etc/shadow", b"root:x:0:0\n");
+        let arch = JpkgArchive::from_bytes(make_malicious_jpkg(&tar_buf)).unwrap();
+
+        let tmp = TempDir::new().unwrap();
+        let extract_dir = tmp.path().join("extract");
+        fs::create_dir_all(&extract_dir).unwrap();
+
+        let result = arch.extract(&extract_dir);
+        assert!(result.is_err(), "path-traversal entry must be rejected");
+        match result.unwrap_err() {
+            ArchiveError::Io(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+                assert!(e.to_string().contains("escapes extraction root"), "{e}");
+            }
+            other => panic!("expected Io(InvalidData), got: {other}"),
+        }
+        // The file must not have been created anywhere under tmp.
+        assert!(!tmp.path().join("etc/shadow").exists());
+    }
+
+    // SEC-2: absolute path entry must be rejected.
+    #[test]
+    fn test_sec_absolute_path_rejected() {
+        let mut tar_buf = Vec::new();
+        append_tar_file_entry(&mut tar_buf, "/etc/motd", b"pwned\n");
+        let arch = JpkgArchive::from_bytes(make_malicious_jpkg(&tar_buf)).unwrap();
+
+        let tmp = TempDir::new().unwrap();
+        let extract_dir = tmp.path().join("extract");
+        fs::create_dir_all(&extract_dir).unwrap();
+
+        let result = arch.extract(&extract_dir);
+        assert!(result.is_err(), "absolute path entry must be rejected");
+        match result.unwrap_err() {
+            ArchiveError::Io(e) => assert_eq!(e.kind(), io::ErrorKind::InvalidData),
+            other => panic!("expected Io(InvalidData), got: {other}"),
+        }
+    }
+
+    // SEC-3: symlink with absolute target must be rejected.
+    #[test]
+    fn test_sec_absolute_symlink_target_rejected() {
+        let mut tar_buf = Vec::new();
+        append_tar_symlink_entry(&mut tar_buf, "lib/evil", "/etc");
+        let arch = JpkgArchive::from_bytes(make_malicious_jpkg(&tar_buf)).unwrap();
+
+        let tmp = TempDir::new().unwrap();
+        let extract_dir = tmp.path().join("extract");
+        fs::create_dir_all(extract_dir.join("lib")).unwrap();
+
+        let result = arch.extract(&extract_dir);
+        assert!(result.is_err(), "absolute symlink target must be rejected");
+        match result.unwrap_err() {
+            ArchiveError::Io(e) => {
+                assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+                assert!(e.to_string().contains("absolute"), "{e}");
+            }
+            other => panic!("expected Io(InvalidData), got: {other}"),
+        }
+        assert!(!extract_dir.join("lib/evil").symlink_metadata().is_ok());
+    }
+
+    // SEC-4: two-step symlink-through-extraction-root attack must be rejected.
+    //
+    // Entry 1: `escape -> ../..`  (symlink, target escapes dest two levels up)
+    // Entry 2: `escape/shadow`    (file written through the symlink)
+    //
+    // The validation must block entry 1 before it is written to disk.
+    #[test]
+    fn test_sec_symlink_through_extraction_root_rejected() {
+        let mut tar_buf = Vec::new();
+        append_tar_symlink_entry(&mut tar_buf, "escape", "../..");
+        append_tar_file_entry(&mut tar_buf, "escape/shadow", b"written-through-symlink\n");
+        let arch = JpkgArchive::from_bytes(make_malicious_jpkg(&tar_buf)).unwrap();
+
+        let tmp = TempDir::new().unwrap();
+        let extract_dir = tmp.path().join("extract");
+        fs::create_dir_all(&extract_dir).unwrap();
+
+        let result = arch.extract(&extract_dir);
+        assert!(result.is_err(), "escape symlink must be rejected");
+        assert!(!extract_dir.join("escape").symlink_metadata().is_ok());
+    }
+
+    // SEC-5: valid relative symlink within dest must still work after the fix.
+    #[test]
+    fn test_sec_valid_relative_symlink_allowed() {
+        let tmp = TempDir::new().unwrap();
+        let destdir = tmp.path().join("destdir");
+        fs::create_dir_all(destdir.join("lib")).unwrap();
+        fs::write(destdir.join("lib/libfoo.so.1"), b"\x7fELF").unwrap();
+        symlink("libfoo.so.1", destdir.join("lib/libfoo.so")).unwrap();
+
+        let out = tmp.path().join("pkg.jpkg");
+        create(&out, SYNTHETIC_TOML, &destdir).unwrap();
+
+        let arch = JpkgArchive::open(&out).unwrap();
+        let extract_dir = tmp.path().join("extract");
+        arch.extract(&extract_dir).expect("valid relative symlink must extract");
+
+        let sym = extract_dir.join("lib/libfoo.so");
+        assert!(sym.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_link(&sym).unwrap().to_str().unwrap(), "libfoo.so.1");
+    }
+
+    // SEC-6: atomic write uses unpredictable temp name, not `{out_path}.tmp`.
+    //
+    // The old code used `out_path.with_extension("tmp")` which is predictable.
+    // A local attacker could pre-place a symlink there to redirect the write.
+    // After the fix, we use a randomly-named tempfile via tempfile::Builder.
+    #[test]
+    fn test_sec_create_no_predictable_tmp_file() {
+        let tmp = TempDir::new().unwrap();
+        let destdir = tmp.path().join("destdir");
+        fs::create_dir_all(destdir.join("bin")).unwrap();
+        fs::write(destdir.join("bin/hello"), b"hello").unwrap();
+
+        let out = tmp.path().join("test.jpkg");
+        create(&out, SYNTHETIC_TOML, &destdir).expect("create() must succeed");
+
+        // Output file must exist.
+        assert!(out.exists(), "output .jpkg must exist");
+
+        // The old predictable .tmp path must NOT exist after create().
+        let old_tmp = out.with_extension("tmp");
+        assert!(
+            !old_tmp.exists(),
+            "predictable .tmp file must not remain: {:?}",
+            old_tmp
+        );
+
+        // No .jpkg-write-*.tmp files must remain (tempfile cleans up on persist).
+        let leftover: Vec<_> = fs::read_dir(tmp.path()).unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(".jpkg-write-") && n.ends_with(".tmp"))
+            .collect();
+        assert!(
+            leftover.is_empty(),
+            "no leftover .jpkg-write-*.tmp files: {:?}",
+            leftover
+        );
+    }
+
+    // Unit tests for the path-validation helpers.
+
+    #[test]
+    fn test_validate_entry_path_rejects_dotdot() {
+        let dest = Path::new("/dest");
+        assert!(validate_entry_path(dest, Path::new("../../etc/shadow")).is_err());
+        assert!(validate_entry_path(dest, Path::new("../sibling")).is_err());
+    }
+
+    #[test]
+    fn test_validate_entry_path_rejects_absolute() {
+        let dest = Path::new("/dest");
+        assert!(validate_entry_path(dest, Path::new("/etc/shadow")).is_err());
+    }
+
+    #[test]
+    fn test_validate_entry_path_allows_normal_paths() {
+        let dest = Path::new("/dest");
+        assert!(validate_entry_path(dest, Path::new("bin/sh")).is_ok());
+        assert!(validate_entry_path(dest, Path::new("./bin/sh")).is_ok());
+        // a/b/../c stays within dest
+        assert!(validate_entry_path(dest, Path::new("a/b/../c")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_symlink_target_rejects_absolute() {
+        let dest = Path::new("/dest");
+        let parent = Path::new("/dest/lib");
+        assert!(validate_symlink_target(parent, Path::new("/etc"), dest).is_err());
+    }
+
+    #[test]
+    fn test_validate_symlink_target_rejects_escape() {
+        let dest = Path::new("/dest");
+        let parent = Path::new("/dest/lib");
+        // ../../ from /dest/lib reaches /, above /dest
+        assert!(validate_symlink_target(parent, Path::new("../../"), dest).is_err());
+        assert!(validate_symlink_target(parent, Path::new("../.."), dest).is_err());
+    }
+
+    #[test]
+    fn test_validate_symlink_target_allows_normal_relative() {
+        let dest = Path::new("/dest");
+        let parent = Path::new("/dest/lib");
+        assert!(validate_symlink_target(parent, Path::new("libfoo.so.1"), dest).is_ok());
+        // ../bin/sh goes dest/lib -> dest/bin/sh, still within dest
+        assert!(validate_symlink_target(parent, Path::new("../bin/sh"), dest).is_ok());
+        // ../ alone reaches dest itself, which is within dest (depth >= 0)
+        assert!(validate_symlink_target(parent, Path::new("../"), dest).is_ok());
     }
 }

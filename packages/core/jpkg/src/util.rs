@@ -54,7 +54,7 @@ use walkdir::WalkDir;
 
 // ── Public constants ────────────────────────────────────────────────────────
 
-pub const JPKG_VERSION: &str = "2.2.0";
+pub const JPKG_VERSION: &str = "2.2.1";
 pub const JPKG_DB_DIR: &str = "/var/db/jpkg";
 pub const JPKG_CACHE_DIR: &str = "/var/cache/jpkg";
 pub const JPKG_CONFIG_DIR: &str = "/etc/jpkg";

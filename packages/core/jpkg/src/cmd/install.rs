@@ -42,6 +42,16 @@ pub(crate) enum SignatureError {
 
 /// Verify the per-package signature embedded in a `.jpkg` archive.
 ///
+/// # Security: TOCTOU fix
+///
+/// The old signature took `jpkg_path: &Path` and opened the file itself,
+/// creating a window between sha256 verification (done by the caller) and
+/// signature verification: a racing `rename(2)` could swap in a different file
+/// in that gap, letting a valid signature on file A authorise the extraction
+/// of file B.  The fix is to accept an already-opened `&JpkgArchive` — the
+/// same in-memory bytes that were sha256-verified — so the signature is
+/// verified over exactly the bytes that will be extracted.
+///
 /// # Behaviour
 ///
 /// | signature present | valid | policy   | outcome                     |
@@ -57,14 +67,10 @@ pub(crate) enum SignatureError {
 /// (typically `rootfs/etc/jpkg/keys`).  If the directory doesn't exist or
 /// has no keys, unsigned packages pass only under Warn/Ignore policy.
 pub(crate) fn verify_jpkg_signature(
-    jpkg_path: &Path,
+    archive: &JpkgArchive,
     keys_dir: &Path,
     policy: SignaturePolicy,
 ) -> Result<VerifyOutcome, SignatureError> {
-    // Open archive to get metadata + payload bytes.
-    let archive = crate::archive::JpkgArchive::open(jpkg_path)
-        .map_err(|e| SignatureError::Invalid(format!("failed to open archive: {e}")))?;
-
     let metadata = Metadata::from_str(
         archive
             .metadata_str()
@@ -317,7 +323,12 @@ pub(crate) fn install_packages(
             .and_then(|p| p.parent())
             .map(|p| p.join("etc/jpkg/keys"))
             .unwrap_or_else(|| std::path::PathBuf::from("/etc/jpkg/keys"));
-        match verify_jpkg_signature(&jpkg_path, &keys_dir, repo.signature_policy) {
+        // Open archive once.  The same in-memory bytes are used for both
+        // signature verification and extraction, eliminating the TOCTOU window
+        // that existed when verify_jpkg_signature reopened the file by path.
+        let archive = JpkgArchive::open(&jpkg_path)?;
+
+        match verify_jpkg_signature(&archive, &keys_dir, repo.signature_policy) {
             Ok(VerifyOutcome::Verified { key_id }) => {
                 log::info!(
                     "verified signature for {}-{} (key {})",
@@ -369,8 +380,7 @@ pub(crate) fn install_packages(
             },
         }
 
-        // Open archive + parse metadata.
-        let archive = JpkgArchive::open(&jpkg_path)?;
+        // Parse metadata from the already-opened archive (no second file open).
         let metadata = Metadata::from_str(archive.metadata_str()?)?;
 
         // pre_install hook.
@@ -703,7 +713,8 @@ mod tests {
         let empty_keys = tmp.path().join("keys");
         fs::create_dir_all(&empty_keys).unwrap();
 
-        let result = verify_jpkg_signature(&jpkg_path, &empty_keys, SignaturePolicy::Warn);
+        let archive = JpkgArchive::open(&jpkg_path).unwrap();
+        let result = verify_jpkg_signature(&archive, &empty_keys, SignaturePolicy::Warn);
         assert!(
             matches!(result, Ok(VerifyOutcome::UnsignedAccepted)),
             "policy=warn + no sig must give UnsignedAccepted; got: {:?}",
@@ -719,7 +730,8 @@ mod tests {
         let empty_keys = tmp.path().join("keys");
         fs::create_dir_all(&empty_keys).unwrap();
 
-        let result = verify_jpkg_signature(&jpkg_path, &empty_keys, SignaturePolicy::Ignore);
+        let archive = JpkgArchive::open(&jpkg_path).unwrap();
+        let result = verify_jpkg_signature(&archive, &empty_keys, SignaturePolicy::Ignore);
         assert!(
             matches!(result, Ok(VerifyOutcome::UnsignedIgnored)),
             "policy=ignore + no sig must give UnsignedIgnored; got: {:?}",
@@ -735,7 +747,8 @@ mod tests {
         let empty_keys = tmp.path().join("keys");
         fs::create_dir_all(&empty_keys).unwrap();
 
-        let result = verify_jpkg_signature(&jpkg_path, &empty_keys, SignaturePolicy::Require);
+        let archive = JpkgArchive::open(&jpkg_path).unwrap();
+        let result = verify_jpkg_signature(&archive, &empty_keys, SignaturePolicy::Require);
         assert!(
             matches!(result, Err(SignatureError::Missing)),
             "policy=require + no sig must give Missing; got: {:?}",
@@ -761,7 +774,8 @@ mod tests {
 
         // All three policies should error on an invalid signature.
         for policy in [SignaturePolicy::Warn, SignaturePolicy::Ignore, SignaturePolicy::Require] {
-            let result = verify_jpkg_signature(&jpkg_path, &keys_dir, policy);
+            let archive = JpkgArchive::open(&jpkg_path).unwrap();
+            let result = verify_jpkg_signature(&archive, &keys_dir, policy);
             assert!(
                 matches!(result, Err(SignatureError::Invalid(_))),
                 "tampered sig must always give Invalid (policy={policy:?}); got: {:?}",
@@ -785,7 +799,8 @@ mod tests {
             build_signed_jpkg(tmp.path(), "signedpkg", "2.0.0", &sk, key_id);
 
         for policy in [SignaturePolicy::Warn, SignaturePolicy::Ignore, SignaturePolicy::Require] {
-            let result = verify_jpkg_signature(&jpkg_path, &keys_dir, policy);
+            let archive = JpkgArchive::open(&jpkg_path).unwrap();
+            let result = verify_jpkg_signature(&archive, &keys_dir, policy);
             match result {
                 Ok(VerifyOutcome::Verified { key_id: ref kid }) => {
                     assert_eq!(kid, key_id, "matched key should be {key_id}");

@@ -28,6 +28,8 @@
 //! [PAYLOAD: zstd-compressed tar archive — to end of file]
 //! ```
 
+// Fail the build on any compiler warning — zero-warning policy.
+#![deny(warnings)]
 #![allow(dead_code)]
 // jpkg is your own MIT-licensed source — the Rust port is a translation
 // rather than a clean-room rewrite — but we still want the safety budget
@@ -48,9 +50,6 @@ pub mod repo;
 pub mod deps;
 
 pub mod cmd;
-
-// Phase-3 CLI sub-module:
-// pub mod cmd;
 
 /// `JPKG\x00\x01\x00\x00` — see jpkg/src/pkg.h:17-20.  First 4 bytes are the
 /// ASCII tag; next 4 are version major/minor in two LE16s (currently 1, 0).
