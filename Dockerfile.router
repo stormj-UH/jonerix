@@ -23,7 +23,7 @@ ARG CORE_IMAGE=jonerix:core
 FROM ${CORE_IMAGE}
 
 # Install networking packages via jpkg
-# Core already provides: dropbear, dhcpcd, ifupdown-ng, unbound, doas
+# Core already provides: dropbear, dhcpcd, ifupdown-ng, unbound
 # Router adds: stormwall (nftables CLI), jcarp (CARP failover),
 # nloxide (libnl replacement), hostapd, wpa_supplicant, btop for
 # monitoring.

@@ -908,7 +908,7 @@ NONFREE_URL="https://github.com/RPi-Distro/firmware-nonfree/archive/refs/heads/$
 log() {{ printf '[pi5-restricted] %s\\n' "$*"; }}
 die() {{ printf '[pi5-restricted] ERROR: %s\\n' "$*" >&2; exit 1; }}
 
-[ "$(id -u)" -eq 0 ] || die "must run as root (try: doas $0)"
+[ "$(id -u)" -eq 0 ] || die "must run as root (try: sudo $0)"
 
 command -v curl >/dev/null 2>&1 || die "curl is required (jpkg install curl)"
 command -v bsdtar >/dev/null 2>&1 || die "bsdtar is required (jpkg install bsdtar)"

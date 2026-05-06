@@ -100,7 +100,7 @@ RUN jpkg --root /jonerix update && \
       cmake jmake samurai flex bc byacc \
       perl python3 nodejs \
       exproxide \
-      curl dropbear openrc doas \
+      curl dropbear openrc \
       snooze dhcpcd ifupdown-ng unbound \
       shadow \
       mandoc pigz fastfetch \
@@ -161,7 +161,6 @@ COPY config/defaults/etc/group        /jonerix/etc/group
 COPY config/defaults/etc/shadow       /jonerix/etc/shadow
 COPY config/defaults/etc/shells       /jonerix/etc/shells
 COPY config/defaults/etc/profile      /jonerix/etc/profile
-COPY config/defaults/etc/doas.conf    /jonerix/etc/doas.conf
 COPY config/defaults/etc/os-release   /jonerix/etc/os-release
 COPY config/defaults/etc/fastfetch/   /jonerix/etc/fastfetch/
 COPY config/defaults/etc/securetty    /jonerix/etc/securetty

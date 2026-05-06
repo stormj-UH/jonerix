@@ -78,7 +78,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     for pkg in \
       musl \
       zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
-      openrc doas snooze tzdata \
+      openrc snooze tzdata \
       dropbear dhcpcd ifupdown-ng unbound openntpd \
       shadow \
       libarchive bsdtar openrsync \
@@ -117,8 +117,8 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     /bin/toybox ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true && \
     /bin/toybox ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true && \
     # Re-assert /bin/sh -> mksh AFTER the install loop. The for-loop above
-    # transitively re-installs toybox (as a runtime dep of openrc, doas,
-    # snooze, etc.) with `--force`, and toybox.jpkg's payload includes a
+    # transitively re-installs toybox (as a runtime dep of openrc, snooze,
+    # etc.) with `--force`, and toybox.jpkg's payload includes a
     # /bin/sh -> toybox symlink that overwrites mksh's earlier claim.
     # Without this final symlink, /bin/sh ends up as toybox in the published
     # core image and downstream Dockerfile.builder's RUN block (which calls

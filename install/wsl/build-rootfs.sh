@@ -156,7 +156,7 @@ ln -sf mksh "${STAGING}/bin/sh"
 for pkg in \
     musl \
     zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
-    doas snooze tzdata \
+    snooze tzdata \
     dropbear dhcpcd ifupdown-ng unbound openntpd \
     shadow \
     libarchive bsdtar openrsync \
@@ -215,7 +215,7 @@ ln -sf pico    "${STAGING}/bin/editor" 2>/dev/null || true
 ln -sf pico    "${STAGING}/bin/vi"     2>/dev/null || true
 
 # SUID bits on login utilities (if present)
-chmod 4755 "${STAGING}/bin/su" "${STAGING}/bin/passwd" "${STAGING}/bin/login" "${STAGING}/bin/doas" 2>/dev/null || true
+chmod 4755 "${STAGING}/bin/su" "${STAGING}/bin/passwd" "${STAGING}/bin/login" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # 8. Copy config files from repo defaults
@@ -225,7 +225,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DEFAULTS="${REPO_ROOT}/config/defaults/etc"
 
 echo "--- Copying default config files ---"
-for f in hostname passwd group shadow shells profile zshrc doas.conf os-release securetty; do
+for f in hostname passwd group shadow shells profile zshrc os-release securetty; do
     if [ -f "${DEFAULTS}/${f}" ]; then
         cp "${DEFAULTS}/${f}" "${STAGING}/etc/${f}"
     fi

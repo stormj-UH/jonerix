@@ -255,7 +255,7 @@ fn delegate_to_shadow_chsh(shell_path: &str, target_user: &str, caller: &str) ->
     if !is_executable(Path::new(SHADOW_CHSH)) {
         eprintln!(
             "chsh: cannot rewrite /etc/passwd as a non-root user, and {} is not installed.\n\
-             Run `doas chsh -s {}` (or rerun this command as root).",
+             Run `sudo chsh -s {}` (or rerun this command as root).",
             SHADOW_CHSH, shell_path
         );
         return ExitCode::FAILURE;
@@ -279,7 +279,7 @@ fn print_usage() {
     println!("       chsh SHELL [USER]             # same as -s");
     println!();
     println!("Login shells must live in /bin. Common picks: brash, bash, mksh, zsh, sh.");
-    println!("Run as root (or via doas) to change other users' shells.");
+    println!("Run as root (or via sudo) to change other users' shells.");
 }
 
 #[derive(Clone)]

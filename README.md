@@ -239,7 +239,6 @@ the rootfs is assembled in CI.
 | mandoc | ISC | Man page tools |
 | pigz | Zlib | Parallel gzip |
 | bsdtar | BSD-2-Clause | Archive tool (libarchive) |
-| doas | ISC | Privilege escalation |
 | fastfetch | MIT | System information |
 | btop | Apache-2.0 | Terminal resource monitor |
 | tmux | ISC | Terminal multiplexer |

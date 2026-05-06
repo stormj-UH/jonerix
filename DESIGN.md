@@ -97,7 +97,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | Coreutils | toybox + uutils | 0BSD / MIT | BusyBox (GPL), GNU coreutils (GPL) |
 | Shell | zsh | BSD | bash (GPL) |
 | Init system | OpenRC | BSD-2-Clause | systemd (LGPL) |
-| Privilege escalation | doas | ISC | sudo |
+| Privilege escalation | sudo | ISC | — |
 | TLS library | LibreSSL | ISC | OpenSSL (Apache-2.0) |
 | SSH server | dropbear | MIT | OpenSSH (BSD, but depends on GPL OpenSSL historically) |
 | HTTP client | curl | curl license (MIT-like) | wget (GPL) |
@@ -251,7 +251,6 @@ Merged `/usr` — all binaries live in `/bin`, all libraries in `/lib`. It's 202
 │   ├── unbound/      ← DNS resolver config (router)
 │   ├── hostapd/      ← WiFi AP config (router)
 │   ├── fastfetch/    ← system info display config
-│   ├── doas.conf     ← privilege escalation rules
 │   └── securetty     ← allowed TTYs for root login
 ├── var/
 │   ├── log/          ← syslogd output
@@ -341,7 +340,6 @@ All packages are built with:
 
 - **Multi-user**: getty on tty1-tty3, `/etc/securetty` restricts root login to console + tty1-3 + ttyS0.
 - **SUID bits**: Only `su`, `passwd`, and `login` have setuid (chmod 4755).
-- **doas**: Minimal config. Default: users in `wheel` group can elevate. No `NOPASSWD` by default.
 - **System accounts**: daemon, bin, sys with nologin. Separate groups for tty, disk access.
 - **Kernel hardening**: `kernel.kptr_restrict=2`, `kernel.dmesg_restrict=1`, `kernel.unprivileged_bpf_disabled=1`.
 - **Router sysctl**: SYN cookies, ICMP redirect rejection, reverse path filtering, no source routing.
@@ -463,7 +461,7 @@ jonerix/
 │   │   └── etc/             ← unbound, hostapd, interfaces, sysctl
 │   └── defaults/
 │       └── etc/             ← hostname, passwd, group, shadow, profile,
-│                               securetty, doas.conf, os-release, fastfetch/
+│                               securetty, os-release, fastfetch/
 │
 ├── scripts/
 │   ├── build-local.sh       ← build images locally (mirrors CI chain)

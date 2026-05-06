@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **98 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -30,7 +30,6 @@ Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-
 | **`bsdtar`** | `core` | 3.8.6-r7 | Apache-2.0 | any | `libarchive` | - | Compatibility package providing /bin/tar via libarchive bsdtar |
 | **`curl`** | `core` | 8.11.1-r6 | MIT | any | `musl`, `libressl`, `zlib`, `libnghttp2` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `libnghttp2` | Command-line tool and library for transferring data with URLs |
 | **`dhcpcd`** | `core` | 10.1.0-r8 | BSD-2-Clause | any | `musl`, `openrc` | `clang`, `make`, `jonerix-headers` | RFC2131-compliant DHCP client daemon |
-| **`doas`** | `core` | 6.8.2-r3 | ISC | any | `musl` | `clang`, `make`, `byacc` | Lightweight privilege escalation tool (OpenDoas) |
 | **`dropbear`** | `core` | 2024.86-r4 | MIT | any | `musl`, `libressl` | `clang`, `make`, `jonerix-headers` | Lightweight SSH server and client |
 | **`expat`** | `core` | 2.6.4 | MIT | any | `musl` | `clang`, `make` | Stream-oriented XML parser library (libexpat) |
 | **`exproxide`** | `core` | 0.1.0 | MIT | any | `musl` | `rust` | Clean-room Rust implementation of expr for jonerix |
