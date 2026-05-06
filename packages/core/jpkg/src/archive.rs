@@ -284,9 +284,10 @@ fn build_compressed_tar(root: &Path) -> Result<Vec<u8>, ArchiveError> {
 /// 1. **Path traversal**: entry paths containing `..` that escape `dest`, or
 ///    absolute paths (e.g. `../../etc/shadow`, `/etc/shadow`).
 ///
-/// 2. **Symlink-through-extraction-root**: a symlink entry whose target, when
-///    resolved relative to its parent directory inside `dest`, escapes `dest`.
-///    Absolute symlink targets are always rejected.
+/// 2. **Symlink-through-extraction-root**: a relative symlink entry whose target,
+///    when resolved relative to its parent directory inside `dest`, escapes `dest`
+///    via `../` traversal.  Absolute symlink targets are allowed (jonerix packages
+///    use them legitimately, e.g. `/lib/libc.so`).
 fn extract_zstd_tar(zstd_tar_bytes: &[u8], dest: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
     let decoder = zstd::stream::Decoder::new(zstd_tar_bytes).map_err(ArchiveError::Zstd)?;
     let mut archive = tar::Archive::new(decoder);
@@ -410,7 +411,13 @@ pub(crate) fn validate_entry_path(dest: &Path, entry_path: &Path) -> Result<(), 
 }
 
 /// Validate that `link_target`, resolved relative to `symlink_parent` inside
-/// `dest`, stays within `dest`.  Absolute targets are always rejected.
+/// `dest`, stays within `dest`.
+///
+/// **Absolute symlink targets are allowed** — the jonerix package format uses
+/// absolute symlinks extensively (e.g. `lib/ld-musl-x86_64.so.1 → /lib/libc.so`).
+/// These are safe because `tar::Entry::unpack_in` creates the symlink as a
+/// dangling symlink node inside `dest`, it does NOT follow the target.  The
+/// actual security risk is relative `../` traversal, which this function catches.
 ///
 /// Pure depth arithmetic — no filesystem calls.
 pub(crate) fn validate_symlink_target(
@@ -418,11 +425,10 @@ pub(crate) fn validate_symlink_target(
     link_target: &Path,
     dest: &Path,
 ) -> Result<(), String> {
+    // Absolute targets are fine — they're stored as symlink nodes, not followed
+    // during extraction.  Packages like musl use `/lib/libc.so` as a target.
     if link_target.is_absolute() {
-        return Err(format!(
-            "symlink target is absolute and would escape extraction root: {:?}",
-            link_target
-        ));
+        return Ok(());
     }
 
     let dest_depth = dest.components().count();
@@ -737,9 +743,12 @@ mod tests {
 
     // SEC-3: symlink with absolute target must be rejected.
     #[test]
-    fn test_sec_absolute_symlink_target_rejected() {
+    fn test_sec_absolute_symlink_target_allowed() {
+        // Absolute symlink targets are legitimate in jonerix packages.
+        // musl creates `/lib/ld-musl-x86_64.so.1 → /lib/libc.so`.
+        // These are safe: tar creates the symlink node, it does NOT follow the target.
         let mut tar_buf = Vec::new();
-        append_tar_symlink_entry(&mut tar_buf, "lib/evil", "/etc");
+        append_tar_symlink_entry(&mut tar_buf, "lib/link", "/lib/libc.so");
         let arch = JpkgArchive::from_bytes(make_malicious_jpkg(&tar_buf)).unwrap();
 
         let tmp = TempDir::new().unwrap();
@@ -747,15 +756,12 @@ mod tests {
         fs::create_dir_all(extract_dir.join("lib")).unwrap();
 
         let result = arch.extract(&extract_dir);
-        assert!(result.is_err(), "absolute symlink target must be rejected");
-        match result.unwrap_err() {
-            ArchiveError::Io(e) => {
-                assert_eq!(e.kind(), io::ErrorKind::InvalidData);
-                assert!(e.to_string().contains("absolute"), "{e}");
-            }
-            other => panic!("expected Io(InvalidData), got: {other}"),
-        }
-        assert!(!extract_dir.join("lib/evil").symlink_metadata().is_ok());
+        assert!(result.is_ok(), "absolute symlink target should be allowed: {:?}", result.err());
+        // Verify the symlink was created (as a dangling symlink)
+        let link_path = extract_dir.join("lib/link");
+        assert!(link_path.symlink_metadata().is_ok(), "symlink should exist");
+        let target = fs::read_link(&link_path).unwrap();
+        assert_eq!(target.to_str().unwrap(), "/lib/libc.so");
     }
 
     // SEC-4: two-step symlink-through-extraction-root attack must be rejected.
@@ -865,10 +871,14 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_symlink_target_rejects_absolute() {
+    fn test_validate_symlink_target_allows_absolute() {
+        // Absolute symlink targets are legitimate in jonerix packages
+        // (e.g. musl: lib/ld-musl-x86_64.so.1 → /lib/libc.so).
+        // They're stored as symlink nodes, not followed during extraction.
         let dest = Path::new("/dest");
         let parent = Path::new("/dest/lib");
-        assert!(validate_symlink_target(parent, Path::new("/etc"), dest).is_err());
+        assert!(validate_symlink_target(parent, Path::new("/lib/libc.so"), dest).is_ok());
+        assert!(validate_symlink_target(parent, Path::new("/etc/shadow"), dest).is_ok());
     }
 
     #[test]
