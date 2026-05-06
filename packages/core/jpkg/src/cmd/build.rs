@@ -354,6 +354,9 @@ fn extract_source(tarball: &Path, src_dir: &Path) -> Result<(), String> {
 
     // Split the tar_bin string for Command.
     let mut parts = tar_bin.split_whitespace();
+    // SAFETY: `tar_bin` is always one of the three string literals above —
+    // "/bin/toybox tar", a bsdtar path, or "tar" — all of which are non-empty.
+    // `split_whitespace().next()` on a non-empty string is always `Some`.
     let prog = parts.next().unwrap();
     let mut cmd = Command::new(prog);
     for part in parts {

@@ -160,6 +160,9 @@ pub(crate) fn merge_duplicate_sections(input: &str) -> Cow<'_, str> {
         // Body line (or comment/blank, or in-string content).
         match &current {
             Some(key) => {
+                // SAFETY: `current` is always set to a key that was inserted via
+                // `bodies.entry(inner.clone()).or_default()` above, so the key is
+                // guaranteed to be present in `bodies`.  The unwrap is unreachable.
                 bodies.get_mut(key).unwrap().push(line);
             }
             None => prefix.push(line),
@@ -375,7 +378,10 @@ pub(crate) fn sanitize_legacy_escapes(input: &str) -> Cow<'_, str> {
     }
 
     if changed {
-        // Sanitiser only doubles existing valid UTF-8 bytes, never breaks codepoints.
+        // SAFETY: the sanitiser only copies bytes from the input `&str` (which is
+        // valid UTF-8 by construction) and doubles backslash bytes (0x5C), which
+        // are single-byte ASCII codepoints.  No multi-byte UTF-8 sequences are
+        // split or synthesised, so the resulting `Vec<u8>` is always valid UTF-8.
         Cow::Owned(String::from_utf8(out).expect("sanitiser preserves UTF-8"))
     } else {
         Cow::Borrowed(input)

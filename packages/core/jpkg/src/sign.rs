@@ -203,6 +203,9 @@ pub fn verify_detached(
             got: sig.len(),
         });
     }
+    // SAFETY: the `sig.len() != SIGNATURE_LEN` guard above ensures exactly
+    // SIGNATURE_LEN (64) bytes are present, so try_into() into [u8; 64] cannot
+    // fail — the slice length matches the array length exactly.
     let arr: [u8; SIGNATURE_LEN] = sig.try_into().unwrap();
     let signature = Signature::from_bytes(&arr);
     public.verify(msg, &signature)?;
@@ -298,6 +301,9 @@ impl PublicKeySet {
                 Err(e) => last_err = Some(e),
             }
         }
+        // SAFETY: the `self.keys.is_empty()` early-return above guarantees at
+        // least one iteration of the loop, so `last_err` is always `Some` by
+        // the time we reach this point.  The unwrap is unreachable.
         Err(last_err.unwrap())
     }
 }

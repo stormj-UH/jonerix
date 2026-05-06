@@ -128,6 +128,9 @@ pub fn build_manifest(tree_root: &Path) -> io::Result<Vec<FileEntry>> {
             continue;
         }
 
+        // SAFETY: every `abs` came from `WalkDir::new(tree_root)` with the root
+        // itself skipped, so `strip_prefix(tree_root)` always succeeds.  The
+        // expect is unreachable in production.
         let rel = abs
             .strip_prefix(tree_root)
             .expect("walkdir yields children of root")
@@ -302,6 +305,8 @@ fn flatten_dir_into(destdir: &Path, src_name: &str, dest_dir: &Path) -> io::Resu
             io::Error::new(io::ErrorKind::Other, format!("walkdir: {e}"))
         })?;
         let abs = entry.path();
+        // SAFETY: every `abs` came from `WalkDir::new(&src)`, so
+        // `strip_prefix(&src)` always succeeds.  The expect is unreachable.
         let rel = abs.strip_prefix(&src).expect("walkdir child of src");
         let dest = dest_dir.join(rel);
 

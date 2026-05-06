@@ -581,7 +581,7 @@ mod tests {
             ("d", vec![]),
         ]);
         let (_tmp, db) = make_db(&[]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, false)
+        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
             .expect("resolve_install failed");
 
         // D must be first, A must be last; B and C in between.
@@ -607,7 +607,7 @@ mod tests {
             ("b", vec!["a"]),
         ]);
         let (_tmp, db) = make_db(&[]);
-        let err = resolve_install(&[String::from("a")], "x86_64", &db, &index, false)
+        let err = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
             .expect_err("expected cycle error");
         match err {
             DepsError::Cycle(path) => {
@@ -641,7 +641,7 @@ mod tests {
             ("b", vec![]),
         ]);
         let (_tmp, db) = make_db(&["b"]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, false)
+        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
             .expect("resolve_install failed");
         assert_eq!(plan.to_install, vec!["a"]);
         assert!(
@@ -657,7 +657,7 @@ mod tests {
         // A is already installed.  With force=true, plan = [A].
         let index = make_index(&[("a", vec![])]);
         let (_tmp, db) = make_db(&["a"]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, true)
+        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Force)
             .expect("resolve_install failed");
         assert!(
             plan.to_install.contains(&String::from("a")),
@@ -682,7 +682,7 @@ mod tests {
             String::from("mksh"),
             String::from("shadow"),
         ];
-        let plan = resolve_install(&want, "x86_64", &db, &index, false)
+        let plan = resolve_install(&want, "x86_64", &db, &index, InstallMode::Normal)
             .expect("resolve_install failed");
         assert_eq!(plan.to_install, want);
     }
@@ -694,7 +694,7 @@ mod tests {
         // A depends on B, but B is not in the index.
         let index = make_index(&[("a", vec!["b"])]);
         let (_tmp, db) = make_db(&[]);
-        let err = resolve_install(&[String::from("a")], "x86_64", &db, &index, false)
+        let err = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
             .expect_err("expected error for unknown dep");
         match err {
             DepsError::UnknownDependency { dependent, missing } => {
@@ -711,7 +711,7 @@ mod tests {
     fn test_remove_no_rev_deps() {
         // Only A is installed, nothing depends on it.
         let (_tmp, db) = make_db_with_deps(&[("a", vec![])]);
-        let order = resolve_remove(&[String::from("a")], &db, false)
+        let order = resolve_remove(&[String::from("a")], &db, OrphanMode::KeepOrphans)
             .expect("resolve_remove failed");
         assert_eq!(order, vec!["a"]);
     }
@@ -726,7 +726,7 @@ mod tests {
             ("a", vec!["b"]),
             ("b", vec![]),
         ]);
-        let order = resolve_remove(&[String::from("a")], &db, true)
+        let order = resolve_remove(&[String::from("a")], &db, OrphanMode::PruneOrphans)
             .expect("resolve_remove failed");
         assert!(order.contains(&String::from("a")), "a must be in removal list");
         assert!(order.contains(&String::from("b")), "b must be in removal list as orphan");
@@ -745,7 +745,7 @@ mod tests {
             ("a", vec!["b"]),
             ("b", vec![]),
         ]);
-        let err = resolve_remove(&[String::from("b")], &db, false)
+        let err = resolve_remove(&[String::from("b")], &db, OrphanMode::KeepOrphans)
             .expect_err("expected error: b is needed by a");
         match err {
             DepsError::UnknownDependency { dependent, missing } => {

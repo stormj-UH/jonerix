@@ -94,6 +94,11 @@ pub fn canonical_bytes(metadata: &Metadata, payload_sha256: &[u8; 32]) -> Vec<u8
     // Serialise the stripped metadata.  `toml::to_string` is deterministic for
     // a fixed struct; any change to package/depends/hooks/files will produce
     // different bytes.
+    // SAFETY: `toml::to_string` returns Err only for types that contain maps
+    // with non-string keys or other TOML-incompatible constructs.  `Metadata`
+    // and all its sub-structs use only `String`, `Vec<String>`, `Option<T>`,
+    // and `u64` fields — all of which round-trip cleanly through TOML.  This
+    // call is unreachable in practice.
     let meta_toml = toml::to_string(&stripped)
         .expect("Metadata serialisation must not fail — all field types are TOML-compatible");
 
