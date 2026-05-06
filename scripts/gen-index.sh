@@ -134,7 +134,10 @@ while read -r pkg; do
     if [ -n "$recipe_file" ]; then
         depends_arr="$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')"
     else
-        echo "WARNING: no recipe for $name; skipping $pkg_base" >&2
+        # No recipe means the package was removed from the repo.
+        # Flag the orphan .jpkg for deletion instead of indexing it.
+        echo "orphan: no recipe for $name — flagging $pkg_base for removal" >&2
+        printf '%s\n' "$pkg_base" >> "$STALE_LIST"
         continue
     fi
     [ "$depends_arr" = "[]" ] && depends_arr=""
