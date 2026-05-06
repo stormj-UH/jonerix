@@ -1,26 +1,12 @@
-/*
- * jpkg - jonerix package manager
- * cmd/upgrade.rs - jpkg upgrade: compare installed vs INDEX, install newer
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Port of jpkg/src/cmd_upgrade.c (158 lines).
- *
- * Divergences from C:
- * - The C code refreshes the INDEX unconditionally (cmd_upgrade.c:36-49).
- *   We prefer the cached INDEX and only fetch if absent, matching the install
- *   path.  Callers that want a fresh INDEX should run `jpkg update` first.
- *   This is deliberate: in CI, `jpkg update` is a separate step.
- * - We call install_packages() directly instead of rebuilding an argv[] and
- *   calling cmd_install() (cmd_upgrade.c:141), which avoids the boilerplate
- *   of synthetic arg vectors.
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 use std::cmp::Ordering;
 
 use crate::cmd::common::{resolve_arch, resolve_rootfs};
 use crate::cmd::install::install_packages;
+use crate::types::InstallMode;
 use crate::db::InstalledDb;
 use crate::repo::Repo;
 use crate::util::version_compare;
@@ -163,7 +149,7 @@ pub fn run(args: &[String]) -> i32 {
     // force=true bypasses the "same version, already installed" check in
     // install_packages, which is correct here: we've already verified these
     // have newer versions available.
-    match install_packages(&db, &repo, &index, &arch, &to_upgrade, true) {
+    match install_packages(&db, &repo, &index, &arch, &to_upgrade, InstallMode::Force) {
         Ok(n) => {
             eprintln!("jpkg: {n} package(s) upgraded");
             0

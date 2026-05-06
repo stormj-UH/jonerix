@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! `jpkg license-audit` — verify installed packages have permissive licenses.
 //!
 //! C reference: `jpkg/src/cmd_audit.c`.

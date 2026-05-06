@@ -1,10 +1,6 @@
-/*
- * jpkg - jonerix package manager
- * cmd/resign.rs - `jpkg resign`: bulk re-sign existing .jpkg archives
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 //! `jpkg resign` — bulk re-sign one or more existing `.jpkg` archives.
 //!
@@ -172,6 +168,12 @@ fn process_one(path: &Path, key_path: &Path, key_id: &str, keep_existing: bool, 
 
 // ── Subcommand dispatcher ─────────────────────────────────────────────────────
 
+/// Run the `jpkg resign` subcommand.
+///
+/// Bulk re-signs one or more existing `.jpkg` archives in-place.  Each
+/// archive's metadata is updated with a fresh `[signature]` block derived
+/// from the canonical bytes and written atomically.  Returns 0 if all
+/// archives were signed successfully, 1 if any failed, or 2 on usage error.
 pub fn run(args: &[String]) -> i32 {
     let parsed = match parse_args(args) {
         Ok(a) => a,

@@ -1,10 +1,6 @@
-/*
- * jpkg - jonerix package manager
- * cmd/keygen.rs - `jpkg keygen`: generate an Ed25519 signing keypair
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 //! `jpkg keygen [<name>] [--dir <path>]`
 //!
@@ -20,6 +16,12 @@ use std::path::PathBuf;
 
 const USAGE: &str = "usage: jpkg keygen [<name>] [--dir <path>]";
 
+/// Run the `jpkg keygen` subcommand.
+///
+/// Generates a fresh Ed25519 keypair and writes `<name>.pub` (mode 0644)
+/// and `<name>.sec` (mode 0600) into the key directory.  The key directory
+/// defaults to `$JPKG_ROOT/etc/jpkg/keys`; override with `--dir <path>`.
+/// Returns 0 on success, 1 on I/O error, or 2 on usage error.
 pub fn run(args: &[String]) -> i32 {
     // ── Argument parsing ─────────────────────────────────────────────────────
     let mut name: Option<String> = None;

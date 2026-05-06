@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! `jpkg build-world` — rebuild the entire jonerix package set from source.
 //!
 //! Ported from the loop in `packages/jpkg/src/cmd_build.c` (`cmd_build_world`)

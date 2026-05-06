@@ -1,10 +1,6 @@
-/*
- * jpkg - jonerix package manager
- * cmd/sign.rs - `jpkg sign`: sign .jpkg archives or produce detached sigs for arbitrary files
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 //! `jpkg sign` — two modes:
 //!
@@ -209,6 +205,11 @@ pub fn sign_jpkg_in_place(path: &Path, secret: &SigningKey, key_id: &str) -> Res
 
 // ── Subcommand dispatcher ─────────────────────────────────────────────────────
 
+/// Run the `jpkg sign` subcommand.
+///
+/// Two modes: `.jpkg` archive signing (embeds `[signature]` in the metadata
+/// header) and raw-file detached signing (writes a 64-byte `.sig` file).
+/// Returns 0 on success, 1 on signing error, or 2 on usage error.
 pub fn run(args: &[String]) -> i32 {
     // Detect if we're operating on a .jpkg archive (new mode) or a raw file
     // (original mode).  A .jpkg argument is indicated by either the --key flag

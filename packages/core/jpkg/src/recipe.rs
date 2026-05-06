@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! Recipe / metadata TOML layer — Rust port of jpkg/src/toml.c + pkg.c (parse→struct).
 //!
 //! Three public types:
@@ -434,67 +438,20 @@ impl From<std::io::Error> for RecipeError {
     }
 }
 
-// ─── License gate (inlined from util.c:518-554) ──────────────────────────────
-
-/// Permissive SPDX identifiers accepted by jonerix (mirrors `util.c`).
-static PERMISSIVE_LICENSES: &[&str] = &[
-    "MIT",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "Apache-2.0",
-    "0BSD",
-    "CC0",
-    "CC0-1.0",
-    "Unlicense",
-    "curl",
-    "MirOS",
-    "OpenSSL",
-    "SSLeay",
-    "zlib",
-    "Zlib",
-    "public domain",
-    "Public-Domain",
-    "BSD-2-Clause-Patent",
-    "PSF-2.0",
-    "BSL-1.0",
-    "Artistic-2.0",
-    "Ruby",
-    "MPL-2.0",
-    "Info-ZIP",
-    "bzip2-1.0.6",
-];
+// ─── License gate ────────────────────────────────────────────────────────────
 
 /// Returns `true` if `license` is (or resolves to) a permissive license.
 ///
-/// Mirrors the C `license_is_permissive` logic exactly:
+/// Mirrors the C `license_is_permissive` logic, extended to handle:
 /// - Exact case-insensitive match against the table.
 /// - SPDX OR: permissive if **any** component is permissive.
 /// - SPDX AND: permissive only if **all** components are permissive.
+/// - Parenthesised sub-expressions, e.g. `"(MIT OR GPL-2.0) AND Apache-2.0"`.
+///
+/// Delegates to [`crate::util::license_is_permissive`] so the two copies
+/// stay in sync.
 pub fn license_is_permissive(license: &str) -> bool {
-    // Exact match (case-insensitive).
-    if PERMISSIVE_LICENSES
-        .iter()
-        .any(|&l| l.eq_ignore_ascii_case(license))
-    {
-        return true;
-    }
-
-    // SPDX OR: "MIT OR Apache-2.0" → permissive if any component is.
-    if let Some(pos) = license.find(" OR ") {
-        let left = &license[..pos];
-        let right = &license[pos + 4..];
-        return license_is_permissive(left) || license_is_permissive(right);
-    }
-
-    // SPDX AND: "MIT AND GPL-2.0" → permissive only if all components are.
-    if let Some(pos) = license.find(" AND ") {
-        let left = &license[..pos];
-        let right = &license[pos + 5..];
-        return license_is_permissive(left) && license_is_permissive(right);
-    }
-
-    false
+    crate::util::license_is_permissive(license)
 }
 
 // ─── Sub-structs shared between Recipe and Metadata ──────────────────────────

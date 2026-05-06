@@ -1,4 +1,43 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! `.jpkg` archive read/write — ported from `jpkg/src/pkg.c`.
+//!
+//! # Invariants
+//!
+//! 1. **Magic prefix**: every valid `.jpkg` begins with the 8-byte sequence
+//!    `JPKG\x00\x01\x00\x00`.  Any file whose first 8 bytes differ is rejected
+//!    with `ArchiveError::BadMagic` before any further parsing.
+//!
+//! 2. **Header-length bound**: the LE32 `hdr_len` field at bytes `[8..12]`
+//!    must satisfy `12 + hdr_len ≤ file_length`.  A value that points past
+//!    EOF is rejected with `ArchiveError::BadHeaderLen`.  Callers must not
+//!    pass a `hdr_len` value that would overflow a `usize`.
+//!
+//! 3. **Metadata is UTF-8 TOML**: the metadata block (`bytes[12..12+hdr_len]`)
+//!    contains valid UTF-8.  [`JpkgArchive::metadata`] panics if non-UTF-8
+//!    bytes are present; use [`JpkgArchive::metadata_str`] for a fallible
+//!    alternative.  The C writer never emits non-UTF-8, but callers that
+//!    construct synthetic archives must ensure UTF-8 conformance.
+//!
+//! 4. **Flattened layout on write**: [`create`] and
+//!    [`create_with_metadata_factory`] reject any `payload_root` that contains
+//!    a top-level `usr/` or `lib64/` directory.  Callers (typically `cmd_build`)
+//!    are responsible for running the `jpkg flatten` pass before calling these
+//!    functions; violating this assumption produces an
+//!    `ArchiveError::UnflatLayout` error and no archive is written.
+//!
+//! 5. **Atomic writes**: output archives are written to `{out_path}.tmp` and
+//!    then renamed into place.  A concurrent reader therefore never observes a
+//!    partially written archive.  If the rename fails the `.tmp` file is left
+//!    on disk; callers that care about cleanup should remove it.
+//!
+//! 6. **Deterministic payload order**: [`build_compressed_tar`] sorts entries
+//!    by path before adding them to the tar stream.  Given the same input tree,
+//!    the compressed payload bytes are identical across runs (modulo zstd
+//!    frame-level timestamp differences, which zstd level 0 does not embed).
+//!    This is required by `canon::canonical_bytes` which signs the payload hash.
 //!
 //! # Wire format (verified against pkg.c:173-200 and pkg.h:17-20)
 //!
@@ -144,6 +183,9 @@ impl JpkgArchive {
         }
 
         // LE32 header length (pkg.c:132, uses util.c `read_le32`)
+        // SAFETY: the `bytes.len() < HEADER_MIN` guard above ensures
+        // bytes.len() >= 12, so bytes[8..12] is exactly 4 bytes.
+        // The try_into() cannot fail for a fixed-size slice of the right length.
         let hdr_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
         let meta_start = HEADER_MIN; // 12
         let meta_end = meta_start
@@ -166,13 +208,19 @@ impl JpkgArchive {
     ///
     /// This is the verbatim on-disk bytes — not NUL-terminated.  The caller
     /// should parse with `crate::recipe::Metadata::from_str`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the metadata block is not valid UTF-8.  This is a
+    /// programming error: every valid `.jpkg` archive written by this codebase
+    /// or by C jpkg 1.1.5 contains only UTF-8 TOML.  Callers that handle
+    /// untrusted on-disk data should call [`Self::metadata_str`] instead to
+    /// get a `Result` rather than a potential panic.
     pub fn metadata(&self) -> &str {
-        // Validated UTF-8 here; errors surfaced at construction time via
-        // `metadata_str` or lazily accepted here — we choose the lazy path
-        // and panic only if somehow invalid bytes slipped through.  In
-        // practice the C writer always emits valid UTF-8 TOML.
+        // The C writer (pkg.c) always emits valid UTF-8 TOML, so valid archives
+        // never reach this branch.  The expect message is left for debugging.
         std::str::from_utf8(&self.metadata_raw)
-            .expect("metadata block is not valid UTF-8; use metadata_bytes() for raw access")
+            .expect("metadata block is not valid UTF-8; use metadata_str() for error handling")
     }
 
     /// Raw TOML metadata bytes (for callers that need to validate UTF-8
@@ -348,6 +396,9 @@ fn build_compressed_tar(root: &Path) -> Result<Vec<u8>, ArchiveError> {
     entries.sort();
 
     for abs_path in &entries {
+        // SAFETY: every entry came from WalkDir::new(root) with the root itself
+        // filtered out, so strip_prefix always succeeds.  The unwrap is
+        // unreachable in production because WalkDir only yields descendants.
         let rel = abs_path
             .strip_prefix(root)
             .expect("walkdir yields children of root");

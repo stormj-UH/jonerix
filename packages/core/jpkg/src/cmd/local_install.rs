@@ -1,26 +1,6 @@
-/*
- * jpkg - jonerix package manager
- * cmd/local_install.rs - jpkg-local install: force-install a single .jpkg
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Port of main_local.c lines 498-596 (the jpkg-local install sub-command).
- *
- * Divergences from C:
- * - URL detection: the C code passes source to `fetch_to_tmp` which internally
- *   decides whether to download or just open the path (main_local.c:532).  We
- *   check the prefix explicitly (https?://), matching the documented interface.
- * - Stdin ("-"): we read all of stdin into a Vec<u8> and pass to
- *   JpkgArchive::from_bytes.  The C code also reads stdin to a temp file; this
- *   is equivalent without the temp-file indirection.
- * - We do NOT warn about unsatisfied runtime dependencies (the C code does,
- *   main_local.c:550-556).  The local-install command is intentionally
- *   dependency-free (it is used during bootstrap when the dep graph is not yet
- *   populated).  A FIXME is left below if this should be re-added.
- * - No `audit_layout_tree` call: the archive crate enforces the merged-/usr
- *   layout at create time via `ArchiveError::UnflatLayout`.
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 use std::io::{self, Read};
 use std::path::Path;
@@ -87,7 +67,16 @@ pub fn run(args: &[String]) -> i32 {
     };
 
     // ── Parse metadata (for logging + hooks) ──────────────────────────────
-    let metadata = match Metadata::from_str(archive.metadata()) {
+    // Use metadata_str() rather than metadata() so a corrupt archive with
+    // non-UTF-8 metadata bytes returns an error exit instead of panicking.
+    let meta_str = match archive.metadata_str() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("jpkg-local install: metadata in {source} is not valid UTF-8: {e}");
+            return 1;
+        }
+    };
+    let metadata = match Metadata::from_str(meta_str) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("jpkg-local install: failed to parse metadata from {source}: {e}");

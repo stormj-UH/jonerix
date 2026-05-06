@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! `jpkg search` — search the package index by name and description.
 //!
 //! C reference: `jpkg/src/cmd_search.c`.

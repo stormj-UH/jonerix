@@ -1,30 +1,13 @@
-/*
- * jpkg - jonerix package manager
- * cmd/remove.rs - jpkg remove: remove package files, update database
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Port of jpkg/src/cmd_remove.c (192 lines).
- *
- * Divergences from C:
- * - C's remove_package_files (cmd_remove.c:30-66) iterates the forward
- *   linked list in declaration order (files before dirs by construction of
- *   build_file_manifest).  We sort entries in reverse so that longer paths
- *   come first, ensuring files are removed before their parent directories.
- *   This is strictly more correct than the C approach.
- * - C calls deps_removal_order (which also collects orphans) per-target;
- *   we call resolve_remove once for all targets at once.  The semantics are
- *   equivalent when a single target is named (the common case).
- * - hook failures are non-fatal (matching cmd_remove.c:162 where run_hook
- *   return value is ignored for remove hooks beyond a warning).
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 use std::fs;
 
 use crate::cmd::common::{resolve_rootfs, run_hook};
 use crate::db::InstalledDb;
 use crate::deps::resolve_remove;
+use crate::types::OrphanMode;
 
 // ─── public entry point ───────────────────────────────────────────────────────
 
@@ -89,7 +72,8 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     // ── Resolve removal order ─────────────────────────────────────────────
-    let order = match resolve_remove(&pkg_names, &db, orphans) {
+    let orphan_mode = if orphans { OrphanMode::PruneOrphans } else { OrphanMode::KeepOrphans };
+    let order = match resolve_remove(&pkg_names, &db, orphan_mode) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("jpkg: removal resolution failed: {e}");

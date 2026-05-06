@@ -1,4 +1,36 @@
-//! Synchronous HTTPS fetch layer — port of jpkg/src/fetch.c (libtls) to ureq + rustls.
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+//! Synchronous HTTPS fetch layer — port of `jpkg/src/fetch.c` (libtls) to
+//! `ureq` + `rustls`.
+//!
+//! # Invariants
+//!
+//! 1. **Atomicity**: [`download_to`] writes to `<dest>.partial` in the same
+//!    directory as `dest` and renames it into place only on complete success.
+//!    On any error the `.partial` file is removed and `dest` is absent.
+//!    Callers must not treat a missing `dest` as a permanent error; the mirror
+//!    fallback in [`download_via_mirrors_to`] retries the next mirror.
+//!
+//! 2. **TLS CA bundle**: the `webpki-roots` CA bundle is compiled in; no
+//!    system CA store is read at runtime.  HTTP (plain) is also accepted for
+//!    test harnesses that spin up a local `TcpListener`.  Callers must not
+//!    pass plain-HTTP mirror URLs in production.
+//!
+//! 3. **Timeout bounds**: both connect and read timeouts are 30 seconds.  A
+//!    [`FetchError::Timeout`] is returned when either limit is exceeded.
+//!    [`download_via_mirrors`] and [`download_via_mirrors_to`] log a warning
+//!    and move to the next mirror on any per-mirror error, including timeouts.
+//!
+//! 4. **Redirect limit**: up to 10 HTTP redirects are followed automatically.
+//!    A chain longer than 10 redirects is treated as a transport error.
+//!
+//! 5. **URL joining**: [`join_mirror`] (used internally) ensures exactly one
+//!    `/` separates the mirror base and the relative path regardless of whether
+//!    either side has a trailing/leading slash.  Callers that construct mirror
+//!    URLs must not double-slash paths; [`download_via_mirrors`] calls
+//!    `join_mirror` for them.
 //!
 //! Design notes:
 //! - No system CA bundle dependency.  webpki-roots is compiled in, matching the
@@ -80,8 +112,12 @@ fn build_agent() -> ureq::Agent {
     let tls_cfg = ClientConfig::builder_with_provider(
         rustls::crypto::ring::default_provider().into(),
     )
+    // SAFETY: with_protocol_versions returns Err only when a protocol version
+    // is unsupported by the selected crypto provider.  The ring provider
+    // ships with TLS 1.2 and TLS 1.3 support compiled in, so this is
+    // unreachable in all configurations we build.
     .with_protocol_versions(&[&rustls::version::TLS12, &rustls::version::TLS13])
-    .expect("TLS protocol config always valid with ring provider")
+    .expect("TLS protocol config: ring provider always supports TLS 1.2 and 1.3")
     .with_root_certificates(root_store)
     .with_no_client_auth();
 

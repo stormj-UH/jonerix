@@ -1,11 +1,49 @@
-/*
- * jpkg - jonerix package manager
- * util.rs - Port of util.c: logging, string helpers, path helpers,
- *           SHA-256, version comparison, license gate, layout audit.
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+//! Utility functions — port of `jpkg/src/util.c`: logging macros, string
+//! helpers, path helpers, SHA-256, version comparison, license gate, and
+//! layout audit.
+//!
+//! # Invariants
+//!
+//! 1. **Version comparison contract**: [`version_compare`] implements the same
+//!    algorithm as the C `version_compare` in `util.c`.  The rules are: skip
+//!    non-alphanumeric separators; compare digit segments numerically (longer
+//!    digit string wins; strip leading zeros); compare alpha segments
+//!    character-by-character; a digit segment beats an alpha segment.  Callers
+//!    that sort package upgrade candidates MUST use this function, not
+//!    `str::cmp`, because `"1.10" > "1.9"` under this ordering but not under
+//!    lexicographic ordering.
+//!
+//! 2. **License gate completeness**: [`license_is_permissive`] checks against
+//!    the `PERMISSIVE_LICENSES` whitelist compiled from `util.c`.  Any license
+//!    identifier not in that list (or not decomposable via SPDX `OR`/`AND`
+//!    operators into listed identifiers) returns `false`.  Adding a new license
+//!    to the project requires updating `PERMISSIVE_LICENSES` here AND in
+//!    `util.c`; a mismatch between the two lists will cause the Rust port to
+//!    reject recipes that the C tool accepts (or vice versa).
+//!
+//! 3. **Layout audit scope**: [`audit_layout_tree`] checks for banned paths
+//!    (`lib64/`, root-level `*.0` files) and banned string content (`/lib64`
+//!    in ELF and text files, symlink targets).  Files under `share/man/`,
+//!    `share/doc/`, and similar doc trees are exempt from the content scan.
+//!    The `bin/jpkg` and `bin/jpkg-local` binaries are exempt because they
+//!    contain `"/lib64"` as a literal in their own source.  Adding new exempt
+//!    paths requires a code change here; it cannot be configured at runtime.
+//!
+//! 4. **SHA-256 correctness**: [`sha256_file`] streams the file in 8 KiB
+//!    chunks and computes the digest incrementally; it does not read the whole
+//!    file into memory.  The result is a 64-character lowercase hex string
+//!    identical to `sha256sum` output.  Callers must not truncate or
+//!    case-fold this string before comparing with INDEX/manifest entries.
+//!
+//! 5. **log_fatal panics**: the [`log_fatal`] macro logs at `error` level and
+//!    then panics.  In production binaries a panic hook converts this to an
+//!    exit(1); in tests the panic is caught by the test harness.  Callers must
+//!    not use `log_fatal` for recoverable errors — use the normal `Result`
+//!    error-propagation path instead.
 
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
@@ -16,7 +54,7 @@ use walkdir::WalkDir;
 
 // ── Public constants ────────────────────────────────────────────────────────
 
-pub const JPKG_VERSION: &str = "1.1.5";
+pub const JPKG_VERSION: &str = "2.2.0";
 pub const JPKG_DB_DIR: &str = "/var/db/jpkg";
 pub const JPKG_CACHE_DIR: &str = "/var/cache/jpkg";
 pub const JPKG_CONFIG_DIR: &str = "/etc/jpkg";
@@ -315,10 +353,15 @@ static PERMISSIVE_LICENSES: &[&str] = &[
 /// - Exact case-insensitive match against the list above.
 /// - SPDX `OR` compound: permissive if **any** component is permissive.
 /// - SPDX `AND` compound: permissive only if **all** components are permissive.
+/// - Parenthesised sub-expressions, e.g. `"(MIT OR GPL-2.0) AND Apache-2.0"`.
 pub fn license_is_permissive(license: &str) -> bool {
+    let license = license.trim();
     if license.is_empty() {
         return false;
     }
+
+    // Strip a single layer of matching outer parentheses: "(expr)" → "expr".
+    let license = strip_outer_parens(license);
 
     // Exact case-insensitive match.
     for &known in PERMISSIVE_LICENSES {
@@ -327,21 +370,82 @@ pub fn license_is_permissive(license: &str) -> bool {
         }
     }
 
-    // SPDX OR: permissive if any component is.
-    if let Some(pos) = license.find(" OR ") {
-        let left = &license[..pos];
-        let right = &license[pos + 4..];
-        return license_is_permissive(left) || license_is_permissive(right);
-    }
-
-    // SPDX AND: permissive only if all components are.
-    if let Some(pos) = license.find(" AND ") {
-        let left = &license[..pos];
-        let right = &license[pos + 5..];
-        return license_is_permissive(left) && license_is_permissive(right);
+    // Find a top-level " OR " or " AND " (i.e. not inside parentheses).
+    // We scan left-to-right tracking paren depth; an operator at depth 0
+    // is a genuine top-level split point.
+    if let Some((op, left, right)) = find_top_level_op(license) {
+        return match op {
+            TopOp::Or  => license_is_permissive(left) || license_is_permissive(right),
+            TopOp::And => license_is_permissive(left) && license_is_permissive(right),
+        };
     }
 
     false
+}
+
+/// Strip one layer of matching outer parentheses, returning the inner slice.
+/// `"(MIT OR Apache-2.0)"` → `"MIT OR Apache-2.0"`.
+/// Already-unparenthesised strings are returned unchanged.
+fn strip_outer_parens(s: &str) -> &str {
+    if !s.starts_with('(') || !s.ends_with(')') {
+        return s;
+    }
+    let inner = &s[1..s.len() - 1];
+    // Verify the opening paren really does close at the last char (i.e. the
+    // whole expression is wrapped, not just a prefix like `(A) OR B`).
+    let mut depth = 0i32;
+    for ch in inner.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    // The first `(` closed before the end — the parens are not
+                    // wrapping the whole expression; return the original.
+                    return s;
+                }
+            }
+            _ => {}
+        }
+    }
+    // If we get here without early return, inner is a valid balanced expression.
+    inner
+}
+
+#[derive(Copy, Clone)]
+enum TopOp { Or, And }
+
+/// Find the first top-level ` OR ` or ` AND ` (paren-depth == 0) in `s`.
+/// Returns `Some((op, left, right))` or `None`.
+fn find_top_level_op(s: &str) -> Option<(TopOp, &str, &str)> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut depth = 0i32;
+    let mut i = 0usize;
+
+    while i < n {
+        match bytes[i] {
+            b'(' => { depth += 1; i += 1; }
+            b')' => { depth -= 1; i += 1; }
+            b' ' if depth == 0 => {
+                // Try " OR " (4 bytes including leading space already consumed)
+                if i + 4 <= n && &bytes[i..i + 4] == b" OR " {
+                    let left  = &s[..i];
+                    let right = &s[i + 4..];
+                    return Some((TopOp::Or, left, right));
+                }
+                // Try " AND " (5 bytes)
+                if i + 5 <= n && &bytes[i..i + 5] == b" AND " {
+                    let left  = &s[..i];
+                    let right = &s[i + 5..];
+                    return Some((TopOp::And, left, right));
+                }
+                i += 1;
+            }
+            _ => { i += 1; }
+        }
+    }
+    None
 }
 
 // ── Layout audit ─────────────────────────────────────────────────────────────
@@ -361,6 +465,7 @@ pub enum AuditResult {
 }
 
 impl AuditResult {
+    /// Return `true` if the audit result is [`AuditResult::Ok`] (no violations found).
     pub fn is_ok(&self) -> bool {
         matches!(self, AuditResult::Ok)
     }
@@ -738,6 +843,35 @@ mod tests {
         assert!(license_is_permissive("MIT AND Apache-2.0"));
         // One forbidden → false.
         assert!(!license_is_permissive("MIT AND GPL-2.0-only"));
+    }
+
+    #[test]
+    fn test_license_nested_parens() {
+        // "(MIT OR GPL-2.0) AND Apache-2.0":
+        //   outer parens strip → "MIT OR GPL-2.0 AND Apache-2.0"? No — the AND
+        //   is at the top level AFTER the closing paren, so outer parens do NOT
+        //   wrap the whole thing.  find_top_level_op scans at depth 0 and finds
+        //   " AND " AFTER the closing paren → left = "(MIT OR GPL-2.0)",
+        //   right = "Apache-2.0".  left strips parens → "MIT OR GPL-2.0" →
+        //   MIT is permissive → true.  Apache-2.0 is permissive → true AND true.
+        assert!(license_is_permissive("(MIT OR GPL-2.0) AND Apache-2.0"));
+
+        // "(GPL-2.0 OR GPL-3.0) AND MIT":
+        //   left = "(GPL-2.0 OR GPL-3.0)" → inner "GPL-2.0 OR GPL-3.0" →
+        //   neither arm permissive → false.  AND short-circuits → false.
+        assert!(!license_is_permissive("(GPL-2.0 OR GPL-3.0) AND MIT"));
+
+        // "MIT AND (Apache-2.0 OR GPL-2.0)":
+        //   top-level AND: left=MIT (permissive), right=(Apache-2.0 OR GPL-2.0).
+        //   right strips parens → "Apache-2.0 OR GPL-2.0" → Apache-2.0 saves it.
+        assert!(license_is_permissive("MIT AND (Apache-2.0 OR GPL-2.0)"));
+
+        // Fully-wrapped: "(MIT AND Apache-2.0)" → strips outer parens →
+        // "MIT AND Apache-2.0" → both permissive → true.
+        assert!(license_is_permissive("(MIT AND Apache-2.0)"));
+
+        // "(GPL-2.0)" → strips parens → "GPL-2.0" → not permissive.
+        assert!(!license_is_permissive("(GPL-2.0)"));
     }
 
     // ── audit_layout_tree ────────────────────────────────────────────────

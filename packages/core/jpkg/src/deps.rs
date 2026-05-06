@@ -1,13 +1,45 @@
-/*
- * jpkg - jonerix package manager
- * deps.rs - Dependency resolution (topological sort, cycle detection)
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Port of jpkg/src/deps.c.  Algorithm: post-order DFS (same as C), which
- * naturally produces leaves-first ordering without a separate Kahn pass.
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+//! Dependency resolution — topological sort and cycle detection.  Port of
+//! `jpkg/src/deps.c`.  Algorithm: post-order DFS, which naturally produces
+//! leaves-first ordering without a separate Kahn pass.
+//!
+//! # Invariants
+//!
+//! 1. **Install-order guarantee**: [`resolve_install`] returns packages in
+//!    post-order DFS sequence — every package appears after all of its
+//!    transitive dependencies.  The caller's requested package order is
+//!    preserved for packages at the same dependency level: if `[toybox, mksh]`
+//!    is requested and both are leaves, they appear as `[toybox, mksh]` in the
+//!    plan.  Callers that depend on this ordering (e.g. hook scripts that
+//!    `claim` files from earlier packages) must not sort the plan.
+//!
+//! 2. **Cycle detection correctness**: the DFS colouring (`Unvisited` /
+//!    `Visiting` / `Visited`) guarantees that any back-edge (a node reached
+//!    while it is already on the DFS stack) is detected exactly once and
+//!    reported as `DepsError::Cycle`.  The cycle path includes the repeated
+//!    node at both ends (e.g. `[a, b, a]`) so the caller can format a readable
+//!    error.  A DAG produces no false positives; the algorithm terminates in
+//!    `O(V + E)` time.
+//!
+//! 3. **Already-installed leniency**: packages that are installed on the local
+//!    system but absent from the repository INDEX are silently accepted as
+//!    satisfied dependencies (matching the C behaviour for base-system packages
+//!    like `musl`).  If a dependency is absent from both the INDEX and the DB
+//!    the function returns `DepsError::UnknownDependency`.  Callers must ensure
+//!    the DB is opened against the correct rootfs before calling.
+//!
+//! 4. **Deterministic ordering**: dependency lists are sorted before recursion
+//!    so that the install plan is identical across runs given the same INDEX
+//!    and DB state.  This is a stronger guarantee than the C implementation,
+//!    which inherits whatever order `toml_parse` returns.
+//!
+//! 5. **Removal order**: [`resolve_remove`] puts explicit targets first
+//!    (sorted for determinism), then appends orphaned dependencies in the order
+//!    they are discovered.  The result is safe to pass directly to an uninstall
+//!    loop — no package appears before the packages that depend on it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,6 +48,7 @@ use crate::db::{DbError, InstalledDb};
 #[cfg(test)]
 use crate::db::InstalledPkg;
 use crate::recipe::{Index, IndexEntry};
+use crate::types::{InstallMode, OrphanMode};
 
 // ─── DepsError ───────────────────────────────────────────────────────────────
 
@@ -195,15 +228,16 @@ fn dfs_visit(
 ///      image depends on this: toybox must land before mksh/shadow/fixups so
 ///      their hooks can claim /bin/sh, /bin/login, and /bin/reboot.
 ///   3. Cycle → `Err::Cycle`; unknown dep → `Err::UnknownDependency`.
-///   4. If `force=false`, split the post-order result into `to_install`
-///      (not yet installed) and `already_installed` (already present).
-///   5. If `force=true`, every reachable package goes into `to_install`.
+///   4. If `mode` is [`InstallMode::Normal`], split the post-order result into
+///      `to_install` (not yet installed) and `already_installed` (already present).
+///   5. If `mode` is [`InstallMode::Force`], every reachable package goes into
+///      `to_install`.
 pub fn resolve_install(
     want: &[String],
     arch: &str,
     db: &InstalledDb,
     index: &Index,
-    force: bool,
+    mode: InstallMode,
 ) -> Result<ResolvedPlan, DepsError> {
     let installed_names: BTreeSet<String> = db.list()?.into_iter().collect();
 
@@ -237,7 +271,7 @@ pub fn resolve_install(
     let mut already_installed: Vec<String> = Vec::new();
 
     for pkg in result {
-        if force || !installed_names.contains(&pkg) {
+        if mode.is_force() || !installed_names.contains(&pkg) {
             to_install.push(pkg);
         } else {
             already_installed.push(pkg);
@@ -254,9 +288,9 @@ pub fn resolve_install(
 ///
 /// Algorithm (deps.c:245-295):
 ///   1. Add explicit `targets` to the removal set.
-///   2. If `orphans=true`, walk each target's `metadata.depends.runtime`;
-///      any dependency whose only reverse-dependents are in the removal set is
-///      itself added (recursively).
+///   2. If `mode` is [`OrphanMode::PruneOrphans`], walk each target's
+///      `metadata.depends.runtime`; any dependency whose only reverse-dependents
+///      are in the removal set is itself added (recursively).
 ///   3. Topological order: a package appears AFTER all packages that depend on
 ///      it (so it is removed last among its rev-dependents).
 ///      The C code (deps.c:247-251) simply puts the explicit target first, then
@@ -268,7 +302,7 @@ pub fn resolve_install(
 pub fn resolve_remove(
     targets: &[String],
     db: &InstalledDb,
-    orphans: bool,
+    mode: OrphanMode,
 ) -> Result<Vec<String>, DepsError> {
     // Build the full set of installed packages and their runtime deps.
     let all_names = db.list()?;
@@ -312,7 +346,7 @@ pub fn resolve_remove(
         }
     }
 
-    if !orphans {
+    if !mode.is_prune() {
         return Ok(result);
     }
 
@@ -436,6 +470,7 @@ fn cycle_dfs(
 mod tests {
     use super::*;
     use crate::recipe::{DependsSection, IndexEntry, Metadata, PackageSection};
+    use crate::types::{InstallMode, OrphanMode};
 
     // ── Test helpers ─────────────────────────────────────────────────────────
 
@@ -525,7 +560,7 @@ mod tests {
             ("c", vec![]),
         ]);
         let (_tmp, db) = make_db(&[]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, false)
+        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
             .expect("resolve_install failed");
         assert_eq!(plan.to_install, vec!["c", "b", "a"]);
         assert!(plan.already_installed.is_empty());

@@ -1,12 +1,6 @@
-/*
- * jpkg - jonerix package manager
- * cmd/update.rs - jpkg update: fetch INDEX.zst from mirrors, verify, cache
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Rust port of jpkg/src/cmd_update.c.
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 use std::path::Path;
 
@@ -16,6 +10,12 @@ use crate::repo::{Repo, RepoError};
 // Public entry point (wired by main dispatcher)
 // ---------------------------------------------------------------------------
 
+/// Run the `jpkg update` subcommand.
+///
+/// Fetches `INDEX.zst` and `INDEX.zst.sig` from the configured mirrors,
+/// verifies the signature, decompresses the index, and writes it to the
+/// cache at `$JPKG_ROOT/var/cache/jpkg/INDEX`.  Returns 0 on success,
+/// 1 on error, or 2 on usage error.
 pub fn run(args: &[String]) -> i32 {
     if !args.is_empty() {
         eprintln!("jpkg update: unexpected argument(s): {:?}", args);

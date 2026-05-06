@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! jpkg — jonerix package manager (Rust port of jpkg 1.1.5).
 //!
 //! Goal: byte-equivalent CLI behaviour at every CI call site
@@ -36,6 +40,7 @@ pub mod recipe;
 pub mod archive;
 pub mod sign;
 pub mod canon;
+pub mod types;
 
 pub mod db;
 pub mod fetch;

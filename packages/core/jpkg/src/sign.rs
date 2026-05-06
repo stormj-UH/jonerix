@@ -1,15 +1,48 @@
-/*
- * jpkg - jonerix package manager
- * sign.rs - Ed25519 keypair / signing / verification
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Rust port of sign.c.  Wire-compatible with the C jpkg:
- *   - Public key:  32 bytes raw binary  (.pub)
- *   - Secret key:  64 bytes raw binary  (.sec) — seed[32] || pubkey[32]
- *   - Signature:   64 bytes raw binary  (.sig) — no length prefix
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+//! Ed25519 keypair generation, signing, and verification — Rust port of
+//! `jpkg/src/sign.c`.
+//!
+//! # Invariants
+//!
+//! 1. **Key format**: public keys are 32-byte raw Ed25519 verifying keys; secret
+//!    keys are 64-byte sequences `seed[32] || pubkey[32]` matching the C `.sec`
+//!    file layout.  Files with any other length are rejected with
+//!    `SignError::BadKeyLen`.  Callers must not pass a key file whose length is
+//!    correct but whose bytes are not a valid Ed25519 scalar; `ed25519-dalek`
+//!    will reject such keys during signing or verification with a
+//!    `SignError::Verify` variant.
+//!
+//! 2. **Signature format**: detached signatures are exactly 64 bytes of raw
+//!    Ed25519 signature material (`R || S`), with no length prefix, no framing,
+//!    and no algorithm tag.  This is wire-compatible with the C jpkg
+//!    `sign_create` / `sign_verify_detached` pair.  A slice of any other length
+//!    passed to `verify_detached` returns `SignError::BadSigLen` before any
+//!    cryptographic work is done.
+//!
+//! 3. **Verification guarantee**: `verify_detached` returning `Ok(())` means
+//!    the signature was produced by the private half of the provided public key
+//!    over the exact bytes in `msg`.  Any single-byte change to `msg` or `sig`
+//!    after signing will cause verification to return `Err(SignError::Verify)`.
+//!
+//! 4. **Key-set semantics**: [`PublicKeySet::verify_detached`] tries all loaded
+//!    keys and returns `Ok(key_name)` for the first match.  An empty key set
+//!    returns `Err(SignError::NoKeys)` without attempting any verification.
+//!    A non-empty key set where no key matches returns `Err(SignError::Verify)`
+//!    from the last attempted key.  Callers must treat `NoKeys` and `Verify`
+//!    differently: `NoKeys` means verification was not possible (unconfigured
+//!    host), while `Verify` means the signature is positively wrong.
+//!
+//! 5. **Secret key file mode**: [`write_secret_key`] creates files with mode
+//!    0o600 (owner-read/write only).  Callers must not relax this mode; leaking
+//!    a secret key allows an attacker to forge package signatures.
+//!
+//! Wire-compatible with the C jpkg:
+//!   - Public key:  32 bytes raw binary  (.pub)
+//!   - Secret key:  64 bytes raw binary  (.sec) — seed[32] || pubkey[32]
+//!   - Signature:   64 bytes raw binary  (.sig) — no length prefix
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
@@ -86,6 +119,9 @@ pub fn read_public_key(path: &Path) -> Result<VerifyingKey, SignError> {
             got: bytes.len(),
         });
     }
+    // SAFETY: the `bytes.len() != PUBLIC_KEY_LEN` guard above ensures exactly
+    // PUBLIC_KEY_LEN (32) bytes are present, so try_into() into [u8; 32] cannot
+    // fail — the slice length matches the array length exactly.
     let arr: [u8; PUBLIC_KEY_LEN] = bytes.try_into().unwrap();
     Ok(VerifyingKey::from_bytes(&arr)?)
 }
@@ -99,6 +135,9 @@ pub fn read_secret_key(path: &Path) -> Result<SigningKey, SignError> {
             got: bytes.len(),
         });
     }
+    // SAFETY: the `bytes.len() != SECRET_KEY_LEN` guard above ensures exactly
+    // SECRET_KEY_LEN (64) bytes are present, so try_into() into [u8; 64] cannot
+    // fail — the slice length matches the array length exactly.
     let arr: [u8; SECRET_KEY_LEN] = bytes.try_into().unwrap();
     // from_keypair_bytes expects seed[32] || pubkey[32] — exactly our .sec format.
     Ok(SigningKey::from_keypair_bytes(&arr)?)
@@ -231,6 +270,10 @@ impl PublicKeySet {
         Ok(Self { keys })
     }
 
+    /// Return `true` if no public keys are loaded.
+    ///
+    /// An empty set cannot verify any signature; [`verify_detached`](Self::verify_detached)
+    /// will return `Err(SignError::NoKeys)` immediately.
     pub fn is_empty(&self) -> bool {
         self.keys.is_empty()
     }

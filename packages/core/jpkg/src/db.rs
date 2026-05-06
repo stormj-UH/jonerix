@@ -1,4 +1,44 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! Installed-package database — Rust port of `jpkg/src/db.c`.
+//!
+//! # Invariants
+//!
+//! 1. **Manifest format compatibility**: the `files` manifest written by
+//!    [`InstalledDb::insert`] is byte-for-byte compatible with the format
+//!    produced by C jpkg 1.1.5 (`db.c:serialize_files_list`, lines 156–175).
+//!    Any deviation breaks forward/backward compatibility: existing installations
+//!    managed by the C tool will become unreadable by the Rust port.  The
+//!    symlink sentinel SHA-256 (`0000…0000`) and the `%06o` octal mode format
+//!    must never change without a version bump.
+//!
+//! 2. **Atomic writes**: every mutation of the on-disk state goes through
+//!    [`atomic_write`], which writes to a sibling `.tmp` file and renames it
+//!    into place.  Callers must not write to `metadata.toml` or `files`
+//!    directly; doing so can leave a partially written record that looks valid
+//!    to a concurrent reader.
+//!
+//! 3. **Lock semantics**: [`InstalledDb::lock`] acquires an `fcntl` write-lock
+//!    (non-blocking, `F_SETLK`) on `db_dir/lock`.  Only one process may hold
+//!    this lock at a time.  The [`DbLock`] RAII guard drops the lock and
+//!    removes the lock file on exit.  Callers that mutate the database (insert,
+//!    remove, transfer_ownership) must hold a [`DbLock`] for the duration of
+//!    the operation; read-only operations (list, get) do not require the lock
+//!    but may observe partially committed state if a writer races them.
+//!
+//! 4. **Path format**: all paths stored in `FileEntry.path` are relative to the
+//!    rootfs with no leading slash (e.g. `"bin/foo"`, not `"/bin/foo"`).
+//!    The C code stores them with a leading `/`; the Rust port strips it during
+//!    parse and re-adds it during serialisation.  Callers that compare path
+//!    strings must use the no-leading-slash form.
+//!
+//! 5. **No size field**: the `files` manifest does not store file size.
+//!    `FileEntry.size` is always 0 after a round-trip through the database; it
+//!    is populated on demand from the filesystem by callers that need it
+//!    (e.g. `cmd verify`).  Treating `size` as authoritative after a DB read
+//!    will produce incorrect results.
 //!
 //! # Database layout
 //!

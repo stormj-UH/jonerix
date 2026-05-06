@@ -1,27 +1,50 @@
-/*
- * jpkg - jonerix package manager
- * repo.rs - Repository handling (INDEX fetch, verify, cache, package download)
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Rust port of jpkg/src/repo.c.
- *
- * Cross-module deps:
- *   crate::recipe::Index / IndexEntry  — DONE
- *   crate::sign::PublicKeySet          — DONE
- *   crate::fetch::*                    — Worker F (running in parallel)
- *
- * On-mirror URL layout (matches publish-packages.yml + gen-index.sh):
- *   INDEX:   <mirror_base>/INDEX.zst
- *   SIG:     <mirror_base>/INDEX.zst.sig
- *   PACKAGE: <mirror_base>/<name>-<version>-<arch>.jpkg
- *   (legacy) <mirror_base>/<name>-<version>.jpkg
- *
- * The section key in INDEX is "name-arch" (see gen-index.sh line 151).
- * Package filenames on the release: name-version-arch.jpkg (pkg.c:pkg_filename).
- * No arch sub-directory prefix — everything flat under the release asset URL.
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+//! Repository state: INDEX fetch, signature verification, cache management,
+//! and package download.  Rust port of `jpkg/src/repo.c`.
+//!
+//! # Invariants
+//!
+//! 1. **INDEX format**: the repository INDEX is a zstd-compressed TOML file
+//!    (`INDEX.zst`) served flat under each mirror base URL.  The TOML section
+//!    key for each entry is `"name-arch"` (e.g. `"toybox-x86_64"`), matching
+//!    the format produced by `gen-index.sh`.  Any INDEX file whose section keys
+//!    do not follow this convention will silently produce empty lookup results
+//!    from [`crate::recipe::Index::get`].
+//!
+//! 2. **Signature policy semantics**: the [`SignaturePolicy`] enum controls
+//!    what happens when a package's embedded `[signature]` block is missing or
+//!    was signed by an unknown key.  A *present-but-invalid* signature is ALWAYS
+//!    an error regardless of policy — this protects against tampered packages
+//!    that happen to carry a syntactically valid but cryptographically wrong
+//!    signature.  Policy only governs the *absent* and *unknown-key* cases.
+//!    Callers must not interpret `Warn` as permission to ignore invalid
+//!    signatures.
+//!
+//! 3. **Cache atomicity**: [`Repo::fetch_index`] writes the decompressed INDEX
+//!    to `cache_dir/INDEX` via a temporary file that is renamed into place.
+//!    Concurrent readers therefore never observe a partially written cache file.
+//!    A failed fetch leaves the previous cache file intact, which
+//!    [`Repo::load_cached_index`] can still serve.
+//!
+//! 4. **TLS guarantees**: all HTTPS fetches use the `ureq` + `rustls` stack
+//!    with the `webpki-roots` CA bundle compiled in.  No system CA bundle is
+//!    consulted.  Callers that operate behind a corporate MITM proxy must add
+//!    the proxy CA to the `webpki-roots` bundle at compile time; there is no
+//!    runtime override.
+//!
+//! 5. **Timeout bounds**: connect and read timeouts are 30 seconds each
+//!    (matching the C `--connect-timeout 30` curl flag).  A stalled mirror will
+//!    block for up to 60 seconds before [`FetchError::Timeout`] is returned and
+//!    the next mirror is tried.
+//!
+//! On-mirror URL layout (matches publish-packages.yml + gen-index.sh):
+//!   INDEX:   `<mirror_base>/INDEX.zst`
+//!   SIG:     `<mirror_base>/INDEX.zst.sig`
+//!   PACKAGE: `<mirror_base>/<name>-<version>-<arch>.jpkg`
+//!   (legacy) `<mirror_base>/<name>-<version>.jpkg`
 
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};

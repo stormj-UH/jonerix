@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! `cmd::*` — one sub-module per jpkg subcommand.
 //!
 //! Each module exposes a `pub fn run(args: ...) -> i32` (or returns a typed

@@ -1,4 +1,43 @@
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 //! Canonical bytes for per-package signature.
+//!
+//! # Invariants
+//!
+//! 1. **Determinism**: [`canonical_bytes`] is a pure function.  Given the same
+//!    `Metadata` struct content (ignoring the `signature` field) and the same
+//!    `payload_sha256`, it always returns the same byte sequence.  Any change
+//!    to the algorithm, field ordering, or prefix bytes constitutes a breaking
+//!    change and must be accompanied by a [`CANON_VERSION`] increment.
+//!
+//! 2. **Signature-field stripping**: the `[signature]` section is removed from
+//!    `Metadata` before serialisation.  This ensures that the canonical bytes
+//!    are identical whether or not a signature is already embedded, solving the
+//!    self-referential problem: you can verify a signed archive without first
+//!    stripping the signature block manually.  Callers must not pre-strip the
+//!    signature before calling this function; doing so is harmless but redundant.
+//!
+//! 3. **Payload binding**: the 32-byte raw SHA-256 of the zstd-compressed tar
+//!    payload is embedded in the canonical bytes.  This cryptographically binds
+//!    the metadata to a specific payload; a signature on canonical bytes
+//!    `(M, H)` cannot be reused for `(M, H')` where `H ≠ H'`.  Callers must
+//!    pass the SHA-256 of the *payload bytes* (everything after the 12-byte
+//!    file header), not the SHA-256 of the whole `.jpkg` file.
+//!
+//! 4. **Version prefix**: every canonical-bytes buffer begins with the 11-byte
+//!    tag `"jpkg-canon\0"` followed by [`CANON_VERSION`] (currently `1`).
+//!    Verifiers must check the prefix and version byte before attempting
+//!    signature verification.  A mismatch indicates the archive was signed with
+//!    a different version of this algorithm.
+//!
+//! 5. **TOML serialisation contract**: the metadata body is produced by
+//!    `toml::to_string` applied to the signature-stripped struct.  This is
+//!    deterministic for a fixed struct layout with the `toml` crate; however
+//!    any change to the field order in `Metadata` or its sub-structs will
+//!    change the serialised output and invalidate all previously computed
+//!    canonical bytes (and hence all signatures).
 //!
 //! The signed message is constructed deterministically from the
 //! metadata-with-signature-section-stripped plus the sha256 of the .jpkg

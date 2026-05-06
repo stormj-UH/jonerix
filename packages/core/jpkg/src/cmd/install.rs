@@ -1,22 +1,6 @@
-/*
- * jpkg - jonerix package manager
- * cmd/install.rs - jpkg install: resolve deps, fetch, verify, extract
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Port of jpkg/src/cmd_install.c.
- *
- * Divergences from C:
- * - --force applies to all packages in the plan (not just explicit names).
- *   The C code only force-installs names explicitly typed on the CLI
- *   (cmd_install.c:679-684).  In practice the only caller that passes
- *   --force is cmd_upgrade, which names the exact packages to force, so
- *   the observable difference is zero.  Simplicity wins.
- * - install_packages is pub(crate) so upgrade.rs can call it directly
- *   without going through run().  The C code calls cmd_install() with a
- *   synthetic argv; we avoid that by sharing the function.
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 use std::path::Path;
 
@@ -30,6 +14,7 @@ use crate::deps::resolve_install;
 use crate::recipe::{Index, Metadata};
 use crate::repo::{Repo, SignaturePolicy};
 use crate::sign::PublicKeySet;
+use crate::types::InstallMode;
 
 // ─── per-package signature verification ──────────────────────────────────────
 
@@ -80,8 +65,12 @@ pub(crate) fn verify_jpkg_signature(
     let archive = crate::archive::JpkgArchive::open(jpkg_path)
         .map_err(|e| SignatureError::Invalid(format!("failed to open archive: {e}")))?;
 
-    let metadata = Metadata::from_str(archive.metadata())
-        .map_err(|e| SignatureError::Invalid(format!("failed to parse metadata: {e}")))?;
+    let metadata = Metadata::from_str(
+        archive
+            .metadata_str()
+            .map_err(|e| SignatureError::Invalid(format!("metadata not valid UTF-8: {e}")))?,
+    )
+    .map_err(|e| SignatureError::Invalid(format!("failed to parse metadata: {e}")))?;
 
     // No signature section.
     let sig = match &metadata.signature {
@@ -132,13 +121,13 @@ pub(crate) fn verify_jpkg_signature(
 /// Returns 0 on success, 1 on any failure.
 pub fn run(args: &[String]) -> i32 {
     // ── Parse flags ───────────────────────────────────────────────────────
-    let mut force = false;
+    let mut mode = InstallMode::Normal;
     let mut pkg_names: Vec<String> = Vec::new();
 
     let mut iter = args.iter();
     while let Some(a) = iter.next() {
         match a.as_str() {
-            "--force" | "-f" => force = true,
+            "--force" | "-f" => mode = InstallMode::Force,
             other => pkg_names.push(other.to_string()),
         }
     }
@@ -186,7 +175,7 @@ pub fn run(args: &[String]) -> i32 {
     };
 
     // ── Resolve deps ──────────────────────────────────────────────────────
-    let plan = match resolve_install(&pkg_names, &arch, &db, &index, force) {
+    let plan = match resolve_install(&pkg_names, &arch, &db, &index, mode) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("jpkg: dependency resolution failed: {e}");
@@ -207,7 +196,7 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     // ── Install loop ──────────────────────────────────────────────────────
-    match install_packages(&db, &repo, &index, &arch, &plan.to_install, force) {
+    match install_packages(&db, &repo, &index, &arch, &plan.to_install, mode) {
         Ok(n) => {
             eprintln!("jpkg: {n} package(s) installed");
             0
@@ -231,7 +220,7 @@ pub(crate) fn install_packages(
     index: &Index,
     arch: &str,
     names: &[String],
-    force: bool,
+    mode: InstallMode,
 ) -> Result<usize, InstallError> {
     let mut installed = 0usize;
 
@@ -248,7 +237,7 @@ pub(crate) fn install_packages(
         };
 
         // Skip if already installed at same version and not forced.
-        if !force {
+        if !mode.is_force() {
             if let Some(existing) = db.get(name)? {
                 let installed_ver = existing
                     .metadata
@@ -382,7 +371,7 @@ pub(crate) fn install_packages(
 
         // Open archive + parse metadata.
         let archive = JpkgArchive::open(&jpkg_path)?;
-        let metadata = Metadata::from_str(archive.metadata())?;
+        let metadata = Metadata::from_str(archive.metadata_str()?)?;
 
         // pre_install hook.
         let rootfs = crate::cmd::common::resolve_rootfs(None);

@@ -1,13 +1,6 @@
-/*
- * jpkg - jonerix package manager
- * cmd/common.rs - Shared helpers used by install, remove, upgrade, local_install
- *
- * MIT License
- * Copyright (c) 2026 Jon-Erik G. Storm, Inc. DBA Lava Goat Software
- *
- * Port of the shared machinery scattered across cmd_install.c (lines 36-203)
- * and main_local.c (lines 100-186).
- */
+// Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+// doing business as LAVA GOAT SOFTWARE. All rights reserved.
+// SPDX-License-Identifier: MIT
 
 use std::fmt;
 use std::fs;
@@ -435,7 +428,9 @@ pub fn extract_and_register(
     db: &InstalledDb,
 ) -> Result<InstalledPkg, InstallError> {
     // ── 1. Parse metadata ─────────────────────────────────────────────────
-    let metadata = Metadata::from_str(archive.metadata())?;
+    // Use metadata_str() rather than metadata() so a corrupt archive with
+    // non-UTF-8 metadata bytes returns an error instead of panicking.
+    let metadata = Metadata::from_str(archive.metadata_str()?)?;
     let pkg_name = metadata
         .package
         .name
