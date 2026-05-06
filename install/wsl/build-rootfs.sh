@@ -102,7 +102,10 @@ printf '[repo]\nurl = "%s"\n' "${PKG_BASE_URL}" > "${STAGING}/etc/jpkg/repos.con
 
 # Install the signing key BEFORE any jpkg install operations. jpkg 2.2.x
 # (Require policy) hard-fails if it can't verify a package signature.
-PUBKEY="${DEFAULTS}/jpkg/keys/jonerix.pub"
+# Derive path from script location (DEFAULTS is set later in section 8).
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+_REPO_ROOT="$(cd "${_SCRIPT_DIR}/../.." && pwd)"
+PUBKEY="${_REPO_ROOT}/config/defaults/etc/jpkg/keys/jonerix.pub"
 [ -f "${PUBKEY}" ] && cp "${PUBKEY}" "${STAGING}/etc/jpkg/keys/jonerix.pub"
 
 # ---------------------------------------------------------------------------
