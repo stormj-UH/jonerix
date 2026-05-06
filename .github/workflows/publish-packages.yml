@@ -291,7 +291,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
-      packages: read
 
     steps:
       - name: Checkout source
@@ -304,14 +303,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq zstd
 
-      - name: Log in to GHCR for jpkg signer
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Build Rust jpkg signer
-        env:
-          SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
-        run: sh "$GITHUB_WORKSPACE/scripts/ci-build-jpkg-signer.sh"
-
       - name: Download all packages from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -323,6 +314,23 @@ jobs:
             --dir /tmp/jpkg-index 2>/dev/null || true
           echo "Downloaded packages:"
           ls -lh /tmp/jpkg-index/*.jpkg 2>/dev/null || echo "(none)"
+
+      - name: Extract jpkg binary from package
+        run: |
+          # Find the x86_64 jpkg package (already downloaded above).
+          pkg=$(ls /tmp/jpkg-index/jpkg-*-x86_64.jpkg 2>/dev/null | sort -V | tail -1)
+          if [ -z "$pkg" ] || [ ! -f "$pkg" ]; then
+            echo "FATAL: no jpkg x86_64 package found in release"
+            exit 1
+          fi
+          echo "Extracting jpkg from: $(basename "$pkg")"
+          # jpkg format: 8B magic + 4B LE header_len + TOML + zstd(tar)
+          mkdir -p /tmp/jpkg-extract
+          hdr_len=$(od -An -v -tu4 -N4 -j8 "$pkg" | tr -d ' ')
+          skip=$((12 + hdr_len))
+          tail -c +$((skip + 1)) "$pkg" | zstd -dc | tar xf - -C /tmp/jpkg-extract
+          sudo install -m 755 /tmp/jpkg-extract/bin/jpkg /usr/local/bin/jpkg
+          jpkg --version
 
       - name: Download published asset manifests
         if: ${{ !inputs.index_only }}
@@ -455,5 +463,4 @@ jobs:
           OPEN_RELEASE_ASSET_LIST: /tmp/jpkg-index/.open-release-assets
           RECIPES_ROOT: ${{ github.workspace }}/packages
           PKG_INPUT: ${{ inputs.package }}
-          SIGNER_IMAGE: ${{ env.BUILDER_IMAGE_X86_64 }}
         run: sh "$GITHUB_WORKSPACE/scripts/sync-open-package-release.sh"
