@@ -12,7 +12,7 @@
 
 **A fully self-hosting Linux distribution with zero GPL in userland.**
 
-Current release: **[v1.2.1](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.1)** (`jpkg conform 1.2.1` to pin a host to this tag). The 1.2.x release line ships **jpkg 2.0** — the from-scratch Rust port of the C jpkg 1.1.5 (~11.7K LOC, zero `unsafe`, 160 in-crate tests, byte-equivalent `.jpkg` / INDEX / `/var/db/jpkg/installed/` wire formats). See [PACKAGES.md](PACKAGES.md) for the full package inventory and the README's [Rust drop-in replacements](#rust-drop-in-replacements) section for the port's design.
+Current release: **[v1.2.1](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.1)** (`jpkg conform 1.2.1` to pin a host to this tag). The 1.2.x release line ships **jpkg 2.0** — the from-scratch Rust port of the C jpkg 1.1.5 (~11.7K LOC, zero `unsafe`, 160 in-crate tests, byte-equivalent `.jpkg` / INDEX / `/var/db/jpkg/installed/` wire formats). See [PACKAGES.md](PACKAGES.md) for the full package inventory and the README's [Rust drop-in replacements](#rust-drop-in-replacements) section for the port's design. Full SUSv4/UNIX V7 compatibility is in the roadmap.
 
 ## Overview
 
