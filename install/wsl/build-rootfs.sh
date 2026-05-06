@@ -95,10 +95,15 @@ chmod 0700 "${STAGING}/root"
 chmod 1777 "${STAGING}/tmp"
 
 # ---------------------------------------------------------------------------
-# 4. Configure jpkg repository
+# 4. Configure jpkg repository + signing key
 # ---------------------------------------------------------------------------
 echo "--- Writing /etc/jpkg/repos.conf ---"
 printf '[repo]\nurl = "%s"\n' "${PKG_BASE_URL}" > "${STAGING}/etc/jpkg/repos.conf"
+
+# Install the signing key BEFORE any jpkg install operations. jpkg 2.2.x
+# (Require policy) hard-fails if it can't verify a package signature.
+PUBKEY="${DEFAULTS}/jpkg/keys/jonerix.pub"
+[ -f "${PUBKEY}" ] && cp "${PUBKEY}" "${STAGING}/etc/jpkg/keys/jonerix.pub"
 
 # ---------------------------------------------------------------------------
 # 5. Install packages via jpkg
