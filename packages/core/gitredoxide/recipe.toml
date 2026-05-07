@@ -43,6 +43,15 @@ system = "custom"
 #   On jonerix, LibreSSL headers are at /include, libs at /lib.
 build = """
 set -e
+cd gitoxide
+mkdir -p .cargo
+cat > .cargo/config.toml << 'VENDOR_EOF'
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "../gitredoxide-vendor"
+VENDOR_EOF
 export CARGO_HOME=/tmp/gitredoxide-cargo
 export CARGO_TARGET_DIR="$PWD/target"
 export OPENSSL_DIR=/
@@ -54,7 +63,7 @@ cargo build --release --frozen --offline --bin gitredoxide
 """
 install = """
 set -e
-BIN="$PWD/target/release/gitredoxide"
+BIN="$PWD/gitoxide/target/release/gitredoxide"
 install -Dm755 "$BIN" "$DESTDIR/bin/gitredoxide"
 ln -sf gitredoxide "$DESTDIR/bin/git"
 llvm-strip --strip-all "$DESTDIR/bin/gitredoxide" 2>/dev/null || true
