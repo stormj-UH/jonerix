@@ -162,7 +162,7 @@ for pkg in \
     libarchive bsdtar openrsync \
     pigz mandoc onetrueawk \
     anvil exproxide \
-    pico libcxx fastfetch ripgrep gitoxide \
+    pico libcxx fastfetch ripgrep gitredoxide \
     iproute-go zsh
 do
     echo "=== Installing: $pkg ==="

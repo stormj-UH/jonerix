@@ -53,7 +53,7 @@ minimal -> core -> builder   (compilers + dev tools)
 | Image | Base | Contents |
 |-------|------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
-| `core` | minimal | mksh, uutils, pico, fastfetch, ripgrep, gitoxide, ncurses, networking |
+| `core` | minimal | mksh, uutils, pico, fastfetch, ripgrep, gitredoxide, ncurses, networking |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | jcarp, hostapd, wpa_supplicant, btop, unbound DNS config, sysctl hardening |
 
@@ -72,7 +72,7 @@ All packages build from source on jonerix itself (both x86_64 and aarch64):
 - **LLVM/Clang/LLD**: Full compiler toolchain from source
 - **Go chain**: C → Go 1.4 → 1.17 → 1.20 → 1.22 → 1.24 → 1.26 (bootstrapped from C)
 - **Go packages**: containerd, runc, nerdctl, CNI plugins, headscale, derper
-- **Rust packages**: uutils, gitoxide, ripgrep, btop (via system LLVM + bootstrap rustc)
+- **Rust packages**: uutils, gitredoxide, ripgrep, btop (via system LLVM + bootstrap rustc)
 - **Scripting**: Python 3, Node.js, Perl (from source with Clang/musl)
 
 All components are compiled with:
@@ -119,7 +119,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 | Build tool (make) | jmake | MIT | GNU make (GPL) |
 | Text editor | pico | Apache-2.0 | vim |
 | Grep | ripgrep | MIT | GNU grep (GPL) |
-| Git | gitoxide | MIT/Apache-2.0 | git (GPL) |
+| Git | gitredoxide | MIT/Apache-2.0 | git (GPL) |
 | System info | fastfetch | MIT | neofetch |
 | Process monitor | btop | Apache-2.0 | htop |
 | awk | onetrueawk | MIT | gawk (GPL) |

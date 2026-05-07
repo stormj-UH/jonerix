@@ -22,7 +22,7 @@ description = "Permissively licensed drop-in /bin/git replacement (43 commands)"
 # Full push/pull/clone/fetch, merge/cherry-pick/rebase/stash, checkout
 # family, plumbing commands, log/show/diff/status, branch/tag/remote.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.0/gitredoxide-1.0.0-vendored.tar.gz"
-sha256 = "d01acbd525dc54d55e7fca11a3ac582d2c4fda9f5df350438fef9a35755268a1"
+sha256 = "fb4b1d7a16012b1edf4abfb04853f409c99669b345b9293b60bc1d0801e9cc7a"
 
 [build]
 system = "custom"

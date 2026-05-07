@@ -115,12 +115,11 @@ cainfo = "/etc/ssl/certs/ca-certificates.crt"
 
 [net]
 # IMPORTANT: stay on cargo's built-in libgit2 fetcher (the default).
-# jonerix's `git` is gitoxide (gix), not the GNU git CLI — gix doesn't
-# implement the same flag surface (`--no-tags`, `--depth`, etc), so
-# `git-fetch-with-cli = true` would have cargo invoke gix expecting GNU
-# git semantics and most fetches would fail. libgit2 itself is
-# permissive (MIT-style with linking exception), so staying off the
-# CLI shell-out keeps us inside the license envelope.
+# jonerix's `git` is gitredoxide (drop-in /bin/git replacement), which
+# implements 43 Git commands including clone/fetch/pull/push, but
+# cargo's libgit2 fetcher is still preferred for offline/vendored builds.
+# libgit2 itself is permissive (MIT-style with linking exception), so
+# staying off the CLI shell-out keeps us inside the license envelope.
 git-fetch-with-cli = false
 
 [env]
