@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.1"
+version = "1.0.2"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (43 commands)"
 
@@ -26,8 +26,13 @@ description = "Permissively licensed drop-in /bin/git replacement (43 commands)"
 # /bin/git, calling Command::new("git") forks itself infinitely.
 # 16 unconditional passthrough sites removed across 8 modules.
 # passthrough_git() deleted.  4 regression tests prevent reintroduction.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.1/gitredoxide-1.0.1-vendored.tar.gz"
-sha256 = "1ed2c85a584f0312bef1a70a2c81c0159eae666ed6807a49303036953090522f"
+#
+# 1.0.2: auto-discover system CA bundle for HTTPS transport.
+# gix links libssl directly (not libcurl), so it needs SSL_CERT_FILE
+# pointed at the system CA bundle.  probe_ssl_certs() in main.rs
+# checks common paths at startup.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.2/gitredoxide-1.0.2-vendored.tar.gz"
+sha256 = "4467bfde4a40c78fcc924a12436ca399226ef5075d33520c24e9455f093cda8a"
 
 [build]
 system = "custom"
