@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.13"
+version = "1.0.14"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -22,22 +22,22 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.13.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.14.tar.gz
 #
-# 1.0.13: fix history up-arrow bug (unmatched quote in history file
-# swallowed all remaining entries into one mega-entry); security
-# hardening (recursion depth limits for expansion, functions, eval,
-# source), SAFETY docs on all 156 unsafe blocks, panic audit (148
-# PROVEN: comments), invariant ledgers on all 9 modules, copyright
-# headers, perf improvements.  82/82 bash-5.3 test suite, 128 unit
-# tests, 18 differential corpora, zero compiler warnings.
+# 1.0.14: fix history up-arrow bug (unmatched quote in history file
+# swallowed all remaining entries into one mega-entry).
+# 1.0.13: security hardening (recursion depth limits for expansion,
+# functions, eval, source), SAFETY docs on all 156 unsafe blocks,
+# panic audit (148 PROVEN: comments), invariant ledgers on all 9
+# modules, copyright headers, perf improvements.  82/82 bash-5.3
+# test suite, 128 unit tests, 18 differential corpora, zero warnings.
 # 1.0.12: 82/82 bash-5.3 test suite, 18/18 test corpora green.
 # Tab on a fresh empty line now rings the bell on the first press and only
 # lists completions on the second consecutive Tab (matches readline's
 # show-all-if-unmodified=off default), instead of immediately prompting
 # "Display all N possibilities?" or dumping the whole command list.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.13/brash-1.0.13.tar.gz"
-sha256 = "253250ed1a8cc316c78593d7f2be595286b26012eaa9ead87764582b4f5f09ae"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.14/brash-1.0.14.tar.gz"
+sha256 = "8afff4449173822cdfe6a3536cf550279149dce749ead52300d072470b875d85"
 
 [build]
 system = "custom"
