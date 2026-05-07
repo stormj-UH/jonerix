@@ -225,7 +225,7 @@ done
 
 # Path-only tarballs: no vendor/ required but Cargo.lock must not
 # reference external registries.
-for pkg in anvil jfsck lsusb-rs m4oxide; do
+for pkg in anvil jfsck lsusb-rs m4oxide readlineoxide; do
     recipe=$(find "${RECIPES}" -path "*/${pkg}/recipe.toml" | head -n 1)
     [ -f "$recipe" ] || continue
     file=$(find_source_tarball "$pkg" "$recipe") || continue

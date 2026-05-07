@@ -5,7 +5,7 @@
 # installed ABI names are the conventional libreadline/libhistory names
 # so configure scripts and existing consumers can find them.
 name = "readlineoxide"
-version = "0.1.5-r1"
+version = "0.1.6-r0"
 license = "MIT"
 description = "Clean-room Rust libreadline/libhistory compatibility layer for jonerix"
 
@@ -13,11 +13,11 @@ description = "Clean-room Rust libreadline/libhistory compatibility layer for jo
 # Canonical source: Forgejo jonerik/readlineoxide on
 # castle.great-morpho.ts.net:3000. That host sits behind Tailscale so
 # GitHub Actions can't reach it; the tarball is mirrored to the
-# stormj-UH/jonerix GH release source-readlineoxide-v0.1.5 for CI.
+# stormj-UH/jonerix GH release source-readlineoxide-v0.1.6 for CI.
 # Forgejo URL (reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/readlineoxide/archive/v0.1.5.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-readlineoxide-v0.1.5/readlineoxide-v0.1.5.tar.gz"
-sha256 = "62b18dd6b2c28d6adc045ac3139b79c69bb1dcd0248a9f640fd663c7a48c50fb"
+#   https://castle.great-morpho.ts.net:3000/jonerik/readlineoxide/archive/v0.1.6.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-readlineoxide-v0.1.6/readlineoxide-v0.1.6.tar.gz"
+sha256 = "a109f0c25be31fc96b4d72eb551eb29a15168528315e4172b85626bc4c38fea4"
 
 [build]
 system = "custom"
@@ -55,7 +55,7 @@ includedir=${prefix}/include
 
 Name: readlineoxide
 Description: Clean-room libreadline compatibility layer
-Version: 0.1.5
+Version: 0.1.6
 Libs: -L${libdir} -lreadline
 Cflags: -I${includedir}
 PC
@@ -67,7 +67,7 @@ includedir=${prefix}/include
 
 Name: readlineoxide-history
 Description: Clean-room libhistory compatibility layer
-Version: 0.1.5
+Version: 0.1.6
 Libs: -L${libdir} -lhistory
 Cflags: -I${includedir}
 PC

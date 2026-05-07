@@ -52,7 +52,7 @@ Generated from tracked `packages/**/recipe.toml` -- **98 recipes**. All jonerix-
 | **`openntpd`** | `core` | 6.8p1-r4 | ISC | any | `musl`, `libressl` | `clang`, `jmake`, `exproxide` | OpenBSD NTP daemon — lightweight, secure time synchronization |
 | **`openrc`** | `core` | 0.54-r6 | BSD-2-Clause | any | `musl`, `mksh` | `clang`, `meson`, `samurai`, `jonerix-headers` | Dependency-based init system for Unix-like systems |
 | **`pigz`** | `core` | 2.8-r1 | Zlib | any | `musl`, `zlib` | `clang`, `make` | Parallel implementation of gzip |
-| **`readlineoxide`** | `core` | 0.1.5-r1 | MIT | any | `musl` | `rust` | Clean-room Rust libreadline/libhistory compatibility layer for jonerix |
+| **`readlineoxide`** | `core` | 0.1.6-r0 | MIT | any | `musl` | `rust` | Clean-room Rust libreadline/libhistory compatibility layer for jonerix |
 | **`ripgrep`** | `core` | 15.1.0 | MIT | any | `musl` | `rust` | Fast line-oriented search tool (grep replacement) |
 | **`shadow`** | `core` | 4.19.4-r5 | BSD-3-Clause | any | `musl`, `toybox` | `clang`, `make`, `jonerix-headers`, `pkgconf` | shadow-utils (login, passwd, user/group management) — REPLACES toybox's passwd / login / useradd / userdel / usermod / groupadd / groupdel / groupmod and jonerix-util's chsh. Originals snapshotted under /etc/jpkg/shadow/toybox-prev/ and restored on remove. |
 | **`snooze`** | `core` | 0.5-r1 | CC0 | any | `musl` | `clang`, `make` | Lightweight cron alternative for running a command at a specific time |
