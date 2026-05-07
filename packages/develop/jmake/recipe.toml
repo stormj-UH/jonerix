@@ -145,7 +145,7 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.0/jmake-v1.2.0.tar.gz"
-sha256 = "6f2396d0e0cd69aec4f41aaa54a35209c1846b15f361d73b8a8f55b3bd917bd5"
+sha256 = "17edbaec5c9713c697f8cc38e9190d9889fb7d56fcacaa40de91f4b1e2f32b50"
 
 [build]
 system = "custom"
