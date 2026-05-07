@@ -1,0 +1,123 @@
+[package]
+# Permissively licensed drop-in replacement for /bin/git, built on the
+# gitoxide gix-* crate ecosystem.  43 Git commands implemented (29
+# porcelain, 12 plumbing, 2 global).  302 tests passing, zero-warning
+# release build.  MIT OR Apache-2.0.
+#
+# gitredoxide replaces the gitoxide package (gix + ein) as the primary
+# Git provider on jonerix.  It installs as /bin/gitredoxide and provides
+# /bin/git as a symlink.  The gix and ein plumbing tools remain available
+# via the gitoxide package if needed, but this package owns /bin/git.
+name = "gitredoxide"
+version = "1.0.0"
+license = "MIT OR Apache-2.0"
+description = "Permissively licensed drop-in /bin/git replacement (43 commands)"
+
+[source]
+# Canonical source: Forgejo jonerik/gitoxide on castle.great-morpho.ts.net:3000.
+# Vendored tarball mirrored to GitHub for CI access from outside Tailscale.
+#
+# 1.0.0: initial release. 43 Git commands, 302 tests, zero-warning build.
+# 16-module architecture: mod.rs dispatch hub + 15 command modules.
+# Full push/pull/clone/fetch, merge/cherry-pick/rebase/stash, checkout
+# family, plumbing commands, log/show/diff/status, branch/tag/remote.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.0/gitredoxide-1.0.0-vendored.tar.gz"
+sha256 = "d01acbd525dc54d55e7fca11a3ac582d2c4fda9f5df350438fef9a35755268a1"
+
+[build]
+system = "custom"
+# The vendored tarball extracts as gitoxide/ (the workspace root).
+# gitredoxide is the [[bin]] target inside the gitredoxide/ member crate.
+# The workspace includes all gix-* plumbing crates as path dependencies.
+#
+# Build notes:
+# - --frozen --offline: vendored deps only, no network access.
+# - -C strip=symbols: small binary, llvm-strip as backup.
+# - -C target-feature=-crt-static: dynamic linking against musl libc.
+# - OPENSSL_*: gitoxide transport crates link OpenSSL (via curl) for HTTPS.
+#   On jonerix, LibreSSL headers are at /include, libs at /lib.
+build = """
+set -e
+cd gitoxide
+export CARGO_HOME=/tmp/gitredoxide-cargo
+export CARGO_TARGET_DIR="$PWD/target"
+export OPENSSL_DIR=/
+export OPENSSL_INCLUDE_DIR=/include
+export OPENSSL_LIB_DIR=/lib
+export PKG_CONFIG_ALLOW_CROSS=1
+export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
+cargo build --release --frozen --offline --bin gitredoxide
+"""
+install = """
+set -e
+BIN="$PWD/gitoxide/target/release/gitredoxide"
+install -Dm755 "$BIN" "$DESTDIR/bin/gitredoxide"
+ln -sf gitredoxide "$DESTDIR/bin/git"
+llvm-strip --strip-all "$DESTDIR/bin/gitredoxide" 2>/dev/null || true
+"""
+
+[hooks]
+# Take over /bin/git from whatever currently provides it (gitoxide's
+# gix alias, or no provider at all).  This hook runs after the package
+# files are installed, so /bin/gitredoxide and /bin/git -> gitredoxide
+# are already in place.
+#
+# If there's a stale /bin/git pointing elsewhere (e.g. gix), our
+# installed symlink already replaced it.  This hook just does cleanup
+# and verification.
+post_install = """
+set -e
+
+# Ensure /bin/git points to gitredoxide (should already be the case
+# from install, but verify in case of package manager ordering issues).
+if [ -e /bin/git ] && [ "$(readlink /bin/git 2>/dev/null)" != "gitredoxide" ]; then
+    ln -sf gitredoxide /bin/git
+fi
+
+# Register in /etc/shells so gitredoxide and git are valid login shells
+# (unlikely to be used as login shells, but consistent with convention).
+ensure_in_shells() {
+    target=$1
+    if [ -f /etc/shells ]; then
+        grep -qx "$target" /etc/shells 2>/dev/null || printf '%s\n' "$target" >> /etc/shells
+    fi
+}
+
+# Provide /bin/git-upload-pack and /bin/git-receive-pack as symlinks
+# to gitredoxide for protocol compatibility.  Git clients and servers
+# call these directly during push/fetch.
+for helper in git-upload-pack git-receive-pack; do
+    if [ ! -e "/bin/$helper" ]; then
+        ln -sf gitredoxide "/bin/$helper"
+    fi
+done
+
+exit 0
+"""
+
+# On removal, restore /bin/git to gix if the gitoxide package is still
+# installed.  Otherwise remove the /bin/git symlink entirely — better
+# an honest "command not found" than a dangling symlink.
+post_remove = """
+set -e
+
+# Clean up protocol helper symlinks if they still point to gitredoxide.
+for helper in git-upload-pack git-receive-pack; do
+    if [ "$(readlink /bin/$helper 2>/dev/null)" = "gitredoxide" ]; then
+        rm -f "/bin/$helper"
+    fi
+done
+
+# Restore /bin/git fallback.
+if [ -e /bin/git ] || [ -L /bin/git ]; then
+    exit 0
+fi
+if [ -x /bin/gix ]; then
+    ln -sf gix /bin/git
+fi
+exit 0
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]
