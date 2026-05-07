@@ -34,7 +34,8 @@ Generated from tracked `packages/**/recipe.toml` -- **98 recipes**. All jonerix-
 | **`expat`** | `core` | 2.6.4 | MIT | any | `musl` | `clang`, `make` | Stream-oriented XML parser library (libexpat) |
 | **`exproxide`** | `core` | 0.1.0 | MIT | any | `musl` | `rust` | Clean-room Rust implementation of expr for jonerix |
 | **`fastfetch`** | `core` | 2.36.1-r1 | MIT | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | Feature-rich system information tool |
-| **`gitoxide`** | `core` | 0.52.0-r5 | MIT OR Apache-2.0 | any | `musl` | `rust` | Pure Rust implementation of git (gix + ein) |
+| **`gitoxide`** | `core` | 0.52.0-r5 | MIT OR Apache-2.0 | any | `musl` | `rust` | Pure Rust implementation of git plumbing (gix + ein) |
+| **`gitredoxide`** | `core` | 1.0.0 | MIT OR Apache-2.0 | any | `musl` | `rust` | Drop-in /bin/git replacement (43 commands, built on gitoxide gix-* crates) |
 | **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | - | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
 | **`ifupdown-ng`** | `core` | 0.12.1-r2 | ISC | any | `musl` | `clang`, `make`, `jonerix-headers` | Next-generation network interface configuration tool |
 | **`iproute-go`** | `core` | 0.16.0 | BSD-3-Clause | any | - | `go` | u-root's ip command — Go reimplementation of iproute2's ip(8) |

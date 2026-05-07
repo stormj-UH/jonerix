@@ -158,7 +158,7 @@ the rootfs is assembled in CI.
 | Image | Based on | Contents |
 |-------|----------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
-| `core` | minimal | mksh (/bin/sh), zsh, uutils, pico, fastfetch, ripgrep, gitoxide, networking tools |
+| `core` | minimal | mksh (/bin/sh), zsh, uutils, pico, fastfetch, ripgrep, gitredoxide (/bin/git), networking tools |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | jcarp, hostapd, wpa_supplicant, nloxide (libnl replacement), **stormwall** (single firewall front-end speaking both `nft` and BSD `pf.conf` syntax); home-router / AP / gateway appliance |
 
@@ -234,7 +234,7 @@ the rootfs is assembled in CI.
 | Component | License | Role |
 |-----------|---------|------|
 | pico | Apache-2.0 | Terminal text editor (alpine) |
-| gitoxide | MIT/Apache-2.0 | Git implementation in Rust |
+| gitredoxide | MIT/Apache-2.0 | Drop-in /bin/git replacement (43 commands) |
 | ripgrep | MIT | Fast recursive grep |
 | mandoc | ISC | Man page tools |
 | pigz | Zlib | Parallel gzip |
@@ -294,7 +294,7 @@ sources, vetted for license compatibility:
 | Replaces | Project | License | Notes |
 |----------|---------|---------|-------|
 | GNU coreutils (sort, wc, tr, cut, head, tail, ...70+ tools) | `uutils` | MIT | Replaces toybox multicall symlinks for the commands uutils provides; `replaces = ["toybox"]` lets jpkg flip the `/bin/<cmd>` symlinks and `post_remove` hands them back if uutils is uninstalled. |
-| git | `gitoxide` | MIT or Apache-2.0 | `gix` and `ein` binaries. Read-mostly client — fast `clone`, `fetch`, `log`, blame; not a full server-side replacement. |
+| git | `gitredoxide` | MIT or Apache-2.0 | Drop-in `/bin/git` with 43 implemented commands (push, pull, clone, fetch, merge, rebase, cherry-pick, stash, checkout, switch, restore, diff, log, show, blame, and more). Built on gitoxide `gix-*` plumbing crates. |
 | grep | `ripgrep` | MIT | Default `/bin/rg`. Faster than GNU grep on the kinds of trees jonerix CI walks (recipe corpus, build logs). |
 
 ### Relationship to toybox and mksh

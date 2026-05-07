@@ -216,7 +216,7 @@ find_source_tarball() {
 # Tarball packages with registry dependencies must carry Cargo.lock,
 # vendor/, and source replacement config.  Filenames are derived from
 # each recipe's version field so version bumps propagate automatically.
-for pkg in brash exproxide gitoxide jmake ripgrep stormwall uutils; do
+for pkg in brash exproxide gitoxide gitredoxide jmake ripgrep stormwall uutils; do
     recipe=$(find "${RECIPES}" -path "*/${pkg}/recipe.toml" | head -n 1)
     [ -f "$recipe" ] || continue
     file=$(find_source_tarball "$pkg" "$recipe") || continue
