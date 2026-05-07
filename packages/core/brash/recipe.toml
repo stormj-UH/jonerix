@@ -24,18 +24,20 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Forgejo URL (primary, reachable from inside the jonerix network):
 #   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.13.tar.gz
 #
-# 1.0.13: security hardening (recursion depth limits for expansion,
-# functions, eval, source), SAFETY docs on all 156 unsafe blocks, panic
-# audit (148 PROVEN: comments), invariant ledgers on all 9 modules,
-# copyright headers, perf improvements.  82/82 bash-5.3 test suite,
-# 128 unit tests, 18 differential corpora, zero compiler warnings.
+# 1.0.13: fix history up-arrow bug (unmatched quote in history file
+# swallowed all remaining entries into one mega-entry); security
+# hardening (recursion depth limits for expansion, functions, eval,
+# source), SAFETY docs on all 156 unsafe blocks, panic audit (148
+# PROVEN: comments), invariant ledgers on all 9 modules, copyright
+# headers, perf improvements.  82/82 bash-5.3 test suite, 128 unit
+# tests, 18 differential corpora, zero compiler warnings.
 # 1.0.12: 82/82 bash-5.3 test suite, 18/18 test corpora green.
 # Tab on a fresh empty line now rings the bell on the first press and only
 # lists completions on the second consecutive Tab (matches readline's
 # show-all-if-unmodified=off default), instead of immediately prompting
 # "Display all N possibilities?" or dumping the whole command list.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.13/brash-1.0.13.tar.gz"
-sha256 = "d69e6effc6b20ef7f3858458deb272d21e3680421dc476243d32eceb552ade9a"
+sha256 = "253250ed1a8cc316c78593d7f2be595286b26012eaa9ead87764582b4f5f09ae"
 
 [build]
 system = "custom"
