@@ -32,7 +32,7 @@ description = "Permissively licensed drop-in /bin/git replacement (43 commands)"
 # pointed at the system CA bundle.  probe_ssl_certs() in main.rs
 # checks common paths at startup.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.2/gitredoxide-1.0.2-vendored.tar.gz"
-sha256 = "4467bfde4a40c78fcc924a12436ca399226ef5075d33520c24e9455f093cda8a"
+sha256 = "21b5e7acfbdface9e5a57f846d85f3a250cbbd397f26d843878568c61d3df155"
 
 [build]
 system = "custom"
