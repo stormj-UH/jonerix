@@ -1,36 +1,16 @@
 [package]
 name = "llvm-all"
-version = "21.1.2-r5"
+version = "21.1.2-r6"
 license = "Apache-2.0"
 description = "Full LLVM toolchain with all 80+ clang/llvm/lldb tools — pairs with slim llvm"
 
-# llvm-all shares its source build with `llvm`. The `llvm` package in
-# packages/develop/ produces a SLIM toolchain (clang, lld, lldb, core
-# llvm-* tools) intended for the builder image and most build use.
-# llvm-all ships the full set — llvm-dwp, llvm-mca, llvm-opt-report,
-# bugpoint, dsymutil, clang-tidy, clang-format, lldb, lldb-server, etc
-# — for development/debugging.
+# llvm-all ships the full set of LLVM/clang/lld tools — llvm-dwp,
+# llvm-mca, clang-tidy, clang-format, etc. — for development/debugging.
+# The core toolchain is now split across libllvm + clang + lld packages;
+# llvm-all is repacked from a combined build of all three.
 #
-# This recipe is intentionally lightweight: scripts/build-all.sh does not
-# build it directly (not in build-order.txt). The artifacts on the release
-# were produced by `scripts/repack-jpkg.py` from the existing llvm source
-# build — same payload, different manifest. A future rebuild should teach
-# build-all how to split the LLVM source build into two jpkgs instead of
-# running the whole thing twice.
-#
-# r1: lldb added to LLVM_ENABLE_PROJECTS in the upstream llvm recipe.
-#     /bin/lldb, /bin/lldb-server, and /lib/liblldb.so now ship.
-# r4: tracks llvm-r4 — clang now picks compiler-rt / libunwind / lld /
-#     libc++ as built-in defaults via CLANG_DEFAULT_RTLIB / UNWINDLIB /
-#     LINKER / CXX_STDLIB, and CLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang
-#     makes /etc/clang/<triple>.cfg + /etc/clang/clang++.cfg work as a
-#     real user-editable override layer. Same payload as llvm-r4, just
-#     repacked with the llvm-all manifest.
-# r5: pairs with llvm-r5 (the actual slim split). llvm-all carries the
-#     unfiltered build payload — every binary the source build produces
-#     (~120 real bins, ~30 symlinks) — while llvm-r5 keeps only the
-#     toolchain core listed in packages/develop/llvm/slim-keep-bins.txt.
-#     Same source build for both; differ only at the repack step.
+# r6: updated for the libllvm/clang/lld split. Now depends on the split
+#     packages at runtime instead of the monolithic llvm build.
 
 [source]
 url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
@@ -46,5 +26,5 @@ exit 1
 install = ""
 
 [depends]
-runtime = ["musl", "libcxx", "zstd", "zlib"]
-build = ["clang", "cmake", "samurai", "python3", "libcxx"]
+runtime = ["musl", "libllvm", "libcxx", "zstd", "zlib"]
+build = ["libllvm", "clang", "lld", "cmake", "samurai", "python3", "libcxx"]

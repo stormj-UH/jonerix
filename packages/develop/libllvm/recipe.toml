@@ -1,0 +1,119 @@
+[package]
+name = "libllvm"
+version = "21.1.2"
+license = "Apache-2.0"
+description = "LLVM core libraries, headers, cmake configs, and base tools (shared libLLVM-21.so)"
+
+# libllvm builds JUST the LLVM core — no clang, no lld, no lldb.
+# Ships libLLVM-21.so so clang, lld, and rust can all link against
+# the same LLVM build instead of rebuilding LLVM from source each time.
+#
+# Consumers:
+#   clang  — cmake -DLLVM_DIR=/lib/cmake/llvm
+#   lld    — cmake -DLLVM_DIR=/lib/cmake/llvm
+#   rust   — x.py with llvm-config = "/bin/llvm-config"
+#   lldb   — cmake -DLLVM_DIR=/lib/cmake/llvm
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+
+[build]
+system = "custom"
+build = """
+set -e
+
+# LLVM needs -fPIC, not -fPIE, for shared library code.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+
+case $(uname -m) in
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=2 ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+esac
+
+LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
+LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
+
+# libssp_nonshared.a stub — musl provides __stack_chk_fail natively.
+printf '!<arch>\n' > /lib/libssp_nonshared.a
+
+mkdir -p build
+cmake -S llvm -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_ENABLE_PROJECTS="" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
+    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DLLVM_ENABLE_LIBCXX=ON \
+    -DLLVM_BUILD_LLVM_DYLIB=ON \
+    -DLLVM_LINK_LLVM_DYLIB=ON \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLVM_INSTALL_UTILS=ON \
+    -DLLVM_ENABLE_ASSERTIONS=OFF \
+    -DLLVM_ENABLE_SPHINX=OFF \
+    -DLLVM_ENABLE_DOXYGEN=OFF \
+    -DLLVM_BUILD_TESTS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_ENABLE_FFI=OFF \
+    -DLLVM_ENABLE_ZLIB=ON \
+    -DLLVM_ENABLE_ZSTD=ON \
+    -DLLVM_ENABLE_PLUGINS=OFF \
+    -DLLVM_PARALLEL_LINK_JOBS=2
+
+samu -C build -j"$LLVM_BUILD_JOBS"
+DESTDIR=$DESTDIR cmake --install build
+
+# Flatten usr/ (jonerix merged-usr layout)
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+
+# Flatten lib64/ (cmake x86_64 default)
+if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
+    cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/"
+    rm -rf "$DESTDIR/lib64"
+fi
+
+# Keep: libLLVM-21.so, headers, cmake configs, llvm-config, llvm-* tools
+# Delete: static libs (clang/lld will link via the shared dylib)
+find "$DESTDIR/lib" -maxdepth 1 -name 'libLLVM*.a' -delete 2>/dev/null || true
+
+# Strip binaries
+find "$DESTDIR/bin" -type f -executable \
+    -exec llvm-strip {} \; 2>/dev/null || true
+llvm-strip --strip-debug "$DESTDIR/lib/libLLVM"*.so* 2>/dev/null || true
+
+# Remove docs
+rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc"
+
+# libssp stub in DESTDIR
+printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
+
+# Normalize /lib64 references
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+    "$DESTDIR/bin" "$DESTDIR/lib" 2>/dev/null || true
+
+echo "=== libllvm DESTDIR ==="
+ls -lh "$DESTDIR/lib/libLLVM"* 2>/dev/null || true
+"$DESTDIR/bin/llvm-config" --version 2>/dev/null || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "libcxx", "zstd", "zlib"]
+build = ["clang", "cmake", "samurai", "python3", "libcxx"]

@@ -1,0 +1,90 @@
+[package]
+name = "lld"
+version = "21.1.2"
+license = "Apache-2.0"
+description = "LLD linker (built against shared libllvm)"
+
+# lld is built out-of-tree against the pre-installed libllvm package.
+# No LLVM rebuild — cmake finds libLLVM-21.so via -DLLVM_DIR.
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+
+[build]
+system = "custom"
+build = """
+set -e
+
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+
+# Find the installed libllvm cmake configs.
+LLVM_DIR=""
+for d in /lib/cmake/llvm /usr/lib/cmake/llvm; do
+    [ -f "$d/LLVMConfig.cmake" ] && LLVM_DIR="$d" && break
+done
+[ -n "$LLVM_DIR" ] || { echo "FATAL: libllvm cmake configs not found"; exit 1; }
+echo "lld: using LLVM_DIR=$LLVM_DIR"
+
+LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
+LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
+
+mkdir -p build
+cmake -S lld -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_DIR="$LLVM_DIR" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLVM_ENABLE_PLUGINS=OFF \
+    -DLLD_BUILD_TOOLS=ON
+
+samu -C build -j$(nproc)
+DESTDIR=$DESTDIR cmake --install build
+
+# Flatten usr/ and lib64/
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
+    cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/"
+    rm -rf "$DESTDIR/lib64"
+fi
+
+# Remove static lld libs and cmake configs (not needed at runtime)
+find "$DESTDIR/lib" -maxdepth 1 -name 'liblld*.a' -delete 2>/dev/null || true
+rm -rf "$DESTDIR/lib/cmake/lld"
+
+# Symlink
+ln -sf ld.lld "$DESTDIR/bin/ld" 2>/dev/null || true
+
+# Strip
+find "$DESTDIR/bin" -type f -executable \
+    -exec llvm-strip {} \; 2>/dev/null || true
+
+# Remove docs, headers
+rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc"
+rm -rf "$DESTDIR/include"
+
+# Normalize /lib64
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+    "$DESTDIR/bin" "$DESTDIR/lib" 2>/dev/null || true
+
+echo "=== lld DESTDIR ==="
+"$DESTDIR/bin/ld.lld" --version 2>/dev/null || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "libllvm", "libcxx"]
+build = ["libllvm", "cmake", "samurai", "libcxx"]

@@ -1,0 +1,173 @@
+[package]
+name = "clang"
+version = "21.1.2"
+license = "Apache-2.0"
+description = "Clang C/C++ compiler with compiler-rt builtins (built against shared libllvm)"
+
+# clang is built out-of-tree against the pre-installed libllvm package.
+# No LLVM rebuild — cmake finds libLLVM-21.so via -DLLVM_DIR.
+# Also builds compiler-rt builtins for the jonerix triple.
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
+sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+
+[build]
+system = "custom"
+build = """
+set -e
+
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+
+case $(uname -m) in
+    x86_64)  LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=2 ;;
+    aarch64) LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+esac
+
+SRC=$(pwd)
+LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
+LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
+
+# Find the installed libllvm cmake configs.
+LLVM_DIR=""
+for d in /lib/cmake/llvm /usr/lib/cmake/llvm; do
+    [ -f "$d/LLVMConfig.cmake" ] && LLVM_DIR="$d" && break
+done
+[ -n "$LLVM_DIR" ] || { echo "FATAL: libllvm cmake configs not found"; exit 1; }
+echo "clang: using LLVM_DIR=$LLVM_DIR"
+
+# --- Step 1: Bootstrap compiler-rt builtins for the build compiler ---
+# Needed so --rtlib=compiler-rt test links pass during cmake configure.
+BOOTSTRAP_TRIPLE=$(clang -dumpmachine)
+rm -rf /tmp/clang-builtins-bootstrap
+mkdir -p /tmp/clang-builtins-bootstrap
+cmake -S compiler-rt/lib/builtins -B /tmp/clang-builtins-bootstrap -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_C_COMPILER_TARGET="$BOOTSTRAP_TRIPLE" \
+    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCMAKE_INSTALL_PREFIX=/lib/llvm21/lib/clang/21
+samu -C /tmp/clang-builtins-bootstrap
+DESTDIR="" cmake --install /tmp/clang-builtins-bootstrap
+
+# --- Step 2: Build clang against pre-installed libllvm ---
+mkdir -p build
+cmake -S clang -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_DIR="$LLVM_DIR" \
+    -DLLVM_EXTERNAL_LIT="" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCLANG_BUILD_CLANG_DYLIB=OFF \
+    -DCLANG_LINK_CLANG_DYLIB=OFF \
+    -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
+    -DCLANG_TOOL_C_INDEX_TEST_BUILD=OFF \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCLANG_DEFAULT_RTLIB=compiler-rt \
+    -DCLANG_DEFAULT_UNWINDLIB=libunwind \
+    -DCLANG_DEFAULT_LINKER=lld \
+    -DCLANG_DEFAULT_CXX_STDLIB=libc++ \
+    -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang \
+    -DLLVM_ENABLE_PLUGINS=OFF \
+    -DCLANG_INCLUDE_TESTS=OFF
+
+samu -C build -j"$BUILD_JOBS"
+DESTDIR=$DESTDIR cmake --install build
+
+# Flatten usr/ and lib64/
+if [ -d "$DESTDIR/usr" ]; then
+    cp -a "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
+    cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/"
+    rm -rf "$DESTDIR/lib64"
+fi
+
+# Remove static clang libs (not needed at runtime)
+find "$DESTDIR/lib" -maxdepth 1 -name 'libclang*.a' -delete 2>/dev/null || true
+# Remove clang cmake configs (only useful for building tools against libclang)
+rm -rf "$DESTDIR/lib/cmake/clang"
+
+# --- Step 3: jonerix compiler-rt builtins ---
+rm -rf /tmp/clang-builtins-jonerix
+mkdir -p /tmp/clang-builtins-jonerix
+cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/clang-builtins-jonerix -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER="$DESTDIR/bin/clang" \
+    -DCMAKE_C_COMPILER_TARGET="$LLVM_TRIPLE" \
+    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
+    -DCMAKE_AR="llvm-ar" \
+    -DCMAKE_RANLIB="llvm-ranlib" \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCMAKE_INSTALL_PREFIX="$DESTDIR/lib/clang/21"
+samu -C /tmp/clang-builtins-jonerix
+DESTDIR="" cmake --install /tmp/clang-builtins-jonerix
+
+# Copy from legacy linux/ layout to per-target dir
+ARCH=$(uname -m)
+RT_LINUX="$DESTDIR/lib/clang/21/lib/linux"
+RT_TARGET="$DESTDIR/lib/clang/21/lib/$LLVM_TRIPLE"
+if [ -d "$RT_LINUX" ]; then
+    mkdir -p "$RT_TARGET"
+    cp "$RT_LINUX/libclang_rt.builtins-${ARCH}.a"  "$RT_TARGET/libclang_rt.builtins.a"  2>/dev/null || true
+    cp "$RT_LINUX/clang_rt.crtbegin-${ARCH}.o"     "$RT_TARGET/clang_rt.crtbegin.o"     2>/dev/null || true
+    cp "$RT_LINUX/clang_rt.crtend-${ARCH}.o"       "$RT_TARGET/clang_rt.crtend.o"       2>/dev/null || true
+fi
+
+# libssp stub
+printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
+
+# --- Step 4: /etc/clang config files ---
+mkdir -p "$DESTDIR/etc/clang"
+
+cat > "$DESTDIR/etc/clang/$LLVM_TRIPLE.cfg" << CLANGCFG
+# /etc/clang/$LLVM_TRIPLE.cfg — jonerix default toolchain selection.
+--rtlib=compiler-rt
+--unwindlib=libunwind
+-fuse-ld=lld
+CLANGCFG
+
+cat > "$DESTDIR/etc/clang/clang++.cfg" << 'CLANGXXCFG'
+# /etc/clang/clang++.cfg — jonerix default C++ stdlib selection.
+-stdlib=libc++
+CLANGXXCFG
+
+# Symlinks
+ln -sf clang   "$DESTDIR/bin/cc"  2>/dev/null || true
+ln -sf clang++ "$DESTDIR/bin/c++" 2>/dev/null || true
+
+# Strip
+find "$DESTDIR/bin" -type f -executable \
+    -exec llvm-strip {} \; 2>/dev/null || true
+
+# Remove docs, headers (clang dev headers not needed at runtime)
+rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc"
+rm -rf "$DESTDIR/include"
+
+# Normalize /lib64
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+    "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/etc" 2>/dev/null || true
+
+echo "=== clang DESTDIR ==="
+"$DESTDIR/bin/clang" -dumpmachine 2>/dev/null || true
+"$DESTDIR/bin/clang" --version 2>/dev/null | head -1 || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "libllvm", "libcxx"]
+build = ["libllvm", "cmake", "samurai", "python3", "libcxx"]

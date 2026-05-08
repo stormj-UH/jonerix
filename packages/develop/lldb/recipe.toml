@@ -85,7 +85,7 @@ rm -rf "$STAGE" /tmp/lldb-stage.env"""
 # libc++ from libcxx. xz/zstd/zlib feed its DWARF decompression
 # code paths; ncurses is not needed because the slim build path
 # disables curses (LLDB_ENABLE_CURSES=OFF in the llvm-all rebuild).
-runtime = ["musl", "llvm", "libcxx", "xz", "zstd", "zlib"]
+runtime = ["musl", "libllvm", "libcxx", "xz", "zstd", "zlib"]
 # Build-time: llvm-all itself (so the staging install has files to
 # copy) plus jpkg (implicit).
 build = ["llvm-all"]

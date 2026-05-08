@@ -30,4 +30,4 @@ find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || tru
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "llvm"]
+build = ["clang", "libllvm"]

@@ -1,324 +1,54 @@
 [package]
 name = "llvm"
-version = "21.1.2-r5"
+version = "21.1.2-r6"
 license = "Apache-2.0"
-description = "Slim LLVM toolchain (clang, lld, llvm-ar/nm/ranlib/strip/objcopy/objdump/readelf, opt, llc, llvm-config, llvm-cov, llvm-symbolizer, llvm-cxxfilt). See llvm-all for the full 80+ tool set."
+description = "LLVM toolchain metapackage (pulls in libllvm + clang + lld, installs POSIX tool symlinks)"
 
-# r5: produced as a slim subset of the source build by repacking the
-# full llvm-all artifact through scripts/repack-jpkg.py with
-# --keep-bins-file slim-keep-bins.txt. The source build itself is in
-# this same recipe (everything below); the slim filter is applied
-# post-build at upload time. Until the recipe + CI workflow are taught
-# to do the split atomically, the build produces a full payload that
-# is then split into llvm.jpkg (slim) + llvm-all.jpkg (full) on the
-# release-side repack pass.
+# r6: converted from monolithic source build to metapackage.
+# The actual build is now split across three packages:
+#   libllvm  — LLVM core (libLLVM-21.so, headers, cmake configs, llvm-* tools)
+#   clang    — clang compiler + compiler-rt builtins + /etc/clang configs
+#   lld      — LLD linker
+#
+# This metapackage depends on all three and installs the traditional
+# POSIX-name symlinks (cc, c++, ld, ar, nm, ranlib, strip, etc.) that
+# point to the LLVM tools. Packages that list "llvm" as a dependency
+# continue to work without changes.
+#
+# Previous versions (r1-r5) built LLVM + clang + lld + lldb monolithically
+# from source. That 300-line build took 2-3 hours per architecture because
+# LLVM was rebuilt every time clang or lld needed a patch. With the split,
+# only the changed component rebuilds — and rust can use llvm-config to
+# skip its own LLVM build entirely.
 
-[source]
-url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
-sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+# No [source] — nothing to fetch; this is a metapackage.
 
 [build]
 system = "custom"
 build = """
 set -e
 
-# Override jpkg's -fPIE with -fPIC: LLVM's static libraries need
-# position-independent code for the final link.
-export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
-export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
-export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+# Verify that the split packages are installed.
+[ -x /bin/clang ] || { echo "llvm: /bin/clang not found (install clang first)"; exit 1; }
+[ -x /bin/ld.lld ] || { echo "llvm: /bin/ld.lld not found (install lld first)"; exit 1; }
+[ -x /bin/llvm-ar ] || { echo "llvm: /bin/llvm-ar not found (install libllvm first)"; exit 1; }
 
-# Zero-GNU LLVM from-source build.
-# Produces clang, lld, and compiler-rt linked against libc++/libunwind.
-# No libstdc++, no libgcc_s, no GCC CRT objects.
-#
-# Build notes:
-# - compiler-rt builtins are built standalone (two-step) instead of via
-#   LLVM_ENABLE_RUNTIMES, because the runtimes sub-build pulls in
-#   sanitizer_common which needs kernel headers not present in the container.
-# - libclang-cpp.so cannot be built on aarch64/musl (non-PIC relocation
-#   errors), so all shared dylib targets are disabled.
-# - cmake --install fails because cmake_install.cmake still references the
-#   disabled shared libs; a manual install is used instead.
-# - llvm-ar/llvm-ranlib are at /lib/llvm21/bin/ in the bootstrap env.
-
-case $(uname -m) in
-    # GitHub's x86_64 runners can stall badly on LLVM with full nproc fan-out.
-    # Cap compile parallelism there; aarch64 completes fine at host parallelism.
-    x86_64)  LLVM_TARGET="X86";    LLVM_TRIPLE="x86_64-jonerix-linux-musl"; LLVM_BUILD_JOBS=2 ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
-esac
-
-SRC=$(pwd)
-
-# Locate bootstrap llvm-ar/llvm-ranlib (may be in /lib/llvm21/bin or on PATH)
-LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
-LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
-
-# --- Step 0: libssp_nonshared.a must exist before cmake configure ---
-# Without it, --rtlib=compiler-rt test links fail at configure time.
-# musl provides __stack_chk_fail natively so this stub is safe.
-printf '!<arch>\n' > /lib/libssp_nonshared.a
-
-# --- Step 1: Bootstrap compiler-rt builtins ---
-# Build builtins for the BOOTSTRAP clang's triple so that --rtlib=compiler-rt
-# test links pass during the main cmake configure step.
-BOOTSTRAP_TRIPLE=$(clang -dumpmachine)
-rm -rf /tmp/llvm-builtins-bootstrap
-mkdir -p /tmp/llvm-builtins-bootstrap
-cmake -S compiler-rt/lib/builtins -B /tmp/llvm-builtins-bootstrap -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_C_COMPILER_TARGET="$BOOTSTRAP_TRIPLE" \
-    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
-    -DCMAKE_AR="$LLVM_AR" \
-    -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
-    -DCMAKE_INSTALL_PREFIX=/lib/llvm21/lib/clang/21
-samu -C /tmp/llvm-builtins-bootstrap
-DESTDIR="" cmake --install /tmp/llvm-builtins-bootstrap
-
-# --- Step 2: Configure main LLVM build ---
-# No LLVM_ENABLE_RUNTIMES — compiler-rt is built standalone (steps 1 and 3).
-# Disable all shared library targets: libclang-cpp.so fails to link on
-# aarch64/musl due to R_AARCH64_ADR_PREL_PG_HI21 relocations.
-mkdir -p build
-cmake -S llvm -B build -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_ENABLE_PROJECTS="clang;lld;lldb" \
-    -DLLDB_ENABLE_PYTHON=OFF \
-    -DLLDB_ENABLE_CURSES=OFF \
-    -DLLDB_ENABLE_LIBEDIT=OFF \
-    -DLLDB_ENABLE_LUA=OFF \
-    -DLLDB_ENABLE_LZMA=OFF \
-    -DLLDB_INCLUDE_TESTS=OFF \
-    -DLLDB_BUILD_FRAMEWORK=OFF \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
-    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
-    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
-    -DCMAKE_AR="$LLVM_AR" \
-    -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt" \
-    -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
-    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
-    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
-    -DLLVM_ENABLE_LIBCXX=ON \
-    -DLLVM_BUILD_LLVM_DYLIB=OFF \
-    -DCLANG_BUILD_CLANG_DYLIB=OFF \
-    -DCLANG_LINK_CLANG_DYLIB=OFF \
-    -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
-    -DLLVM_TOOL_LTO_BUILD=OFF \
-    -DCLANG_TOOL_C_INDEX_TEST_BUILD=OFF \
-    -DLLVM_ENABLE_PLUGINS=OFF \
-    -DCMAKE_INSTALL_PREFIX=/ \
-    -DCMAKE_INSTALL_LIBDIR=lib \
-    -DLLVM_INSTALL_UTILS=ON \
-    -DLLVM_ENABLE_ASSERTIONS=OFF \
-    -DLLVM_ENABLE_SPHINX=OFF \
-    -DLLVM_ENABLE_DOXYGEN=OFF \
-    -DLLVM_BUILD_TESTS=OFF \
-    -DLLVM_INCLUDE_TESTS=OFF \
-    -DLLVM_INCLUDE_BENCHMARKS=OFF \
-    -DLLVM_INCLUDE_EXAMPLES=OFF \
-    -DLLVM_ENABLE_FFI=OFF \
-    -DLLVM_ENABLE_ZLIB=ON \
-    -DLLVM_ENABLE_ZSTD=ON \
-    -DLLVM_PARALLEL_LINK_JOBS=2 \
-    -DCLANG_DEFAULT_RTLIB=compiler-rt \
-    -DCLANG_DEFAULT_UNWINDLIB=libunwind \
-    -DCLANG_DEFAULT_LINKER=lld \
-    -DCLANG_DEFAULT_CXX_STDLIB=libc++ \
-    -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang
-
-# --- Step 3: Build ---
-# The default 'all' target includes libclang-cpp.so which may fail to
-# link on x86_64/musl due to relocation issues (same issue as aarch64).
-# Allow the build to fail, then verify the binaries we need exist.
-samu -C build -j"$LLVM_BUILD_JOBS" -k0 || true
-if [ ! -x build/bin/clang-21 ]; then
-    echo "FATAL: clang-21 was not built"
-    exit 1
-fi
-
-# --- Step 4: Manual install ---
-# cmake --install fails because cmake_install.cmake still references the
-# disabled libclang-cpp.so. Copy directly from the build tree instead.
-mkdir -p "$DESTDIR/bin" "$DESTDIR/lib"
-cp -a build/bin/. "$DESTDIR/bin/"
-cp -a build/lib/clang "$DESTDIR/lib/"
-# Copy any non-empty shared libs actually built (libRemarks.so etc.)
-find build/lib -maxdepth 1 -name '*.so*' -size +0 \
-    ! -name 'libclang-cpp*' ! -name 'libLLVM*' \
-    -exec cp -a {} "$DESTDIR/lib/" \; 2>/dev/null || true
-
-# --- Step 5: Post-install fixups ---
-
-# Flatten usr/ (jonerix merged-usr layout)
-if [ -d "$DESTDIR/usr" ]; then
-    cp -a "$DESTDIR/usr/." "$DESTDIR/"
-    rm -rf "$DESTDIR/usr"
-fi
-
-# Flatten lib64/ (cmake x86_64 default)
-if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
-    cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/"
-    rm -rf "$DESTDIR/lib64"
-fi
-
-# Global tool symlinks
-ln -sf clang       "$DESTDIR/bin/cc"       2>/dev/null || true
-ln -sf clang++     "$DESTDIR/bin/c++"      2>/dev/null || true
-ln -sf ld.lld      "$DESTDIR/bin/ld"       2>/dev/null || true
-ln -sf llvm-ar     "$DESTDIR/bin/ar"       2>/dev/null || true
-ln -sf llvm-nm     "$DESTDIR/bin/nm"       2>/dev/null || true
-ln -sf llvm-ranlib "$DESTDIR/bin/ranlib"   2>/dev/null || true
-ln -sf llvm-strip  "$DESTDIR/bin/strip"    2>/dev/null || true
-ln -sf llvm-objcopy  "$DESTDIR/bin/objcopy"  2>/dev/null || true
-ln -sf llvm-objdump  "$DESTDIR/bin/objdump"  2>/dev/null || true
-
-# --- Step 6: jonerix compiler-rt builtins ---
-# Build builtins with the newly-built clang targeting the jonerix triple.
-# Installed to the per-target layout that the new clang expects.
-rm -rf /tmp/llvm-builtins-jonerix
-mkdir -p /tmp/llvm-builtins-jonerix
-cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/llvm-builtins-jonerix -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER="$DESTDIR/bin/clang" \
-    -DCMAKE_C_COMPILER_TARGET="$LLVM_TRIPLE" \
-    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
-    -DCMAKE_AR="$DESTDIR/bin/llvm-ar" \
-    -DCMAKE_RANLIB="$DESTDIR/bin/llvm-ranlib" \
-    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
-    -DCMAKE_INSTALL_PREFIX="$DESTDIR/lib/clang/21"
-samu -C /tmp/llvm-builtins-jonerix
-DESTDIR="" cmake --install /tmp/llvm-builtins-jonerix
-
-# Copy from legacy linux/ layout to the per-target dir the new clang expects
-ARCH=$(uname -m)
-RT_LINUX="$DESTDIR/lib/clang/21/lib/linux"
-RT_TARGET="$DESTDIR/lib/clang/21/lib/$LLVM_TRIPLE"
-if [ -d "$RT_LINUX" ]; then
-    mkdir -p "$RT_TARGET"
-    cp "$RT_LINUX/libclang_rt.builtins-${ARCH}.a"  "$RT_TARGET/libclang_rt.builtins.a"  2>/dev/null || true
-    cp "$RT_LINUX/clang_rt.crtbegin-${ARCH}.o"     "$RT_TARGET/clang_rt.crtbegin.o"     2>/dev/null || true
-    cp "$RT_LINUX/clang_rt.crtend-${ARCH}.o"       "$RT_TARGET/clang_rt.crtend.o"       2>/dev/null || true
-fi
-
-# Empty libssp_nonshared.a in DESTDIR (musl provides __stack_chk_fail)
-printf '!<arch>\n' > "$DESTDIR/lib/libssp_nonshared.a"
-
-# Clang default-flag config files
-# ─────────────────────────────────────────────────────────────────────
-# r4 bakes jonerix's toolchain choices directly into clang at build time
-# via CLANG_DEFAULT_RTLIB, CLANG_DEFAULT_UNWINDLIB, CLANG_DEFAULT_LINKER,
-# and CLANG_DEFAULT_CXX_STDLIB.  Those four CMake flags make compiler-rt /
-# libunwind / lld / libc++ the internal defaults — no cfg file or explicit
-# recipe flag is required for the toolchain to pick the right libs.
-#
-# CLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang wires up the system config dir so
-# that clang actually loads these files at invocation time:
-#
-#   /etc/clang/<triple>.cfg   — every invocation that resolves to this triple
-#   /etc/clang/<driver>.cfg   — per driver: clang.cfg for C, clang++.cfg for C++
-#
-# The cfg files are an additive override layer on top of the baked defaults.
-# clang++ on jonerix loads both.  The shipped lines are redundant with the
-# baked defaults — their real value is as human-readable documentation of
-# what is active, and as a lightweight user-editable override point (e.g.
-# drop -stdlib=libc++ from clang++.cfg if you ever bring libstdc++ in, or
-# swap -fuse-ld=lld for -fuse-ld=mold without recompiling clang).
-#
-# Both files are plain text; comments start with `#`. The shipped lines
-# reflect jonerix's permissive-license-only runtime envelope (compiler-rt /
-# libunwind / lld / libc++; never libgcc/libstdc++ which are GPL-3.0).
-# Override notes are at the top of each generated file.
-mkdir -p "$DESTDIR/etc/clang"
-
-cat > "$DESTDIR/etc/clang/$LLVM_TRIPLE.cfg" << CLANGCFG
-# /etc/clang/$LLVM_TRIPLE.cfg — jonerix default toolchain selection.
-#
-# Applies to every clang AND clang++ invocation that resolves to the
-# $LLVM_TRIPLE target triple. To override a flag here:
-#
-#   1) Edit this file in place (simplest; jpkg upgrade of llvm WILL
-#      overwrite, so re-apply your edits after upgrade), or
-#   2) Pass the overriding flag explicitly on the command line; later
-#      flags win against earlier flags from the cfg.
-#
-# Removing any of the lines below is supported but is rarely what you
-# want — every flag is here because the GPL-3.0 alternative (libgcc /
-# libgcc_s / GNU ld) is excluded from jonerix's runtime envelope.
-
---rtlib=compiler-rt
---unwindlib=libunwind
--fuse-ld=lld
-CLANGCFG
-
-cat > "$DESTDIR/etc/clang/clang++.cfg" << 'CLANGXXCFG'
-# /etc/clang/clang++.cfg — jonerix default C++ stdlib selection.
-#
-# Applies to every clang++ invocation, on top of the triple cfg above.
-# jonerix ships libc++ (LLVM, Apache-2.0) only — libstdc++ is GPL-3.0
-# and excluded from our runtime envelope. Without this flag, CMake
-# probes like check_include_file_cxx(<ranges>) fail because clang's
-# default header search omits /include/c++/v1.
-#
-# Override notes: same as the triple cfg above.
-
--stdlib=libc++
-CLANGXXCFG
-
-# --- Step 8: Strip and clean up ---
-# Remove static libs (dev-only, ~400MB uncompressed) and headers.
-# liblldb*.a covers the lldb internal archives produced when lldb is in
-# LLVM_ENABLE_PROJECTS; liblldb.so is preserved by the *.so* copy above.
-find "$DESTDIR/lib" -maxdepth 1 -name 'libLLVM*.a' -delete 2>/dev/null || true
-find "$DESTDIR/lib" -maxdepth 1 -name 'libclang*.a' -delete 2>/dev/null || true
-find "$DESTDIR/lib" -maxdepth 1 -name 'liblld*.a'   -delete 2>/dev/null || true
-find "$DESTDIR/lib" -maxdepth 1 -name 'liblldb*.a'  -delete 2>/dev/null || true
-rm -rf "$DESTDIR/include"
-
-# Strip debug info to reduce package size
-find "$DESTDIR/bin" -type f -executable \
-    -exec "$DESTDIR/bin/llvm-strip" {} \; 2>/dev/null || true
-find "$DESTDIR/lib" -name '*.so*' -type f -size +0 \
-    -exec "$DESTDIR/bin/llvm-strip" --strip-debug {} \; 2>/dev/null || true
-
-# Remove docs/man/cmake to save space
-rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc" "$DESTDIR/lib/cmake"
-
-# Normalize any remaining upstream /lib64 search paths in scripts and ELF
-# string tables so the packaged toolchain matches jonerix's merged-lib
-# layout.
-python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
-    "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/etc"
-if rg -n --text '/lib64' "$DESTDIR/bin" "$DESTDIR/lib" "$DESTDIR/etc" 2>/dev/null; then
-    echo "FATAL: llvm install still contains /lib64 references"
-    exit 1
-fi
-
-# --- Verify DESTDIR contents before packaging ---
-echo "=== DESTDIR tree ==="
-find "$DESTDIR" -type f | head -100
-echo "=== DESTDIR lib/ ==="
-ls -laR "$DESTDIR/lib/" 2>/dev/null | head -50
-echo "=== DESTDIR etc/ ==="
-ls -laR "$DESTDIR/etc/" 2>/dev/null | head -20
-
-# --- Verify: warn if any GNU deps leaked through ---
-echo "=== Verifying clang binary dependencies ==="
-readelf -d "$DESTDIR/bin/clang-21" 2>/dev/null | grep NEEDED || true
-if readelf -d "$DESTDIR/bin/clang-21" 2>/dev/null | grep -q 'libstdc++\|libgcc_s'; then
-    echo "WARNING: GNU runtime dependencies detected in clang binary!"
-fi
-echo "=== Triple check ==="
-"$DESTDIR/bin/clang" -dumpmachine 2>/dev/null || true
+# POSIX-name symlinks — these let plain `cc`, `ar`, `strip` etc.
+# resolve to the LLVM tools without every Makefile needing explicit
+# CC=clang overrides.
+mkdir -p "$DESTDIR/bin"
+ln -sf clang       "$DESTDIR/bin/cc"
+ln -sf clang++     "$DESTDIR/bin/c++"
+ln -sf ld.lld      "$DESTDIR/bin/ld"
+ln -sf llvm-ar     "$DESTDIR/bin/ar"
+ln -sf llvm-nm     "$DESTDIR/bin/nm"
+ln -sf llvm-ranlib "$DESTDIR/bin/ranlib"
+ln -sf llvm-strip  "$DESTDIR/bin/strip"
+ln -sf llvm-objcopy  "$DESTDIR/bin/objcopy"
+ln -sf llvm-objdump  "$DESTDIR/bin/objdump"
 """
 install = ""
 
 [depends]
-runtime = ["musl", "libcxx", "zstd", "zlib"]
-build = ["clang", "cmake", "samurai", "python3", "libcxx"]
+runtime = ["libllvm", "clang", "lld"]
+build = []

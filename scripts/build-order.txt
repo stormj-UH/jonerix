@@ -15,7 +15,11 @@
 #   go-bootstrap → musl, clang (x86_64 only)
 #   go        → musl, clang, go-bootstrap
 #   go-current→ musl, clang, go
-#   rust      → musl, llvm, rust (prebuilt), cmake, samurai, python3, curl
+#   libllvm   → musl, clang (bootstrap), cmake, samurai, python3, libcxx
+#   clang     → musl, libllvm, cmake, samurai, python3, libcxx
+#   lld       → musl, libllvm, cmake, samurai, libcxx
+#   llvm      → libllvm, clang, lld (metapackage)
+#   rust      → musl, libllvm, rust (prebuilt)
 #   ripgrep   → musl, rust
 #   uutils    → musl, rust
 #   anvil     → musl, rust
@@ -84,7 +88,12 @@ python3
 cmake
 # Tier 5: depends on multiple tier-3/4 packages (large)
 nodejs
-# Tier 6: LLVM from source (requires cmake, samurai, python3)
+# Tier 6a: LLVM core (libLLVM-21.so, headers, cmake configs, llvm-* tools)
+libllvm
+# Tier 6b: clang + lld (built against installed libllvm, no LLVM rebuild)
+clang
+lld
+# Tier 6c: LLVM metapackage (POSIX symlinks: cc, ld, ar, etc.)
 llvm
 # Tier 7: Go bootstrap chain (x86_64: C→1.4→1.17→1.26, aarch64: prebuilt)
 go-bootstrap
