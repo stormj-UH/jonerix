@@ -36,6 +36,7 @@ RUN jpkg update && \
       cmake jmake samurai flex bc byacc \
       pkgconf \
       perl python3 nodejs \
+      gitredoxide \
       strace; \
     do \
       echo "Installing: $pkg" && \

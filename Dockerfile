@@ -105,6 +105,7 @@ RUN jpkg --root /jonerix update && \
       shadow \
       mandoc pigz fastfetch \
       pico \
+      gitredoxide \
       strace zsh; \
     do \
       echo "=== Installing: $pkg ===" && \
