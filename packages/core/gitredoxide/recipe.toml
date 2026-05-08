@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.6"
+version = "1.0.7"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness)"
 
@@ -72,8 +72,19 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # lands via gix's official API.  The task now also removes any
 # bad commit-graph file from prior 1.0.5 runs so users are
 # auto-recovered on their next maintenance run.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.6/gitredoxide-1.0.6-vendored.tar.gz"
-sha256 = "f60d9ae826d0fb2a5a2d90d96da40956459f15cc1e6b197c1f4afbf7bbb99319"
+#
+# 1.0.7: closes the two 1.0.6 protocol-level limitations by adding
+# the required APIs to the gix-* crates we hard-forked from upstream.
+# gix-commitgraph gained a verified single-file writer (six round-trip
+# tests against the existing reader); 'maintenance run --task=commit-
+# graph' now writes real commit-graph files and subsequent log/walk
+# operations use them.  gix-protocol gained an explicit-OID fetch
+# path (v2 'want <oid>' lines) with ten new wire-format and end-to-end
+# tests; 'git backfill' now actually fetches missing blobs from the
+# promisor remote in configurable batches instead of just reporting
+# them.  Test suite 491 passed, 0 failed, 0 warnings.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.7/gitredoxide-1.0.7-vendored.tar.gz"
+sha256 = "ef7e5afd2b26e3e0b7296efca84590ad12030007e26251680799b7d3c8beff4a"
 
 [build]
 system = "custom"
