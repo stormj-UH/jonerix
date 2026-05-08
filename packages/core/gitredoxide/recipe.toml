@@ -9,9 +9,9 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.2"
+version = "1.0.3"
 license = "MIT OR Apache-2.0"
-description = "Permissively licensed drop-in /bin/git replacement (43 commands)"
+description = "Permissively licensed drop-in /bin/git replacement (60+ commands, 100% parity harness)"
 
 [source]
 # Canonical source: Forgejo jonerik/gitoxide on castle.great-morpho.ts.net:3000.
@@ -31,8 +31,19 @@ description = "Permissively licensed drop-in /bin/git replacement (43 commands)"
 # gix links libssl directly (not libcurl), so it needs SSL_CERT_FILE
 # pointed at the system CA bundle.  probe_ssl_certs() in main.rs
 # checks common paths at startup.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.2/gitredoxide-1.0.2-vendored.tar.gz"
-sha256 = "21b5e7acfbdface9e5a57f846d85f3a250cbbd397f26d843878568c61d3df155"
+#
+# 1.0.3: major feature-parity release.  17 new subcommands; parity test
+# harness from 5% to 100% on 104 practical tests.  Adds bisect, worktree,
+# submodule, archive, bundle, format-patch, am, grep, notes, show-branch,
+# range-diff, replace, verify-commit/tag, gc, prune, repack, count-objects,
+# fsck, pack-refs, plus upload-pack/receive-pack helper-mode dispatch on
+# argv[0].  Closes the tormenta local-fetch IO error: gitredoxide now
+# correctly serves git-upload-pack and git-receive-pack helper protocols
+# instead of rejecting --stateless-rpc as an unknown global option.
+# Per-command --help support added across all ~50 subcommands.  Test suite
+# 427 passed, 0 failed, 0 warnings.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.3/gitredoxide-1.0.3-vendored.tar.gz"
+sha256 = "ef91c8c2c3715732921bf633136ee4674a4801bb3e110e4be6da3ae2f6eaba7e"
 
 [build]
 system = "custom"
