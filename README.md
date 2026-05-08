@@ -158,7 +158,7 @@ the rootfs is assembled in CI.
 | Image | Based on | Contents |
 |-------|----------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
-| `core` | minimal | mksh (/bin/sh), zsh, uutils, pico, fastfetch, ripgrep, gitredoxide (/bin/git), networking tools |
+| `core` | minimal | mksh (/bin/sh), zsh, uutils, pico, fastfetch, ripgrep, brash (/bin/bash), gitredoxide (/bin/git, /bin/git-upload-pack, /bin/git-receive-pack — 77 subcommands; full HTTPS push/pull/clone/fetch), networking tools |
 | `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | jcarp, hostapd, wpa_supplicant, nloxide (libnl replacement), **stormwall** (single firewall front-end speaking both `nft` and BSD `pf.conf` syntax); home-router / AP / gateway appliance |
 
@@ -234,7 +234,7 @@ the rootfs is assembled in CI.
 | Component | License | Role |
 |-----------|---------|------|
 | pico | Apache-2.0 | Terminal text editor (alpine) |
-| gitredoxide | MIT/Apache-2.0 | Drop-in /bin/git replacement (43 commands) |
+| gitredoxide | MIT/Apache-2.0 | Drop-in /bin/git replacement (77 subcommands; covers push, pull, clone, fetch, rebase, bisect, worktree, submodule, archive, bundle, format-patch, am, fast-export/import, sparse-checkout, rerere, maintenance, and more — 491 tests, 100% on practical parity harness). See [Rust drop-in replacements](#rust-drop-in-replacements). |
 | ripgrep | MIT | Fast recursive grep |
 | mandoc | ISC | Man page tools |
 | pigz | Zlib | Parallel gzip |
@@ -285,6 +285,7 @@ These are written and maintained inside the jonerix project.
 | e2fsck + fsck.fat (rescue scope) | `jfsck` | BSD-2-Clause | Scoped to Pi 5 boot recovery — ext4 journal replay + FAT32 boot-partition repair. Derived from Ghidra binary analysis of e2fsprogs and dosfstools. |
 | lsusb | `lsusb-rs` | MIT | Pure-sysfs lsusb (no libusb dependency). Reads `/sys/bus/usb/devices/*` and the bundled USB IDs database. |
 | jpkg (the jonerix package manager itself, 2.0+) | `jpkg` | MIT | Translation of the C jpkg 1.1.5 (~9.5K LOC) to Rust (~11.7K LOC). Byte-equivalent on every wire format the C tool defined: `JPKG\x00\x01\x00\x00` magic + LE32 header + TOML metadata + zstd(tar) payload, the `/var/db/jpkg/installed/<name>/{metadata.toml,files}` layout, the INDEX TOML grammar, the Ed25519 detached `.sig` flow, the merged-/usr layout audit, and the `replaces = […]` ownership-transfer semantics. 158 in-crate unit tests, plus an end-to-end smoke pass (build → install into a tempdir rootfs → info → verify clean → tamper-detect → remove). `#![forbid(unsafe_code)]` at the crate root keeps the safety budget at zero. The 2.0 release supersedes the C 1.1.5 series; `/bin/jpkg`, `/bin/jpkg-local`, and `/bin/jpkg-conform` continue to ship from the same `packages/jpkg/` recipe. |
+| git (full porcelain + protocol helpers) | `gitredoxide` | MIT/Apache-2.0 | Drop-in `/bin/git` with **77 subcommands** implemented (~95% of git's documented main porcelain + ancillary). Hard-forked from gitoxide's `gix-*` crate ecosystem — we ship our own write paths upstream gitoxide didn't have: **`gix-commitgraph::write`** (verified single-file commit-graph writer, 6 round-trip tests against the existing reader) and **`gix-protocol::fetch::oids`** (explicit-OID fetch path emitting `want <oid>` lines for partial-clone backfill). **Helper-mode dispatch on argv[0]** — the same binary serves `/bin/git`, `/bin/git-upload-pack`, and `/bin/git-receive-pack` so jpkg can transfer all three symlinks atomically and gitredoxide can talk to itself for local fetch/push without ever shelling out to a real git. Coverage: clone/fetch/pull/push/ls-remote (HTTPS, SSH, file://, local-bare), branch/tag/remote/worktree/submodule, rebase + bisect (full state machines with `--continue` / `--abort` / `--skip`), stash/cherry-pick/revert/merge/merge-tree (modern + legacy 3-arg forms), rerere (caches conflict resolutions and replays them, integrated into merge.rs), sparse-checkout (cone + non-cone modes with skip-worktree bit handling), archive (tar, tar.gz, zip), bundle (create / verify / list-heads / unbundle, round-trip tested), format-patch / am (mailbox format with state-machine restart), fast-export / fast-import (round-trip verified byte-identical), maintenance (gc, prune, repack, count-objects, fsck, pack-refs, commit-graph, loose-objects, incremental-repack), bugreport + diagnose (zip with password redaction), grep, notes, show-branch, range-diff, replace, verify-commit, verify-tag, and per-command `--help` across all of them. **491 unit + integration tests, 100% on a 104-test practical parity harness against system git, zero warnings** on `cargo build --release`. Self-hosted: gitredoxide pushes its own source to Forgejo. Out of scope: `citool`/`gitk`/`gui` (Tcl/Tk UIs), `gitweb`/`instaweb` (Perl CGI), `scalar` (Microsoft enterprise), `whatchanged` (deprecated), `filter-branch` (use `git-filter-repo`). |
 
 ### Third-party
 
@@ -294,7 +295,6 @@ sources, vetted for license compatibility:
 | Replaces | Project | License | Notes |
 |----------|---------|---------|-------|
 | GNU coreutils (sort, wc, tr, cut, head, tail, ...70+ tools) | `uutils` | MIT | Replaces toybox multicall symlinks for the commands uutils provides; `replaces = ["toybox"]` lets jpkg flip the `/bin/<cmd>` symlinks and `post_remove` hands them back if uutils is uninstalled. |
-| git | `gitredoxide` | MIT or Apache-2.0 | Drop-in `/bin/git` with 43 implemented commands (push, pull, clone, fetch, merge, rebase, cherry-pick, stash, checkout, switch, restore, diff, log, show, blame, and more). Built on gitoxide `gix-*` plumbing crates. |
 | grep | `ripgrep` | MIT | Default `/bin/rg`. Faster than GNU grep on the kinds of trees jonerix CI walks (recipe corpus, build logs). |
 
 ### Relationship to toybox and mksh
