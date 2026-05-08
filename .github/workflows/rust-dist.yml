@@ -14,7 +14,7 @@ env:
 
 jobs:
   build-x86_64:
-    name: Build Rust ${{ inputs.rust_version }} (x86_64)
+    name: "Build Rust ${{ inputs.rust_version }} (x86_64)"
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -34,13 +34,13 @@ jobs:
             -v "$PWD/rust-out:/out" \
             --entrypoint /bin/mksh \
             $BUILDER_IMAGE_X86_64 \
-            -c '
+            -c "$(cat <<'DOCKERSCRIPT'
           set -ex
 
-          RUST_VERSION="'"$RUST_VERSION"'"
-          TRIPLE="'"$TRIPLE"'"
+          RUST_VERSION=$1
+          TRIPLE=$2
 
-          # Provide /bin/sh and /bin/bash — Rust x.py and configure
+          # Provide /bin/sh and /bin/bash -- Rust x.py and configure
           # scripts expect both; the builder image only ships mksh.
           [ -e /bin/sh ] || ln -sf mksh /bin/sh
           [ -e /bin/bash ] || ln -sf mksh /bin/bash
@@ -61,11 +61,9 @@ jobs:
           mkdir rust-src && tar xJf rustc-src.tar.xz -C rust-src --strip-components=1
           cd rust-src
 
-          # The stage0 compiler from rust-lang.org does not know the
-          # jonerix vendor triple.  Supply a JSON target spec so rustc
-          # can resolve "x86_64-jonerix-linux-musl".  Identical to the
-          # built-in x86_64-unknown-linux-musl with vendor = "jonerix".
-          cat > ${TRIPLE}.json <<TGTSPEC
+          # JSON target spec so stage0 can resolve the jonerix vendor triple.
+          # Identical to x86_64-unknown-linux-musl with vendor = "jonerix".
+          cat > x86_64-jonerix-linux-musl.json <<'TGTSPEC'
           {
             "arch": "x86_64",
             "crt-objects-fallback": "musl",
@@ -126,7 +124,7 @@ jobs:
           llvm-tools = false
           omit-git-hash = true
 
-          [target.${TRIPLE}]
+          [target.x86_64-jonerix-linux-musl]
           cc = "clang"
           cxx = "clang++"
           ar = "llvm-ar"
@@ -156,14 +154,14 @@ jobs:
           echo "=== Dist artifacts ==="
           ls -lh build/dist/
 
-          # Copy the dist tarball out
           cp build/dist/rust-${RUST_VERSION}-${TRIPLE}.tar.gz /out/ 2>/dev/null || \
           cp build/dist/rust-*-${TRIPLE}.tar.gz /out/ 2>/dev/null || {
             echo "=== Available dist files ==="
             ls build/dist/*.tar.gz
             cp build/dist/*.tar.gz /out/
           }
-          '
+          DOCKERSCRIPT
+          )" "$RUST_VERSION" "$TRIPLE"
 
       - name: Upload dist tarball
         run: |
@@ -176,7 +174,7 @@ jobs:
             exit 1
           fi
           SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
-          echo "x86_64 tarball: $(basename "$FILE")"
+          echo "x86_64 tarball: $(basename $FILE)"
           echo "SHA256: $SHA"
           echo "X86_SHA=$SHA" >> "$GITHUB_ENV"
           echo "X86_FILE=$FILE" >> "$GITHUB_ENV"
@@ -195,7 +193,7 @@ jobs:
           echo "- **SHA256:** ${{ env.X86_SHA }}" >> "$GITHUB_STEP_SUMMARY"
 
   build-aarch64:
-    name: Build Rust ${{ inputs.rust_version }} (aarch64)
+    name: "Build Rust ${{ inputs.rust_version }} (aarch64)"
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     permissions:
@@ -215,11 +213,11 @@ jobs:
             -v "$PWD/rust-out:/out" \
             --entrypoint /bin/mksh \
             $BUILDER_IMAGE_AARCH64 \
-            -c '
+            -c "$(cat <<'DOCKERSCRIPT'
           set -ex
 
-          RUST_VERSION="'"$RUST_VERSION"'"
-          TRIPLE="'"$TRIPLE"'"
+          RUST_VERSION=$1
+          TRIPLE=$2
 
           [ -e /bin/sh ] || ln -sf mksh /bin/sh
           [ -e /bin/bash ] || ln -sf mksh /bin/bash
@@ -238,9 +236,9 @@ jobs:
           mkdir rust-src && tar xJf rustc-src.tar.xz -C rust-src --strip-components=1
           cd rust-src
 
-          # Custom target spec for aarch64-jonerix-linux-musl.
+          # JSON target spec for aarch64-jonerix-linux-musl.
           # Identical to aarch64-unknown-linux-musl with vendor = "jonerix".
-          cat > ${TRIPLE}.json <<TGTSPEC
+          cat > aarch64-jonerix-linux-musl.json <<'TGTSPEC'
           {
             "arch": "aarch64",
             "crt-objects-fallback": "musl",
@@ -260,7 +258,7 @@ jobs:
             "stack-probes": {"kind": "inline"},
             "static-position-independent-executables": true,
             "supported-sanitizers": ["address","cfi","hwaddress","kcfi","leak","memory","memtag","thread"],
-            "target-mcount": "_mcount",
+            "target-mcount": "_mcount",
             "vendor": "jonerix"
           }
           TGTSPEC
@@ -303,7 +301,7 @@ jobs:
           llvm-tools = false
           omit-git-hash = true
 
-          [target.${TRIPLE}]
+          [target.aarch64-jonerix-linux-musl]
           cc = "clang"
           cxx = "clang++"
           ar = "llvm-ar"
@@ -339,7 +337,8 @@ jobs:
             ls build/dist/*.tar.gz
             cp build/dist/*.tar.gz /out/
           }
-          '
+          DOCKERSCRIPT
+          )" "$RUST_VERSION" "$TRIPLE"
 
       - name: Upload dist tarball
         run: |
@@ -352,7 +351,7 @@ jobs:
             exit 1
           fi
           SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
-          echo "aarch64 tarball: $(basename "$FILE")"
+          echo "aarch64 tarball: $(basename $FILE)"
           echo "SHA256: $SHA"
           echo "ARM_SHA=$SHA" >> "$GITHUB_ENV"
 
