@@ -1,8 +1,16 @@
 [package]
 name = "toybox"
-version = "0.8.11-r4"
+version = "0.8.11-r5"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
+# 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
+# takes ownership of ~100 /bin/<cmd> symlinks via `replaces = ["toybox"]`,
+# but tarball extraction during a later `jpkg upgrade toybox` was silently
+# stomping the takeover by re-laying down /bin/<cmd> -> toybox symlinks
+# from toybox's own install layout.  post_install now reads uutils's
+# manifest and restores its winning symlinks for every /bin/* entry it
+# claims.  Together with uutils 0.7.0-r2 this keeps the takeover sticky
+# across toybox upgrades.
 
 [source]
 url = "http://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
@@ -76,6 +84,32 @@ install -Dm644 "$RECIPE_DIR/conf.d/syslogd" "$DESTDIR/etc/conf.d/syslogd"
 [hooks]
 post_install = """mkdir -p /etc/runlevels/default
 [ -f /etc/init.d/syslogd ] && ln -sf /etc/init.d/syslogd /etc/runlevels/default/syslogd 2>/dev/null || true
+
+# Yield /bin/<cmd> symlinks to packages with replaces=["toybox"] semantics.
+# Tarball extraction has just laid down /bin/<cmd> -> toybox for every
+# applet we provide; if another package's manifest claims one of those
+# paths, restore its symlink so the takeover stays sticky across
+# `jpkg upgrade toybox`.
+#
+# Currently this matters for uutils (Rust GNU-coreutils rewrite) and
+# exproxide (POSIX-strict expr); the loop is generic so a future
+# replaces-toybox package will be honored without recipe changes here.
+for _mfst in /var/db/jpkg/installed/*/files; do
+    [ -f "$_mfst" ] || continue
+    _owner=$(basename "$(dirname "$_mfst")")
+    [ "$_owner" = "toybox" ] && continue
+    awk -v owner="$_owner" '
+        $3 ~ /^\\/bin\\// && $4 == "->" && $5 == owner { print $3 }
+    ' "$_mfst" 2>/dev/null | while read -r _path; do
+        _curr=$(readlink "$_path" 2>/dev/null || echo "")
+        # Only re-claim if toybox extraction just stomped this and the
+        # rightful owner's binary still exists.
+        if [ "$_curr" = "toybox" ] && [ -e "/bin/$_owner" ]; then
+            ln -sf "$_owner" "$_path" 2>/dev/null || true
+        fi
+    done
+done
+exit 0
 """
 post_remove = """rm -f /etc/runlevels/default/syslogd
 """

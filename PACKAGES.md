@@ -59,10 +59,10 @@ Generated from tracked `packages/**/recipe.toml` -- **98 recipes**. All jonerix-
 | **`snooze`** | `core` | 0.5-r1 | CC0 | any | `musl` | `clang`, `make` | Lightweight cron alternative for running a command at a specific time |
 | **`stormwall`** | `core` | 1.0.5 | MIT | any | `musl` | `rust` | Drop-in firewall front-end — accepts both Linux nftables (nft) and OpenBSD pf (pfctl) DSLs against the same in-kernel netfilter backend |
 | **`sudo`** | `core` | 1.9.17p2-r2 | ISC | any | `musl`, `libressl` | `clang`, `make`, `exproxide`, `jonerix-headers` | Privilege escalation utility |
-| **`toybox`** | `core` | 0.8.11-r4 | 0BSD | any | `musl` | `clang`, `brash`, `jonerix-headers` | BSD-licensed coreutils replacement |
+| **`toybox`** | `core` | 0.8.11-r5 | 0BSD | any | `musl` | `clang`, `brash`, `jonerix-headers` | BSD-licensed coreutils replacement |
 | **`tzdata`** | `core` | 2026a | Public-Domain | any | `musl` | `clang` | IANA time zone database (zoneinfo data plus zic/zdump tools) |
 | **`unbound`** | `core` | 1.22.0-r4 | BSD-3-Clause | any | `musl`, `libressl`, `expat` | `clang`, `make`, `jonerix-headers`, `libressl`, `expat` | Validating, recursive, and caching DNS resolver |
-| **`uutils`** | `core` | 0.7.0-r1 | MIT | any | `musl` | `rust`, `jmake` | Rust rewrite of GNU coreutils (tr, expr, sort, wc, cut, and 70+ more) |
+| **`uutils`** | `core` | 0.7.0-r2 | MIT | any | `musl` | `rust`, `jmake` | Rust rewrite of GNU coreutils (tr, sort, wc, cut, and 70+ more); takes over toybox's /bin/<cmd> symlinks for every applet uutils provides; expr stays with exproxide |
 | **`xz`** | `core` | 5.8.2-r2 | 0BSD | any | `musl` | `clang`, `cmake`, `samurai` | XZ compression utilities and liblzma (with development headers) |
 | **`zlib`** | `core` | 1.3.2-r1 | Zlib | any | `musl` | `clang`, `make` | General-purpose compression library |
 | **`zstd`** | `core` | 1.5.6 | BSD-3-Clause | any | `musl` | `clang`, `cmake`, `samurai` | Zstandard compression library and tool |

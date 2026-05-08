@@ -1,11 +1,19 @@
 [package]
 name = "uutils"
-version = "0.7.0-r1"
+version = "0.7.0-r2"
 license = "MIT"
-description = "Rust rewrite of GNU coreutils (tr, expr, sort, wc, cut, and 70+ more)"
+description = "Rust rewrite of GNU coreutils (tr, sort, wc, cut, and 70+ more)"
 # Claim toybox's multicall /bin/* symlinks for every command uutils
 # provides. Without this, `jpkg install uutils` errors out on every
 # /bin/<cmd> file already owned by toybox. Requires jpkg >= 1.0.4.
+#
+# 0.7.0-r2: drop /bin/expr from the takeover set so we don't overwrite
+# exproxide's POSIX-strict expr.  Audit run 2026-05-08 found that was
+# the only command in the CMDS list with a non-toybox owner; everything
+# else is either toybox-or-uutils or uutils-only.  toybox 0.8.11-r5
+# now restores uutils' winning symlinks in its post_install so that
+# `jpkg upgrade toybox` doesn't silently stomp the takeover via tarball
+# extraction.
 replaces = ["toybox"]
 
 [source]
@@ -34,13 +42,16 @@ install -Dm755 target/release/coreutils "$DESTDIR/bin/uutils"
 # Create per-command symlinks (mirrors upstream GNUmakefile MULTICALL=y layout).
 CMDS="arch base32 base64 basename basenc cat chgrp chmod chown chroot cksum
  comm cp csplit cut date dd df dir dircolors dirname du echo env expand
- expr factor false fmt fold groups hashsum head hostname id install join
+ factor false fmt fold groups hashsum head hostname id install join
  kill link ln logname ls md5sum mkdir mkfifo mknod mktemp more mv nice
  nl nohup nproc numfmt od paste pr printenv printf ptx pwd readlink
  realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum
  shred shuf sleep sort split stat stdbuf stty sum sync tac tail tee
  test timeout touch tr true truncate tsort tty uname unexpand uniq
  unlink uptime users vdir wc who whoami yes"
+# Note: expr is owned by exproxide (POSIX-strict standalone).  We don't
+# claim it here; `replaces = ["toybox"]` is targeted at toybox-only
+# overlaps.
 for cmd in $CMDS; do
   ln -sf uutils "$DESTDIR/bin/$cmd"
 done
@@ -64,7 +75,7 @@ llvm-strip --strip-all "$DESTDIR/bin/uutils" 2>/dev/null || true"""
 # in sync.
 post_install = """CMDS="arch base32 base64 basename basenc cat chgrp chmod chown
  chroot cksum comm cp csplit cut date dd df dir dircolors dirname du
- echo env expand expr factor false fmt fold groups hashsum head hostname
+ echo env expand factor false fmt fold groups hashsum head hostname
  id install join kill link ln logname ls md5sum mkdir mkfifo mknod
  mktemp more mv nice nl nohup nproc numfmt od paste pr printenv printf
  ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum
@@ -81,7 +92,7 @@ post_remove = """# Restore toybox symlinks for commands uutils took over.
 # Only restore ones that no longer exist AND toybox is still present.
 CMDS="arch base32 base64 basename basenc cat chgrp chmod chown chroot
  cksum comm cp csplit cut date dd df dir dircolors dirname du echo env
- expand expr factor false fmt fold groups hashsum head hostname id
+ expand factor false fmt fold groups hashsum head hostname id
  install join kill link ln logname ls md5sum mkdir mkfifo mknod mktemp
  more mv nice nl nohup nproc numfmt od paste pr printenv printf ptx
  pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum
@@ -92,6 +103,8 @@ for cmd in $CMDS; do
   [ ! -e "/bin/$cmd" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/$cmd"
 done
 [ ! -e "/bin/[" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/["
+# Hand /bin/expr back to exproxide if it's installed.
+[ ! -e "/bin/expr" ] && [ -x /bin/exproxide ] && ln -sf exproxide "/bin/expr"
 exit 0"""
 
 [depends]
