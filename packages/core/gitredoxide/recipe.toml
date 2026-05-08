@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.5"
+version = "1.0.6"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness)"
 
@@ -64,8 +64,16 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # (system+repo diagnostic dump), diagnose (zip archive of detailed
 # diagnostics with password/token redaction).  Test suite 489 passed,
 # 0 failed, 0 warnings.  Command surface 77 subcommands.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.5/gitredoxide-1.0.5-vendored.tar.gz"
-sha256 = "1fb58f3c6726bd7faa5fc85f3668bf0907467dc93f613508945a5e9a6c1bb7d9"
+#
+# 1.0.6: hotfix.  The 1.0.5 commit-graph task wrote a malformed
+# file (CDAT chunk parent fields misencoded) that gix-commitgraph's
+# reader rejected, breaking every subsequent log/walk operation.
+# Stubbed task_commit_graph as a no-op until a verified writer
+# lands via gix's official API.  The task now also removes any
+# bad commit-graph file from prior 1.0.5 runs so users are
+# auto-recovered on their next maintenance run.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.6/gitredoxide-1.0.6-vendored.tar.gz"
+sha256 = "f60d9ae826d0fb2a5a2d90d96da40956459f15cc1e6b197c1f4afbf7bbb99319"
 
 [build]
 system = "custom"
