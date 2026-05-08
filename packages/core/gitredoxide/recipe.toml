@@ -9,9 +9,9 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.3"
+version = "1.0.4"
 license = "MIT OR Apache-2.0"
-description = "Permissively licensed drop-in /bin/git replacement (60+ commands, 100% parity harness)"
+description = "Permissively licensed drop-in /bin/git replacement (70 commands, 100% parity harness)"
 
 [source]
 # Canonical source: Forgejo jonerik/gitoxide on castle.great-morpho.ts.net:3000.
@@ -42,8 +42,19 @@ description = "Permissively licensed drop-in /bin/git replacement (60+ commands,
 # instead of rejecting --stateless-rpc as an unknown global option.
 # Per-command --help support added across all ~50 subcommands.  Test suite
 # 427 passed, 0 failed, 0 warnings.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.3/gitredoxide-1.0.3-vendored.tar.gz"
-sha256 = "ef91c8c2c3715732921bf633136ee4674a4801bb3e110e4be6da3ae2f6eaba7e"
+#
+# 1.0.4: closes the documented-porcelain gap.  5 new subcommands:
+# annotate (alias for blame), merge-tree (programmatic 3-way merge),
+# rerere (reuse recorded resolution with full library API integrated
+# into merge.rs), sparse-checkout (cone + non-cone modes with full
+# subcommand surface), fast-export / fast-import (bidirectional
+# git-fast-import stream support, round-trip verified).  Plus tag
+# --sort=version:refname version-aware comparison fix.  Test suite
+# 463 passed, 0 failed, 0 warnings.  Command surface 70 subcommands
+# (95% of git's documented main porcelain + ancillary, excluding
+# intentional skips for Tcl/Tk UIs and Microsoft scalar).
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.4/gitredoxide-1.0.4-vendored.tar.gz"
+sha256 = "bef27d1125d5abc413dcbcbd2749ae56b4e58dc90e068aed1941ced4ba95245e"
 
 [build]
 system = "custom"
