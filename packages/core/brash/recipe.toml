@@ -13,8 +13,7 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # that want bashisms, associative arrays, [[ ]], etc.
 #
 # No `replaces` needed: jonerix has no prior /bin/bash or /bin/rash
-# provider (toybox skips the bash applet, gnu-compat-symlinks ships
-# library symlinks only, mksh installs /bin/sh).
+# provider (toybox skips the bash applet, mksh installs /bin/sh).
 
 [source]
 # Canonical source: Forgejo jonerik/brash on castle.great-morpho.ts.net:3000.

@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **98 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **97 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -36,7 +36,6 @@ Generated from tracked `packages/**/recipe.toml` -- **98 recipes**. All jonerix-
 | **`fastfetch`** | `core` | 2.36.1-r1 | MIT | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | Feature-rich system information tool |
 | **`gitoxide`** | `core` | 0.52.0-r5 | MIT OR Apache-2.0 | any | `musl` | `rust` | Pure Rust implementation of git plumbing (gix + ein) |
 | **`gitredoxide`** | `core` | 1.0.7 | MIT OR Apache-2.0 | any | `musl` | `rust` | Drop-in /bin/git replacement — 77 subcommands (~95% of git's documented main porcelain + ancillary). Hard-fork of gitoxide's `gix-*` crates with our own write paths upstream gitoxide didn't have: `gix-commitgraph::write` (verified single-file commit-graph writer) and `gix-protocol::fetch::oids` (explicit-OID fetch for partial-clone backfill). Helper-mode dispatch on argv[0] serves `/bin/git`, `/bin/git-upload-pack`, and `/bin/git-receive-pack` from the same binary. Covers full HTTPS/SSH push/pull/clone/fetch, rebase + bisect, worktree, submodule, archive, bundle, format-patch/am, fast-export/import, sparse-checkout, rerere, maintenance, plus per-command `--help`. 491 tests, 100% on a 104-test parity harness. |
-| **`gnu-compat-symlinks`** | `core` | 1.0.0 | MIT | any | `llvm`, `libcxx` | - | Compatibility symlinks for GNU-built binaries (libgcc_s → libunwind, libstdc++ → libc++) |
 | **`ifupdown-ng`** | `core` | 0.12.1-r3 | ISC | any | `musl` | `clang`, `make`, `jonerix-headers` | Next-generation network interface configuration tool |
 | **`iproute-go`** | `core` | 0.16.0 | BSD-3-Clause | any | - | `go` | u-root's ip command — Go reimplementation of iproute2's ip(8) |
 | **`jpkg`** | `core` | 2.2.1 | 0BSD | any | `musl`, `mksh` | `rust` | jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5) |
@@ -70,7 +69,7 @@ Generated from tracked `packages/**/recipe.toml` -- **98 recipes**. All jonerix-
 | **`byacc`** | `develop` | 20241231-r1 | public domain | any | `musl` | `clang`, `make`, `exproxide` | Berkeley Yacc parser generator |
 | **`cmake`** | `develop` | 4.1.0 | BSD-3-Clause | any | `musl` | `clang`, `python3`, `samurai` | Cross-platform build system generator |
 | **`flex`** | `develop` | 2.6.4-r4 | BSD-2-Clause | any | `musl` | `clang`, `make`, `m4oxide` | Fast lexical analyzer generator |
-| **`go`** | `develop` | 1.26.1 | BSD-3-Clause | any | `musl`, `gnu-compat-symlinks` | `python3` | Go programming language compiler and tools |
+| **`go`** | `develop` | 1.26.1 | BSD-3-Clause | any | `musl`, `libcxx` | `python3` | Go programming language compiler and tools |
 | **`jmake`** | `develop` | 1.2.0 | MIT | any | `musl` | `rust` | Clean-room drop-in replacement for GNU Make, written in Rust |
 | **`jonerix-headers`** | `develop` | 4.19.88-r3 | 0BSD AND BSD-3-Clause | any | - | - | Linux UAPI kernel headers for jonerix package builds + BSD sys/queue.h compat |
 | **`libcxx`** | `develop` | 21.1.2-r1 | Apache-2.0 | any | `musl` | `clang`, `cmake`, `samurai`, `python3` | LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME |

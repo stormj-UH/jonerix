@@ -239,7 +239,5 @@ fi
 exit 0"""
 
 [depends]
-# gnu-compat-symlinks not required: our self-built rust uses
-# llvm-libunwind=system, so library/unwind emits -lunwind, not -lgcc_s.
-runtime = ["musl", "libcxx", "llvm"]
+runtime = ["musl", "libcxx", "libllvm"]
 build = []

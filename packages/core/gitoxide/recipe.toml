@@ -11,8 +11,7 @@ sha256 = "4982d5be80005456bef2074b9c15a2c4451aff56d3d3bf5395e27ee9ba236282"
 [build]
 system = "custom"
 # Rust 1.94.1-r1 builds with llvm-libunwind=system, so library/unwind
-# emits -lunwind instead of -lgcc_s for proc-macro .so output. No
-# cc-wrapper or gnu-compat-symlinks runtime dep needed any more.
+# emits -lunwind instead of -lgcc_s for proc-macro .so output.
 #
 # TLS backend: --features max-pure switches from the default
 # http-client-curl (bundled static libcurl) to http-client-reqwest-rust-tls

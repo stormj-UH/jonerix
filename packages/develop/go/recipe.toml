@@ -93,8 +93,18 @@ if rg -n --text '/lib64' "$DESTDIR/lib/go" 2>/dev/null; then
   exit 1
 fi
 """
-install = ""
+install = """set -e
+mkdir -p "$DESTDIR/lib"
+# GCC unwinder compat: cgo-linked binaries expect libgcc_s.so.1 —
+# provide it via LLVM's libunwind (shipped by libcxx).
+ln -sf libunwind.so.1 "$DESTDIR/lib/libgcc_s.so.1"
+ln -sf libgcc_s.so.1 "$DESTDIR/lib/libgcc_s.so"
+# C++ stdlib compat: GCC-linked tools expecting libstdc++ —
+# provide via LLVM's libc++ (shipped by libcxx).
+ln -sf libc++.so.1 "$DESTDIR/lib/libstdc++.so.6"
+ln -sf libstdc++.so.6 "$DESTDIR/lib/libstdc++.so"
+"""
 
 [depends]
-runtime = ["musl", "gnu-compat-symlinks"]
+runtime = ["musl", "libcxx"]
 build = ["python3"]
