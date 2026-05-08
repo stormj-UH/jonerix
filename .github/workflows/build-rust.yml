@@ -33,11 +33,17 @@ jobs:
           docker run --rm \
             -v "$PWD/rust-out:/out" \
             $BUILDER_IMAGE_X86_64 \
-            /bin/bash -c '
+            --entrypoint /bin/mksh \
+            /bin/mksh -c '
           set -ex
 
           RUST_VERSION="'"$RUST_VERSION"'"
           TRIPLE="'"$TRIPLE"'"
+
+          # Provide /bin/sh and /bin/bash — Rust x.py and configure
+          # scripts expect both; the builder image only ships mksh.
+          [ -e /bin/sh ] || ln -sf mksh /bin/sh
+          [ -e /bin/bash ] || ln -sf mksh /bin/bash
 
           # Stage0 cargo/rustc from rust-lang.org are GCC-linked
           ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true
@@ -180,11 +186,15 @@ jobs:
           docker run --rm \
             -v "$PWD/rust-out:/out" \
             $BUILDER_IMAGE_AARCH64 \
-            /bin/bash -c '
+            --entrypoint /bin/mksh \
+            /bin/mksh -c '
           set -ex
 
           RUST_VERSION="'"$RUST_VERSION"'"
           TRIPLE="'"$TRIPLE"'"
+
+          [ -e /bin/sh ] || ln -sf mksh /bin/sh
+          [ -e /bin/bash ] || ln -sf mksh /bin/bash
 
           ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true
           ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
