@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.15"
+version = "1.0.16"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -22,10 +22,10 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.15.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.16.tar.gz
 #
-# 1.0.15: suppress PROMPT_COMMAND from leaking into history (Gentoo
-# genfun_set_win_title appeared as first up-arrow entry).
+# 1.0.16: fix line-wrap redraw (prompt reprinted on every keystroke
+# past terminal width); suppress PROMPT_COMMAND from history.
 # 1.0.14: fix history up-arrow bug (unmatched quote in history file
 # swallowed all remaining entries into one mega-entry).
 # 1.0.13: security hardening (recursion depth limits for expansion,
@@ -38,8 +38,8 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # lists completions on the second consecutive Tab (matches readline's
 # show-all-if-unmodified=off default), instead of immediately prompting
 # "Display all N possibilities?" or dumping the whole command list.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.15/brash-1.0.15.tar.gz"
-sha256 = "146f4e6543409baee7b9ceeca1b2cb6e15eb172db9309cd02c82b8c4e94860b2"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.16/brash-1.0.16.tar.gz"
+sha256 = "8f277fb25912897e26b0f957f8451bf0d9774ffe5362cb2e742439ce36f6db87"
 
 [build]
 system = "custom"
