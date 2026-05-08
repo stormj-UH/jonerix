@@ -1,0 +1,304 @@
+name: Build Rust dist
+
+on:
+  workflow_dispatch:
+    inputs:
+      rust_version:
+        description: 'Rust version to build (e.g. 1.95.0)'
+        required: true
+        default: '1.95.0'
+
+env:
+  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder-amd64
+  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder-arm64
+
+jobs:
+  build-x86_64:
+    name: Build Rust ${{ inputs.rust_version }} (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build Rust dist tarball
+        run: |
+          RUST_VERSION="${{ inputs.rust_version }}"
+          TRIPLE="x86_64-jonerix-linux-musl"
+          docker run --rm \
+            -v "$PWD/rust-out:/out" \
+            $BUILDER_IMAGE_X86_64 \
+            /bin/bash -c '
+          set -ex
+
+          RUST_VERSION="'"$RUST_VERSION"'"
+          TRIPLE="'"$TRIPLE"'"
+
+          # Stage0 cargo/rustc from rust-lang.org are GCC-linked
+          ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true
+          ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
+
+          # Kernel headers for LLVM build (if needed)
+          if [ ! -f /include/asm/prctl.h ]; then
+            jpkg update 2>&1 | tail -2
+            jpkg install --force jonerix-headers 2>/dev/null || true
+          fi
+
+          cd /tmp
+          curl -fsSL -o rustc-src.tar.xz \
+            "https://static.rust-lang.org/dist/rustc-${RUST_VERSION}-src.tar.xz"
+          mkdir rust-src && tar xJf rustc-src.tar.xz -C rust-src --strip-components=1
+          cd rust-src
+
+          cat > config.toml <<CONF
+          profile = "dist"
+          change-id = 999999
+
+          [build]
+          target = ["${TRIPLE}"]
+          host = ["${TRIPLE}"]
+          cargo-native-static = false
+          extended = true
+          tools = ["cargo"]
+          docs = false
+          compiler-docs = false
+
+          [llvm]
+          link-shared = true
+          download-ci-llvm = false
+          optimize = true
+          assertions = false
+          ninja = true
+          targets = "X86;AArch64"
+          experimental-targets = ""
+          cflags = "--rtlib=compiler-rt --unwindlib=libunwind"
+          cxxflags = "--rtlib=compiler-rt --unwindlib=libunwind -stdlib=libc++"
+          ldflags = "--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+
+          [rust]
+          codegen-units = 1
+          codegen-units-std = 1
+          debug = false
+          debug-assertions = false
+          debug-logging = false
+          optimize = true
+          channel = "stable"
+          lld = true
+          llvm-tools = false
+          omit-git-hash = true
+
+          [target.${TRIPLE}]
+          cc = "clang"
+          cxx = "clang++"
+          ar = "llvm-ar"
+          ranlib = "llvm-ranlib"
+          linker = "clang"
+          musl-root = "/"
+          crt-static = false
+          llvm-libunwind = "system"
+
+          [target.x86_64-unknown-linux-musl]
+          cc = "clang"
+          cxx = "clang++"
+          ar = "llvm-ar"
+          ranlib = "llvm-ranlib"
+          linker = "clang"
+          musl-root = "/"
+          crt-static = false
+          llvm-libunwind = "system"
+          CONF
+
+          export OPENSSL_DIR=/
+          export OPENSSL_INCLUDE_DIR=/include
+          export OPENSSL_LIB_DIR=/lib
+          export PKG_CONFIG_ALLOW_CROSS=1
+          BOOTSTRAP_SKIP_TARGET_SANITY=1 python3 x.py dist --stage 2 2>&1
+
+          echo "=== Dist artifacts ==="
+          ls -lh build/dist/
+
+          # Copy the dist tarball out
+          cp build/dist/rust-${RUST_VERSION}-${TRIPLE}.tar.gz /out/ 2>/dev/null || \
+          cp build/dist/rust-*-${TRIPLE}.tar.gz /out/ 2>/dev/null || {
+            echo "=== Available dist files ==="
+            ls build/dist/*.tar.gz
+            cp build/dist/*.tar.gz /out/
+          }
+          '
+
+      - name: Upload dist tarball
+        run: |
+          RUST_VERSION="${{ inputs.rust_version }}"
+          ls -lh rust-out/
+          FILE=$(ls rust-out/rust-*-x86_64-jonerix-linux-musl.tar.gz 2>/dev/null | head -1)
+          if [ -z "$FILE" ]; then
+            echo "FATAL: no x86_64 dist tarball produced"
+            ls rust-out/
+            exit 1
+          fi
+          SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
+          echo "x86_64 tarball: $(basename "$FILE")"
+          echo "SHA256: $SHA"
+          echo "X86_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "X86_FILE=$FILE" >> "$GITHUB_ENV"
+
+          TAG="source-rust-v${RUST_VERSION}"
+          gh release create "$TAG" --title "Rust ${RUST_VERSION} dist" \
+            --notes "Self-built Rust ${RUST_VERSION} dist tarballs (jonerix-linux-musl triple)." \
+            2>/dev/null || true
+          gh release upload "$TAG" "$FILE" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### Rust ${{ inputs.rust_version }} x86_64 build complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SHA256:** ${{ env.X86_SHA }}" >> "$GITHUB_STEP_SUMMARY"
+
+  build-aarch64:
+    name: Build Rust ${{ inputs.rust_version }} (aarch64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build Rust dist tarball
+        run: |
+          RUST_VERSION="${{ inputs.rust_version }}"
+          TRIPLE="aarch64-jonerix-linux-musl"
+          docker run --rm \
+            -v "$PWD/rust-out:/out" \
+            $BUILDER_IMAGE_AARCH64 \
+            /bin/bash -c '
+          set -ex
+
+          RUST_VERSION="'"$RUST_VERSION"'"
+          TRIPLE="'"$TRIPLE"'"
+
+          ln -sf libunwind.so.1 /lib/libgcc_s.so.1 2>/dev/null || true
+          ln -sf libc++.so.1 /lib/libstdc++.so.6 2>/dev/null || true
+
+          if [ ! -f /include/asm/hwcap.h ]; then
+            jpkg update 2>&1 | tail -2
+            jpkg install --force jonerix-headers 2>/dev/null || true
+          fi
+
+          cd /tmp
+          curl -fsSL -o rustc-src.tar.xz \
+            "https://static.rust-lang.org/dist/rustc-${RUST_VERSION}-src.tar.xz"
+          mkdir rust-src && tar xJf rustc-src.tar.xz -C rust-src --strip-components=1
+          cd rust-src
+
+          cat > config.toml <<CONF
+          profile = "dist"
+          change-id = 999999
+
+          [build]
+          target = ["${TRIPLE}"]
+          host = ["${TRIPLE}"]
+          cargo-native-static = false
+          extended = true
+          tools = ["cargo"]
+          docs = false
+          compiler-docs = false
+
+          [llvm]
+          link-shared = true
+          download-ci-llvm = false
+          optimize = true
+          assertions = false
+          ninja = true
+          targets = "X86;AArch64"
+          experimental-targets = ""
+          cflags = "--rtlib=compiler-rt --unwindlib=libunwind"
+          cxxflags = "--rtlib=compiler-rt --unwindlib=libunwind -stdlib=libc++"
+          ldflags = "--rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+
+          [rust]
+          codegen-units = 1
+          codegen-units-std = 1
+          debug = false
+          debug-assertions = false
+          debug-logging = false
+          optimize = true
+          channel = "stable"
+          lld = true
+          llvm-tools = false
+          omit-git-hash = true
+
+          [target.${TRIPLE}]
+          cc = "clang"
+          cxx = "clang++"
+          ar = "llvm-ar"
+          ranlib = "llvm-ranlib"
+          linker = "clang"
+          musl-root = "/"
+          crt-static = false
+          llvm-libunwind = "system"
+
+          [target.aarch64-unknown-linux-musl]
+          cc = "clang"
+          cxx = "clang++"
+          ar = "llvm-ar"
+          ranlib = "llvm-ranlib"
+          linker = "clang"
+          musl-root = "/"
+          crt-static = false
+          llvm-libunwind = "system"
+          CONF
+
+          export OPENSSL_DIR=/
+          export OPENSSL_INCLUDE_DIR=/include
+          export OPENSSL_LIB_DIR=/lib
+          export PKG_CONFIG_ALLOW_CROSS=1
+          BOOTSTRAP_SKIP_TARGET_SANITY=1 python3 x.py dist --stage 2 2>&1
+
+          echo "=== Dist artifacts ==="
+          ls -lh build/dist/
+
+          cp build/dist/rust-${RUST_VERSION}-${TRIPLE}.tar.gz /out/ 2>/dev/null || \
+          cp build/dist/rust-*-${TRIPLE}.tar.gz /out/ 2>/dev/null || {
+            echo "=== Available dist files ==="
+            ls build/dist/*.tar.gz
+            cp build/dist/*.tar.gz /out/
+          }
+          '
+
+      - name: Upload dist tarball
+        run: |
+          RUST_VERSION="${{ inputs.rust_version }}"
+          ls -lh rust-out/
+          FILE=$(ls rust-out/rust-*-aarch64-jonerix-linux-musl.tar.gz 2>/dev/null | head -1)
+          if [ -z "$FILE" ]; then
+            echo "FATAL: no aarch64 dist tarball produced"
+            ls rust-out/
+            exit 1
+          fi
+          SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
+          echo "aarch64 tarball: $(basename "$FILE")"
+          echo "SHA256: $SHA"
+          echo "ARM_SHA=$SHA" >> "$GITHUB_ENV"
+
+          TAG="source-rust-v${RUST_VERSION}"
+          gh release create "$TAG" --title "Rust ${RUST_VERSION} dist" \
+            --notes "Self-built Rust ${RUST_VERSION} dist tarballs (jonerix-linux-musl triple)." \
+            2>/dev/null || true
+          gh release upload "$TAG" "$FILE" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### Rust ${{ inputs.rust_version }} aarch64 build complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SHA256:** ${{ env.ARM_SHA }}" >> "$GITHUB_STEP_SUMMARY"
