@@ -1,4 +1,4 @@
-name: Build Rust dist
+name: Build Rust dist (jonerix-linux-musl)
 
 on:
   workflow_dispatch:
