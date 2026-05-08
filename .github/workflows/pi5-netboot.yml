@@ -217,7 +217,7 @@ jobs:
       # ── Manual dispatch / main push: workflow artifact ──────────────────
       - name: Upload workflow artifact
         if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: jonerix-pi5-netboot
           path: |

@@ -72,7 +72,7 @@ jobs:
 
       - name: Cache firmware tarball
         id: fw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           # Cache a DIRECTORY, not a single file. The docker step below
           # bind-mounts this into the container; with a single-file
@@ -221,7 +221,7 @@ jobs:
       # ── Manual dispatch: upload as workflow artifact instead ─────────────
       - name: Upload workflow artifact (manual dispatch)
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: jonerix-pi5-image
           path: |

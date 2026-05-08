@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload published asset manifest
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: published-assets-x86_64
           path: /tmp/published-assets-x86_64.txt
@@ -272,7 +272,7 @@ jobs:
 
       - name: Upload published asset manifest
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: published-assets-aarch64
           path: /tmp/published-assets-aarch64.txt
@@ -334,7 +334,7 @@ jobs:
 
       - name: Download published asset manifests
         if: ${{ !inputs.index_only }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: published-assets-*
           path: /tmp/published-assets
