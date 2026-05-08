@@ -32,9 +32,9 @@ jobs:
           TRIPLE="x86_64-jonerix-linux-musl"
           docker run --rm \
             -v "$PWD/rust-out:/out" \
-            $BUILDER_IMAGE_X86_64 \
             --entrypoint /bin/mksh \
-            /bin/mksh -c '
+            $BUILDER_IMAGE_X86_64 \
+            -c '
           set -ex
 
           RUST_VERSION="'"$RUST_VERSION"'"
@@ -185,9 +185,9 @@ jobs:
           TRIPLE="aarch64-jonerix-linux-musl"
           docker run --rm \
             -v "$PWD/rust-out:/out" \
-            $BUILDER_IMAGE_AARCH64 \
             --entrypoint /bin/mksh \
-            /bin/mksh -c '
+            $BUILDER_IMAGE_AARCH64 \
+            -c '
           set -ex
 
           RUST_VERSION="'"$RUST_VERSION"'"
