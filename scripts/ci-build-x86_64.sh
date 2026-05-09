@@ -234,7 +234,13 @@ failures=0
 
 package_timeout() {
     case "$1" in
-        llvm) echo 20000 ;;
+        # LLVM-family from-source builds. x86_64 caps parallelism at -j2
+        # to avoid GitHub runner stalls, so even libllvm (a fraction of
+        # the old monolithic llvm) needs ~90 minutes. llvm-extra's
+        # standalone clang-tools-extra + lldb + sanitizers stack adds up
+        # to similar wall-time. Keep the legacy llvm at the same cap so
+        # rebuilds of the metapackage scenario stay safe.
+        llvm|libllvm|clang|lld|llvm-extra) echo 20000 ;;
         *) echo 3600 ;;
     esac
 }

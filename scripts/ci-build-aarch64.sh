@@ -234,7 +234,10 @@ failures=0
 
 package_timeout() {
     case "$1" in
-        llvm) echo 14400 ;;
+        # LLVM-family from-source builds (aarch64 runs at full -j$(nproc)
+        # so these are faster than the x86_64 sibling, but still need
+        # well over 1h). Keep the legacy llvm at the same cap.
+        llvm|libllvm|clang|lld|llvm-extra) echo 14400 ;;
         *) echo 3600 ;;
     esac
 }
