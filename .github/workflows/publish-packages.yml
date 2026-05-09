@@ -164,7 +164,7 @@ jobs:
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
             -v "/tmp/jpkg-bin-x86_64:/jpkg-bin" \
-            -v "/tmp/sccache:/usr/local/bin/sccache:ro" \
+            -v "/tmp/sccache:/bin/sccache:ro" \
             -v "/tmp/sccache-cache:/var/cache/sccache" \
             ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
             -w /workspace \
@@ -304,7 +304,7 @@ jobs:
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
             -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
-            -v "/tmp/sccache:/usr/local/bin/sccache:ro" \
+            -v "/tmp/sccache:/bin/sccache:ro" \
             -v "/tmp/sccache-cache:/var/cache/sccache" \
             ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
             -w /workspace \
