@@ -23,6 +23,11 @@ for bin in containerd containerd-shim-runc-v2 ctr; do
   install -m755 "bin/$bin" "$DESTDIR/bin/$bin"
 done
 
+# OpenRC init script. Registration into the boot runlevel happens in
+# post_install (only when openrc is actually present on the host).
+mkdir -p "$DESTDIR/etc/init.d"
+install -m755 "$RECIPE_DIR/init.d/containerd" "$DESTDIR/etc/init.d/containerd"
+
 # Strip /lib64 references from ELF files only (Go embeds the dynamic
 # linker path in its string table even for static binaries). Null-pad
 # /lib64 -> /lib\0\0 (same length, terminates string early). Safe:
@@ -50,6 +55,44 @@ rm -f "$ELF_LIST"
 for bin in containerd containerd-shim-runc-v2 ctr; do
   llvm-strip --strip-all "$DESTDIR/bin/$bin" 2>/dev/null || true
 done"""
+
+[hooks]
+# Register the OpenRC service iff openrc is present on the host. We
+# never install rc-update / rc-service ourselves — that's openrc's job
+# — so a system without openrc gets the binary + init script and the
+# user is told how to wire it up manually. Detection: prefer rc-update
+# on PATH, fall back to /etc/init.d existence (in case rc-update lives
+# elsewhere). The `default` runlevel mirrors what other jonerix daemons
+# (dhcpcd, sshd, etc.) use; docker depends on us via `need containerd`
+# in its own init.d.
+post_install = """set -e
+if command -v rc-update >/dev/null 2>&1; then
+    rc-update add containerd default 2>/dev/null || true
+    echo "containerd: registered with OpenRC (boot runlevel: default)."
+    echo "containerd: start now with: rc-service containerd start"
+elif [ -d /etc/init.d ] && [ -d /etc/runlevels/default ]; then
+    # OpenRC seems present (runlevel dir exists) but rc-update isn't on PATH.
+    # Symlink directly so the next boot picks it up.
+    ln -sf /etc/init.d/containerd /etc/runlevels/default/containerd 2>/dev/null || true
+    echo "containerd: registered into /etc/runlevels/default (manual symlink)."
+else
+    echo "containerd: OpenRC not detected. Init script is at"
+    echo "containerd:   /etc/init.d/containerd"
+    echo "containerd: Install openrc and run: rc-update add containerd default"
+fi
+"""
+
+post_remove = """set -e
+# Stop the service before removing if it's running.
+if command -v rc-service >/dev/null 2>&1 && [ -f /run/openrc/softlevel ]; then
+    rc-service containerd stop 2>/dev/null || true
+fi
+if command -v rc-update >/dev/null 2>&1; then
+    rc-update del containerd default 2>/dev/null || true
+fi
+# Clean up the runlevel symlink if we placed it there manually.
+rm -f /etc/runlevels/default/containerd 2>/dev/null || true
+"""
 
 [depends]
 runtime = ["musl"]

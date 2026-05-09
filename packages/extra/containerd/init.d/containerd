@@ -1,0 +1,53 @@
+#!/bin/openrc-run
+# containerd — industry-standard container runtime OpenRC service.
+# Part of the jonerix extra/containerd jpkg (Apache-2.0).
+
+name="containerd"
+description="containerd container runtime"
+
+: "${CONTAINERD_BIN:=/bin/containerd}"
+: "${CONTAINERD_CONF:=/etc/containerd/config.toml}"
+: "${CONTAINERD_ROOT:=/var/lib/containerd}"
+: "${CONTAINERD_STATE:=/run/containerd}"
+: "${CONTAINERD_SOCK:=/run/containerd/containerd.sock}"
+: "${CONTAINERD_PIDFILE:=/run/containerd.pid}"
+: "${CONTAINERD_LOGFILE:=/var/log/containerd.log}"
+
+command="${CONTAINERD_BIN}"
+# --config is conditional on the config file existing — containerd has
+# sensible built-in defaults and refuses to start if pointed at a
+# missing file. The empty fallback expands to nothing in command_args.
+: "${CONTAINERD_CONFIG_ARG:=}"
+[ -f "${CONTAINERD_CONF}" ] && CONTAINERD_CONFIG_ARG="--config ${CONTAINERD_CONF}"
+command_args="${CONTAINERD_CONFIG_ARG} \
+    --address ${CONTAINERD_SOCK} \
+    --root ${CONTAINERD_ROOT} \
+    --state ${CONTAINERD_STATE}"
+command_background="yes"
+pidfile="${CONTAINERD_PIDFILE}"
+output_log="${CONTAINERD_LOGFILE}"
+error_log="${CONTAINERD_LOGFILE}"
+
+depend() {
+    need net
+    after dhcpcd
+    provide container-runtime
+    keyword -jail -prefix
+}
+
+start_pre() {
+    # Ensure required directories exist.
+    checkpath -d -m 0711 "${CONTAINERD_ROOT}" 2>/dev/null || \
+        mkdir -p "${CONTAINERD_ROOT}" 2>/dev/null || true
+    checkpath -d -m 0711 "${CONTAINERD_STATE}" 2>/dev/null || \
+        mkdir -p "${CONTAINERD_STATE}" 2>/dev/null || true
+    mkdir -p "$(dirname "${CONTAINERD_LOGFILE}")" 2>/dev/null || true
+}
+
+stop_post() {
+    # containerd usually cleans up its socket on graceful shutdown,
+    # but a hard-killed process can leave a stale socket that blocks
+    # the next start.
+    rm -f "${CONTAINERD_SOCK}" 2>/dev/null || true
+    rm -f "${CONTAINERD_PIDFILE}" 2>/dev/null || true
+}
