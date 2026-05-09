@@ -203,4 +203,4 @@ install = ""
 
 [depends]
 runtime = ["musl", "libllvm", "libcxx", "xz", "zstd", "zlib"]
-build = ["libllvm", "clang", "lld", "cmake", "samurai", "libcxx"]
+build = ["libllvm", "clang", "lld", "cmake", "samurai", "libcxx", "jonerix-headers"]

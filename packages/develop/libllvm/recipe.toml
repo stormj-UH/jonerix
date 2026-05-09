@@ -118,4 +118,4 @@ install = ""
 
 [depends]
 runtime = ["musl", "libcxx", "zstd", "zlib"]
-build = ["clang", "cmake", "samurai", "python3", "libcxx"]
+build = ["clang", "cmake", "samurai", "python3", "libcxx", "jonerix-headers"]

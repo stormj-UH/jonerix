@@ -174,4 +174,4 @@ install = ""
 
 [depends]
 runtime = ["musl", "libllvm", "libcxx"]
-build = ["libllvm", "cmake", "samurai", "python3", "libcxx"]
+build = ["libllvm", "cmake", "samurai", "python3", "libcxx", "jonerix-headers"]

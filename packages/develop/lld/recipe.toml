@@ -89,4 +89,4 @@ install = ""
 
 [depends]
 runtime = ["musl", "libllvm", "libcxx"]
-build = ["libllvm", "cmake", "samurai", "libcxx"]
+build = ["libllvm", "cmake", "samurai", "libcxx", "jonerix-headers"]
