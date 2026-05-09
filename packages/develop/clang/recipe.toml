@@ -142,8 +142,8 @@ cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/clang-builtins-jonerix -G Ninja
     -DCMAKE_C_COMPILER_TARGET="$LLVM_TRIPLE" \
     -DCMAKE_C_FLAGS="-fPIC -I$SRC/libunwind/include" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-    -DCMAKE_AR="llvm-ar" \
-    -DCMAKE_RANLIB="llvm-ranlib" \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
     -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
     -DCMAKE_INSTALL_PREFIX="$DESTDIR/lib/clang/21"
 samu -C /tmp/clang-builtins-jonerix
