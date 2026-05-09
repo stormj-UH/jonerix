@@ -1,15 +1,18 @@
 [package]
 name = "rust"
-version = "1.94.1-r4"
+version = "1.95.0"
 license = "MIT"
 description = "Systems programming language (jonerix-linux-musl triple, no GNU runtime)"
 
 # No [source] section: the build step consumes the arch-appropriate
 # vendored dist tarball (self-built, jonerix-linux-musl triple) and
 # verifies its sha256.
-# These tarballs are produced by the rust-build pipeline on castle (x86_64)
-# and m4ni (aarch64) using llvm-libunwind=system, so -lunwind replaces
-# -lgcc_s in proc-macro .so link lines — zero GCC runtime dependency.
+# 1.95.0 dist tarballs are built by .github/workflows/rust-dist.yml,
+# uploaded to the source-rust-v1.95.0 release, and vendored into
+# sources/ for offline-CI consumption. Build config: link-shared LLVM
+# (libllvm jpkg), llvm-libunwind = system, -fuse-ld=lld,
+# --rtlib=compiler-rt, --unwindlib=libunwind, -stdlib=libc++. Zero
+# GCC runtime dependency in the produced rustc/cargo.
 
 [build]
 system = "custom"
@@ -37,12 +40,12 @@ find_vendored_file() {
 
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
-  FILE="rust-1.94.1-aarch64-jonerix-linux-musl.tar.gz"
-  SHA="30097dc070c4806935e7a777148be9d094655594249cab1b46f9be7e34cd111d"
+  FILE="rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz"
+  SHA="89a641eeec33309c57350850c7b40635f7d67c735ab7049f6acc3884388fabd6"
   TRIPLE="aarch64-jonerix-linux-musl"
 else
-  FILE="rust-1.94.1-x86_64-jonerix-linux-musl.tar.gz"
-  SHA="23988d5dde206a685d03dd2606554c441247652f1e98944380791887c2c70f48"
+  FILE="rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz"
+  SHA="8fc23aa8dd93a5c23cb32f74f4ab3f7de0e4b4eb76d857a428b67c3457727021"
   TRIPLE="x86_64-jonerix-linux-musl"
 fi
 
