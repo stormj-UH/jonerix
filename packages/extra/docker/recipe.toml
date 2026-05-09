@@ -87,11 +87,16 @@ done
 """
 
 [hooks]
-# Pre-install: dockerd needs three kernel modules that jonerix doesn't
-# auto-load on boot — overlay (for the overlay2 storage driver),
-# bridge (for docker0), and br_netfilter (so iptables/nft rules see
-# bridged frames). The modules ship with the kernel package; they're
-# just not loaded by default.
+# Pre-install: dockerd needs four kernel modules that jonerix doesn't
+# auto-load on boot:
+#   overlay        — overlay2 storage driver
+#   bridge         — docker0 bridge interface
+#   br_netfilter   — so iptables/nft rules see bridged frames
+#   veth           — virtual ethernet pair for container networking
+# The modules ship with the kernel package; they're just not loaded by
+# default. Also surface a warning if the kernel was built without
+# CONFIG_SECCOMP (runc will fail to start containers unless
+# `--security-opt seccomp=unconfined` is set).
 #
 # We check what's missing and prompt the user before calling modprobe.
 # In a non-interactive context (no controlling tty — CI builds, scripted
@@ -100,7 +105,7 @@ done
 # running kernel state.
 pre_install = """set -e
 need=""
-for mod in overlay bridge br_netfilter; do
+for mod in overlay bridge br_netfilter veth; do
     if ! awk '{print $1}' /proc/modules | grep -qx "$mod" 2>/dev/null; then
         # Built-in to the kernel? Treat that as already-loaded.
         if [ -d "/sys/module/$mod" ]; then continue; fi
@@ -108,8 +113,20 @@ for mod in overlay bridge br_netfilter; do
     fi
 done
 
+# Seccomp is a separate, kernel-config-time concern — modprobe can't help.
+# Surface it as a warning if absent; runc will refuse to start containers
+# unless they're started with --security-opt seccomp=unconfined.
+if [ -r /proc/config.gz ]; then
+    if ! zcat /proc/config.gz 2>/dev/null | grep -q "^CONFIG_SECCOMP=y"; then
+        echo "docker: WARNING: kernel was built without CONFIG_SECCOMP."
+        echo "docker:          runc will refuse to start containers; pass"
+        echo "docker:          --security-opt seccomp=unconfined to docker run,"
+        echo "docker:          or rebuild the kernel with CONFIG_SECCOMP=y."
+    fi
+fi
+
 if [ -z "$need" ]; then
-    echo "docker: required kernel modules already present (overlay, bridge, br_netfilter)"
+    echo "docker: required kernel modules already present (overlay, bridge, br_netfilter, veth)"
     exit 0
 fi
 
