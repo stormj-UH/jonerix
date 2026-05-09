@@ -12,10 +12,11 @@ sha256 = "0d071c1773c855778d85590e01b924c1857000fd786485f4b674a3be2d3b893c"
 [build]
 system = "custom"
 build = """set -e
-# Upstream tarball extracts to moby-<version>/ (repo is moby/moby, not
-# docker/docker), so jpkg's auto-cd lands us in the parent directory.
-# Step into the source tree explicitly.
-cd moby-27.5.1
+# moby v27 ships vendor.mod / vendor.sum at the repo root, NOT go.mod /
+# go.sum.  Upstream's hack/make.sh renames them at build time; replicate
+# that here so 'go build' can find a module file.
+[ -f go.mod ] || cp vendor.mod go.mod
+[ -f go.sum ] || cp vendor.sum go.sum
 
 # Moby v27 builds with standard 'go build'; the Makefile wrapper is
 # GNU-make-heavy and requires variables we do not have.  Build the two
@@ -40,7 +41,6 @@ go build -trimpath \
   ./cmd/docker-proxy
 """
 install = """set -e
-cd moby-27.5.1
 mkdir -p "$DESTDIR/bin"
 install -m755 bundles/dockerd       "$DESTDIR/bin/dockerd"
 install -m755 bundles/docker-proxy  "$DESTDIR/bin/docker-proxy"
