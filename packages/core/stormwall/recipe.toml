@@ -45,7 +45,7 @@ description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI d
 # 1.1.2 (prior): user-chain auto-create on the operating chain.
 # 1.1.1 (prior): help-text refresh for nft + pfctl + iptables.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.4/stormwall-1.1.4.tar.gz"
-sha256 = "abfc3b7c4d3ca01092bde4f5c1f9e3a108859e5bcfd4a676ea7becd7164ea390"
+sha256 = "58764e529af82d28b402e9b565614bf132421edb2f1d2021a32c9a947773bf69"
 
 [build]
 system = "custom"
