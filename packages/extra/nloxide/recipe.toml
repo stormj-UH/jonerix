@@ -1,6 +1,6 @@
 [package]
 name = "nloxide"
-version = "1.2.1"
+version = "1.2.2"
 license = "BSD-2-Clause"
 description = "Clean-room netlink library for jonerix hostapd/wpa_supplicant"
 
@@ -24,13 +24,26 @@ mkdir -p "$DESTDIR/lib"
 mkdir -p "$DESTDIR/include/netlink"
 mkdir -p "$DESTDIR/include/netlink/genl"
 
+# Static archives — for any consumer that prefers static linking
+# (`gcc -lnl-3 -static`, build-time -Wl,-Bstatic, etc.). 1.2.1 only
+# shipped these + a linker script masquerading as `.so`, but consumers
+# like wpa_supplicant 2.11-r2 carry DT_NEEDED libnl-3.so in their
+# dynamic section and the musl loader can't dlopen a `INPUT(...)`
+# linker script — it returns "Exec format error" and every libnl
+# symbol relocation fails. 1.2.2 additionally ships a real cdylib so
+# the runtime path works.
 install -m 644 "$LIB/libnloxide.a" "$DESTDIR/lib/libnl-3.a"
 cp "$DESTDIR/lib/libnl-3.a" "$DESTDIR/lib/libnl-genl-3.a"
 
-# Linker scripts preserve the usual -lnl-3 / -lnl-genl-3 names without
-# shipping a dynamic libnl-shaped runtime.
-printf '%s\n' 'INPUT(libnl-3.a)' > "$DESTDIR/lib/libnl-3.so"
-printf '%s\n' 'INPUT(libnl-genl-3.a)' > "$DESTDIR/lib/libnl-genl-3.so"
+# Dynamic library — the cdylib output libnloxide.so contains every
+# symbol both libnl-3 and libnl-genl-3 expose, so a single binary
+# serves both names via symlinks. The `.so.200` versioned name
+# matches upstream libnl-3.x's SONAME generation, which is what
+# DT_NEEDED entries in pre-built consumers reference.
+install -m 755 "$LIB/libnloxide.so" "$DESTDIR/lib/libnl-3.so.200"
+ln -sf libnl-3.so.200 "$DESTDIR/lib/libnl-3.so"
+ln -sf libnl-3.so.200 "$DESTDIR/lib/libnl-genl-3.so.200"
+ln -sf libnl-genl-3.so.200 "$DESTDIR/lib/libnl-genl-3.so"
 
 # Stub headers — generated inline so no extra source files are needed
 cat > "$DESTDIR/include/netlink/netlink.h" << 'HDR'

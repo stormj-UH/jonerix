@@ -1,13 +1,16 @@
 [package]
 name = "nloxide"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 description = "Clean-room libnl-3/libnl-genl-3 compatibility layer for jonerix nl80211 users"
 license = "BSD-2-Clause"
 
 [lib]
 name = "nloxide"
-crate-type = ["staticlib"]
+# cdylib produces libnloxide.so for runtime consumers (wpa_supplicant
+# DT_NEEDED libnl-3.so, hostapd, etc.). staticlib keeps the .a archive
+# for any consumer that prefers static linking.
+crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 libc = { version = "0.2", default-features = false }

@@ -521,6 +521,17 @@ pub unsafe extern "C" fn genl_cache_free(cache: *mut GenlCache) {
     }
 }
 
+/// libnl-3's generic cache free — for nloxide every cache that lives
+/// behind an opaque `nl_cache *` is actually a `GenlCache` allocated
+/// via Box::into_raw, so freeing it is identical to genl_cache_free.
+/// Upstream wpa_supplicant references this symbol unconditionally
+/// (DT_NEEDED libnl-3.so), so a missing nl_cache_free fails the
+/// runtime relocation pass even when the cleanup path never runs.
+#[no_mangle]
+pub unsafe extern "C" fn nl_cache_free(cache: *mut GenlCache) {
+    genl_cache_free(cache);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn genl_ctrl_search(cache: *mut GenlCache, id: u16) -> *mut GenlFamily {
     if cache.is_null() {
