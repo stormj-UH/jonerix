@@ -1,0 +1,79 @@
+name: Snapshot builder image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_suffix:
+        description: 'Suffix for the snapshot tags (becomes builder-amd64-<suffix> / builder-arm64-<suffix>). Defaults to today (YYYYMMDD).'
+        required: false
+        default: ''
+
+# Concurrency: snapshotting is cheap (manifest-only retag, ~10s).
+# Don't let it conflict with publish-images.
+concurrency:
+  group: snapshot-builder
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    name: Snapshot ghcr.io/stormj-uh/jonerix:builder-{amd64,arm64}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Compute snapshot tags
+        id: tags
+        run: |
+          if [ -n "${{ inputs.tag_suffix }}" ]; then
+              suffix="${{ inputs.tag_suffix }}"
+          else
+              suffix="$(date -u +%Y%m%d)"
+          fi
+          echo "amd64=builder-amd64-${suffix}" >> "$GITHUB_OUTPUT"
+          echo "arm64=builder-arm64-${suffix}" >> "$GITHUB_OUTPUT"
+          echo "Snapshot tags:"
+          echo "  ghcr.io/stormj-uh/jonerix:builder-amd64-${suffix}"
+          echo "  ghcr.io/stormj-uh/jonerix:builder-arm64-${suffix}"
+
+      - name: Install crane
+        run: |
+          # crane (go-containerregistry) — single static binary,
+          # ~7 MB, no docker daemon required.
+          _ver="v0.20.2"
+          _arch="x86_64"
+          _url="https://github.com/google/go-containerregistry/releases/download/${_ver}/go-containerregistry_Linux_${_arch}.tar.gz"
+          curl -fsSL --retry 3 -o /tmp/crane.tar.gz "$_url"
+          tar -xzf /tmp/crane.tar.gz -C /usr/local/bin crane
+          /usr/local/bin/crane version
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+              | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Snapshot builder-amd64
+        run: |
+          crane copy \
+              ghcr.io/stormj-uh/jonerix:builder-amd64 \
+              ghcr.io/stormj-uh/jonerix:${{ steps.tags.outputs.amd64 }}
+          echo "amd64 manifest digest:"
+          crane digest ghcr.io/stormj-uh/jonerix:${{ steps.tags.outputs.amd64 }}
+
+      - name: Snapshot builder-arm64
+        run: |
+          crane copy \
+              ghcr.io/stormj-uh/jonerix:builder-arm64 \
+              ghcr.io/stormj-uh/jonerix:${{ steps.tags.outputs.arm64 }}
+          echo "arm64 manifest digest:"
+          crane digest ghcr.io/stormj-uh/jonerix:${{ steps.tags.outputs.arm64 }}
+
+      - name: Summary
+        run: |
+          echo "## Builder snapshot complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pinned tags:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "  - \`ghcr.io/stormj-uh/jonerix:${{ steps.tags.outputs.amd64 }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "  - \`ghcr.io/stormj-uh/jonerix:${{ steps.tags.outputs.arm64 }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "These point at the same manifest digests as the current \`builder-amd64\` / \`builder-arm64\` floating tags. Future builder rebuilds won't move them." >> "$GITHUB_STEP_SUMMARY"
