@@ -8,7 +8,7 @@ replaces = ["nerdctl"]
 
 [source]
 url = "https://github.com/docker/cli/archive/refs/tags/v27.5.1.tar.gz"
-sha256 = "d09b8bda26e78459b4ba4e87ac2ccb70de1c0a45df9cf5eb0eb3e24b74b88a14"
+sha256 = "abd16e3911bc7bbd00596ebe4f58baf3d577160d99eefd749a908507ddfc587b"
 
 [build]
 system = "custom"

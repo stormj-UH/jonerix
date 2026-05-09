@@ -7,7 +7,7 @@ replaces = []
 
 [source]
 url = "https://github.com/moby/moby/archive/refs/tags/v27.5.1.tar.gz"
-sha256 = "f3a41bafa23cb4ae39775e5aab67e4cfce94f84f8b3a0e5e7604b5fd3f0f83a3"
+sha256 = "0d071c1773c855778d85590e01b924c1857000fd786485f4b674a3be2d3b893c"
 
 [build]
 system = "custom"

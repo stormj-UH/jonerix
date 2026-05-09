@@ -6,7 +6,7 @@ description = "BuildKit — high-performance build backend for Docker and OCI im
 
 [source]
 url = "https://github.com/moby/buildkit/archive/refs/tags/v0.20.2.tar.gz"
-sha256 = "4f92af7dd3de8e2bee5564e6e4c5e8b0d2efbf8e94ef1f4e03bd02a7d3284a70"
+sha256 = "a6ec208e0572a16e52c33b1e145b59f9ea994f6a57f19715b244c4c11c6998ec"
 
 [build]
 system = "custom"
