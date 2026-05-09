@@ -1,0 +1,111 @@
+[package]
+name = "docker"
+version = "27.5.1-r1"
+license = "Apache-2.0"
+description = "Docker daemon (dockerd) — industry-standard container engine using containerd as the runtime backend"
+replaces = []
+
+[source]
+url = "https://github.com/moby/moby/archive/refs/tags/v27.5.1.tar.gz"
+sha256 = "f3a41bafa23cb4ae39775e5aab67e4cfce94f84f8b3a0e5e7604b5fd3f0f83a3"
+
+[build]
+system = "custom"
+build = """set -e
+# Moby v27 builds with standard 'go build'; the Makefile wrapper is
+# GNU-make-heavy and requires variables we do not have.  Build the two
+# daemon binaries directly instead.
+#
+# VERSION is embedded by moby's internal/lazyregexp init path; without it the
+# daemon starts but 'docker version' shows "(unknown)".  Set it explicitly.
+export GOFLAGS="-mod=vendor"
+export CGO_ENABLED=0
+VERSION=27.5.1
+GITCOMMIT=jonerix
+
+go build -trimpath \
+  -ldflags "-s -w -X github.com/docker/docker/dockerversion.Version=${VERSION} \
+    -X github.com/docker/docker/dockerversion.GitCommit=${GITCOMMIT}" \
+  -o bundles/dockerd \
+  ./cmd/dockerd
+
+go build -trimpath \
+  -ldflags "-s -w" \
+  -o bundles/docker-proxy \
+  ./cmd/docker-proxy
+"""
+install = """set -e
+mkdir -p "$DESTDIR/bin"
+install -m755 bundles/dockerd       "$DESTDIR/bin/dockerd"
+install -m755 bundles/docker-proxy  "$DESTDIR/bin/docker-proxy"
+
+# Default daemon configuration.
+mkdir -p "$DESTDIR/etc/docker"
+printf '%s\n' '{"iptables": true, "userland-proxy": true}' \
+  > "$DESTDIR/etc/docker/daemon.json"
+
+# OpenRC service.
+mkdir -p "$DESTDIR/etc/init.d"
+install -m755 "$RECIPE_DIR/init.d/docker" "$DESTDIR/etc/init.d/docker"
+
+# Data directory placeholder (owned by root; docker group set in post_install).
+mkdir -p "$DESTDIR/var/lib/docker"
+
+# Strip /lib64 references from ELF files only (Go embeds the dynamic
+# linker path in its string table even for static binaries). Null-pad
+# /lib64 -> /lib\0\0 (same length, terminates string early). Safe:
+# jonerix has no /lib64, so the padded path dereferences to /lib.
+ELF_LIST=$(mktemp)
+find "$DESTDIR" -type f -exec sh -c '
+    head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d " " | grep -q "^7f454c46" && printf "%s\n" "$1"
+' _ {} \; > "$ELF_LIST" 2>/dev/null || true
+if [ -s "$ELF_LIST" ]; then
+    python3 - "$ELF_LIST" <<'PYEOF' || true
+import sys
+with open(sys.argv[1]) as f:
+    files = [ln.rstrip("\n") for ln in f if ln.strip()]
+for p in files:
+    with open(p, "rb") as fh: d = fh.read()
+    n = d.count(b"/lib64")
+    if not n: continue
+    d = d.replace(b"/lib64", b"/lib\x00\x00")
+    with open(p, "wb") as fh: fh.write(d)
+    print(f"docker lib64-fix: {p} replaced {n} refs")
+PYEOF
+fi
+rm -f "$ELF_LIST"
+
+for bin in "$DESTDIR/bin/dockerd" "$DESTDIR/bin/docker-proxy"; do
+    llvm-strip --strip-all "$bin" 2>/dev/null || true
+done
+"""
+
+[hooks]
+post_install = """set -e
+# Create the docker system group if it does not exist.
+addgroup -S docker 2>/dev/null || true
+
+# Seed daemon.json only when none is present on the live system.
+if [ ! -e /etc/docker/daemon.json ]; then
+    mkdir -p /etc/docker
+    install -Dm644 /etc/docker/daemon.json /etc/docker/daemon.json 2>/dev/null || true
+fi
+
+# Register OpenRC service in the default runlevel.
+if command -v rc-update >/dev/null 2>&1; then
+    rc-update add docker default 2>/dev/null || true
+fi
+"""
+
+post_remove = """set -e
+if command -v rc-service >/dev/null 2>&1 && [ -f /run/openrc/softlevel ]; then
+    rc-service docker stop 2>/dev/null || true
+fi
+if command -v rc-update >/dev/null 2>&1; then
+    rc-update del docker default 2>/dev/null || true
+fi
+"""
+
+[depends]
+runtime = ["musl", "containerd", "runc", "cni-plugins", "tini", "iproute-go", "stormwall >= 1.1.0"]
+build = ["go"]

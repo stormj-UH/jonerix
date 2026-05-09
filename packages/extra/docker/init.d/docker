@@ -1,0 +1,52 @@
+#!/bin/openrc-run
+# docker — Docker daemon (dockerd) OpenRC service.
+# Part of the jonerix extra/docker jpkg (Apache-2.0).
+
+name="docker"
+description="Docker container engine daemon"
+
+: "${DOCKER_CONF:=/etc/docker/daemon.json}"
+: "${DOCKER_DATA_ROOT:=/var/lib/docker}"
+: "${DOCKER_EXEC_ROOT:=/var/run/docker}"
+: "${DOCKER_PIDFILE:=/run/docker.pid}"
+: "${DOCKER_LOGFILE:=/var/log/docker.log}"
+: "${CONTAINERD_SOCK:=/run/containerd/containerd.sock}"
+
+command="/bin/dockerd"
+command_args="--config-file ${DOCKER_CONF} \
+    --data-root ${DOCKER_DATA_ROOT} \
+    --exec-root ${DOCKER_EXEC_ROOT} \
+    --containerd ${CONTAINERD_SOCK} \
+    --pidfile ${DOCKER_PIDFILE}"
+command_background="yes"
+pidfile="${DOCKER_PIDFILE}"
+output_log="${DOCKER_LOGFILE}"
+error_log="${DOCKER_LOGFILE}"
+
+depend() {
+    need net
+    need containerd
+    after dhcpcd containerd
+    keyword -jail -prefix
+}
+
+start_pre() {
+    # Ensure required directories exist and have correct permissions.
+    checkpath -d -m 0710 -o root:docker "${DOCKER_DATA_ROOT}" 2>/dev/null || \
+        mkdir -p "${DOCKER_DATA_ROOT}" 2>/dev/null || true
+    checkpath -d -m 0710 -o root:docker "${DOCKER_EXEC_ROOT}" 2>/dev/null || \
+        mkdir -p "${DOCKER_EXEC_ROOT}" 2>/dev/null || true
+    mkdir -p "$(dirname "${DOCKER_LOGFILE}")" 2>/dev/null || true
+    # Verify containerd socket is present before starting.
+    if [ ! -S "${CONTAINERD_SOCK}" ]; then
+        eerror "containerd socket ${CONTAINERD_SOCK} not found"
+        eerror "ensure containerd service is running"
+        return 1
+    fi
+}
+
+stop_post() {
+    # Remove the docker.sock left by dockerd — it does not clean up on exit.
+    rm -f "${DOCKER_EXEC_ROOT}/docker.sock" 2>/dev/null || true
+    rm -f "${DOCKER_PIDFILE}" 2>/dev/null || true
+}
