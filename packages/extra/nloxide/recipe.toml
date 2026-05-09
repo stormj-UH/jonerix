@@ -1,6 +1,6 @@
 [package]
 name = "nloxide"
-version = "1.2.2"
+version = "1.2.3"
 license = "BSD-2-Clause"
 description = "Clean-room netlink library for jonerix hostapd/wpa_supplicant"
 

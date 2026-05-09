@@ -12,8 +12,8 @@ use crate::attr::{
 use crate::callback::{nl_cb_clone, nl_cb_put, nl_cb_set};
 use crate::error::{NLE_INVAL, NLE_NOMEM, NLE_OBJ_NOTFOUND};
 use crate::message::{
-    nlmsg_alloc_simple, nlmsg_attrdata, nlmsg_attrlen, nlmsg_data, nlmsg_datalen, nlmsg_free,
-    nlmsg_hdr, NlMsg,
+    nlmsg_alloc, nlmsg_alloc_simple, nlmsg_attrdata, nlmsg_attrlen, nlmsg_data, nlmsg_datalen,
+    nlmsg_free, nlmsg_hdr, NlMsg,
 };
 use crate::socket::{nl_connect, nl_recvmsgs, NlSock};
 use crate::types::*;
@@ -77,9 +77,21 @@ pub unsafe extern "C" fn genlmsg_attrdata(ghdr: *const GenlMsgHdr, hdrlen: c_int
 
 #[no_mangle]
 pub unsafe extern "C" fn genlmsg_attrlen(ghdr: *const GenlMsgHdr, hdrlen: c_int) -> c_int {
-    let _ = ghdr;
-    let _ = hdrlen;
-    0
+    // Upstream libnl-3 inline:
+    //   nlmsg_datalen(parent_nlmsghdr) - GENL_HDRLEN - NLMSG_ALIGN(hdrlen)
+    // The parent nlmsghdr lives NLMSG_HDRLEN bytes before ghdr.
+    // Returning 0 unconditionally (1.2.1's stub) made every caller —
+    // wpa_supplicant's family_handler in driver_nl80211, hostapd's
+    // mcast group resolver, etc. — see an empty attr payload, which
+    // surfaces as -ENOENT from nl_get_multicast_id and aborts wifi.
+    if ghdr.is_null() || hdrlen < 0 {
+        return 0;
+    }
+    let parent = (ghdr as *const u8).sub(NLMSG_HDRLEN) as *const NlMsgHdr;
+    let dl = nlmsg_datalen(parent) as usize;
+    dl.saturating_sub(GENL_HDRLEN)
+        .saturating_sub(nlmsg_align(hdrlen as usize))
+        .min(c_int::MAX as usize) as c_int
 }
 
 #[no_mangle]
@@ -185,14 +197,27 @@ unsafe extern "C" fn resolve_valid_cb(msg: *mut NlMsg, arg: *mut c_void) -> c_in
     let attrdata = nlmsg_attrdata(hdr, GENL_HDRLEN as c_int);
     let attrlen = nlmsg_attrlen(hdr, GENL_HDRLEN as c_int);
 
-    // parse CTRL_ATTR_FAMILY_ID (1)
+    // parse CTRL_ATTR_FAMILY_ID (1). We DO NOT set ctx.done here —
+    // marking done on VALID and breaking the outer loop leaves the
+    // trailing ACK datagram (NLM_F_ACK was set by nl_send_auto) in
+    // the socket buffer. The next caller that loops on nl_recvmsgs
+    // (typically wpa_supplicant's send_and_recv_resp inside
+    // nl_get_multicast_id) reads that stale ACK first, treats it as
+    // the ACK for *its* request, exits the loop without ever seeing
+    // the real response, and returns -ENOENT. End-of-sequence is
+    // signalled by the ACK callback below.
     let mut tb: [*mut NlAttr; 8] = [ptr::null_mut(); 8];
     nla_parse(tb.as_mut_ptr(), 7, attrdata, attrlen, ptr::null());
     if !tb[CTRL_ATTR_FAMILY_ID as usize].is_null() {
         ctx.family_id = nla_get_u16(tb[CTRL_ATTR_FAMILY_ID as usize]) as i32;
-        ctx.done = true;
     }
     crate::types::NL_OK
+}
+
+unsafe extern "C" fn resolve_ack_cb(_msg: *mut NlMsg, arg: *mut c_void) -> c_int {
+    let ctx = &mut *(arg as *mut ResolveCtx);
+    ctx.done = true;
+    crate::types::NL_STOP
 }
 
 fn genl_ctrl_do_resolve(sk: *mut NlSock, name: *const u8) -> c_int {
@@ -241,6 +266,15 @@ fn genl_ctrl_do_resolve(sk: *mut NlSock, name: *const u8) -> c_int {
             Some(resolve_valid_cb),
             &mut ctx as *mut ResolveCtx as *mut c_void,
         );
+        // ACK marks end-of-sequence — see resolve_valid_cb's note on
+        // why we can't break on VALID.
+        nl_cb_set(
+            cb,
+            crate::types::NL_CB_ACK as c_int,
+            0,
+            Some(resolve_ack_cb),
+            &mut ctx as *mut ResolveCtx as *mut c_void,
+        );
 
         loop {
             let r2 = nl_recvmsgs(sk, cb);
@@ -280,13 +314,16 @@ unsafe extern "C" fn resolve_grp_valid_cb(msg: *mut NlMsg, arg: *mut c_void) -> 
         return crate::types::NL_OK;
     }
 
-    // walk nested mcast groups list
+    // walk nested mcast groups list. We only RECORD the matching id;
+    // marking done + returning NL_STOP from VALID would leave the
+    // trailing ACK datagram in the socket buffer for the next caller
+    // to consume incorrectly. ACK signals end-of-sequence — see
+    // resolve_grp_ack_cb below and the matching note on resolve_valid_cb.
     let groups_data = nla_data(mcast_attr) as *const NlAttr;
     let groups_len = nla_len(mcast_attr);
     let mut pos = groups_data;
     let mut rem = groups_len;
     while nla_ok(pos, rem) {
-        // each entry is a nested attr with CTRL_ATTR_MCAST_GRP_NAME and _ID
         let mut gtb: [*mut NlAttr; 3] = [ptr::null_mut(); 3];
         nla_parse(
             gtb.as_mut_ptr(),
@@ -299,12 +336,17 @@ unsafe extern "C" fn resolve_grp_valid_cb(msg: *mut NlMsg, arg: *mut c_void) -> 
         let id_attr = gtb[CTRL_ATTR_MCAST_GRP_ID as usize];
         if !name_attr.is_null() && !id_attr.is_null() && attr_cstr_eq(name_attr, ctx.grp_name) {
             ctx.grp_id = nla_get_u32(id_attr) as i32;
-            ctx.done = true;
-            return crate::types::NL_STOP;
+            break;
         }
         pos = nla_next(pos, &mut rem);
     }
     crate::types::NL_OK
+}
+
+unsafe extern "C" fn resolve_grp_ack_cb(_msg: *mut NlMsg, arg: *mut c_void) -> c_int {
+    let ctx = &mut *(arg as *mut ResolveGrpCtx);
+    ctx.done = true;
+    crate::types::NL_STOP
 }
 
 #[no_mangle]
@@ -359,6 +401,13 @@ pub unsafe extern "C" fn genl_ctrl_resolve_grp(
         Some(resolve_grp_valid_cb),
         &mut ctx as *mut ResolveGrpCtx as *mut c_void,
     );
+    nl_cb_set(
+        cb,
+        crate::types::NL_CB_ACK as c_int,
+        0,
+        Some(resolve_grp_ack_cb),
+        &mut ctx as *mut ResolveGrpCtx as *mut c_void,
+    );
 
     loop {
         let r2 = nl_recvmsgs(sk, cb);
@@ -394,8 +443,24 @@ pub struct McastGroup {
     pub id: u32,
 }
 
+struct CacheCtx {
+    cache: *mut GenlCache,
+    done: bool,
+}
+
+unsafe extern "C" fn cache_fill_finish_cb(_msg: *mut NlMsg, arg: *mut c_void) -> c_int {
+    // NLMSG_DONE arrives after the last family. Mark done so the
+    // outer loop exits after this datagram. ACK isn't sent for DUMP
+    // requests (NLM_F_DUMP suppresses NLM_F_ACK), so DONE is the only
+    // end-of-sequence signal.
+    let ctx = &mut *(arg as *mut CacheCtx);
+    ctx.done = true;
+    crate::types::NL_STOP
+}
+
 unsafe extern "C" fn cache_fill_valid_cb(msg: *mut NlMsg, arg: *mut c_void) -> c_int {
-    let cache = &mut *(arg as *mut GenlCache);
+    let ctx = &mut *(arg as *mut CacheCtx);
+    let cache = &mut *ctx.cache;
     let hdr = nlmsg_hdr(msg);
     let attrdata = nlmsg_attrdata(hdr, GENL_HDRLEN as c_int);
     let attrlen = nlmsg_attrlen(hdr, GENL_HDRLEN as c_int);
@@ -464,8 +529,18 @@ pub unsafe extern "C" fn genl_ctrl_alloc_cache(
         return -(NLE_INVAL);
     }
 
-    // Send CTRL_CMD_GETFAMILY with DUMP flag to enumerate all families
-    let msg = nlmsg_alloc_simple(GENL_ID_CTRL as c_int, (NLM_F_REQUEST | NLM_F_DUMP) as c_int);
+    // CTRL_CMD_GETFAMILY + NLM_F_DUMP enumerates all families. The
+    // DUMP flag must be passed via genlmsg_put — nlmsg_put (which
+    // genlmsg_put calls internally) OVERWRITES nlmsg_flags rather
+    // than OR-ing it, so any flags set by nlmsg_alloc_simple are
+    // lost. Sending without DUMP and without a CTRL_ATTR_FAMILY_NAME
+    // makes the kernel respond NLMSG_ERROR err=-EINVAL — which the
+    // dispatcher then surfaced as a -22 from nl_recvmsgs, so the
+    // cache stayed empty and every later genl_ctrl_search_by_name
+    // returned NULL. wpa_supplicant treats that as
+    // "Could not get nl80211 family from cache" and aborts
+    // driver init.
+    let msg = nlmsg_alloc();
     if msg.is_null() {
         return -(NLE_NOMEM);
     }
@@ -476,7 +551,7 @@ pub unsafe extern "C" fn genl_ctrl_alloc_cache(
         0,
         GENL_ID_CTRL as c_int,
         0,
-        0,
+        (NLM_F_REQUEST | NLM_F_DUMP) as c_int,
         CTRL_CMD_GETFAMILY,
         1,
     );
@@ -494,18 +569,34 @@ pub unsafe extern "C" fn genl_ctrl_alloc_cache(
     let mut cache = Box::new(GenlCache {
         entries: Vec::new(),
     });
+    let mut ctx = CacheCtx {
+        cache: &mut *cache as *mut GenlCache,
+        done: false,
+    };
     let cb = nl_cb_clone((*sk).s_cb);
     nl_cb_set(
         cb,
         NL_CB_VALID as c_int,
         0,
         Some(cache_fill_valid_cb),
-        &mut *cache as *mut GenlCache as *mut c_void,
+        &mut ctx as *mut CacheCtx as *mut c_void,
+    );
+    nl_cb_set(
+        cb,
+        crate::types::NL_CB_FINISH as c_int,
+        0,
+        Some(cache_fill_finish_cb),
+        &mut ctx as *mut CacheCtx as *mut c_void,
     );
 
+    // DUMP responses are sequence of CTRL_CMD_NEWFAMILY messages
+    // followed by NLMSG_DONE. Loop until DONE arrives or recv errors.
+    // The previous `if r2 <= 0 break` exited after the first datagram,
+    // catching only the first 1-2 families and leaving everything else
+    // (nl80211 included) out of the cache.
     loop {
         let r2 = crate::socket::nl_recvmsgs(sk, cb);
-        if r2 <= 0 {
+        if r2 < 0 || ctx.done {
             break;
         }
     }

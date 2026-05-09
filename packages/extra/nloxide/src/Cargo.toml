@@ -1,6 +1,6 @@
 [package]
 name = "nloxide"
-version = "1.2.2"
+version = "1.2.3"
 edition = "2021"
 description = "Clean-room libnl-3/libnl-genl-3 compatibility layer for jonerix nl80211 users"
 license = "BSD-2-Clause"
