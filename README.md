@@ -30,7 +30,7 @@ jonerix can rebuild itself from source using only the tools it ships:
 - **Go**: Full bootstrap chain from C source (C &rarr; Go 1.4 &rarr; 1.17 &rarr; 1.20 &rarr; 1.22 &rarr; 1.24 &rarr; 1.26)
 - **Rust**: Built from source using system LLVM and a bootstrap rustc; targets the custom `aarch64-jonerix-linux-musl` / `x86_64-jonerix-linux-musl` triple with no GCC runtime (uses `llvm-libunwind = "system"` so `-lunwind` replaces `-lgcc_s` in proc-macro link lines)
 - **Python 3 + Node.js**: Built from source with Clang/musl
-- **Container runtime**: containerd + runc + nerdctl + CNI plugins, all from source
+- **Container runtime**: containerd + runc + nerdctl + Docker (dockerd + docker-cli + BuildKit) + CNI plugins, all from source
 
 The `jonerix:builder` image installs these tools from jpkg packages. It compiles C, Go, and Rust programs out of the box.
 
@@ -226,7 +226,11 @@ the rootfs is assembled in CI.
 |-----------|---------|------|
 | containerd | Apache-2.0 | Container runtime |
 | runc | Apache-2.0 | OCI runtime |
-| nerdctl | Apache-2.0 | Docker-compatible CLI |
+| docker (dockerd) | Apache-2.0 | Docker daemon — full Docker engine backed by containerd (`extra`) |
+| docker-cli | Apache-2.0 | `docker` CLI — client for dockerd or any containerd endpoint (`extra`) |
+| buildkit | Apache-2.0 | BuildKit — high-performance `docker build` backend (`extra`) |
+| nerdctl | Apache-2.0 | Lighter Docker-compatible CLI for containerd (alternative to docker-cli) |
+| tini | MIT | Minimal container init for `docker run --init` |
 | CNI plugins | Apache-2.0 | Container networking |
 
 ### Utilities

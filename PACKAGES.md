@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **103 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -87,12 +87,15 @@ Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-
 | **`strace`** | `develop` | 4.25-r2 | BSD-3-Clause | any | `musl` | `clang`, `make`, `exproxide`, `jonerix-headers` | ptrace-based syscall tracer (last BSD-3-Clause release) |
 | **`bsdsed`** | `extra` | 0.99.2-r1 | BSD-2-Clause | any | `musl` | `clang`, `make` | FreeBSD sed made portable — POSIX stream editor |
 | **`btop`** | `extra` | 1.4.5-r5 | Apache-2.0 | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | Terminal resource monitor with CPU, memory, disk, network, and process views |
+| **`buildkit`** | `extra` | 0.20.2-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc` | `go` | BuildKit — high-performance OCI image build backend (buildkitd + buildctl) used by `docker build` |
 | **`bzip2`** | `extra` | 1.0.8-r2 | bzip2-1.0.6 | any | `musl` | `clang`, `make` | Block-sorting file compressor (bzip2 + libbz2, clang/musl build, no GNU) |
 | **`ca-certificates`** | `extra` | 20260211-r2 | MPL-2.0 | any | - | - | Mozilla CA certificate bundle for TLS verification (sourced from curl.se) |
 | **`chimerautils`** | `extra` | 15.0.3-r1 | BSD-3-Clause | any | `musl`, `ncurses`, `libressl`, `zlib`, `xz`, `bzip2`, `zstd` | `clang`, `samurai`, `meson`, `pkgconf`, `ncurses`, `libressl`, `zlib`, `xz`, `bzip2`, `zstd` | Chimera Linux's FreeBSD-derived BSD coreutils — ls, cat, cp, mv, sed, grep, awk, find, tar, ed, ee, jot, nc, gzip, m4, patch, ... — installed under /share/chimerautils/ so it coexists with toybox + uutils + bsdsed + onetrueawk without clobbering /bin paths |
 | **`cni-plugins`** | `extra` | 1.9.1 | Apache-2.0 | any | `musl` | `go` | CNI network plugins for container networking |
 | **`containerd`** | `extra` | 2.2.2-r1 | Apache-2.0 | any | `musl` | `go` | Industry-standard container runtime |
 | **`derper`** | `extra` | 1.96.5 | BSD-3-Clause | any | `musl` | `go` | Tailscale DERP relay server |
+| **`docker`** | `extra` | 27.5.1-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc`, `cni-plugins`, `tini`, `iproute-go`, `stormwall >= 1.1.0` | `go` | Docker daemon (dockerd + docker-proxy) — container engine backed by containerd; ships OpenRC service and default daemon.json |
+| **`docker-cli`** | `extra` | 27.5.1-r1 | Apache-2.0 | any | `musl` | `go` | Docker CLI (`/bin/docker`) — client for dockerd or containerd; replaces nerdctl's `/bin/docker` symlink |
 | **`headscale`** | `extra` | 0.28.0 | BSD-3-Clause | any | `musl` | `go` | Open-source self-hosted Tailscale control server |
 | **`hostapd`** | `extra` | 2.11-r1 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator |
 | **`jcarp`** | `extra` | 0.1.0-r1 | BSD-2-Clause | any | `musl`, `openrc`, `stormwall` | `rust`, `mksh` | Rust OpenBSD-CARP-compatible failover daemon for jonerix |
@@ -109,7 +112,7 @@ Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-
 | **`linux`** | `extra` | 6.14.2 | GPL-2.0-only | any | - | - | Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers. |
 | **`lsusb-rs`** | `extra` | 0.1.1-r0 | MIT | any | `musl` | `rust` | Permissive-license lsusb drop-in (pure Rust, sysfs backend) |
 | **`lua`** | `extra` | 5.4.7 | MIT | any | `musl` | `clang`, `make` | Lua programming language interpreter, compiler, and library |
-| **`nerdctl`** | `extra` | 2.2.1-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc`, `cni-plugins` | `go` | Docker-compatible CLI for containerd |
+| **`nerdctl`** | `extra` | 2.2.1-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc`, `cni-plugins` | `go` | Docker-compatible CLI for containerd — lighter alternative to docker-cli; installs `/bin/nerdctl` (and `/bin/docker` symlink unless docker-cli is present) |
 | **`nginx`** | `extra` | 1.28.3-r3 | BSD-2-Clause | any | `musl`, `libressl`, `zlib`, `pcre2` | `clang`, `make`, `mksh`, `libressl`, `zlib`, `pcre2` | High-performance HTTP server and reverse proxy |
 | **`nloxide`** | `extra` | 1.2.1 | BSD-2-Clause | any | `musl` | `clang`, `rust`, `jonerix-headers` | Clean-room netlink library for jonerix hostapd/wpa_supplicant |
 | **`openrsync`** | `extra` | 0.5.0-git20250127 | ISC | any | `musl` | `clang`, `libllvm` | BSD-licensed clean-room implementation of rsync (drop-in replacement, protocol 27 compatible) |
@@ -120,6 +123,7 @@ Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-
 | **`ruby`** | `extra` | 3.4.3-r1 | BSD-2-Clause AND Ruby | any | `musl`, `libressl`, `zlib` | `clang`, `jmake`, `onetrueawk`, `mksh` | Ruby programming language interpreter |
 | **`runc`** | `extra` | 1.4.1-r3 | Apache-2.0 | any | `musl` | `go` | OCI container runtime |
 | **`sqlite`** | `extra` | 3.51.3-r1 | Public-Domain | any | `musl` | `clang`, `make` | Self-contained SQL database engine (with sqlite3.pc) |
+| **`tini`** | `extra` | 0.19.0-r1 | MIT | any | `musl` | `clang`, `cmake`, `samurai` | Minimal container init — reaps zombie processes and forwards signals; used as `docker run --init` PID 1 |
 | **`tmux`** | `extra` | 3.6a-r1 | ISC | any | `musl`, `ncurses`, `libevent` | `clang`, `make`, `exproxide`, `libevent`, `ncurses`, `jonerix-headers`, `byacc` | Terminal multiplexer |
 | **`unzip`** | `extra` | 0.1.0 | Apache-2.0 | any | `libarchive` | - | Compatibility package: /bin/unzip → /bin/bsdunzip (libarchive) |
 | **`wpa_supplicant`** | `extra` | 2.11-r2 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | WPA/WPA2/WPA3 supplicant for wireless network authentication |
