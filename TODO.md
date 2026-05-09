@@ -1,17 +1,11 @@
-* Split LLVM into separate packages so each consumer builds against a
-  shared libLLVM.so instead of rebuilding LLVM from source:
-    - libllvm: core libraries, libLLVM.so, headers, cmake configs,
-      llvm-config
-    - clang: clang + compiler-rt, built with -DLLVM_DIR against libllvm
-    - lld: linker, built with -DLLVM_DIR against libllvm
-    - rust: rustc + cargo, built with llvm-config = "/path" against
-      libllvm (saves 1-2 hours per dist build)
-    - libcxx: libc++/libc++abi/libunwind stay as-is — they need clang
-      to build but don't link libLLVM.so at runtime
-  Current builder image builds LLVM+clang+lld monolithically with
-  -DLLVM_ENABLE_PROJECTS.  Split means building libllvm first, then
-  each consumer separately — more recipes but each rebuild is faster
-  and only what changed gets rebuilt.
+* [DONE] Split LLVM into separate packages (commit 3a428f22):
+    - libllvm: LLVM core, libLLVM-21.so, headers, cmake configs
+    - clang: out-of-tree clang + compiler-rt builtins + /etc/clang
+    - lld: out-of-tree LLD linker
+    - llvm: metapackage (POSIX symlinks: cc, ld, ar, nm, etc.)
+    - libcxx: stays as-is (no libLLVM.so link at runtime)
+  Remaining: wire rust recipe to use llvm-config = "/bin/llvm-config"
+  so Rust dist builds skip their own LLVM build (saves 1-2 hours).
 
 * llvm-libc: ship as optional package, track for eventual musl
   replacement.  Goal is fully LLVM-native stack: llvm-libc + libc++ +
