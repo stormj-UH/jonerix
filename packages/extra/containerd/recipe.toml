@@ -58,18 +58,25 @@ done"""
 
 [hooks]
 # Register the OpenRC service iff openrc is present on the host. We
-# never install rc-update / rc-service ourselves — that's openrc's job
-# — so a system without openrc gets the binary + init script and the
-# user is told how to wire it up manually. Detection: prefer rc-update
-# on PATH, fall back to /etc/init.d existence (in case rc-update lives
-# elsewhere). The `default` runlevel mirrors what other jonerix daemons
-# (dhcpcd, sshd, etc.) use; docker depends on us via `need containerd`
-# in its own init.d.
+# never install rc-update / rc-service ourselves — that's openrc's
+# job — so a system without openrc gets the binary + init script and
+# the user is told how to wire it up manually. The `default` runlevel
+# mirrors what other jonerix daemons (dhcpcd, sshd, etc.) use; docker
+# depends on us via `need containerd` in its own init.d.
+#
+# `cd /` before calling rc-update — librc resolves runlevels via the
+# relative path "etc/runlevels/<name>", so running from any other cwd
+# (e.g. jpkg's build/install temp dir) makes rc-update reject every
+# runlevel name as "not a valid runlevel".
 post_install = """set -e
 if command -v rc-update >/dev/null 2>&1; then
-    rc-update add containerd default 2>/dev/null || true
-    echo "containerd: registered with OpenRC (boot runlevel: default)."
-    echo "containerd: start now with: rc-service containerd start"
+    if (cd / && rc-update add containerd default) >/dev/null 2>&1; then
+        echo "containerd: registered with OpenRC (boot runlevel: default)."
+        echo "containerd: start now with: rc-service containerd start"
+    else
+        echo "containerd: WARNING: rc-update add failed — register manually:"
+        echo "containerd:   cd / && rc-update add containerd default"
+    fi
 elif [ -d /etc/init.d ] && [ -d /etc/runlevels/default ]; then
     # OpenRC seems present (runlevel dir exists) but rc-update isn't on PATH.
     # Symlink directly so the next boot picks it up.
@@ -88,7 +95,7 @@ if command -v rc-service >/dev/null 2>&1 && [ -f /run/openrc/softlevel ]; then
     rc-service containerd stop 2>/dev/null || true
 fi
 if command -v rc-update >/dev/null 2>&1; then
-    rc-update del containerd default 2>/dev/null || true
+    (cd / && rc-update del containerd default) 2>/dev/null || true
 fi
 # Clean up the runlevel symlink if we placed it there manually.
 rm -f /etc/runlevels/default/containerd 2>/dev/null || true

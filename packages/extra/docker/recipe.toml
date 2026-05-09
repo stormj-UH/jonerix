@@ -170,8 +170,18 @@ if [ ! -e /etc/docker/daemon.json ]; then
 fi
 
 # Register OpenRC service in the default runlevel.
+# `cd /` before rc-update — librc resolves runlevels via the relative
+# path "etc/runlevels/<name>", so running from any other cwd (e.g.
+# jpkg's install temp dir) makes rc-update reject every runlevel name
+# as "not a valid runlevel".
 if command -v rc-update >/dev/null 2>&1; then
-    rc-update add docker default 2>/dev/null || true
+    if (cd / && rc-update add docker default) >/dev/null 2>&1; then
+        echo "docker: registered with OpenRC (boot runlevel: default)."
+        echo "docker: start now with: rc-service docker start"
+    else
+        echo "docker: WARNING: rc-update add failed — register manually:"
+        echo "docker:   cd / && rc-update add docker default"
+    fi
 fi
 """
 
@@ -180,7 +190,7 @@ if command -v rc-service >/dev/null 2>&1 && [ -f /run/openrc/softlevel ]; then
     rc-service docker stop 2>/dev/null || true
 fi
 if command -v rc-update >/dev/null 2>&1; then
-    rc-update del docker default 2>/dev/null || true
+    (cd / && rc-update del docker default) 2>/dev/null || true
 fi
 """
 

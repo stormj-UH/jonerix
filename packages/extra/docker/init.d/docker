@@ -43,6 +43,15 @@ start_pre() {
         eerror "ensure containerd service is running"
         return 1
     fi
+    # Clean up a stale pidfile from a previous unclean shutdown (kill -9,
+    # OOM, host hard-reset). dockerd refuses to start if it sees the file
+    # and a process with that pid still exists OR the file is non-empty.
+    if [ -f "${DOCKER_PIDFILE}" ]; then
+        old_pid=$(cat "${DOCKER_PIDFILE}" 2>/dev/null)
+        if [ -z "$old_pid" ] || ! kill -0 "$old_pid" 2>/dev/null; then
+            rm -f "${DOCKER_PIDFILE}"
+        fi
+    fi
 }
 
 stop_post() {
