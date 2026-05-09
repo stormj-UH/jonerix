@@ -184,7 +184,21 @@ jobs:
           gh release create "$TAG" --title "Rust ${RUST_VERSION} dist" \
             --notes "Self-built Rust ${RUST_VERSION} dist tarballs (jonerix-linux-musl triple)." \
             2>/dev/null || true
-          gh release upload "$TAG" "$FILE" --clobber
+          # Retry the upload — GITHUB_TOKEN's per-installation rate limit
+          # has eaten 3-hour builds before (run 25591573031). Back off and
+          # retry up to 5 times (waits 30s, 60s, 120s, 240s, 480s = 15.5
+          # minutes total worst case) before giving up.
+          attempts=0
+          until gh release upload "$TAG" "$FILE" --clobber; do
+              attempts=$((attempts + 1))
+              if [ "$attempts" -ge 5 ]; then
+                  echo "FATAL: gh release upload failed after $attempts attempts" >&2
+                  exit 1
+              fi
+              wait_secs=$((30 * (1 << (attempts - 1))))
+              echo "gh release upload failed (attempt $attempts), retrying in ${wait_secs}s..." >&2
+              sleep "$wait_secs"
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -361,7 +375,21 @@ jobs:
           gh release create "$TAG" --title "Rust ${RUST_VERSION} dist" \
             --notes "Self-built Rust ${RUST_VERSION} dist tarballs (jonerix-linux-musl triple)." \
             2>/dev/null || true
-          gh release upload "$TAG" "$FILE" --clobber
+          # Retry the upload — GITHUB_TOKEN's per-installation rate limit
+          # has eaten 3-hour builds before (run 25591573031). Back off and
+          # retry up to 5 times (waits 30s, 60s, 120s, 240s, 480s = 15.5
+          # minutes total worst case) before giving up.
+          attempts=0
+          until gh release upload "$TAG" "$FILE" --clobber; do
+              attempts=$((attempts + 1))
+              if [ "$attempts" -ge 5 ]; then
+                  echo "FATAL: gh release upload failed after $attempts attempts" >&2
+                  exit 1
+              fi
+              wait_secs=$((30 * (1 << (attempts - 1))))
+              echo "gh release upload failed (attempt $attempts), retrying in ${wait_secs}s..." >&2
+              sleep "$wait_secs"
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
