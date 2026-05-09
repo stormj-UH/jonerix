@@ -48,7 +48,8 @@ cmake -S compiler-rt/lib/builtins -B /tmp/clang-builtins-bootstrap -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_C_COMPILER_TARGET="$BOOTSTRAP_TRIPLE" \
-    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
+    -DCMAKE_C_FLAGS="-fPIC -I$SRC/libunwind/include" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
     -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
@@ -66,10 +67,12 @@ cmake -S clang -B build -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os --rtlib=compiler-rt" \
-    -DCMAKE_CXX_FLAGS="-Os -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DLLVM_ENABLE_PIC=ON \
     -DCLANG_BUILD_CLANG_DYLIB=OFF \
     -DCLANG_LINK_CLANG_DYLIB=OFF \
     -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
@@ -109,7 +112,8 @@ cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/clang-builtins-jonerix -G Ninja
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="$DESTDIR/bin/clang" \
     -DCMAKE_C_COMPILER_TARGET="$LLVM_TRIPLE" \
-    -DCMAKE_C_FLAGS="-I$SRC/libunwind/include" \
+    -DCMAKE_C_FLAGS="-fPIC -I$SRC/libunwind/include" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DCMAKE_AR="llvm-ar" \
     -DCMAKE_RANLIB="llvm-ranlib" \
     -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \

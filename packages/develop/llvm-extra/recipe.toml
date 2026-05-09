@@ -54,18 +54,9 @@ esac
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
 SRC=$(pwd)
-COMMON_FLAGS="
-    -DCMAKE_BUILD_TYPE=Release
-    -DCMAKE_C_COMPILER=clang
-    -DCMAKE_CXX_COMPILER=clang++
-    -DCMAKE_C_FLAGS=-Os
-    -DCMAKE_CXX_FLAGS=-Os
-    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
-    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
-    -DCMAKE_INSTALL_PREFIX=/
-    -DCMAKE_INSTALL_LIBDIR=lib
-    -DLLVM_DIR=/lib/cmake/llvm
-"
+# Helper: cmake invocation common bits. We can't put flags-with-spaces
+# in a single shell variable (word-split), so each cmake call lists
+# the C/CXX flag args inline.
 
 # ──────────────────────────────────────────────────────────────────────
 # 1. clang-tools-extra (standalone build against installed clang)
@@ -73,7 +64,18 @@ COMMON_FLAGS="
 echo "=== Building clang-tools-extra ==="
 mkdir -p build-cte
 cmake -S clang-tools-extra -B build-cte -G Ninja \\
-    $COMMON_FLAGS \\
+    -DCMAKE_BUILD_TYPE=Release \\
+    -DCMAKE_C_COMPILER=clang \\
+    -DCMAKE_CXX_COMPILER=clang++ \\
+    -DCMAKE_C_FLAGS="-Os -fPIC" \\
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \\
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \\
+    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \\
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \\
+    -DLLVM_ENABLE_PIC=ON \\
+    -DCMAKE_INSTALL_PREFIX=/ \\
+    -DCMAKE_INSTALL_LIBDIR=lib \\
+    -DLLVM_DIR=/lib/cmake/llvm \\
     -DClang_DIR=/lib/cmake/clang \\
     -DLLVM_HAVE_LINK_VERSION_SCRIPT=ON
 samu -C build-cte -j"$LLVM_BUILD_JOBS"
@@ -85,7 +87,18 @@ DESTDIR=$DESTDIR cmake --install build-cte
 echo "=== Building lldb ==="
 mkdir -p build-lldb
 cmake -S lldb -B build-lldb -G Ninja \\
-    $COMMON_FLAGS \\
+    -DCMAKE_BUILD_TYPE=Release \\
+    -DCMAKE_C_COMPILER=clang \\
+    -DCMAKE_CXX_COMPILER=clang++ \\
+    -DCMAKE_C_FLAGS="-Os -fPIC" \\
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \\
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \\
+    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \\
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \\
+    -DLLVM_ENABLE_PIC=ON \\
+    -DCMAKE_INSTALL_PREFIX=/ \\
+    -DCMAKE_INSTALL_LIBDIR=lib \\
+    -DLLVM_DIR=/lib/cmake/llvm \\
     -DClang_DIR=/lib/cmake/clang \\
     -DLLDB_BUILT_STANDALONE=ON \\
     -DLLDB_ENABLE_CURSES=OFF \\
@@ -106,7 +119,16 @@ DESTDIR=$DESTDIR cmake --install build-lldb
 echo "=== Building compiler-rt sanitizers ==="
 mkdir -p build-rt
 cmake -S compiler-rt -B build-rt -G Ninja \\
-    $COMMON_FLAGS \\
+    -DCMAKE_BUILD_TYPE=Release \\
+    -DCMAKE_C_COMPILER=clang \\
+    -DCMAKE_CXX_COMPILER=clang++ \\
+    -DCMAKE_C_FLAGS="-Os -fPIC" \\
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \\
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \\
+    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \\
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \\
+    -DCMAKE_INSTALL_PREFIX=/ \\
+    -DCMAKE_INSTALL_LIBDIR=lib \\
     -DCOMPILER_RT_STANDALONE_BUILD=ON \\
     -DLLVM_CMAKE_DIR=/lib/cmake/llvm \\
     -DCOMPILER_RT_BUILD_BUILTINS=OFF \\
