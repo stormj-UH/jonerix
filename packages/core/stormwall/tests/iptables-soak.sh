@@ -295,6 +295,68 @@ else
     "$NFT" list ruleset 2>&1 | head -30
 fi
 
+# ── Section 15: 1.1.5 feature additions ──────────────────────────────
+
+printf '=== 15. 1.1.5 features ===\n'
+
+# 15.01: -E rename (requires the chain to exist first).
+flush
+sudo "$IPTABLES" -N OLDNAME 2>/dev/null
+if sudo "$IPTABLES" -E OLDNAME NEWNAME 2>&1; then
+    state=$("$NFT" list ruleset 2>/dev/null)
+    if printf '%s' "$state" | grep -qF "chain NEWNAME" && \
+       ! printf '%s' "$state" | grep -qF "chain OLDNAME"; then
+        PASS=$((PASS + 1))
+        printf '  ok 15.01-rename-chain\n'
+    else
+        FAIL=$((FAIL + 1))
+        FAIL_NAMES="$FAIL_NAMES 15.01-rename-chain"
+        printf '  FAIL 15.01-rename-chain\n%s\n' "$state"
+    fi
+else
+    FAIL=$((FAIL + 1))
+    FAIL_NAMES="$FAIL_NAMES 15.01-rename-chain"
+    printf '  FAIL 15.01-rename-chain [exit nonzero]\n'
+fi
+
+# Compat parsing + new targets/matches.
+run_test  "15.02-set-counters-compat"      "tcp dport 22"                    "" -- -A INPUT -c 0 0 -p tcp --dport 22 -j ACCEPT
+run_test  "15.03-masquerade-random-fully"  "fully-random"                    "" -- -t nat -A POSTROUTING -o eth0 -j MASQUERADE --random-fully
+run_test  "15.04-iprange-src"              "ip saddr 10.0.0.1-10.0.0.100"    "" -- -A FORWARD -m iprange --src-range 10.0.0.1-10.0.0.100 -j ACCEPT
+run_test  "15.05-length-single"            "meta length 100"                 "" -- -A INPUT -m length --length 100 -j ACCEPT
+run_test  "15.06-length-range"             "meta length 200-500"             "" -- -A INPUT -m length --length 200:500 -j ACCEPT
+run_test  "15.07-pkttype-broadcast"        "meta pkttype broadcast"          "" -- -A INPUT -m pkttype --pkt-type broadcast -j DROP
+run_test  "15.08-connmark-match"           "ct mark"                         "" -- -A INPUT -m connmark --mark 0x10 -j ACCEPT
+run_test  "15.09-notrack-target"           "notrack"                         "" -- -t raw -A PREROUTING -p udp -j NOTRACK
+run_test  "15.10-nfqueue-num"              "queue num 5"                     "" -- -A INPUT -j NFQUEUE --queue-num 5
+run_test  "15.11-nfqueue-balance"          "queue num 0-3"                   "" -- -A INPUT -j NFQUEUE --queue-balance 0:3 --queue-bypass
+run_test  "15.12-ct-helper"                "ct helper set"                   "" -- -t raw -A PREROUTING -p tcp --dport 21 -j CT --helper ftp
+run_test  "15.13-ct-notrack"               "notrack"                         "" -- -t raw -A PREROUTING -p udp --dport 53 -j CT --notrack
+run_test  "15.14-tcpmss-clamp"             "tcp option maxseg size set rt mtu" "" -- -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+run_test  "15.15-tcpmss-set"               "tcp option maxseg size set 1400" "" -- -t mangle -A FORWARD -j TCPMSS --set-mss 1400
+run_test  "15.16-tcpmss-match"             "tcp option maxseg size 1400"     "" -- -A FORWARD -p tcp -m tcpmss --mss 1400 -j DROP
+run_test  "15.17-log-tcp-options"          "flags tcp"                       "" -- -A INPUT -j LOG --log-prefix "DROP: " --log-tcp-sequence --log-tcp-options
+
+# 15.18: -X no-arg
+flush
+sudo "$IPTABLES" -N TMP1 2>/dev/null
+sudo "$IPTABLES" -N TMP2 2>/dev/null
+if sudo "$IPTABLES" -X 2>&1; then
+    state=$("$NFT" list ruleset 2>/dev/null)
+    if ! printf '%s' "$state" | grep -qE "chain (TMP1|TMP2)"; then
+        PASS=$((PASS + 1))
+        printf '  ok 15.18-delete-all-empty-user-chains\n'
+    else
+        FAIL=$((FAIL + 1))
+        FAIL_NAMES="$FAIL_NAMES 15.18-delete-all-empty-user-chains"
+        printf '  FAIL 15.18-delete-all-empty-user-chains\n%s\n' "$state"
+    fi
+else
+    FAIL=$((FAIL + 1))
+    FAIL_NAMES="$FAIL_NAMES 15.18-delete-all-empty-user-chains"
+    printf '  FAIL 15.18-delete-all-empty-user-chains [exit nonzero]\n'
+fi
+
 # ── Section 14: iptables-save / restore round-trip ────────────────────
 
 printf '=== 14. iptables-save / -restore round-trip ===\n'

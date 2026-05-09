@@ -1,51 +1,58 @@
 [package]
 name = "stormwall"
-version = "1.1.4"
+version = "1.1.5"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.4
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.5
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 #
-# 1.1.4: triage pass from the iptables-soak.sh behavioural harness
-# against the live kernel.  Three fixes that real iptables scripts
-# (and pre-existing unit tests) tripped over:
+# 1.1.5: feature-completeness pass guided by upstream iptables-extensions(8)
+# and wiki.nftables.org translation tables (descriptive docs only — no
+# GPL source consulted, per the project's clean-room policy). Adds:
 #
-#   1. Bare `-j REJECT` (no `--reject-with`) returned ENOENT from the
-#      kernel because Expr::Reject emitted an empty NFTA_EXPR_DATA;
-#      the kernel actually requires NFTA_REJECT_TYPE even for the
-#      default ICMP_UNREACH path.  Now emits type=ICMP_UNREACH +
-#      code=ICMP_UNREACH_PORT (matches upstream nft + iptables
-#      semantics for unqualified REJECT).
+#   Operations:
+#     -E / --rename-chain        nft `rename chain <fam> <table> <old> <new>`
+#     -c / --set-counters        compat-parsed (no nft equivalent)
+#     -X with no chain argument  enumerates user chains via NFT_MSG_GETCHAIN
+#                                and emits delete chain for each non-builtin
 #
-#   2. Port range form `--dport 1000:2000` lowered correctly to
-#      `tcp dport 1000-2000` but stormwall's own nft text parser
-#      stopped at the lo end and returned a 1-byte Cmp.  The
-#      tokenizer already split the dash; parse_cmp_and_value now
-#      detects the trailing `-` after parse_value and emits
-#      Expr::Range with NFT_RANGE_EQ instead of Expr::Cmp.
+#   Targets:
+#     -j NOTRACK                 nft `notrack`
+#     -j NFQUEUE [--queue-num N | --queue-balance LO:HI]
+#                  [--queue-bypass] [--queue-cpu-fanout]
+#                                nft `queue num N[-HI] [bypass[,fanout]]`
+#     -j TCPMSS --set-mss N      nft `tcp option maxseg size set N`
+#     -j TCPMSS --clamp-mss-to-pmtu
+#                                nft `tcp option maxseg size set rt mtu`
+#     -j CT --notrack | --helper X | --zone N
+#                                nft `notrack` / `ct helper set "X"` / `ct zone set N`
+#     SNAT/DNAT/MASQUERADE --random-fully
+#                                nft `fully-random` flag (modern NAT randomisation)
+#     LOG --log-tcp-sequence | --log-tcp-options | --log-ip-options | --log-uid
+#                                nft `log flags tcp sequence,options` /
+#                                `log flags ip options` (uid → comment marker)
 #
-#   3. Legacy iptables negation form `-s ! 1.2.3.4` was a no-op:
-#      `take_neg` captured `pending_neg` BEFORE `take_value`, but
-#      `take_value` is what flips `pending_neg` when it sees the
-#      legacy `!` token between the flag and its value.  New
-#      `take_value_neg` helper captures after the read.  All 14
-#      flag callers migrated.  Modern form `! -s 1.2.3.4` was
-#      always handled correctly and stays that way.
+#   Match modules:
+#     -m iprange --src-range LO-HI / --dst-range LO-HI
+#                                nft `ip saddr LO-HI` / `ip daddr LO-HI`
+#     -m length --length N[:M]   nft `meta length N[-M]`
+#     -m pkttype --pkt-type X    nft `meta pkttype X`
+#     -m connmark --mark V[/M]   nft `ct mark [and M] V` (distinct from -m mark)
+#     -m tcpmss --mss N[:M]      nft `tcp option maxseg size N[-M]`
 #
-# Verified end-to-end: real-kernel soak now runs cleaner; all 201
-# unit tests pass (was 200/1 before).  Known limitations are filed
-# under iptables-save rule rendering, -D <spec> / -C delete-by-match,
-# and MARK/LOG/REDIRECT lowering — none of which dockerd's libnetwork
-# exercises in a way that blocks bridge bring-up or `docker run`.
+# 19 new unit tests covering each addition; 220/220 cargo tests pass.
+# All shapes match the canonical translations in the nftables wiki's
+# "Quick reference: nftables in 10 minutes" and the iptables-extensions
+# man page on manpages.debian.org (descriptive references only).
 #
-# 1.1.3 (prior): jump-target user-chain auto-create + ct state
-# `{ X, Y }` set-literal parser.
+# 1.1.4 (prior): REJECT no-args + port range parser + legacy `-s ! V`.
+# 1.1.3 (prior): jump-target user-chain auto-create + `ct state { … }`.
 # 1.1.2 (prior): user-chain auto-create on the operating chain.
-# 1.1.1 (prior): help-text refresh for nft + pfctl + iptables.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.4/stormwall-1.1.4.tar.gz"
-sha256 = "58764e529af82d28b402e9b565614bf132421edb2f1d2021a32c9a947773bf69"
+# 1.1.1 (prior): help-text refresh.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.5/stormwall-1.1.5.tar.gz"
+sha256 = "dcd7e64db87aba3da02ab594e1870b9b7b1ebd6815dae1f80317402419046957"
 
 [build]
 system = "custom"
