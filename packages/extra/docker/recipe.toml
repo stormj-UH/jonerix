@@ -107,5 +107,12 @@ fi
 """
 
 [depends]
-runtime = ["musl", "containerd", "runc", "cni-plugins", "tini", "iproute-go", "stormwall >= 1.1.0"]
+# stormwall is the runtime iptables provider — dockerd's libnetwork shells
+# out to /bin/iptables for bridge networking, masquerading, and -p port
+# publishing. The iptables CLI dialect lands in stormwall 1.1.0+; jpkg 2.2.x
+# does not yet parse version-qualified deps so we list a plain name and
+# enforce the version requirement out-of-band (CI matrix + this comment +
+# PACKAGES.md). Switch to "stormwall >= 1.1.0" once jpkg 2.3+ ships
+# version-qualified dep parsing.
+runtime = ["musl", "containerd", "runc", "cni-plugins", "tini", "iproute-go", "stormwall"]
 build = ["go"]
