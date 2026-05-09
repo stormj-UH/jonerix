@@ -73,9 +73,9 @@ Generated from tracked `packages/**/recipe.toml` -- **100 recipes**. All jonerix
 | **`jmake`** | `develop` | 1.2.0 | MIT | any | `musl` | `rust` | Clean-room drop-in replacement for GNU Make, written in Rust |
 | **`jonerix-headers`** | `develop` | 4.19.88-r3 | 0BSD AND BSD-3-Clause | any | - | - | Linux UAPI kernel headers for jonerix package builds + BSD sys/queue.h compat |
 | **`libcxx`** | `develop` | 21.1.2-r1 | Apache-2.0 | any | `musl` | `clang`, `cmake`, `samurai`, `python3` | LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME |
-| **`clang`** | `develop` | 21.1.2-r6 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx` | `libllvm`, `cmake`, `samurai`, `python3`, `libcxx` | Clang compiler + compiler-rt builtins + /etc/clang config files (out-of-tree build against libllvm) |
-| **`libllvm`** | `develop` | 21.1.2-r6 | Apache-2.0 | any | `musl`, `libcxx`, `zstd`, `zlib` | `clang`, `cmake`, `samurai`, `python3`, `libcxx` | LLVM core: libLLVM-21.so, headers, cmake configs, llvm-config, core llvm-* tools |
-| **`lld`** | `develop` | 21.1.2-r6 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx` | `libllvm`, `cmake`, `samurai`, `libcxx` | LLD linker (out-of-tree build against libllvm) |
+| **`clang`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx` | `libllvm`, `cmake`, `samurai`, `python3`, `libcxx` | Clang compiler + compiler-rt builtins + /etc/clang config files (out-of-tree build against libllvm) |
+| **`libllvm`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libcxx`, `zstd`, `zlib` | `clang`, `cmake`, `samurai`, `python3`, `libcxx` | LLVM core: libLLVM-21.so, headers, cmake configs, llvm-config, core llvm-* tools |
+| **`lld`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx` | `libllvm`, `cmake`, `samurai`, `libcxx` | LLD linker (out-of-tree build against libllvm) |
 | **`lldb`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx`, `xz`, `zstd`, `zlib` | `llvm-all` | LLVM debugger — carved out of llvm-all (no separate compile) |
 | **`llvm`** | `develop` | 21.1.2-r6 | Apache-2.0 | any | `libllvm`, `clang`, `lld` | - | LLVM toolchain metapackage (pulls in libllvm + clang + lld, installs POSIX tool symlinks) |
 | **`m4oxide`** | `develop` | 0.1.2-r0 | MIT | any | `musl` | `rust` | Clean-room Rust implementation of m4 for jonerix |
