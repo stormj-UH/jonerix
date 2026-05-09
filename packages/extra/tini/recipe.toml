@@ -13,7 +13,12 @@ system = "custom"
 build = """set -e
 # Build the static tini binary with cmake + Ninja (samurai).
 # -DMINIMAL=ON strips the CLI flag parser and shaves ~5 kB from the binary.
+#
+# tini's CMakeLists.txt declares cmake_minimum_required(VERSION 2.8.2);
+# CMake 4.x removed compat for <3.5 and refuses to configure.  Set the
+# policy-version floor at the command line so the build proceeds.
 cmake -B build -G Ninja \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_EXE_LINKER_FLAGS="-static" \
