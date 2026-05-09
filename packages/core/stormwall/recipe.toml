@@ -1,32 +1,51 @@
 [package]
 name = "stormwall"
-version = "1.1.3"
+version = "1.1.4"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.3
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.4
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 #
-# 1.1.3: jump-target user-chain auto-create. dockerd's libnetwork bridge
-# driver does `iptables -I FORWARD -o docker0 -j DOCKER` against an
-# existing built-in (FORWARD) but jumps to a user chain (DOCKER) it
-# never recreated after its own cleanup `-X DOCKER`. The 1.1.2 fix
-# auto-created the *operating* chain but not the JUMP TARGET, so this
-# call still hit ENOENT in the kernel, surfaced as "iptables: No such
-# file or directory", and dockerd aborted bridge bring-up. 1.1.3
-# extends the auto-create to jump targets in lower_rule_add /
-# lower_rule_replace via a new ensure_jump_target_chain helper. The
-# helper skips built-in jump targets (no double preamble) and skips
-# self-references.
+# 1.1.4: triage pass from the iptables-soak.sh behavioural harness
+# against the live kernel.  Three fixes that real iptables scripts
+# (and pre-existing unit tests) tripped over:
 #
-# 1.1.2 (prior): user-chain auto-create on the operating chain
-# (ensure_table_and_chain) plus /usr/sbin and /sbin compat symlinks for
-# dockerd's hard-coded path lookups.
+#   1. Bare `-j REJECT` (no `--reject-with`) returned ENOENT from the
+#      kernel because Expr::Reject emitted an empty NFTA_EXPR_DATA;
+#      the kernel actually requires NFTA_REJECT_TYPE even for the
+#      default ICMP_UNREACH path.  Now emits type=ICMP_UNREACH +
+#      code=ICMP_UNREACH_PORT (matches upstream nft + iptables
+#      semantics for unqualified REJECT).
 #
-# 1.1.1 (prior): help-text refresh for nft + pfctl + iptables dialects.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.3/stormwall-1.1.3.tar.gz"
-sha256 = "5b2e68b71df28e936b024e59eec46300d2368f4206088a4a622911c770ed0589"
+#   2. Port range form `--dport 1000:2000` lowered correctly to
+#      `tcp dport 1000-2000` but stormwall's own nft text parser
+#      stopped at the lo end and returned a 1-byte Cmp.  The
+#      tokenizer already split the dash; parse_cmp_and_value now
+#      detects the trailing `-` after parse_value and emits
+#      Expr::Range with NFT_RANGE_EQ instead of Expr::Cmp.
+#
+#   3. Legacy iptables negation form `-s ! 1.2.3.4` was a no-op:
+#      `take_neg` captured `pending_neg` BEFORE `take_value`, but
+#      `take_value` is what flips `pending_neg` when it sees the
+#      legacy `!` token between the flag and its value.  New
+#      `take_value_neg` helper captures after the read.  All 14
+#      flag callers migrated.  Modern form `! -s 1.2.3.4` was
+#      always handled correctly and stays that way.
+#
+# Verified end-to-end: real-kernel soak now runs cleaner; all 201
+# unit tests pass (was 200/1 before).  Known limitations are filed
+# under iptables-save rule rendering, -D <spec> / -C delete-by-match,
+# and MARK/LOG/REDIRECT lowering — none of which dockerd's libnetwork
+# exercises in a way that blocks bridge bring-up or `docker run`.
+#
+# 1.1.3 (prior): jump-target user-chain auto-create + ct state
+# `{ X, Y }` set-literal parser.
+# 1.1.2 (prior): user-chain auto-create on the operating chain.
+# 1.1.1 (prior): help-text refresh for nft + pfctl + iptables.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.4/stormwall-1.1.4.tar.gz"
+sha256 = "abfc3b7c4d3ca01092bde4f5c1f9e3a108859e5bcfd4a676ea7becd7164ea390"
 
 [build]
 system = "custom"
