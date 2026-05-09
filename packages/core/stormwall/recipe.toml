@@ -1,14 +1,21 @@
 [package]
 name = "stormwall"
-version = "1.1.0"
+version = "1.1.1"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.0
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.1
 # Mirrored to GitHub for CI (castle is behind Tailscale).
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.0/stormwall-1.1.0.tar.gz"
-sha256 = "bb4fb40680a1675a1f76b69466b6c258058e8edec528ebbd7d6ba45095d1a51c"
+#
+# 1.1.1: help-text refresh.  The nft-mode usage() now describes all
+# three dialects (nft, pfctl, iptables) and lists the argv[0] dispatch
+# names + symlink paths.  The iptables-mode print_help() expanded to
+# cover the full operation/match/target/option surface (matches the
+# real iptables(8) help layout) so users debugging Docker connectivity
+# can see what's supported without reading the source.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.1/stormwall-1.1.1.tar.gz"
+sha256 = "54e0e552b92ad57936383f144715a984535a2802d1a275839f7476eaa591db5e"
 
 [build]
 system = "custom"
