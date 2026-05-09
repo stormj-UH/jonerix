@@ -13,11 +13,16 @@ description="Docker container engine daemon"
 : "${CONTAINERD_SOCK:=/run/containerd/containerd.sock}"
 
 command="/bin/dockerd"
+# We deliberately do NOT pass --pidfile to dockerd. start-stop-daemon
+# (driven by `pidfile=` below) writes the supervised pid to
+# ${DOCKER_PIDFILE} for OpenRC's tracking; if dockerd ALSO writes its
+# own pidfile to the same path, the two race and dockerd's startup
+# self-check finds a non-empty pidfile and refuses to start with
+# "process with PID NNNN is still running" — where NNNN is its own pid.
 command_args="--config-file ${DOCKER_CONF} \
     --data-root ${DOCKER_DATA_ROOT} \
     --exec-root ${DOCKER_EXEC_ROOT} \
-    --containerd ${CONTAINERD_SOCK} \
-    --pidfile ${DOCKER_PIDFILE}"
+    --containerd ${CONTAINERD_SOCK}"
 command_background="yes"
 pidfile="${DOCKER_PIDFILE}"
 output_log="${DOCKER_LOGFILE}"
