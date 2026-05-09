@@ -21,7 +21,7 @@ cmake -B build -G Ninja \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_C_FLAGS="-Wno-unused-command-line-argument" \
+    -DCMAKE_C_FLAGS="-Wno-unused-command-line-argument -Wno-strict-prototypes -Wno-deprecated-non-prototype" \
     -DCMAKE_EXE_LINKER_FLAGS="-static" \
     -DMINIMAL=ON \
     .
