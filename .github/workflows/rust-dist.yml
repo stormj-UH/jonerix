@@ -81,7 +81,7 @@ jobs:
             "stack-probes": {"kind": "inline"},
             "static-position-independent-executables": true,
             "target-mcount": "_mcount",
-            "target-pointer-width": "64",
+            "target-pointer-width": 64,
             "vendor": "jonerix"
           }
           TGTSPEC
@@ -258,7 +258,7 @@ jobs:
             "static-position-independent-executables": true,
             "supported-sanitizers": ["address","cfi","hwaddress","kcfi","leak","memory","memtag","thread"],
             "target-mcount": "_mcount",
-            "target-pointer-width": "64",
+            "target-pointer-width": 64,
             "vendor": "jonerix"
           }
           TGTSPEC
