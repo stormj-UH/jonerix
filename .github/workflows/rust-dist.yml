@@ -32,13 +32,12 @@ jobs:
           TRIPLE="x86_64-jonerix-linux-musl"
           docker run --rm \
             -v "$PWD/rust-out:/out" \
+            -e "RUST_VERSION=$RUST_VERSION" \
+            -e "TRIPLE=$TRIPLE" \
             --entrypoint /bin/mksh \
             $BUILDER_IMAGE_X86_64 \
             -c "$(cat <<'DOCKERSCRIPT'
           set -ex
-
-          RUST_VERSION=$1
-          TRIPLE=$2
 
           # Provide /bin/sh and /bin/bash -- Rust x.py and configure
           # scripts expect both; the builder image only ships mksh.
@@ -161,7 +160,7 @@ jobs:
             cp build/dist/*.tar.gz /out/
           }
           DOCKERSCRIPT
-          )" "$RUST_VERSION" "$TRIPLE"
+          )"
 
       - name: Upload dist tarball
         run: |
@@ -211,13 +210,12 @@ jobs:
           TRIPLE="aarch64-jonerix-linux-musl"
           docker run --rm \
             -v "$PWD/rust-out:/out" \
+            -e "RUST_VERSION=$RUST_VERSION" \
+            -e "TRIPLE=$TRIPLE" \
             --entrypoint /bin/mksh \
             $BUILDER_IMAGE_AARCH64 \
             -c "$(cat <<'DOCKERSCRIPT'
           set -ex
-
-          RUST_VERSION=$1
-          TRIPLE=$2
 
           [ -e /bin/sh ] || ln -sf mksh /bin/sh
           [ -e /bin/bash ] || ln -sf mksh /bin/bash
@@ -338,7 +336,7 @@ jobs:
             cp build/dist/*.tar.gz /out/
           }
           DOCKERSCRIPT
-          )" "$RUST_VERSION" "$TRIPLE"
+          )"
 
       - name: Upload dist tarball
         run: |
