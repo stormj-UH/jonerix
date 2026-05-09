@@ -87,16 +87,23 @@ done
 """
 
 [hooks]
-# Pre-install: dockerd needs four kernel modules that jonerix doesn't
+# Pre-install: dockerd needs several kernel modules that jonerix doesn't
 # auto-load on boot:
-#   overlay        — overlay2 storage driver
-#   bridge         — docker0 bridge interface
-#   br_netfilter   — so iptables/nft rules see bridged frames
-#   veth           — virtual ethernet pair for container networking
+#   overlay              — overlay2 storage driver
+#   bridge               — docker0 bridge interface
+#   br_netfilter         — so iptables/nft rules see bridged frames
+#   veth                 — virtual ethernet pair for container networking
+#   nft_reject           — `iptables -j REJECT` (any --reject-with form)
+#   nft_reject_ipv4      — REJECT in ip4 family
+#   nft_log              — `iptables -j LOG`
+#   nft_limit            — `iptables -m limit`
+#   nft_redir            — `iptables -j REDIRECT`
 # The modules ship with the kernel package; they're just not loaded by
-# default. Also surface a warning if the kernel was built without
-# CONFIG_SECCOMP (runc will fail to start containers unless
-# `--security-opt seccomp=unconfined` is set).
+# default. Without nft_reject + nft_reject_ipv4, dockerd's libnetwork
+# would silently install REJECT rules that error at packet-match time
+# with ENOENT from the kernel. Also surface a warning if the kernel was
+# built without CONFIG_SECCOMP (runc will fail to start containers
+# unless `--security-opt seccomp=unconfined` is set).
 #
 # We check what's missing and prompt the user before calling modprobe.
 # In a non-interactive context (no controlling tty — CI builds, scripted
@@ -105,7 +112,7 @@ done
 # running kernel state.
 pre_install = """set -e
 need=""
-for mod in overlay bridge br_netfilter veth; do
+for mod in overlay bridge br_netfilter veth nft_reject nft_reject_ipv4 nft_log nft_limit nft_redir; do
     if ! awk '{print $1}' /proc/modules | grep -qx "$mod" 2>/dev/null; then
         # Built-in to the kernel? Treat that as already-loaded.
         if [ -d "/sys/module/$mod" ]; then continue; fi
@@ -126,7 +133,7 @@ if [ -r /proc/config.gz ]; then
 fi
 
 if [ -z "$need" ]; then
-    echo "docker: required kernel modules already present (overlay, bridge, br_netfilter, veth)"
+    echo "docker: required kernel modules already present"
     exit 0
 fi
 
