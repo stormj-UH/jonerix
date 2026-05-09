@@ -1,33 +1,32 @@
 [package]
 name = "stormwall"
-version = "1.1.2"
+version = "1.1.3"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.2
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.3
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 #
-# 1.1.2: docker bridge-init unblock.  ensure_table_and_chain() now
-# emits a bare `add chain <fam> <table> <chain>` preamble for user
-# chains (previously only built-ins got a chain preamble).  `add chain`
-# is idempotent in nft, so callers that did `-N USERCHAIN` first are
-# unaffected, but callers that jump straight to `-A USERCHAIN` (which
-# dockerd's libnetwork bridge driver does for the per-network DOCKER-*
-# isolation chains) no longer see ENOENT from the kernel — which was
-# being surfaced as "iptables: No such file or directory" and causing
-# dockerd to abort bridge bring-up.
+# 1.1.3: jump-target user-chain auto-create. dockerd's libnetwork bridge
+# driver does `iptables -I FORWARD -o docker0 -j DOCKER` against an
+# existing built-in (FORWARD) but jumps to a user chain (DOCKER) it
+# never recreated after its own cleanup `-X DOCKER`. The 1.1.2 fix
+# auto-created the *operating* chain but not the JUMP TARGET, so this
+# call still hit ENOENT in the kernel, surfaced as "iptables: No such
+# file or directory", and dockerd aborted bridge bring-up. 1.1.3
+# extends the auto-create to jump targets in lower_rule_add /
+# lower_rule_replace via a new ensure_jump_target_chain helper. The
+# helper skips built-in jump targets (no double preamble) and skips
+# self-references.
 #
-# Also installs /usr/sbin/iptables and /sbin/iptables symlinks so
-# dockerd's hard-coded path lookups find a working iptables without
-# extra setup at install time.
+# 1.1.2 (prior): user-chain auto-create on the operating chain
+# (ensure_table_and_chain) plus /usr/sbin and /sbin compat symlinks for
+# dockerd's hard-coded path lookups.
 #
-# 1.1.1 (prior): help-text refresh.  The nft-mode usage() now describes
-# all three dialects (nft, pfctl, iptables) and lists the argv[0]
-# dispatch names + symlink paths.  The iptables-mode print_help()
-# expanded to cover the full operation/match/target/option surface.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.2/stormwall-1.1.2.tar.gz"
-sha256 = "92172d55c1837d716474569cb56b79b2dee1d46cb4bdb85e8a8edb71445ebccb"
+# 1.1.1 (prior): help-text refresh for nft + pfctl + iptables dialects.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.3/stormwall-1.1.3.tar.gz"
+sha256 = "500460696e4c1cd22aac6e9eb2a8f0b59b85d9ca6e8d9dd4a0c32c71b27c8aca"
 
 [build]
 system = "custom"
@@ -55,29 +54,37 @@ ln -sf stormwall "$DESTDIR/bin/iptables-restore"
 ln -sf stormwall "$DESTDIR/bin/ip6tables"
 ln -sf stormwall "$DESTDIR/bin/ip6tables-save"
 ln -sf stormwall "$DESTDIR/bin/ip6tables-restore"
-# Some tools (notably dockerd's libnetwork bridge driver) hard-code
-# /usr/sbin/iptables / /sbin/iptables and don't fall back to PATH
-# when those don't exist. Plant compatibility symlinks so they
-# resolve back to /bin/stormwall — no behavioural impact for
-# anything that already finds /bin/iptables on PATH.
-mkdir -p "$DESTDIR/usr/sbin" "$DESTDIR/sbin"
-ln -sf ../../bin/stormwall "$DESTDIR/usr/sbin/iptables"
-ln -sf ../../bin/stormwall "$DESTDIR/usr/sbin/iptables-save"
-ln -sf ../../bin/stormwall "$DESTDIR/usr/sbin/iptables-restore"
-ln -sf ../../bin/stormwall "$DESTDIR/usr/sbin/ip6tables"
-ln -sf ../../bin/stormwall "$DESTDIR/usr/sbin/ip6tables-save"
-ln -sf ../../bin/stormwall "$DESTDIR/usr/sbin/ip6tables-restore"
-ln -sf ../../bin/stormwall "$DESTDIR/usr/sbin/nft"
-ln -sf ../bin/stormwall "$DESTDIR/sbin/iptables"
-ln -sf ../bin/stormwall "$DESTDIR/sbin/iptables-save"
-ln -sf ../bin/stormwall "$DESTDIR/sbin/iptables-restore"
-ln -sf ../bin/stormwall "$DESTDIR/sbin/ip6tables"
-ln -sf ../bin/stormwall "$DESTDIR/sbin/ip6tables-save"
-ln -sf ../bin/stormwall "$DESTDIR/sbin/ip6tables-restore"
-ln -sf ../bin/stormwall "$DESTDIR/sbin/nft"
 install -Dm644 LICENSE "$DESTDIR/share/licenses/stormwall/LICENSE"
 llvm-strip --strip-all "$DESTDIR/bin/stormwall" 2>/dev/null || true
 llvm-strip --strip-all "$DESTDIR/bin/pfctl" 2>/dev/null || true
+"""
+
+[hooks]
+# dockerd's libnetwork bridge driver hard-codes /usr/sbin/iptables and
+# /sbin/iptables — it doesn't fall back to PATH lookup. Plant compat
+# symlinks back to /bin/stormwall in those paths at install time, since
+# jpkg payloads can only land in /bin /lib /share /etc and the
+# /usr/sbin and /sbin directories aren't in the package layout.
+post_install = """set -e
+names="iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft"
+for d in /sbin /usr/sbin; do
+    [ -d "$d" ] || mkdir -p "$d"
+    for n in $names; do
+        ln -sf /bin/stormwall "$d/$n"
+    done
+done
+"""
+post_remove = """set -e
+# Clean up the libnetwork-compat symlinks we planted in post_install.
+# Only remove if they still point at our binary so we don't trample a
+# manually placed iptables.
+names="iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft"
+for d in /sbin /usr/sbin; do
+    for n in $names; do
+        target=$(readlink "$d/$n" 2>/dev/null) || continue
+        [ "$target" = "/bin/stormwall" ] && rm -f "$d/$n"
+    done
+done
 """
 
 [depends]

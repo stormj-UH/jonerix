@@ -87,6 +87,61 @@ done
 """
 
 [hooks]
+# Pre-install: dockerd needs three kernel modules that jonerix doesn't
+# auto-load on boot — overlay (for the overlay2 storage driver),
+# bridge (for docker0), and br_netfilter (so iptables/nft rules see
+# bridged frames). The modules ship with the kernel package; they're
+# just not loaded by default.
+#
+# We check what's missing and prompt the user before calling modprobe.
+# In a non-interactive context (no controlling tty — CI builds, scripted
+# installs) we print what would have been loaded and skip — letting the
+# user load them at first dockerd start instead of silently changing the
+# running kernel state.
+pre_install = """set -e
+need=""
+for mod in overlay bridge br_netfilter; do
+    if ! awk '{print $1}' /proc/modules | grep -qx "$mod" 2>/dev/null; then
+        # Built-in to the kernel? Treat that as already-loaded.
+        if [ -d "/sys/module/$mod" ]; then continue; fi
+        need="$need $mod"
+    fi
+done
+
+if [ -z "$need" ]; then
+    echo "docker: required kernel modules already present (overlay, bridge, br_netfilter)"
+    exit 0
+fi
+
+echo "docker: the following kernel modules are required by dockerd but not loaded:"
+echo "       $need"
+
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo "docker: non-interactive install — NOT loading modules. Run before starting dockerd:"
+    for mod in $need; do
+        echo "         modprobe $mod"
+    done
+    exit 0
+fi
+
+printf 'docker: load them now via modprobe? [Y/n] '
+read ans
+case "$ans" in
+    n|N|no|No|NO)
+        echo "docker: skipping modprobe; load them manually before starting dockerd."
+        ;;
+    *)
+        for mod in $need; do
+            if modprobe "$mod" 2>/dev/null; then
+                echo "docker: modprobe $mod ok"
+            else
+                echo "docker: WARNING: modprobe $mod failed — dockerd may not start"
+            fi
+        done
+        ;;
+esac
+"""
+
 post_install = """set -e
 # Create the docker system group if it does not exist.
 addgroup -S docker 2>/dev/null || true
@@ -117,11 +172,13 @@ fi
 # out to /usr/sbin/iptables and /sbin/iptables (hard-coded, not PATH) for
 # bridge networking, masquerading, and -p port publishing. The iptables
 # CLI dialect lands in stormwall 1.1.0+; user-chain auto-create on `-A`
-# and the /usr/sbin + /sbin compatibility symlinks both land in 1.1.2,
-# without which dockerd aborts bridge bring-up with "iptables: No such
-# file or directory". jpkg 2.2.x does not parse version-qualified deps
-# so we list a plain name and enforce the floor out-of-band (CI matrix +
-# this comment + PACKAGES.md). Switch to "stormwall >= 1.1.2" once
-# jpkg 2.3+ ships version-qualified dep parsing.
+# and the /usr/sbin + /sbin compatibility symlinks land in 1.1.2; and
+# jump-target user-chain auto-create (`-I FORWARD -j DOCKER` after
+# dockerd's own `-X DOCKER` cleanup) lands in 1.1.3. Without the 1.1.3
+# fix dockerd aborts bridge bring-up with "iptables: No such file or
+# directory". jpkg 2.2.x does not parse version-qualified deps so we
+# list a plain name and enforce the floor out-of-band (CI matrix + this
+# comment + PACKAGES.md). Switch to "stormwall >= 1.1.3" once jpkg 2.3+
+# ships version-qualified dep parsing.
 runtime = ["musl", "containerd", "runc", "cni-plugins", "tini", "iproute-go", "stormwall"]
 build = ["go"]
