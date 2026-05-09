@@ -41,6 +41,14 @@ env:
   # LibreSSL, Python 3.14, Perl, and all smoke tests passing.
   BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder-amd64
   BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder-arm64
+  # sccache (Mozilla) — persistent compiler cache for the heavy LLVM
+  # builds (libllvm / clang / lld / llvm-extra). Static-musl binary so
+  # it runs unmodified inside the Alpine builder container. cmake auto-
+  # honours CMAKE_{C,CXX}_COMPILER_LAUNCHER from env at first configure;
+  # recipes don't need code changes. Bump SCCACHE_CACHE_VERSION to
+  # invalidate the actions/cache pool (e.g. after a compiler upgrade).
+  SCCACHE_VERSION: v0.15.0
+  SCCACHE_CACHE_VERSION: v1
 
 jobs:
   # ------ Create the packages release once ------------------------------------------------------------------------------------------------------------------
@@ -89,6 +97,34 @@ jobs:
           path: /tmp/jpkg-bin-x86_64
           key: jpkg-bin-x86_64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
 
+      # sccache compiler-output cache. Persistent across CI runs so a
+      # rebuild of libllvm (~2500 ninja steps) only does the deltas.
+      # Each run saves to a unique key (run_id) so concurrent / sequential
+      # runs don't overwrite each other; restore-keys falls back to the
+      # most recent cache for the architecture. Bump
+      # SCCACHE_CACHE_VERSION (env block at top of file) to invalidate
+      # the entire pool — e.g. after a compiler upgrade.
+      - name: Restore sccache cache (x86_64)
+        uses: actions/cache@v5
+        id: sccache-cache-x86_64
+        with:
+          path: /tmp/sccache-cache
+          key: sccache-llvm-x86_64-${{ env.SCCACHE_CACHE_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            sccache-llvm-x86_64-${{ env.SCCACHE_CACHE_VERSION }}-
+
+      - name: Install sccache binary (x86_64)
+        run: |
+          mkdir -p /tmp/sccache-cache
+          _ver="$SCCACHE_VERSION"
+          _name="sccache-${_ver}-x86_64-unknown-linux-musl"
+          _url="https://github.com/mozilla/sccache/releases/download/${_ver}/${_name}.tar.gz"
+          curl -fsSL --retry 3 -o /tmp/sccache.tgz "$_url"
+          tar -xzf /tmp/sccache.tgz -C /tmp
+          install -m 755 "/tmp/${_name}/sccache" /tmp/sccache
+          /tmp/sccache --version
+          rm -rf /tmp/sccache.tgz "/tmp/${_name}"
+
       - name: Download existing x86_64 packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -128,12 +164,27 @@ jobs:
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
             -v "/tmp/jpkg-bin-x86_64:/jpkg-bin" \
+            -v "/tmp/sccache:/usr/local/bin/sccache:ro" \
+            -v "/tmp/sccache-cache:/var/cache/sccache" \
             ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
             -e REBUILD_INPUT="$REBUILD_INPUT" \
+            -e SCCACHE_DIR=/var/cache/sccache \
+            -e SCCACHE_IDLE_TIMEOUT=0 \
+            -e CMAKE_C_COMPILER_LAUNCHER=sccache \
+            -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
             ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
             "$BUILDER_IMAGE_X86_64" /bin/sh /workspace/scripts/ci-build-x86_64.sh
+
+      - name: sccache stats (x86_64)
+        if: always()
+        run: |
+          if [ -x /tmp/sccache ]; then
+            SCCACHE_DIR=/tmp/sccache-cache /tmp/sccache --show-stats || true
+            _bytes=$(du -sb /tmp/sccache-cache 2>/dev/null | awk '{print $1}')
+            [ -n "$_bytes" ] && printf 'sccache cache size: %s bytes\n' "$_bytes"
+          fi
 
       - name: Remove signing key (x86_64)
         if: always()
@@ -192,6 +243,28 @@ jobs:
           path: /tmp/jpkg-bin-aarch64
           key: jpkg-bin-aarch64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
 
+      # sccache: see x86_64 sibling for the full rationale.
+      - name: Restore sccache cache (aarch64)
+        uses: actions/cache@v5
+        id: sccache-cache-aarch64
+        with:
+          path: /tmp/sccache-cache
+          key: sccache-llvm-aarch64-${{ env.SCCACHE_CACHE_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            sccache-llvm-aarch64-${{ env.SCCACHE_CACHE_VERSION }}-
+
+      - name: Install sccache binary (aarch64)
+        run: |
+          mkdir -p /tmp/sccache-cache
+          _ver="$SCCACHE_VERSION"
+          _name="sccache-${_ver}-aarch64-unknown-linux-musl"
+          _url="https://github.com/mozilla/sccache/releases/download/${_ver}/${_name}.tar.gz"
+          curl -fsSL --retry 3 -o /tmp/sccache.tgz "$_url"
+          tar -xzf /tmp/sccache.tgz -C /tmp
+          install -m 755 "/tmp/${_name}/sccache" /tmp/sccache
+          /tmp/sccache --version
+          rm -rf /tmp/sccache.tgz "/tmp/${_name}"
+
       - name: Download existing aarch64 packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -231,12 +304,27 @@ jobs:
             -v "/tmp/jpkg-output:/var/cache/jpkg" \
             -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
             -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
+            -v "/tmp/sccache:/usr/local/bin/sccache:ro" \
+            -v "/tmp/sccache-cache:/var/cache/sccache" \
             ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
             -w /workspace \
             -e PKG_INPUT="$PKG_INPUT" \
             -e REBUILD_INPUT="$REBUILD_INPUT" \
+            -e SCCACHE_DIR=/var/cache/sccache \
+            -e SCCACHE_IDLE_TIMEOUT=0 \
+            -e CMAKE_C_COMPILER_LAUNCHER=sccache \
+            -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
             ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
             "$BUILDER_IMAGE_AARCH64" /bin/sh /workspace/scripts/ci-build-aarch64.sh
+
+      - name: sccache stats (aarch64)
+        if: always()
+        run: |
+          if [ -x /tmp/sccache ]; then
+            SCCACHE_DIR=/tmp/sccache-cache /tmp/sccache --show-stats || true
+            _bytes=$(du -sb /tmp/sccache-cache 2>/dev/null | awk '{print $1}')
+            [ -n "$_bytes" ] && printf 'sccache cache size: %s bytes\n' "$_bytes"
+          fi
 
       - name: Remove signing key (aarch64)
         if: always()
