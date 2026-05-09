@@ -42,6 +42,21 @@ start_pre() {
     checkpath -d -m 0711 "${CONTAINERD_STATE}" 2>/dev/null || \
         mkdir -p "${CONTAINERD_STATE}" 2>/dev/null || true
     mkdir -p "$(dirname "${CONTAINERD_LOGFILE}")" 2>/dev/null || true
+
+    # Clean up stale runtime files from a previous unclean shutdown
+    # (kill -9, OOM, host hard-reset). OpenRC only invokes start_pre
+    # when the service isn't running, so any leftover pidfile/socket
+    # here is by definition orphaned. containerd refuses to bind a
+    # socket that already exists.
+    if [ -f "${CONTAINERD_PIDFILE}" ]; then
+        old_pid=$(cat "${CONTAINERD_PIDFILE}" 2>/dev/null)
+        if [ -z "$old_pid" ] || ! kill -0 "$old_pid" 2>/dev/null; then
+            rm -f "${CONTAINERD_PIDFILE}"
+        fi
+    fi
+    if [ -S "${CONTAINERD_SOCK}" ] && [ ! -f "${CONTAINERD_PIDFILE}" ]; then
+        rm -f "${CONTAINERD_SOCK}" "${CONTAINERD_SOCK}.ttrpc"
+    fi
 }
 
 stop_post() {
