@@ -13,6 +13,10 @@ sha256 = "abd16e3911bc7bbd00596ebe4f58baf3d577160d99eefd749a908507ddfc587b"
 [build]
 system = "custom"
 build = """set -e
+# Upstream tarball extracts to cli-<version>/ (repo is docker/cli, not
+# docker/docker-cli).  Step into the source tree explicitly.
+cd cli-27.5.1
+
 export GOFLAGS="-mod=vendor"
 export CGO_ENABLED=0
 VERSION=27.5.1
@@ -27,6 +31,7 @@ go build -trimpath \
   ./cmd/docker
 """
 install = """set -e
+cd cli-27.5.1
 mkdir -p "$DESTDIR/bin"
 install -m755 build/docker "$DESTDIR/bin/docker"
 
