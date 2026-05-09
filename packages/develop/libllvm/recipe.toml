@@ -91,9 +91,19 @@ if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
     rm -rf "$DESTDIR/lib64"
 fi
 
-# Keep: libLLVM-21.so, headers, cmake configs, llvm-config, llvm-* tools
-# Delete: static libs (clang/lld will link via the shared dylib)
-find "$DESTDIR/lib" -maxdepth 1 -name 'libLLVM*.a' -delete 2>/dev/null || true
+# Keep: libLLVM-21.so, all libLLVM*.a static archives, headers,
+#       cmake configs, llvm-config, llvm-* tools.
+#
+# We INTENTIONALLY ship the static archives even though clang/lld/rust
+# all link against libLLVM-21.so via LLVM_LINK_LLVM_DYLIB. The reason
+# is /lib/cmake/llvm/LLVMExports.cmake — generated during LLVM's
+# install — declares each LLVM* component as an IMPORTED target whose
+# IMPORTED_LOCATION points at the .a file (e.g. libLLVMDemangle.a).
+# Downstream cmake calls (compiler-rt's find_package(LLVM) inside the
+# clang recipe, lld's, llvm-extra's) abort with "imported target
+# references nonexistent file" if the .a is missing — even when the
+# consumer would actually link the dylib at the final link step.
+# Filtering the exports file is more fragile than keeping the .a's.
 
 # Strip binaries
 find "$DESTDIR/bin" -type f -executable \
