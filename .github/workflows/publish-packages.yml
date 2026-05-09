@@ -80,7 +80,12 @@ jobs:
     if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'x86_64') }}
     needs: create-release
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 4-hour timeout — needed for libllvm/clang/lld/llvm-extra builds.
+    # The x86_64 runner caps LLVM_PARALLEL_LINK_JOBS=2 to avoid GitHub
+    # runner stalls, which makes the LLVM rebuild ~80-90 min cold and
+    # the clang code on top another ~20-30 min. Original 90-minute
+    # timeout cut the clang x86_64 build off at exactly 1h30m21s.
+    timeout-minutes: 240
     permissions:
       contents: write
 
@@ -226,7 +231,12 @@ jobs:
     if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'aarch64') }}
     needs: create-release
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 90
+    # 4-hour timeout — needed for libllvm/clang/lld/llvm-extra builds.
+    # The x86_64 runner caps LLVM_PARALLEL_LINK_JOBS=2 to avoid GitHub
+    # runner stalls, which makes the LLVM rebuild ~80-90 min cold and
+    # the clang code on top another ~20-30 min. Original 90-minute
+    # timeout cut the clang x86_64 build off at exactly 1h30m21s.
+    timeout-minutes: 240
     permissions:
       contents: write
 
