@@ -86,7 +86,9 @@ cmake -S clang -B build -G Ninja \
     -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang \
     -DLLVM_ENABLE_PLUGINS=OFF \
     -DCLANG_INCLUDE_TESTS=OFF \
-    -DLLVM_INCLUDE_TESTS=OFF
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_CONFIG_PATH="/bin/llvm-config" \
+    -DLLVM_INSTALL_PACKAGE_DIR="lib/cmake/llvm-clang-shim"
 
 samu -C build -j"$BUILD_JOBS"
 DESTDIR=$DESTDIR cmake --install build
@@ -103,8 +105,13 @@ fi
 
 # Remove static clang libs (not needed at runtime)
 find "$DESTDIR/lib" -maxdepth 1 -name 'libclang*.a' -delete 2>/dev/null || true
-# Remove clang cmake configs (only useful for building tools against libclang)
-rm -rf "$DESTDIR/lib/cmake/clang"
+# Remove the LLVM_INSTALL_PACKAGE_DIR shim dir — libllvm already
+# provides /lib/cmake/llvm; we redirected clang's LLVM cmake install
+# only to avoid the build-time duplicate-rule conflict on
+# /lib/cmake/llvm/LLVM-Config.cmake.
+rm -rf "$DESTDIR/lib/cmake/llvm-clang-shim"
+# Keep /lib/cmake/clang/ — needed by lld and llvm-extra to find clang
+# via find_package(Clang).
 
 # --- Step 3: jonerix compiler-rt builtins ---
 rm -rf /tmp/clang-builtins-jonerix
