@@ -114,11 +114,14 @@ fi
 
 [depends]
 # stormwall is the runtime iptables provider — dockerd's libnetwork shells
-# out to /bin/iptables for bridge networking, masquerading, and -p port
-# publishing. The iptables CLI dialect lands in stormwall 1.1.0+; jpkg 2.2.x
-# does not yet parse version-qualified deps so we list a plain name and
-# enforce the version requirement out-of-band (CI matrix + this comment +
-# PACKAGES.md). Switch to "stormwall >= 1.1.0" once jpkg 2.3+ ships
-# version-qualified dep parsing.
+# out to /usr/sbin/iptables and /sbin/iptables (hard-coded, not PATH) for
+# bridge networking, masquerading, and -p port publishing. The iptables
+# CLI dialect lands in stormwall 1.1.0+; user-chain auto-create on `-A`
+# and the /usr/sbin + /sbin compatibility symlinks both land in 1.1.2,
+# without which dockerd aborts bridge bring-up with "iptables: No such
+# file or directory". jpkg 2.2.x does not parse version-qualified deps
+# so we list a plain name and enforce the floor out-of-band (CI matrix +
+# this comment + PACKAGES.md). Switch to "stormwall >= 1.1.2" once
+# jpkg 2.3+ ships version-qualified dep parsing.
 runtime = ["musl", "containerd", "runc", "cni-plugins", "tini", "iproute-go", "stormwall"]
 build = ["go"]
