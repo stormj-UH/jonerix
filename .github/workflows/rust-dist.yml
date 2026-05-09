@@ -80,6 +80,7 @@ jobs:
             "relro-level": "full",
             "stack-probes": {"kind": "inline"},
             "static-position-independent-executables": true,
+            "target-family": ["unix"],
             "target-mcount": "_mcount",
             "target-pointer-width": 64,
             "vendor": "jonerix"
@@ -257,6 +258,7 @@ jobs:
             "stack-probes": {"kind": "inline"},
             "static-position-independent-executables": true,
             "supported-sanitizers": ["address","cfi","hwaddress","kcfi","leak","memory","memtag","thread"],
+            "target-family": ["unix"],
             "target-mcount": "_mcount",
             "target-pointer-width": 64,
             "vendor": "jonerix"
