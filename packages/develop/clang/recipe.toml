@@ -85,7 +85,8 @@ cmake -S clang -B build -G Ninja \
     -DCLANG_DEFAULT_CXX_STDLIB=libc++ \
     -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang \
     -DLLVM_ENABLE_PLUGINS=OFF \
-    -DCLANG_INCLUDE_TESTS=OFF
+    -DCLANG_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF
 
 samu -C build -j"$BUILD_JOBS"
 DESTDIR=$DESTDIR cmake --install build

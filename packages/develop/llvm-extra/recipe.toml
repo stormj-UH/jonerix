@@ -77,6 +77,9 @@ cmake -S clang-tools-extra -B build-cte -G Ninja \\
     -DCMAKE_INSTALL_LIBDIR=lib \\
     -DLLVM_DIR=/lib/cmake/llvm \\
     -DClang_DIR=/lib/cmake/clang \\
+    -DLLVM_INCLUDE_TESTS=OFF \\
+    -DCLANG_INCLUDE_TESTS=OFF \\
+    -DCLANG_TOOLS_EXTRA_INCLUDE_DOCS=OFF \\
     -DLLVM_HAVE_LINK_VERSION_SCRIPT=ON
 samu -C build-cte -j"$LLVM_BUILD_JOBS"
 DESTDIR=$DESTDIR cmake --install build-cte
@@ -106,6 +109,7 @@ cmake -S lldb -B build-lldb -G Ninja \\
     -DLLDB_ENABLE_LUA=OFF \\
     -DLLDB_ENABLE_LIBEDIT=OFF \\
     -DLLDB_ENABLE_LIBXML2=OFF \\
+    -DLLVM_INCLUDE_TESTS=OFF \\
     -DLLDB_INCLUDE_TESTS=OFF \\
     -DLLDB_USE_SYSTEM_DEBUGSERVER=OFF
 samu -C build-lldb -j"$LLVM_BUILD_JOBS"
@@ -131,6 +135,8 @@ cmake -S compiler-rt -B build-rt -G Ninja \\
     -DCMAKE_INSTALL_LIBDIR=lib \\
     -DCOMPILER_RT_STANDALONE_BUILD=ON \\
     -DLLVM_CMAKE_DIR=/lib/cmake/llvm \\
+    -DCOMPILER_RT_INCLUDE_TESTS=OFF \\
+    -DLLVM_INCLUDE_TESTS=OFF \\
     -DCOMPILER_RT_BUILD_BUILTINS=OFF \\
     -DCOMPILER_RT_BUILD_CRT=OFF \\
     -DCOMPILER_RT_BUILD_SANITIZERS=ON \\

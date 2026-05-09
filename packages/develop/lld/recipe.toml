@@ -48,7 +48,9 @@ cmake -S lld -B build -G Ninja \
     -DCMAKE_INSTALL_PREFIX=/ \
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DLLVM_ENABLE_PLUGINS=OFF \
-    -DLLD_BUILD_TOOLS=ON
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLD_BUILD_TOOLS=ON \
+    -DLLD_INCLUDE_TESTS=OFF
 
 samu -C build -j$(nproc)
 DESTDIR=$DESTDIR cmake --install build
