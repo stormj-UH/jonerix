@@ -19,6 +19,8 @@
 #   clang     → musl, libllvm, cmake, samurai, python3, libcxx
 #   lld       → musl, libllvm, cmake, samurai, libcxx
 #   llvm      → libllvm, clang, lld (metapackage)
+#   llvm-extra→ libllvm, clang, lld, cmake, samurai, libcxx (long tail:
+#               clang-tools-extra, lldb, sanitizers — replaces llvm-all)
 #   rust      → musl, libllvm, rust (prebuilt)
 #   ripgrep   → musl, rust
 #   uutils    → musl, rust
@@ -95,6 +97,9 @@ clang
 lld
 # Tier 6c: LLVM metapackage (POSIX symlinks: cc, ld, ar, etc.)
 llvm
+# Tier 6d: LLVM extras (clang-tools-extra, lldb, sanitizers — out-of-tree
+#          against installed libllvm + clang, replaces the old llvm-all)
+llvm-extra
 # Tier 7: Go bootstrap chain (x86_64: C→1.4→1.17→1.26, aarch64: prebuilt)
 go-bootstrap
 go

@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **100 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **99 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -76,8 +76,8 @@ Generated from tracked `packages/**/recipe.toml` -- **100 recipes**. All jonerix
 | **`clang`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx` | `libllvm`, `cmake`, `samurai`, `python3`, `libcxx` | Clang compiler + compiler-rt builtins + /etc/clang config files (out-of-tree build against libllvm) |
 | **`libllvm`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libcxx`, `zstd`, `zlib` | `clang`, `cmake`, `samurai`, `python3`, `libcxx` | LLVM core: libLLVM-21.so, headers, cmake configs, llvm-config, core llvm-* tools |
 | **`lld`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx` | `libllvm`, `cmake`, `samurai`, `libcxx` | LLD linker (out-of-tree build against libllvm) |
-| **`lldb`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx`, `xz`, `zstd`, `zlib` | `llvm-all` | LLVM debugger — carved out of llvm-all (no separate compile) |
 | **`llvm`** | `develop` | 21.1.2-r6 | Apache-2.0 | any | `libllvm`, `clang`, `lld` | - | LLVM toolchain metapackage (pulls in libllvm + clang + lld, installs POSIX tool symlinks) |
+| **`llvm-extra`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx`, `xz`, `zstd`, `zlib` | `libllvm`, `clang`, `lld`, `cmake`, `samurai`, `libcxx` | LLVM extras — clang-tools-extra (clang-tidy, clang-format, clangd), lldb, compiler-rt sanitizers (asan/msan/tsan/ubsan/lsan/hwasan). Out-of-tree against libllvm; replaces the old llvm-all. |
 | **`m4oxide`** | `develop` | 0.1.2-r0 | MIT | any | `musl` | `rust` | Clean-room Rust implementation of m4 for jonerix |
 | **`nodejs`** | `develop` | 24.15.0-r3 | MIT | any | `musl`, `zlib`, `libcxx` | `clang`, `python3`, `samurai`, `zlib`, `libcxx`, `jonerix-headers` | JavaScript runtime built on V8 (libc++ / compiler-rt / small-icu / zero GNU) |
 | **`perl`** | `develop` | 5.40.0 | Artistic-2.0 | any | `musl` | `clang`, `jmake` | Practical Extraction and Report Language |
@@ -107,7 +107,6 @@ Generated from tracked `packages/**/recipe.toml` -- **100 recipes**. All jonerix
 | **`libngtcp2`** | `extra` | 1.18.0-r1 | MIT | any | `musl`, `libressl` | `clang`, `make`, `pkgconf`, `libressl` | QUIC C library (ngtcp2) — implements RFC 9000 / 9001 |
 | **`limine`** | `extra` | 11.2.1 | BSD-2-Clause | any | `musl` | `clang`, `jmake` | Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-2-Clause) |
 | **`linux`** | `extra` | 6.14.2 | GPL-2.0-only | any | - | - | Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers. |
-| **`llvm-all`** | `extra` | 21.1.2-r6 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx`, `zstd`, `zlib` | `libllvm`, `clang`, `lld`, `cmake`, `samurai`, `python3`, `libcxx` | Full LLVM toolchain with all 80+ clang/llvm/lldb tools — pairs with the split libllvm/clang/lld packages |
 | **`lsusb-rs`** | `extra` | 0.1.1-r0 | MIT | any | `musl` | `rust` | Permissive-license lsusb drop-in (pure Rust, sysfs backend) |
 | **`lua`** | `extra` | 5.4.7 | MIT | any | `musl` | `clang`, `make` | Lua programming language interpreter, compiler, and library |
 | **`nerdctl`** | `extra` | 2.2.1-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc`, `cni-plugins` | `go` | Docker-compatible CLI for containerd |
