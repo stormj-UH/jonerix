@@ -16,14 +16,14 @@ export CGO_ENABLED=0
 VERSION=0.20.2
 REVISION=jonerix
 
-go build -trimpath \
+go build -mod=vendor -trimpath \
   -ldflags "-s -w \
     -X github.com/moby/buildkit/version.Version=${VERSION} \
     -X github.com/moby/buildkit/version.Revision=${REVISION}" \
   -o bin/buildkitd \
   ./cmd/buildkitd
 
-go build -trimpath \
+go build -mod=vendor -trimpath \
   -ldflags "-s -w \
     -X github.com/moby/buildkit/version.Version=${VERSION} \
     -X github.com/moby/buildkit/version.Revision=${REVISION}" \

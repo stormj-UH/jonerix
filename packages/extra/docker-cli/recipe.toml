@@ -24,7 +24,7 @@ VERSION=27.5.1
 GITCOMMIT=jonerix
 
 # docker/cli uses a generated version package; inject the version via ldflags.
-go build -trimpath \
+go build -mod=vendor -trimpath \
   -ldflags "-s -w \
     -X github.com/docker/cli/cli/version.Version=${VERSION} \
     -X github.com/docker/cli/cli/version.GitCommit=${GITCOMMIT}" \

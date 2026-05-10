@@ -29,13 +29,13 @@ export CGO_ENABLED=0
 VERSION=27.5.1
 GITCOMMIT=jonerix
 
-go build -trimpath \
+go build -mod=vendor -trimpath \
   -ldflags "-s -w -X github.com/docker/docker/dockerversion.Version=${VERSION} \
     -X github.com/docker/docker/dockerversion.GitCommit=${GITCOMMIT}" \
   -o bundles/dockerd \
   ./cmd/dockerd
 
-go build -trimpath \
+go build -mod=vendor -trimpath \
   -ldflags "-s -w" \
   -o bundles/docker-proxy \
   ./cmd/docker-proxy
