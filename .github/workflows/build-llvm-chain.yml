@@ -135,10 +135,13 @@ jobs:
           # safe even if a later package fails the chain.
           # POSIX sh: replace commas with spaces, then iterate.
           _pkgs=$(printf '%s' "$PACKAGES" | tr ',' ' ')
+          _chain_start=$(date +%s)
           for pkg in $_pkgs; do
+              _step_start=$(date +%s)
+              _stamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
               echo ""
               echo "=================================================="
-              echo "  Chain step: $pkg (x86_64)"
+              echo "  [$_stamp] Chain step: $pkg (x86_64)"
               echo "=================================================="
               echo ""
 
@@ -184,11 +187,23 @@ jobs:
                   # Move so the next docker run sees them as published.
                   mv /tmp/jpkg-output/*.jpkg /tmp/jpkg-published/
               fi
+
+              _step_end=$(date +%s)
+              _step_dur=$((_step_end - _step_start))
+              _step_min=$((_step_dur / 60))
+              _step_sec=$((_step_dur % 60))
+              _stamp_end=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+              echo ""
+              echo "  [$_stamp_end] $pkg (x86_64) done in ${_step_min}m${_step_sec}s"
           done
 
+          _chain_end=$(date +%s)
+          _chain_dur=$((_chain_end - _chain_start))
+          _chain_min=$((_chain_dur / 60))
+          _stamp_done=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           echo ""
           echo "=================================================="
-          echo "  Chain complete (x86_64)"
+          echo "  [$_stamp_done] Chain complete (x86_64) — total ${_chain_min}m"
           echo "=================================================="
           echo ""
 
@@ -288,10 +303,13 @@ jobs:
           set -e
 
           _pkgs=$(printf '%s' "$PACKAGES" | tr ',' ' ')
+          _chain_start=$(date +%s)
           for pkg in $_pkgs; do
+              _step_start=$(date +%s)
+              _stamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
               echo ""
               echo "=================================================="
-              echo "  Chain step: $pkg (aarch64)"
+              echo "  [$_stamp] Chain step: $pkg (aarch64)"
               echo "=================================================="
               echo ""
 
@@ -331,11 +349,23 @@ jobs:
                   done
                   mv /tmp/jpkg-output/*.jpkg /tmp/jpkg-published/
               fi
+
+              _step_end=$(date +%s)
+              _step_dur=$((_step_end - _step_start))
+              _step_min=$((_step_dur / 60))
+              _step_sec=$((_step_dur % 60))
+              _stamp_end=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+              echo ""
+              echo "  [$_stamp_end] $pkg (aarch64) done in ${_step_min}m${_step_sec}s"
           done
 
+          _chain_end=$(date +%s)
+          _chain_dur=$((_chain_end - _chain_start))
+          _chain_min=$((_chain_dur / 60))
+          _stamp_done=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           echo ""
           echo "=================================================="
-          echo "  Chain complete (aarch64)"
+          echo "  [$_stamp_done] Chain complete (aarch64) — total ${_chain_min}m"
           echo "=================================================="
           echo ""
 
