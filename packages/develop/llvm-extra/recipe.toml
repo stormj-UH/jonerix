@@ -46,9 +46,11 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
 case $(uname -m) in
     # ubuntu-latest 16 GB — -j2 OOMs. -j1 is slower but stable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1 ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1; LLVM_TLS_FLAG="" ;;
+    # AArch64: -mtls-dialect=trad to avoid R_AARCH64_TLSDESC reloc
+    # type that musl can't load. See libllvm recipe for full notes.
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="-mtls-dialect=trad" ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="" ;;
 esac
 
 LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
@@ -103,8 +105,8 @@ cmake -S llvm -B build-lldb -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt -D__ASM_SIGCONTEXT_H" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_C_FLAGS="-Os -fPIC $LLVM_TLS_FLAG --rtlib=compiler-rt -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC $LLVM_TLS_FLAG -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -D__ASM_SIGCONTEXT_H" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
@@ -137,27 +139,42 @@ for comp in lldb lldb-server lldb-argdumper lldb-instr liblldb \
 done
 
 # ──────────────────────────────────────────────────────────────────────
-# 2. compiler-rt sanitizers (standalone, against installed libllvm)
+# 2. compiler-rt sanitizers (in-tree LLVM_ENABLE_RUNTIMES build)
+#
+# Standalone (`cmake -S compiler-rt -DCOMPILER_RT_STANDALONE_BUILD=ON`)
+# hits the same LLVM 21.x duplicate-rule bug as standalone-lldb above.
+# Driving it via the LLVM root with LLVM_ENABLE_RUNTIMES=compiler-rt
+# keeps the rule-namespace single-owned. Sccache from the lldb step
+# already has the LLVM compiles cached, so wall time is short.
 #    BUILD_BUILTINS=OFF — clang already shipped builtins.
 #    Sanitizer libs land in /lib/clang/21/lib/linux/.
 # ──────────────────────────────────────────────────────────────────────
 echo "=== Building compiler-rt sanitizers ==="
 mkdir -p build-rt
-cmake -S compiler-rt -B build-rt -G Ninja \
+cmake -S llvm -B build-rt -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
+    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
-    -DCMAKE_C_FLAGS="-Os -fPIC" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \
-    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
-    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os -fPIC $LLVM_TLS_FLAG --rtlib=compiler-rt -mno-outline-atomics" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC $LLVM_TLS_FLAG -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -mno-outline-atomics" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DLLVM_ENABLE_PIC=ON \
     -DCMAKE_INSTALL_PREFIX=/ \
     -DCMAKE_INSTALL_LIBDIR=lib \
-    -DCOMPILER_RT_STANDALONE_BUILD=ON \
-    -DLLVM_CMAKE_DIR=/lib/cmake/llvm \
     -DCOMPILER_RT_INCLUDE_TESTS=OFF \
     -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_BUILD_UTILS=OFF \
+    -DLLVM_INSTALL_UTILS=OFF \
     -DCOMPILER_RT_BUILD_BUILTINS=OFF \
     -DCOMPILER_RT_BUILD_CRT=OFF \
     -DCOMPILER_RT_BUILD_SANITIZERS=ON \
@@ -168,7 +185,7 @@ cmake -S compiler-rt -B build-rt -G Ninja \
     -DCOMPILER_RT_BUILD_ORC=OFF \
     -DCOMPILER_RT_USE_LIBCXX=ON \
     -DCOMPILER_RT_DEFAULT_TARGET_TRIPLE="$(clang -dumpmachine)"
-samu -C build-rt -j"$LLVM_BUILD_JOBS"
+samu -C build-rt -j"$LLVM_BUILD_JOBS" compiler-rt
 DESTDIR=$DESTDIR cmake --install build-rt
 
 # ──────────────────────────────────────────────────────────────────────

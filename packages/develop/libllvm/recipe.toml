@@ -32,9 +32,16 @@ case $(uname -m) in
     # GitHub's ubuntu-latest runner has 16 GB RAM; -j2 OOMs and stalls
     # the build for 20+ minutes at a time during the heaviest compile
     # ranges (clang/Sema, LLVM Support). -j1 is slower but predictable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1 ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1; LLVM_TLS_FLAG="" ;;
+    # AArch64: force traditional TLS dialect. clang defaults to
+    # -mtls-dialect=desc on AArch64 + linux + musl >=1.2.4 which emits
+    # R_AARCH64_TLSDESC (type 1031) dynamic relocations. The libllvm
+    # built that way fails to load under the chain's musl with 'Error
+    # relocating: unsupported relocation type 6' — see chain run
+    # 25622796818 aarch64 clang step. -mtls-dialect=trad falls back
+    # to R_AARCH64_TLS_TPREL64/DTPREL64/DTPMOD64 which musl handles.
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="-mtls-dialect=trad" ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="" ;;
 esac
 
 LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
@@ -54,8 +61,8 @@ cmake -S llvm -B build -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_C_FLAGS="-Os -fPIC $LLVM_TLS_FLAG --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC $LLVM_TLS_FLAG -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
