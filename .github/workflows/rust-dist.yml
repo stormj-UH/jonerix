@@ -257,6 +257,12 @@ jobs:
           lld = true
           llvm-tools = false
           omit-git-hash = true
+          # Setting `vendor = "jonerix"` in the new target spec files trips
+          # rustc's internal `rustc_lint_opt_deny_field_access` lint
+          # (recommends `Target::is_like_*` instead — irrelevant for the
+          # vendor field).  Stop deny-warnings = true (default for dist
+          # profile) from turning that warning into a build-failing error.
+          deny-warnings = false
 
           [target.x86_64-jonerix-linux-musl]
           cc = "clang"
@@ -547,6 +553,12 @@ jobs:
           lld = true
           llvm-tools = false
           omit-git-hash = true
+          # Setting `vendor = "jonerix"` in the new target spec files trips
+          # rustc's internal `rustc_lint_opt_deny_field_access` lint
+          # (recommends `Target::is_like_*` instead — irrelevant for the
+          # vendor field).  Stop deny-warnings = true (default for dist
+          # profile) from turning that warning into a build-failing error.
+          deny-warnings = false
 
           [target.aarch64-jonerix-linux-musl]
           cc = "clang"
