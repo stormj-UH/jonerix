@@ -41,7 +41,13 @@ find_vendored_file() {
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
   FILE="rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz"
-  SHA="89a641eeec33309c57350850c7b40635f7d67c735ab7049f6acc3884388fabd6"
+  # 622c8491... = the patched 1.95.0 build that registers
+  # aarch64-jonerix-linux-musl as a builtin target (so stable rustc
+  # doesn't bail on "could not find specification for target") and
+  # ships the "(jonerix)" version tag instead of the upstream default
+  # "(built from a source tarball)".  See rust-dist.yml commits
+  # 4c94edb5 (target patch + description) + 00413512 (deny-warnings).
+  SHA="622c8491278486889db2a52a58a19d1a477f1bd101c0a630e416f1cc3922ae8a"
   TRIPLE="aarch64-jonerix-linux-musl"
 else
   FILE="rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz"
