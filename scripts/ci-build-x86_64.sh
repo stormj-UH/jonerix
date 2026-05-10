@@ -283,10 +283,19 @@ install_target_build_deps() {
         # Library packages — always install via jpkg, even if a
         # namesake binary is on PATH. See aarch64 sibling for the
         # python3 `lzma.h` reproducer and rationale.
+        #
+        # libllvm/clang/lld are also force-installed: the builder image
+        # ships an older monolithic LLVM whose /lib/cmake/{llvm,clang,lld}
+        # ClangTargets.cmake & co reference static archives that the
+        # new split packages keep but the monolithic recipe deleted.
+        # find_package(Clang) inside llvm-extra's lldb sub-build then
+        # aborts with "imported target clangBasic references missing
+        # /lib/libclangBasic.a". Force-installing the freshly-built jpkgs
+        # overlays the matching cmake configs and .a files.
         case "$dep" in
             xz|bzip2|zstd|zlib|lz4|ncurses|pcre2|libffi|sqlite|\
             libressl|libarchive|libevent|libcxx|nloxide|curl|expat|\
-            jonerix-headers)
+            jonerix-headers|libllvm|clang|lld)
                 is_library_pkg=1
                 ;;
             *)
@@ -300,8 +309,17 @@ install_target_build_deps() {
 
         dep_pkg="$dep"
         case "$dep" in
-            clang|clang++|ld.lld|llvm-ar|llvm-ranlib|llvm-nm|llvm-strip)
-                dep_pkg=llvm
+            # LLVM-family dep aliases. Post-split (commit 3a428f22), the
+            # llvm package is a metapackage of symlinks only. Map the
+            # underlying tools to the package that actually ships them.
+            clang|clang++)
+                dep_pkg=clang
+                ;;
+            ld.lld)
+                dep_pkg=lld
+                ;;
+            llvm-ar|llvm-ranlib|llvm-nm|llvm-strip|llvm-objcopy|llvm-objdump|llvm-config)
+                dep_pkg=libllvm
                 ;;
             make)
                 dep_pkg=jmake
