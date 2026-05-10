@@ -71,7 +71,7 @@ during implementation).
 | `DNAT` | covered | same |
 | `REDIRECT` | covered | `--to-ports`, `--random`. Requires `nft_redir`. |
 | `MARK` | covered | all mask-kind variants. Mask emit dropped on Set/Xset (nft folds into value). |
-| `CONNMARK` | covered | SetMark/SaveMark/RestoreMark/And/Or/Xor. **1.1.7:** `--nfmask`/`--ctmask` parsed and lowered to `meta mark set ct mark and <mask>` / `ct mark set meta mark and <mask>` (single-mask emit; ctmask wins on save, nfmask on restore — strictly-correct multi-statement form left for follow-up). Tailscale's healthcheck rule depends on these. |
+| `CONNMARK` | covered | SetMark/SaveMark/RestoreMark/And/Or/Xor. **1.1.7:** `--nfmask`/`--ctmask` parsed and lowered to `meta mark set ct mark and <mask>` / `ct mark set meta mark and <mask>` (single-mask emit; ctmask wins on save, nfmask on restore — strictly-correct multi-statement form left for follow-up). Required a paired fix in the nft text parser (`meta KEY set ct KEY [and MASK]` / symmetric form) so the lowered text round-trips to a real rule with the CONNMARK verdict — without it, the kernel only got the match condition. Tailscale's healthcheck rule depends on these. |
 | `TPROXY` | partial | `--on-port`/`--on-ip` covered; `--tproxy-mark` parsed-and-dropped |
 | `NFLOG` | partial | `--nflog-prefix`, `--nflog-group`. `--nflog-threshold`, `--nflog-range`, `--nflog-size` missing. |
 | `TRACE` | covered | nft `meta nftrace set 1` |

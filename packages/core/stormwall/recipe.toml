@@ -13,14 +13,23 @@ description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI d
 # `-t mangle -I PREROUTING 1 -m conntrack --ctstate ESTABLISHED,RELATED
 # -j CONNMARK --restore-mark --nfmask 0xff0000 --ctmask 0xff0000` and
 # 1.1.6 rejected the masks as unknown flags, breaking `tailscale up`.
-# Lower emits the masked nft form `meta mark set ct mark and 0xff0000`
-# (and the symmetric `ct mark set meta mark and ...` for save-mark).
-# The ctmask wins on save / nfmask wins on restore when both are set
-# to different values — matches iptables-translate's preference for
-# the dominant-direction mask.  The strictly-correct multi-statement
-# nft form `(ct mark & ~ctmask) | (meta mark & nfmask)` is left for
-# a follow-up; the symmetric-mask common case (which tailscale uses)
-# is satisfied by the simpler `and <mask>` emit.
+# The fix has two halves:
+#   - iptables/lower.rs: emit the masked nft form `meta mark set ct
+#     mark and 0xff0000` (and the symmetric `ct mark set meta mark
+#     and ...` for save-mark).  ctmask wins on save / nfmask wins on
+#     restore when both are set to different values — matches
+#     iptables-translate's preference for the dominant-direction mask.
+#   - parser.rs (nft text parser): teach the `meta KEY set <expr>` /
+#     `ct KEY set <expr>` shapes to consume `ct/meta KEY [and MASK]`
+#     on the right-hand side, emitting the corresponding Ct/Meta load
+#     plus an Expr::Bitwise.  Without this the lowered text round-
+#     tripped to a rule with no terminal verdict (kernel got just the
+#     conntrack match), so the iptables call returned 0 but tailscaled
+#     still saw the connmark rule missing.
+# The strictly-correct multi-statement nft form
+# `(ct mark & ~ctmask) | (meta mark & nfmask)` is left for follow-up;
+# the symmetric-mask common case (which tailscale uses) is satisfied
+# by the simpler `and <mask>` emit.
 #
 # 1.1.6 (prior): STORMWALL_TEST_MODE=iptables impersonation for
 # tailscaled / firewalld / NetworkManager / docker libnetwork
@@ -86,7 +95,7 @@ description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI d
 # 1.1.2 (prior): user-chain auto-create on the operating chain.
 # 1.1.1 (prior): help-text refresh.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.7/stormwall-1.1.7.tar.gz"
-sha256 = "098819880ebf12c2bf7820cb7f9f5056221261ec391bee22c7abe2097667223b"
+sha256 = "d91268a244d1e4f93536a7678b46a7a2e5585e67c2b20022f827c99442f4b1af"
 
 [build]
 system = "custom"
