@@ -1,6 +1,6 @@
 # stormwall iptables compatibility surface
 
-Last audited: 1.1.7 (2026-05-09).
+Last audited: 1.1.8 (2026-05-09).
 
 This document maps every iptables operation, parameter, target, and match
 module that stormwall recognises against the upstream `iptables(8)` and
@@ -71,7 +71,7 @@ during implementation).
 | `DNAT` | covered | same |
 | `REDIRECT` | covered | `--to-ports`, `--random`. Requires `nft_redir`. |
 | `MARK` | covered | all mask-kind variants. Mask emit dropped on Set/Xset (nft folds into value). |
-| `CONNMARK` | covered | SetMark/SaveMark/RestoreMark/And/Or/Xor. **1.1.7:** `--nfmask`/`--ctmask` parsed and lowered to `meta mark set ct mark and <mask>` / `ct mark set meta mark and <mask>` (single-mask emit; ctmask wins on save, nfmask on restore — strictly-correct multi-statement form left for follow-up). Required a paired fix in the nft text parser (`meta KEY set ct KEY [and MASK]` / symmetric form) so the lowered text round-trips to a real rule with the CONNMARK verdict — without it, the kernel only got the match condition. Tailscale's healthcheck rule depends on these. |
+| `CONNMARK` | covered | SetMark/SaveMark/RestoreMark/And/Or/Xor. **1.1.7:** `--nfmask`/`--ctmask` parsed and lowered to `meta mark set ct mark and <mask>` / `ct mark set meta mark and <mask>` (single-mask emit; ctmask wins on save, nfmask on restore — strictly-correct multi-statement form left for follow-up). Required a paired fix in the nft text parser (`meta KEY set ct KEY [and MASK]` / symmetric form). **1.1.8:** completed the round-trip — Expr::CtReg / MetaReg / CtSet anchor the source-side load to NFT_REG_1 (matching MetaSet's hard-coded SREG), and the listing renderer's meta/ct arms decode the SREG path back into the combined `set` statement so `nft list` matches what was installed. Tailscale's healthcheck rule depends on these and is now fully bidirectional. |
 | `TPROXY` | partial | `--on-port`/`--on-ip` covered; `--tproxy-mark` parsed-and-dropped |
 | `NFLOG` | partial | `--nflog-prefix`, `--nflog-group`. `--nflog-threshold`, `--nflog-range`, `--nflog-size` missing. |
 | `TRACE` | covered | nft `meta nftrace set 1` |
