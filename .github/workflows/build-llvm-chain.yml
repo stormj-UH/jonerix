@@ -394,3 +394,29 @@ jobs:
               rm -f "$JPKG_SIGN_KEY"
               echo "Signing key removed."
           fi
+
+  # ------ Regenerate combined INDEX once both chains finish ------------------
+  # Without this, the INDEX uploaded on the rolling `packages` release stays
+  # frozen at whatever publish-packages last wrote — the chain workflow
+  # uploaded freshly-built jpkgs but their sha256s don't match the stale
+  # INDEX, and downstream image builds fail with "verification failed even
+  # after re-fetch (corrupted mirror?)".  Reuses the same regen-tag-index
+  # workflow that publish-packages doesn't bother dispatching either (it
+  # has its own end-of-run `index` job, which we don't here).
+  regen-index:
+    name: Regenerate INDEX after chain
+    if: ${{ always() && (needs.chain-x86_64.result != 'cancelled' && needs.chain-aarch64.result != 'cancelled') }}
+    needs: [chain-x86_64, chain-aarch64]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch regen-tag-index for `packages`
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run regen-tag-index.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            -f tag=packages
+          echo "regen-tag-index dispatched for packages."
