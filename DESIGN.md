@@ -545,7 +545,28 @@ build = ["clang"]
 - [x] Multi-user mode (getty, system accounts, SUID, securetty)
 - [x] License enforcement in jpkg (allowlist + SPDX AND/OR parsing)
 - [x] Router image with unbound DNS, hostapd, sysctl hardening
-- [x] Raspi support 
+- [x] Raspi support
+
+### Roadmap (deferred — not blocking any current release)
+
+- [ ] **`gitredoxide` upload-pack `filter` capability** — server-side support
+  for partial-clone filter advertising (`git clone --filter=blob:none` against
+  a gitredoxide-served upstream). Client-side `git backfill` already lands
+  blobs from a promisor remote that DOES support filter; the missing piece
+  is the gitredoxide helper-mode upload-pack advertising the capability and
+  honouring the v2 fetch `filter <spec>` line.  Needed for self-hosted
+  partial-clone scenarios on tormenta/jonerix-served Forgejo mirrors. No
+  current dependency. ([gitredoxide repo](https://castle.great-morpho.ts.net:3000/jonerik/gitredoxide))
+- [ ] **Vendored Rust source-tarball trimming** — current gitredoxide source
+  tarball is 130 MB compressed because `cargo vendor` copies the full source
+  of every transitive crate (windows-*, aws-lc-sys, sqlite-wasm-rs, web-sys,
+  etc.) regardless of whether it compiles for jonerix-musl targets. A first
+  attempt (1.0.9 vendor-prune.sh) worked locally but broke
+  `cargo build --frozen --offline` in CI because `--frozen` validates the
+  whole `Cargo.lock` against the vendor dir. A target-aware lockfile
+  regeneration is the cleanest fix; cargo's stable surface doesn't expose it
+  yet — research item, see `gitredoxide/scripts/VENDOR-TRIM-RESEARCH.md`
+  (when written).
 
 ### Known Compromises
 
