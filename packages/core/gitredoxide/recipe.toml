@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.10"
+version = "1.0.11"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness, LFS smudge)"
 
@@ -112,8 +112,25 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 #
 # 1.0.10: revert 1.0.9's vendor prune.  Full 990 MB vendor /
 # 131 MB compressed tarball restored.  CI build succeeds again.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.10/gitredoxide-1.0.10-vendored.tar.gz"
-sha256 = "e1e24deb67ce77cd237347cc6d880e81dbda5974af999576facf3b9c658dcdcd"
+#
+# 1.0.11: surface the inner curl error in pack-consume failures.
+# On tormenta-class slow links (~20 KB/s to GitHub), git-upload-pack
+# responses get cut off mid-stream by GitHub after roughly 7-10 minutes.
+# 1.0.10 reported only the bare wrapper "Failed to consume the pack
+# sent by the remote", because two layers of error suppression were
+# eating the underlying curl error: gix-transport's curl backend used
+# try_send to deliver perform() errors over a rendezvous body channel
+# (always Full mid-read, so the err was dropped), and gitredoxide's
+# clone/fetch formatter did not walk the #[source] chain.  1.0.11
+# fixes both, so the same failure now reports e.g. "[92] Stream error
+# in the HTTP/2 framing layer (CANCEL err 8)" or "[18] Transferred a
+# partial file", giving users something they can route around (HTTP/1.1,
+# shallow clone, or a faster mirror).  Test suite 503 passed, 0 failed,
+# 3 ignored (network-dependent).  0 warnings.  The underlying server
+# cutoff is unchanged — this release improves diagnostics, not transfer
+# resilience.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.11/gitredoxide-1.0.11-vendored.tar.gz"
+sha256 = "53bfce8f6452e2adf3fe4b08a23cdc35cb4906a01d0eead2d04b9e9412d9b319"
 
 [build]
 system = "custom"
