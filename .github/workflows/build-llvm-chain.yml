@@ -184,8 +184,17 @@ jobs:
                       echo "::warning::gh release upload failed (attempt $attempts), retrying in ${wait_secs}s..." >&2
                       sleep "$wait_secs"
                   done
-                  # Move so the next docker run sees them as published.
-                  mv /tmp/jpkg-output/*.jpkg /tmp/jpkg-published/
+                  # Copy (don't move) into jpkg-published so the next
+                  # docker run's "Download existing packages" merge sees
+                  # them as already-published — but ALSO leave the
+                  # originals in /tmp/jpkg-output (= /var/cache/jpkg in
+                  # the container) so ci-build-*.sh's install_target_
+                  # build_deps finds them locally via install_local_jpkg
+                  # and bypasses jpkg's INDEX hash check (which would
+                  # otherwise fail because INDEX was captured at chain
+                  # start and predates rebuild=true regenerating these
+                  # jpkgs with different content).
+                  cp /tmp/jpkg-output/*.jpkg /tmp/jpkg-published/
               fi
 
               _step_end=$(date +%s)
