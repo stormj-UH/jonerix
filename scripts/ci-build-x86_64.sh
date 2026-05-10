@@ -337,11 +337,15 @@ install_target_build_deps() {
                 ;;
         esac
 
-        # Prefer a just-built jpkg in /var/cache/jpkg over INDEX. See
-        # aarch64 sibling for rationale. jpkg install only takes
-        # names, so local hits go through install_local_jpkg.
-        local_pkg=$(ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg 2>/dev/null \
-            | sort -V | tail -1)
+        # Prefer a just-built jpkg over INDEX. Search BOTH
+        # /var/cache/jpkg (jpkg's own repo cache) AND
+        # /var/cache/jpkg-published (chain workflow's mirror of
+        # uploaded jpkgs — jpkg doesn't manage this dir so its
+        # 'update' step won't purge entries with mismatched INDEX
+        # hashes). See aarch64 sibling for full rationale.
+        local_pkg=$( ( ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg \
+                          /var/cache/jpkg-published/${dep_pkg}-*-*.jpkg \
+                          2>/dev/null ) | sort -V | tail -1)
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
             install_local_jpkg "$local_pkg"

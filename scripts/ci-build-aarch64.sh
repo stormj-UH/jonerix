@@ -341,17 +341,29 @@ install_target_build_deps() {
                 ;;
         esac
 
-        # Prefer a just-built jpkg in /var/cache/jpkg over whatever is
-        # in INDEX. Uploads to the release happen at end-of-job, so a
-        # dep rebuilt earlier in the same run isn't yet indexed; a
-        # plain `jpkg install --force <name>` would pull the stale
-        # released version (run 24682739978: nloxide-r3 built, but
-        # wpa_supplicant got r2 and failed). `jpkg install` only
-        # takes package names, so for local-cache hits we extract
-        # the jpkg directly via install_local_jpkg.
+        # Prefer a just-built jpkg over whatever is in INDEX. Uploads
+        # to the release happen at end-of-job, so a dep rebuilt earlier
+        # in the same run isn't yet indexed; a plain `jpkg install
+        # --force <name>` would pull the stale released version (run
+        # 24682739978: nloxide-r3 built, but wpa_supplicant got r2 and
+        # failed). `jpkg install` only takes package names, so for
+        # local-cache hits we extract the jpkg directly via
+        # install_local_jpkg.
+        #
+        # Search BOTH /var/cache/jpkg AND /var/cache/jpkg-published.
+        # jpkg's `update` step purges /var/cache/jpkg entries whose
+        # sha256 doesn't match the freshly-fetched INDEX — which
+        # destroys our rebuild outputs every iteration of the
+        # build-llvm-chain workflow (run 25620792347: chain libllvm/
+        # clang/lld disappeared between steps because they were
+        # uploaded but INDEX wasn't yet regenerated). The chain
+        # workflow mirrors freshly-built jpkgs to /var/cache/jpkg-
+        # published which is read-only from jpkg's perspective —
+        # safe from the purge.
         # Pick the highest-sorting version; sort -V so r10 > r2.
-        local_pkg=$(ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg 2>/dev/null \
-            | sort -V | tail -1)
+        local_pkg=$( ( ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg \
+                          /var/cache/jpkg-published/${dep_pkg}-*-*.jpkg \
+                          2>/dev/null ) | sort -V | tail -1)
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
             install_local_jpkg "$local_pkg"
