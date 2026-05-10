@@ -2,7 +2,7 @@
 name = "python3"
 version = "3.14.5"
 license = "PSF-2.0"
-description = "Python programming language interpreter (PGO + LTO + computed-gotos, with _bz2)"
+description = "Python programming language interpreter (computed-gotos, with _bz2)"
 
 [source]
 url = "https://www.python.org/ftp/python/3.14.5/Python-3.14.5.tar.xz"
@@ -10,17 +10,7 @@ sha256 = "7e32597b99e5d9a39abed35de4693fa169df3e5850d4c334337ffd6a19a36db6"
 
 [build]
 system = "custom"
-# 3.14.5 (2026-05-10): bumped from 3.14.3-r10. New flags:
-#   --enable-optimizations  → PGO (profile-guided): instrumented build
-#                             runs the bundled profile workload, then
-#                             rebuilds with profile data. Roughly 10-20%
-#                             speedup on interpreter-heavy code; build
-#                             time ~2x. Native build (no cross-compile)
-#                             so PGO instrumented binaries can run.
-#   --with-lto=full         → full LTO via clang's -flto. Adds another
-#                             5-10% speedup. clang's full LTO works
-#                             with --rtlib=compiler-rt + ld.lld, both
-#                             of which the jonerix toolchain ships.
+# 3.14.5 (2026-05-10): bumped from 3.14.3-r10.
 #   --with-computed-gotos   → faster CPython interpreter dispatch via
 #                             threaded code (clang accepts label-as-value
 #                             extension). Default-on with clang/gcc but
@@ -28,6 +18,21 @@ system = "custom"
 #   --enable-loadable-sqlite-extensions → lets the _sqlite3 stdlib module
 #                             load extension .so files (e.g. SQLean).
 #                             No runtime cost when not used.
+#
+# --enable-optimizations (PGO) + --with-lto=full are NOT enabled yet
+# because:
+#   1. PGO instrumented build needs jmake ≥ 1.2.2 (the multi-rule prereq
+#      merge bug in 1.2.1 made Python's Makefile pass header files as
+#      compile inputs).  builder image still ships 1.2.1; rebuild image
+#      + bump jmake build-dep here before turning PGO back on.
+#   2. PGO link step needs `libclang_rt.profile.a` at
+#      /lib/clang/21/lib/aarch64-jonerix-linux-musl/, but llvm-extra
+#      installs it under /lib/clang/21/lib/linux/ (clang's default
+#      "unknown" triple path).  Either the llvm-extra recipe needs to
+#      ship profile.a in the per-triple dir, or we symlink at install
+#      time, or python configure needs --with-clang-rt-profile-path.
+# Re-enable both once those two blockers land — gives ~15-30% Python
+# perf for free.
 configure = """mkdir -p .jpkg-tools
 printf '#!/bin/sh\nexec cmp -s "$@"\n' > .jpkg-tools/diff
 chmod 755 .jpkg-tools/diff
@@ -37,8 +42,6 @@ PATH="$PWD/.jpkg-tools:$PATH" \
   CC=clang CXX=clang++ ./configure \
   --prefix=/usr \
   --enable-shared \
-  --enable-optimizations \
-  --with-lto=full \
   --with-computed-gotos \
   --enable-loadable-sqlite-extensions \
   --with-ensurepip=no \

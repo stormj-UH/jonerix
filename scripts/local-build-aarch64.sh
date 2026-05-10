@@ -100,6 +100,16 @@ cmd_build() {
         # out for the build invocation so the CMD ("sh ci-build-aarch64.sh")
         # actually runs.  Without this, zsh tries to open "sh" as a script
         # and dies with "/bin/zsh: can't open input file: sh".
+        # JMAKE_OVERRIDE: optional host path to a jmake binary to mount
+        # over /bin/jmake in the container.  Used when the builder image's
+        # baked-in jmake is older than a fresh build that fixes a Makefile
+        # bug surfaced by a particular recipe (e.g. python3 3.14.5 needs
+        # jmake 1.2.2's multi-rule prereq fix).
+        _jmake_override_args=""
+        if [ -n "${JMAKE_OVERRIDE:-}" ] && [ -f "${JMAKE_OVERRIDE}" ]; then
+            _jmake_override_args="-v ${JMAKE_OVERRIDE}:/bin/jmake:ro -v ${JMAKE_OVERRIDE}:/bin/make:ro"
+            echo "    using jmake override: $JMAKE_OVERRIDE"
+        fi
         docker run --rm \
             --platform linux/arm64 \
             --entrypoint /bin/sh \
@@ -109,6 +119,7 @@ cmd_build() {
             -v "$JPKG_BIN:/jpkg-bin" \
             -v "$SCCACHE:/var/cache/sccache" \
             -v "$SCCACHE_BIN:/bin/sccache:ro" \
+            $_jmake_override_args \
             -w /workspace \
             -e PKG_INPUT="$pkg" \
             -e REBUILD_INPUT="${REBUILD:-false}" \
