@@ -31,3 +31,5 @@ packages/jpkg/tests/test_pkg
 packages/jpkg/tests/test_deps
 # packages/jpkg/jpkg — tracked: CI needs this pre-built arm64 binary
 keys/jonerix.sec
+# Local-build hedge directory (colima/docker artifacts, never committed)
+.local-build/
