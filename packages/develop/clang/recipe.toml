@@ -33,11 +33,9 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 case $(uname -m) in
     # ubuntu-latest is 16 GB; -j2 OOMs during clang's diagnostic
     # tablegen and Sema compile. -j1 is slower but stable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=1; LLVM_TLS_FLAG="" ;;
-    # AArch64: -mtls-dialect=trad to avoid R_AARCH64_TLSDESC reloc
-    # type that musl can't load. See libllvm recipe for full notes.
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="-mtls-dialect=trad" ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="" ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=1 ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
 esac
 
 SRC=$(pwd)
@@ -77,8 +75,8 @@ cmake -S llvm -B build -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os -fPIC $LLVM_TLS_FLAG --rtlib=compiler-rt" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC $LLVM_TLS_FLAG -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \

@@ -46,11 +46,9 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
 case $(uname -m) in
     # ubuntu-latest 16 GB — -j2 OOMs. -j1 is slower but stable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1; LLVM_TLS_FLAG="" ;;
-    # AArch64: -mtls-dialect=trad to avoid R_AARCH64_TLSDESC reloc
-    # type that musl can't load. See libllvm recipe for full notes.
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="-mtls-dialect=trad" ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc); LLVM_TLS_FLAG="" ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1 ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
 esac
 
 LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
@@ -105,8 +103,8 @@ cmake -S llvm -B build-lldb -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os -fPIC $LLVM_TLS_FLAG --rtlib=compiler-rt -D__ASM_SIGCONTEXT_H" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC $LLVM_TLS_FLAG -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -D__ASM_SIGCONTEXT_H" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
@@ -161,10 +159,10 @@ cmake -S llvm -B build-rt -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os -fPIC $LLVM_TLS_FLAG --rtlib=compiler-rt -mno-outline-atomics" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC $LLVM_TLS_FLAG -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -mno-outline-atomics" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt -mno-outline-atomics -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -mno-outline-atomics -D__ASM_SIGCONTEXT_H" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
-    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt -L/lib/clang/21/lib/$(clang -dumpmachine) -l:libclang_rt.builtins.a" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DLLVM_ENABLE_PIC=ON \
     -DCMAKE_INSTALL_PREFIX=/ \
@@ -175,7 +173,7 @@ cmake -S llvm -B build-rt -G Ninja \
     -DLLVM_INCLUDE_EXAMPLES=OFF \
     -DLLVM_BUILD_UTILS=OFF \
     -DLLVM_INSTALL_UTILS=OFF \
-    -DCOMPILER_RT_BUILD_BUILTINS=OFF \
+    -DCOMPILER_RT_BUILD_BUILTINS=ON \
     -DCOMPILER_RT_BUILD_CRT=OFF \
     -DCOMPILER_RT_BUILD_SANITIZERS=ON \
     -DCOMPILER_RT_BUILD_PROFILE=ON \
@@ -187,7 +185,25 @@ cmake -S llvm -B build-rt -G Ninja \
     -DCOMPILER_RT_USE_LIBCXX=ON \
     -DCOMPILER_RT_DEFAULT_TARGET_TRIPLE="$(clang -dumpmachine)"
 samu -C build-rt -j"$LLVM_BUILD_JOBS" compiler-rt
-DESTDIR=$DESTDIR cmake --install build-rt
+# compiler-rt's per-target install components are named per-runtime
+# (e.g. clang_rt.asan-aarch64), not by the friendly sanitizer name.
+# Headers install via the umbrella component; for the actual .so/.a
+# we copy out of the build tree directly — every libclang_rt.* the
+# compiler-rt build produced lands in the per-target lib dir.
+DESTDIR=$DESTDIR cmake --install build-rt --component compiler-rt-headers 2>/dev/null || true
+DESTDIR=$DESTDIR cmake --install build-rt --component compiler-rt-cmake-exports 2>/dev/null || true
+RT_BUILD_LIB="build-rt/lib/clang/21/lib"
+RT_DEST_LIB="$DESTDIR/lib/clang/21/lib"
+if [ -d "$RT_BUILD_LIB" ]; then
+    mkdir -p "$RT_DEST_LIB"
+    cp -a "$RT_BUILD_LIB/." "$RT_DEST_LIB/"
+fi
+RT_BUILD_SHARE="build-rt/lib/clang/21/share"
+RT_DEST_SHARE="$DESTDIR/lib/clang/21/share"
+if [ -d "$RT_BUILD_SHARE" ]; then
+    mkdir -p "$RT_DEST_SHARE"
+    cp -a "$RT_BUILD_SHARE/." "$RT_DEST_SHARE/"
+fi
 
 # ──────────────────────────────────────────────────────────────────────
 # Cleanup: flatten /usr and /lib64, strip overlap with libllvm/clang/lld
@@ -226,6 +242,18 @@ rm -rf "$DESTDIR/lib/cmake/llvm"     "$DESTDIR/lib/cmake/clang" "$DESTDIR/lib/cm
 rm -rf "$DESTDIR/include/llvm"       "$DESTDIR/include/llvm-c"
 rm -rf "$DESTDIR/include/clang"      "$DESTDIR/include/clang-c"
 rm -rf "$DESTDIR/include/lld"
+
+# compiler-rt builtins (libclang_rt.builtins*.a, crtbegin/crtend) ship
+# in clang.jpkg already. We rebuild them here only because the sanitizer
+# link step needs `__extend{s,d}ftf2` and friends that the shipped
+# builtins.a doesn't expose. Remove them from llvm-extra's payload to
+# avoid the file conflict on install.
+find "$DESTDIR/lib/clang"/*/lib -type f \
+    \( -name 'libclang_rt.builtins*.a' \
+    -o -name 'libclang_rt.builtins*.so*' \
+    -o -name 'clang_rt.crtbegin*.o' \
+    -o -name 'clang_rt.crtend*.o' \) \
+    -delete 2>/dev/null || true
 
 # Strip binaries
 find "$DESTDIR/bin" -type f -executable \
