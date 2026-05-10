@@ -1,15 +1,33 @@
 [package]
 name = "python3"
-version = "3.14.3-r10"
+version = "3.14.5"
 license = "PSF-2.0"
-description = "Python programming language interpreter (with _bz2)"
+description = "Python programming language interpreter (PGO + LTO + computed-gotos, with _bz2)"
 
 [source]
-url = "https://www.python.org/ftp/python/3.14.3/Python-3.14.3.tar.xz"
-sha256 = "a97d5549e9ad81fe17159ed02c68774ad5d266c72f8d9a0b5a9c371fe85d902b"
+url = "https://www.python.org/ftp/python/3.14.5/Python-3.14.5.tar.xz"
+sha256 = "7e32597b99e5d9a39abed35de4693fa169df3e5850d4c334337ffd6a19a36db6"
 
 [build]
 system = "custom"
+# 3.14.5 (2026-05-10): bumped from 3.14.3-r10. New flags:
+#   --enable-optimizations  → PGO (profile-guided): instrumented build
+#                             runs the bundled profile workload, then
+#                             rebuilds with profile data. Roughly 10-20%
+#                             speedup on interpreter-heavy code; build
+#                             time ~2x. Native build (no cross-compile)
+#                             so PGO instrumented binaries can run.
+#   --with-lto=full         → full LTO via clang's -flto. Adds another
+#                             5-10% speedup. clang's full LTO works
+#                             with --rtlib=compiler-rt + ld.lld, both
+#                             of which the jonerix toolchain ships.
+#   --with-computed-gotos   → faster CPython interpreter dispatch via
+#                             threaded code (clang accepts label-as-value
+#                             extension). Default-on with clang/gcc but
+#                             explicit pin keeps the choice intentional.
+#   --enable-loadable-sqlite-extensions → lets the _sqlite3 stdlib module
+#                             load extension .so files (e.g. SQLean).
+#                             No runtime cost when not used.
 configure = """mkdir -p .jpkg-tools
 printf '#!/bin/sh\nexec cmp -s "$@"\n' > .jpkg-tools/diff
 chmod 755 .jpkg-tools/diff
@@ -19,6 +37,10 @@ PATH="$PWD/.jpkg-tools:$PATH" \
   CC=clang CXX=clang++ ./configure \
   --prefix=/usr \
   --enable-shared \
+  --enable-optimizations \
+  --with-lto=full \
+  --with-computed-gotos \
+  --enable-loadable-sqlite-extensions \
   --with-ensurepip=no \
   --with-openssl=/ \
   --disable-test-modules"""
