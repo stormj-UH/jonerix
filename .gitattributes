@@ -20,5 +20,6 @@ sources/stormwall-1.1.4.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/stormwall-1.1.5.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/stormwall-1.1.6.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/stormwall-1.1.7.tar.gz filter=lfs diff=lfs merge=lfs -text
+sources/stormwall-1.1.8.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz filter=lfs diff=lfs merge=lfs -text

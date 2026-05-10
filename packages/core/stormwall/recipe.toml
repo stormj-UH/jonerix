@@ -1,14 +1,42 @@
 [package]
 name = "stormwall"
-version = "1.1.7"
+version = "1.1.8"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.7
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.8
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 #
-# 1.1.7: parse `-j CONNMARK --save-mark/--restore-mark --nfmask V
+# 1.1.8: complete the CONNMARK round-trip. 1.1.7's parser made
+# `meta mark set ct mark and M` parse, but the resulting expression
+# chain had a register-width mismatch — Expr::Ct/Bitwise picked
+# NFT_REG32_00 via reg_for_width(4) while Expr::MetaSet hard-codes
+# NFT_REG_1. The kernel accepted the rule but the renderer couldn't
+# decode it AND (more seriously) the meta-set portion was silent on
+# packets because the bytes lived in the wrong register relative to
+# what the kernel's nft_meta_set_eval reads.
+#
+# Two new explicit-register expression variants — Expr::CtReg and
+# Expr::MetaReg — let parse_meta_set_source pin the source-side load
+# to NFT_REG_1 unambiguously. Mirrors the existing BitwiseReg pattern.
+# Adds Expr::CtSet (NFTA_CT_SREG=NFT_REG_1) for the symmetric write
+# direction, plus a `ct KEY set <expr>` parser branch that 1.1.7
+# missed (the comment in the meta arm referenced a "parallel ct set
+# path" that wasn't actually wired up).
+#
+# Renderer (output.rs) also extended: the meta-SREG and ct-SREG arms
+# now consume the preceding ct/meta + bitwise context to print the
+# combined `meta KEY set ct KEY and MASK` (and symmetric) form. The
+# previous behaviour was emitting empty rule bodies. format_mask_native_u32
+# helper turns the kernel's CPU-native mask bytes back into `0x….` text.
+#
+# Net: tailscale's connmark slicing is now fully bidirectional and
+# `nft list ruleset` matches what was installed via iptables. CONNMARK
+# without masks (1.1.6 path) and the 1.1.7 mask parsing both still
+# pass through the unchanged ConnmarkOp lowering arms.
+#
+# 1.1.7 (prior): parse `-j CONNMARK --save-mark/--restore-mark --nfmask V
 # --ctmask V` mask sub-options.  Tailscale's healthcheck installs
 # `-t mangle -I PREROUTING 1 -m conntrack --ctstate ESTABLISHED,RELATED
 # -j CONNMARK --restore-mark --nfmask 0xff0000 --ctmask 0xff0000` and
@@ -94,8 +122,8 @@ description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI d
 # 1.1.3 (prior): jump-target user-chain auto-create + `ct state { … }`.
 # 1.1.2 (prior): user-chain auto-create on the operating chain.
 # 1.1.1 (prior): help-text refresh.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.7/stormwall-1.1.7.tar.gz"
-sha256 = "d91268a244d1e4f93536a7678b46a7a2e5585e67c2b20022f827c99442f4b1af"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.8/stormwall-1.1.8.tar.gz"
+sha256 = "db4f80d41a36e734a3cfd79d6b543a9a0229d476e313540247fdc1245aa33339"
 
 [build]
 system = "custom"
