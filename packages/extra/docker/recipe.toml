@@ -1,6 +1,6 @@
 [package]
 name = "docker"
-version = "27.5.1-r1"
+version = "27.5.1-r2"
 license = "Apache-2.0"
 description = "Docker daemon (dockerd) — industry-standard container engine using containerd as the runtime backend"
 replaces = []
@@ -168,7 +168,22 @@ esac
 
 post_install = """set -e
 # Create the docker system group if it does not exist.
-addgroup -S docker 2>/dev/null || true
+# Use shadow-utils' /bin/groupadd (safe) instead of toybox's
+# /bin/addgroup. The toybox addgroup variant truncates /etc/group to
+# 0 bytes when its lookup-then-rewrite path errors out — reproduced
+# 2026-05-09 on tormenta. The truncation is a side effect of the
+# rewrite path, not the printed error, so `2>/dev/null || true`
+# does NOT mask it. shadow's groupadd uses an atomic-rename pattern
+# and is safe even when the group already exists (it returns 9
+# without modifying the file). Falls back to a safe direct append
+# if shadow isn't installed yet (first-pass bootstrap).
+if ! grep -q "^docker:" /etc/group 2>/dev/null; then
+    if command -v groupadd >/dev/null 2>&1; then
+        groupadd -r docker 2>/dev/null || true
+    else
+        printf 'docker:x:998:\\n' >> /etc/group
+    fi
+fi
 
 # Seed daemon.json only when none is present on the live system.
 if [ ! -e /etc/docker/daemon.json ]; then

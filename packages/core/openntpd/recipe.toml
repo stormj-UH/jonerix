@@ -1,6 +1,6 @@
 [package]
 name = "openntpd"
-version = "6.8p1-r4"
+version = "6.8p1-r5"
 license = "ISC"
 description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 
@@ -79,13 +79,27 @@ post_install = """# 1) _ntp privsep user + group. openntpd drops privileges to t
 # unreliably — reproduced on jonerix-tormenta 2026-04-16 where the
 # previous post_install errored "syntax error: unexpected '||'".
 if ! grep -q "^_ntp:" /etc/group 2>/dev/null; then
-    addgroup -S _ntp 2>/dev/null
+    # toybox addgroup truncates /etc/group to 0 bytes on its
+    # lookup-then-rewrite error path (reproduced 2026-05-09); use
+    # shadow's groupadd (atomic) when available, fall back to a
+    # safe direct append for first-boot before shadow is installed.
+    if command -v groupadd >/dev/null 2>&1; then
+        groupadd -r _ntp 2>/dev/null
+    else
+        printf '_ntp:x:123:\\n' >> /etc/group
+    fi
 fi
 if ! grep -q "^_ntp:" /etc/passwd 2>/dev/null; then
-    if [ -x /bin/adduser-safe ]; then
+    # toybox adduser shares the same lookup-then-rewrite truncation
+    # hazard as toybox addgroup. Prefer shadow's useradd (atomic) when
+    # available; fall back to the legacy adduser-safe wrapper or a
+    # direct /etc/passwd append if neither is installed.
+    if command -v useradd >/dev/null 2>&1; then
+        useradd -r -d /var/empty -s /bin/false -g _ntp _ntp 2>/dev/null
+    elif [ -x /bin/adduser-safe ]; then
         /bin/adduser-safe -S -D -H -h /var/empty -s /bin/false -G _ntp _ntp 2>/dev/null
     else
-        adduser -S -D -H -h /var/empty -s /bin/false -G _ntp _ntp 2>/dev/null
+        printf '_ntp:x:123:123:openntpd:/var/empty:/bin/false\\n' >> /etc/passwd
     fi
 fi
 

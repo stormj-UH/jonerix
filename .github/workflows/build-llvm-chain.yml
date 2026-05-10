@@ -1,0 +1,357 @@
+name: Build LLVM chain
+
+# Sequential build of the LLVM split (clang -> lld -> llvm metapackage
+# -> llvm-extra) plus the rust 1.95.0 jpkg, all in a single workflow
+# job so the user-dispatched publish-packages runs can't cancel it
+# mid-chain (which has happened repeatedly with the previous one-
+# package-per-run approach).
+#
+# Has its own concurrency group ('build-llvm-chain') so it runs
+# alongside publish-packages dispatches without collision. Uploads
+# each jpkg to the packages release as soon as it builds, so even a
+# late-stage failure leaves the earlier outputs accessible.
+#
+# Runtime budget: 12 hours per arch. The full chain is roughly:
+#   clang        ~30-90 min (sccache hits make this fast on warm runs)
+#   lld          ~15-45 min
+#   llvm         ~1 min (metapackage, just symlinks)
+#   llvm-extra   ~30-90 min (clang-tools-extra + lldb + sanitizers)
+#   rust         ~5-10 min (just unpacks the prebuilt dist tarball)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Architecture (all, x86_64, aarch64)'
+        required: false
+        default: 'all'
+      packages:
+        description: 'Comma-separated package list (default: clang,lld,llvm,llvm-extra,rust)'
+        required: false
+        default: 'clang,lld,llvm,llvm-extra,rust'
+      rebuild:
+        description: 'Rebuild even if the package already exists in the release'
+        required: false
+        default: 'true'
+        type: boolean
+
+# IMPORTANT: a different group from publish-packages so user-dispatched
+# publish-packages runs don't cancel the chain. cancel-in-progress is
+# false because losing a 6-hour chain to an accidental redispatch is
+# expensive.
+concurrency:
+  group: build-llvm-chain-${{ inputs.arch }}
+  cancel-in-progress: false
+
+env:
+  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder-amd64
+  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder-arm64
+  SCCACHE_VERSION: v0.15.0
+  SCCACHE_CACHE_VERSION: v1
+
+jobs:
+  chain-x86_64:
+    name: Chain build (x86_64)
+    if: ${{ inputs.arch == 'all' || inputs.arch == 'x86_64' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          lfs: false
+
+      - name: Restore jpkg binary cache (x86_64)
+        uses: actions/cache@v5
+        with:
+          path: /tmp/jpkg-bin-x86_64
+          key: jpkg-bin-x86_64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
+
+      - name: Restore sccache cache (x86_64)
+        uses: actions/cache@v5
+        with:
+          path: /tmp/sccache-cache
+          key: sccache-llvm-x86_64-${{ env.SCCACHE_CACHE_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            sccache-llvm-x86_64-${{ env.SCCACHE_CACHE_VERSION }}-
+
+      - name: Install sccache binary (x86_64)
+        run: |
+          mkdir -p /tmp/sccache-cache
+          _ver="$SCCACHE_VERSION"
+          _name="sccache-${_ver}-x86_64-unknown-linux-musl"
+          _url="https://github.com/mozilla/sccache/releases/download/${_ver}/${_name}.tar.gz"
+          curl -fsSL --retry 3 -o /tmp/sccache.tgz "$_url"
+          tar -xzf /tmp/sccache.tgz -C /tmp
+          install -m 755 "/tmp/${_name}/sccache" /tmp/sccache
+          /tmp/sccache --version
+          rm -rf /tmp/sccache.tgz "/tmp/${_name}"
+
+      - name: Download existing x86_64 packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/jpkg-published /tmp/jpkg-output
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.jpkg" \
+            --dir /tmp/jpkg-published 2>/dev/null || true
+          echo "Existing x86_64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Materialise signing key (x86_64)
+        env:
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY || '' }}
+        run: |
+          if [ -n "$JPKG_SIGNING_KEY" ]; then
+              _key_file="$(mktemp /tmp/jpkg-signing-XXXXXX.sec)"
+              printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > "$_key_file"
+              chmod 600 "$_key_file"
+              echo "JPKG_SIGN_KEY=$_key_file" >> "$GITHUB_ENV"
+              echo "jpkg signing key materialised."
+          else
+              echo "::warning::JPKG_SIGNING_KEY not configured — packages will be unsigned."
+          fi
+
+      - name: Build chain (x86_64)
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          REBUILD_INPUT: ${{ inputs.rebuild && 'true' || 'false' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/jpkg-bin-x86_64
+          set -e
+
+          # Iterate the comma-separated package list. Each iteration runs
+          # the standard ci-build-x86_64.sh with PKG_INPUT set to the
+          # current target, then uploads the resulting jpkg(s) to the
+          # release before moving on. That keeps each package's output
+          # safe even if a later package fails the chain.
+          # POSIX sh: replace commas with spaces, then iterate.
+          _pkgs=$(printf '%s' "$PACKAGES" | tr ',' ' ')
+          for pkg in $_pkgs; do
+              echo ""
+              echo "=================================================="
+              echo "  Chain step: $pkg (x86_64)"
+              echo "=================================================="
+              echo ""
+
+              docker run --rm --privileged --entrypoint "" \
+                  -v "$GITHUB_WORKSPACE:/workspace" \
+                  -v "/tmp/jpkg-output:/var/cache/jpkg" \
+                  -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
+                  -v "/tmp/jpkg-bin-x86_64:/jpkg-bin" \
+                  -v "/tmp/sccache:/bin/sccache:ro" \
+                  -v "/tmp/sccache-cache:/var/cache/sccache" \
+                  ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
+                  -w /workspace \
+                  -e PKG_INPUT="$pkg" \
+                  -e REBUILD_INPUT="$REBUILD_INPUT" \
+                  -e SCCACHE_DIR=/var/cache/sccache \
+                  -e SCCACHE_IDLE_TIMEOUT=0 \
+                  -e CMAKE_C_COMPILER_LAUNCHER=sccache \
+                  -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                  ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
+                  "$BUILDER_IMAGE_X86_64" /bin/sh /workspace/scripts/ci-build-x86_64.sh
+
+              # Upload the just-built jpkg(s) to the release. Retry on
+              # transient rate-limit failures (matches rust-dist.yml's
+              # backoff). Move uploaded jpkgs out of /tmp/jpkg-output
+              # into /tmp/jpkg-published so the next iteration sees them
+              # as already-published and the cache stays trim.
+              _new=$(ls /tmp/jpkg-output/*.jpkg 2>/dev/null || true)
+              if [ -n "$_new" ]; then
+                  echo ""
+                  echo "Uploading new jpkgs:"
+                  echo "$_new" | sed 's/^/  /'
+                  attempts=0
+                  until gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg; do
+                      attempts=$((attempts + 1))
+                      if [ "$attempts" -ge 5 ]; then
+                          echo "::error::gh release upload failed after $attempts attempts" >&2
+                          exit 1
+                      fi
+                      wait_secs=$((30 * (1 << (attempts - 1))))
+                      echo "::warning::gh release upload failed (attempt $attempts), retrying in ${wait_secs}s..." >&2
+                      sleep "$wait_secs"
+                  done
+                  # Move so the next docker run sees them as published.
+                  mv /tmp/jpkg-output/*.jpkg /tmp/jpkg-published/
+              fi
+          done
+
+          echo ""
+          echo "=================================================="
+          echo "  Chain complete (x86_64)"
+          echo "=================================================="
+          echo ""
+
+      - name: sccache stats (x86_64)
+        if: always()
+        run: |
+          if [ -x /tmp/sccache ]; then
+              SCCACHE_DIR=/tmp/sccache-cache /tmp/sccache --show-stats || true
+              _bytes=$(du -sb /tmp/sccache-cache 2>/dev/null | awk '{print $1}')
+              [ -n "$_bytes" ] && printf 'sccache cache size: %s bytes\n' "$_bytes"
+          fi
+
+      - name: Remove signing key (x86_64)
+        if: always()
+        run: |
+          if [ -n "${JPKG_SIGN_KEY:-}" ]; then
+              rm -f "$JPKG_SIGN_KEY"
+              echo "Signing key removed."
+          fi
+
+  chain-aarch64:
+    name: Chain build (aarch64)
+    if: ${{ inputs.arch == 'all' || inputs.arch == 'aarch64' }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 720
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          lfs: false
+
+      - name: Restore jpkg binary cache (aarch64)
+        uses: actions/cache@v5
+        with:
+          path: /tmp/jpkg-bin-aarch64
+          key: jpkg-bin-aarch64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
+
+      - name: Restore sccache cache (aarch64)
+        uses: actions/cache@v5
+        with:
+          path: /tmp/sccache-cache
+          key: sccache-llvm-aarch64-${{ env.SCCACHE_CACHE_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            sccache-llvm-aarch64-${{ env.SCCACHE_CACHE_VERSION }}-
+
+      - name: Install sccache binary (aarch64)
+        run: |
+          mkdir -p /tmp/sccache-cache
+          _ver="$SCCACHE_VERSION"
+          _name="sccache-${_ver}-aarch64-unknown-linux-musl"
+          _url="https://github.com/mozilla/sccache/releases/download/${_ver}/${_name}.tar.gz"
+          curl -fsSL --retry 3 -o /tmp/sccache.tgz "$_url"
+          tar -xzf /tmp/sccache.tgz -C /tmp
+          install -m 755 "/tmp/${_name}/sccache" /tmp/sccache
+          /tmp/sccache --version
+          rm -rf /tmp/sccache.tgz "/tmp/${_name}"
+
+      - name: Download existing aarch64 packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/jpkg-published /tmp/jpkg-output
+          gh release download packages \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.jpkg" \
+            --dir /tmp/jpkg-published 2>/dev/null || true
+          echo "Existing aarch64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Materialise signing key (aarch64)
+        env:
+          JPKG_SIGNING_KEY: ${{ secrets.JPKG_SIGNING_KEY || '' }}
+        run: |
+          if [ -n "$JPKG_SIGNING_KEY" ]; then
+              _key_file="$(mktemp /tmp/jpkg-signing-XXXXXX.sec)"
+              printf '%s' "$JPKG_SIGNING_KEY" | base64 -d > "$_key_file"
+              chmod 600 "$_key_file"
+              echo "JPKG_SIGN_KEY=$_key_file" >> "$GITHUB_ENV"
+              echo "jpkg signing key materialised."
+          else
+              echo "::warning::JPKG_SIGNING_KEY not configured — packages will be unsigned."
+          fi
+
+      - name: Build chain (aarch64)
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          REBUILD_INPUT: ${{ inputs.rebuild && 'true' || 'false' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/jpkg-bin-aarch64
+          set -e
+
+          _pkgs=$(printf '%s' "$PACKAGES" | tr ',' ' ')
+          for pkg in $_pkgs; do
+              echo ""
+              echo "=================================================="
+              echo "  Chain step: $pkg (aarch64)"
+              echo "=================================================="
+              echo ""
+
+              docker run --rm --privileged --entrypoint "" \
+                  -v "$GITHUB_WORKSPACE:/workspace" \
+                  -v "/tmp/jpkg-output:/var/cache/jpkg" \
+                  -v "/tmp/jpkg-published:/var/cache/jpkg-published" \
+                  -v "/tmp/jpkg-bin-aarch64:/jpkg-bin" \
+                  -v "/tmp/sccache:/bin/sccache:ro" \
+                  -v "/tmp/sccache-cache:/var/cache/sccache" \
+                  ${JPKG_SIGN_KEY:+-v "${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"} \
+                  -w /workspace \
+                  -e PKG_INPUT="$pkg" \
+                  -e REBUILD_INPUT="$REBUILD_INPUT" \
+                  -e SCCACHE_DIR=/var/cache/sccache \
+                  -e SCCACHE_IDLE_TIMEOUT=0 \
+                  -e CMAKE_C_COMPILER_LAUNCHER=sccache \
+                  -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                  ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
+                  "$BUILDER_IMAGE_AARCH64" /bin/sh /workspace/scripts/ci-build-aarch64.sh
+
+              _new=$(ls /tmp/jpkg-output/*.jpkg 2>/dev/null || true)
+              if [ -n "$_new" ]; then
+                  echo ""
+                  echo "Uploading new jpkgs:"
+                  echo "$_new" | sed 's/^/  /'
+                  attempts=0
+                  until gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg; do
+                      attempts=$((attempts + 1))
+                      if [ "$attempts" -ge 5 ]; then
+                          echo "::error::gh release upload failed after $attempts attempts" >&2
+                          exit 1
+                      fi
+                      wait_secs=$((30 * (1 << (attempts - 1))))
+                      echo "::warning::gh release upload failed (attempt $attempts), retrying in ${wait_secs}s..." >&2
+                      sleep "$wait_secs"
+                  done
+                  mv /tmp/jpkg-output/*.jpkg /tmp/jpkg-published/
+              fi
+          done
+
+          echo ""
+          echo "=================================================="
+          echo "  Chain complete (aarch64)"
+          echo "=================================================="
+          echo ""
+
+      - name: sccache stats (aarch64)
+        if: always()
+        run: |
+          if [ -x /tmp/sccache ]; then
+              SCCACHE_DIR=/tmp/sccache-cache /tmp/sccache --show-stats || true
+              _bytes=$(du -sb /tmp/sccache-cache 2>/dev/null | awk '{print $1}')
+              [ -n "$_bytes" ] && printf 'sccache cache size: %s bytes\n' "$_bytes"
+          fi
+
+      - name: Remove signing key (aarch64)
+        if: always()
+        run: |
+          if [ -n "${JPKG_SIGN_KEY:-}" ]; then
+              rm -f "$JPKG_SIGN_KEY"
+              echo "Signing key removed."
+          fi

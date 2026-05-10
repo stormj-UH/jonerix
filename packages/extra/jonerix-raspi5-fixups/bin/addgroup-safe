@@ -1,0 +1,123 @@
+#!/bin/mksh
+# addgroup-safe — non-destructive replacement for toybox addgroup.
+#
+# toybox 0.8.11 addgroup has a bug where its lookup-then-rewrite path
+# truncates /etc/group to 0 bytes when an internal step errors (e.g.
+# the group already exists, or /etc/gshadow is missing). The truncation
+# is a SIDE EFFECT of the rewrite, NOT the printed error — so wrapping
+# calls in `2>/dev/null || true` does not suppress it.
+#
+# Reproduced 2026-05-09 on the jonerix Pi 5 (tormenta): a docker
+# post_install ran `addgroup -S docker 2>/dev/null || true`; addgroup
+# printed "No docker in /etc/group" and exited 1, but /etc/group was
+# now empty — wiping wheel, daemon, dhcpcd, jonerik, every group.
+# wpa_supplicant subsequently failed with "CTRL: Invalid group 'wheel'"
+# and Wi-Fi broke. Recovery required `cp /etc/group.bak /etc/group`.
+#
+# This script is strictly append-only on /etc/group. It backs up before
+# writing, refuses to act on a missing-or-empty file, and never calls
+# into toybox addgroup. Compatible argument shape with both
+# `addgroup GROUP` and the BusyBox-style `-S` (system group) flag, and
+# with optional GID via `-g GID` or as the last positional. Returns 0
+# silently if the group already exists (matches the existing recipes'
+# `2>/dev/null || true` expectations).
+#
+# Usage:
+#   addgroup-safe GROUP                     — append a regular group
+#   addgroup-safe -S GROUP                  — append a system group (GID < 1000)
+#   addgroup-safe -g GID GROUP              — append with explicit GID
+#   addgroup-safe -S -g GID GROUP           — same, system group
+#
+# Exit codes:
+#   0   success (added) or no-op (already present)
+#   1   invalid usage / refused to act on bad input
+
+set -e
+
+SYSTEM=
+EXPLICIT_GID=
+GROUP=
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -S|--system)
+      SYSTEM=yes
+      shift
+      ;;
+    -g|--gid)
+      EXPLICIT_GID=$2
+      shift 2
+      ;;
+    -h|--help|"")
+      echo "usage: addgroup-safe [-S] [-g GID] GROUP"
+      echo ""
+      echo "Safe replacement for toybox addgroup that never truncates"
+      echo "/etc/group. Append-only; idempotent (no-op if group exists)."
+      [ "$1" = "" ] && exit 1 || exit 0
+      ;;
+    -*)
+      echo "addgroup-safe: unknown option '$1'" >&2
+      exit 1
+      ;;
+    *)
+      GROUP=$1
+      shift
+      ;;
+  esac
+done
+
+# Validate group name (POSIX portable: lower/upper, digits, underscore, dash).
+case "$GROUP" in
+  ""|*[!a-zA-Z0-9_-]*|*' '*)
+    echo "addgroup-safe: invalid group name '$GROUP'" >&2
+    exit 1
+    ;;
+esac
+
+# Sanity-check /etc/group: must exist, be non-empty, and contain root.
+# Anything else means the file is already corrupt — refuse to touch it
+# until a human restores from /etc/group.bak.
+if [ ! -s /etc/group ] || ! grep -q '^root:' /etc/group 2>/dev/null; then
+  echo "addgroup-safe: /etc/group missing/empty/no-root — refusing to edit" >&2
+  echo "addgroup-safe: restore from /etc/group.bak first" >&2
+  exit 1
+fi
+
+# Already exists? No-op silently.
+if grep -q "^${GROUP}:" /etc/group 2>/dev/null; then
+  exit 0
+fi
+
+# Pick a GID. Prefer the explicitly-requested one. Otherwise scan the
+# appropriate range and grab the next free.
+if [ -n "$EXPLICIT_GID" ]; then
+  case "$EXPLICIT_GID" in
+    *[!0-9]*|"") echo "addgroup-safe: bad GID '$EXPLICIT_GID'" >&2; exit 1 ;;
+  esac
+  if grep -q "^[^:]*:[^:]*:${EXPLICIT_GID}:" /etc/group 2>/dev/null; then
+    echo "addgroup-safe: GID ${EXPLICIT_GID} already in use" >&2
+    exit 1
+  fi
+  GID=$EXPLICIT_GID
+elif [ -n "$SYSTEM" ]; then
+  # System group: GID 100..999, scan downward from 999 for first free.
+  GID=999
+  while [ "$GID" -ge 100 ] && grep -q "^[^:]*:[^:]*:${GID}:" /etc/group 2>/dev/null; do
+    GID=$((GID - 1))
+  done
+  if [ "$GID" -lt 100 ]; then
+    echo "addgroup-safe: no free system GIDs in 100..999" >&2
+    exit 1
+  fi
+else
+  # Regular group: GID 1000..65533, scan upward from highest+1.
+  GID=$(awk -F: 'BEGIN{m=999} $3+0>=1000 && $3+0<65534 && $3+0>m{m=$3} END{print m+1}' /etc/group)
+fi
+
+# Back up — never overwrite an existing snapshot in the same boot.
+[ -e /etc/group.bak ] || cp /etc/group /etc/group.bak
+
+# Append only — never truncate.
+printf '%s:x:%s:\n' "$GROUP" "$GID" >> /etc/group
+
+exit 0

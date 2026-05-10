@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r5"
+version = "0.8.11-r6"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -85,29 +85,78 @@ install -Dm644 "$RECIPE_DIR/conf.d/syslogd" "$DESTDIR/etc/conf.d/syslogd"
 post_install = """mkdir -p /etc/runlevels/default
 [ -f /etc/init.d/syslogd ] && ln -sf /etc/init.d/syslogd /etc/runlevels/default/syslogd 2>/dev/null || true
 
-# Yield /bin/<cmd> symlinks to packages with replaces=["toybox"] semantics.
+# Yield /bin/<cmd> symlinks to packages that own a conflicting path.
 # Tarball extraction has just laid down /bin/<cmd> -> toybox for every
 # applet we provide; if another package's manifest claims one of those
-# paths, restore its symlink so the takeover stays sticky across
-# `jpkg upgrade toybox`.
+# paths, restore the rightful owner so the takeover stays sticky
+# across `jpkg upgrade toybox`.
 #
-# Currently this matters for uutils (Rust GNU-coreutils rewrite) and
-# exproxide (POSIX-strict expr); the loop is generic so a future
-# replaces-toybox package will be honored without recipe changes here.
+# Two kinds of conflict are handled:
+#
+#  (a) `replaces=["toybox"]` semantics — the other package ships
+#      `/bin/<cmd> -> <owner>` (a symlink to its own multicall
+#      binary). Pattern: uutils (Rust GNU-coreutils rewrite),
+#      exproxide (POSIX-strict expr), shadow (passwd/login etc).
+#      We re-create the symlink directly.
+#
+#  (b) Real-binary conflict — the other package ships /bin/<cmd>
+#      as an ELF binary (no `->` field). Pattern: iproute-go
+#      (which owns /bin/ip and /bin/iproute as Go-built ELF). The
+#      symlink we just laid down OVERWROTE the real binary, so we
+#      can't restore from disk; we have to force-reinstall the
+#      conflicting package. Reproduced 2026-05-09 on tormenta —
+#      `ip a` returned "Invalid link." because /bin/ip was the
+#      toybox symlink, and `jpkg verify iproute-go` confirmed the
+#      manifest hash mismatch. `jpkg install -f iproute-go`
+#      restored it.
+#
+# The loop is generic so any future replaces-toybox or owns-/bin/X
+# package is honored without recipe changes here.
+#
+# IMPORTANT: jpkg's manifest stores paths as RELATIVE (no leading
+# slash) — `bin/ip`, not `/bin/ip`. The previous version of this loop
+# matched `^\/bin\//` which never matched anything in any real
+# manifest, so the "yield" loop was a no-op for years. We strip-or-add
+# the leading slash deliberately when constructing $_path for
+# readlink/ln (which need absolute paths).
 for _mfst in /var/db/jpkg/installed/*/files; do
     [ -f "$_mfst" ] || continue
     _owner=$(basename "$(dirname "$_mfst")")
     [ "$_owner" = "toybox" ] && continue
-    awk -v owner="$_owner" '
-        $3 ~ /^\\/bin\\// && $4 == "->" && $5 == owner { print $3 }
-    ' "$_mfst" 2>/dev/null | while read -r _path; do
+    _need_reinstall=""
+    # Collect all bin/* paths this package's manifest claims (whether
+    # symlink or regular file). Manifest paths have NO leading slash.
+    _claims=$(awk '$3 ~ /^bin\\// { print $3 }' "$_mfst" 2>/dev/null)
+    [ -z "$_claims" ] && continue
+    for _rel in $_claims; do
+        _path="/$_rel"
         _curr=$(readlink "$_path" 2>/dev/null || echo "")
-        # Only re-claim if toybox extraction just stomped this and the
-        # rightful owner's binary still exists.
-        if [ "$_curr" = "toybox" ] && [ -e "/bin/$_owner" ]; then
-            ln -sf "$_owner" "$_path" 2>/dev/null || true
-        fi
+        [ "$_curr" = "toybox" ] || continue
+        # Look at this manifest line — is the entry a symlink (->X)
+        # or a regular file?
+        _line=$(awk -v p="$_rel" '$3 == p { print; exit }' "$_mfst")
+        case "$_line" in
+            *" -> "*)
+                # (a) Symlink case: re-link to the named target if the
+                # owner's multicall binary still exists.
+                _target=$(printf '%s\n' "$_line" | awk '
+                    { for(i=1;i<=NF;i++) if($i=="->") { print $(i+1); exit } }
+                ')
+                if [ -n "$_target" ] && [ -e "/bin/$_target" ]; then
+                    ln -sf "$_target" "$_path" 2>/dev/null || true
+                fi
+                ;;
+            *)
+                # (b) Real-binary case: needs reinstall to restore.
+                # Mark and act once per owner at end of loop, since
+                # `jpkg install -f` reinstalls the whole package.
+                _need_reinstall="yes"
+                ;;
+        esac
     done
+    if [ -n "$_need_reinstall" ]; then
+        jpkg install -f "$_owner" >/dev/null 2>&1 || true
+    fi
 done
 exit 0
 """

@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.15"
+version = "1.6.16"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -38,9 +38,15 @@ install -Dm755 init.d/netfilter-nft-modules $DESTDIR/etc/init.d/netfilter-nft-mo
 install -Dm755 init.d/boot-trace $DESTDIR/etc/init.d/boot-trace
 install -Dm755 init.d/reboot-trace-shutdown $DESTDIR/etc/init.d/reboot-trace-shutdown
 install -Dm755 init.d/hwclock $DESTDIR/etc/init.d/hwclock
-# adduser-safe: safe replacement for toybox adduser, which truncates
-# /etc/passwd and /etc/shadow on failure (see bin/adduser-safe header).
-install -Dm755 bin/adduser-safe $DESTDIR/bin/adduser-safe
+# adduser-safe / addgroup-safe: safe replacements for toybox adduser /
+# addgroup, both of which truncate /etc/passwd|/etc/shadow|/etc/group
+# on failure paths (see header in each script for the full diagnosis).
+# adduser was reproduced 2026-04-15; addgroup was reproduced 2026-05-09
+# during a docker post_install — wiped /etc/group, broke wpa_supplicant
+# `CTRL: Invalid group 'wheel'`, killed Wi-Fi until manual restore from
+# /etc/group.bak.
+install -Dm755 bin/adduser-safe  $DESTDIR/bin/adduser-safe
+install -Dm755 bin/addgroup-safe $DESTDIR/bin/addgroup-safe
 # Pi 5 onboard WiFi bring-up: see bin/modprobe-shim and init.d/pi5-wifi
 # headers for the full story. Short version: jonerix ships no kmod, so
 # the kernel can't request_module(brcmfmac-cyw) and the brcmfmac driver
@@ -149,14 +155,22 @@ install = ""
 # the toybox adduser passwd-file-truncation bug. The Pi-specific parts
 # are guarded by /proc/device-tree/model; the adduser swap runs
 # unconditionally because the toybox bug affects every host.
-post_install = """# --- adduser safety (all hosts) ---
-# Back up the current /bin/adduser symlink target (typically: toybox)
-# so post_remove can restore it. Write it once; leave alone on re-install.
+post_install = """# --- adduser / addgroup safety (all hosts) ---
+# Back up the current /bin/adduser and /bin/addgroup symlink targets
+# (typically: toybox) so post_remove can restore them. Write each
+# snapshot once; leave alone on re-install. Then repoint both names
+# at our safe wrappers so every caller — first-party post_installs,
+# third-party scripts, anything that types `adduser` or `addgroup`
+# at a shell — gets the truncation-proof implementation.
+mkdir -p /etc/jpkg/raspi5-fixups
 if [ -L /bin/adduser ] && [ ! -e /etc/jpkg/raspi5-fixups/adduser.prev ]; then
-    mkdir -p /etc/jpkg/raspi5-fixups
     readlink /bin/adduser > /etc/jpkg/raspi5-fixups/adduser.prev 2>/dev/null || true
 fi
-ln -sf adduser-safe /bin/adduser
+if [ -L /bin/addgroup ] && [ ! -e /etc/jpkg/raspi5-fixups/addgroup.prev ]; then
+    readlink /bin/addgroup > /etc/jpkg/raspi5-fixups/addgroup.prev 2>/dev/null || true
+fi
+ln -sf adduser-safe  /bin/adduser
+ln -sf addgroup-safe /bin/addgroup
 
 # --- fstab rescue (Pi images shipped before 2026-04-16) ---
 # The initial jonerix Pi image baked a minimal /etc/fstab with only
@@ -420,9 +434,14 @@ if [ -f /etc/jpkg/raspi5-fixups/adduser.prev ]; then
     prev=$(cat /etc/jpkg/raspi5-fixups/adduser.prev)
     [ -n "$prev" ] && ln -sf "$prev" /bin/adduser
     rm -f /etc/jpkg/raspi5-fixups/adduser.prev
-    rmdir /etc/jpkg/raspi5-fixups 2>/dev/null || true
-    rmdir /etc/jpkg 2>/dev/null || true
 fi
+if [ -f /etc/jpkg/raspi5-fixups/addgroup.prev ]; then
+    prev=$(cat /etc/jpkg/raspi5-fixups/addgroup.prev)
+    [ -n "$prev" ] && ln -sf "$prev" /bin/addgroup
+    rm -f /etc/jpkg/raspi5-fixups/addgroup.prev
+fi
+rmdir /etc/jpkg/raspi5-fixups 2>/dev/null || true
+rmdir /etc/jpkg 2>/dev/null || true
 _restore_reboot_link() {
     _path=$1
     _target=$2

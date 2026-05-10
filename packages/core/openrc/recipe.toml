@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r6"
+version = "0.54-r7"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -17,7 +17,23 @@ sed -i "/subdir('seedrng')/d" src/meson.build
 sed -i "/'seedrng.in',/d" init.d/meson.build
 sed -i "/'seedrng',/d" conf.d/meson.build
 sed -i 's/ seedrng / /g; s/ seedrng"/"/g' tools/meson_runlevels.sh
-meson setup build --prefix=/ --libdir=lib --bindir=bin --sbindir=bin -Dbuildtype=release -Dpam=false -Dselinux=disabled"""
+# `--prefix=/` makes meson default sysconfdir to the relative path
+# `etc` (no leading slash). That propagates into librc's compile-time
+# RC_SYSCONFDIR macro and from there into RC_INITDIR / RC_RUNLEVELDIR
+# (defined as RC_SYSCONFDIR "/init.d" and RC_SYSCONFDIR "/runlevels"
+# in src/librc/rc.h.in). Result: rc-service and rc-update look up
+# `etc/init.d/<svc>` and `etc/runlevels/<name>` via cwd-relative
+# paths, so they only work from cwd=/. Everywhere else (jpkg
+# post_install temp dirs, user shells in /home, ssh non-login
+# sessions where /etc/profile didn't run, …) they fail with
+# "rc-service: No such file or directory" or "'default' is not a
+# valid runlevel". Forcing -Dsysconfdir=/etc keeps the macro
+# absolute, fixing both at the source. Reproduced 2026-05-09 — every
+# recipe in the tree that calls rc-update from a post_install hook
+# had to be wrapped `(cd / && rc-update …)` as a workaround; this
+# recipe change removes that need (the wrappers stay in place as
+# belt-and-suspenders for older openrc).
+meson setup build --prefix=/ --libdir=lib --bindir=bin --sbindir=bin --sysconfdir=/etc --localstatedir=/var -Dbuildtype=release -Dpam=false -Dselinux=disabled"""
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
