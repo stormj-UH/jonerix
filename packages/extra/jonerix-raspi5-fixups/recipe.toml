@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.16"
+version = "1.6.17"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
@@ -47,6 +47,20 @@ install -Dm755 init.d/hwclock $DESTDIR/etc/init.d/hwclock
 # /etc/group.bak.
 install -Dm755 bin/adduser-safe  $DESTDIR/bin/adduser-safe
 install -Dm755 bin/addgroup-safe $DESTDIR/bin/addgroup-safe
+# Ship /bin/adduser and /bin/addgroup as MANIFEST-TRACKED symlinks
+# (instead of creating them lazily in post_install). This way:
+#   1. Toybox's post_install yield-loop sees `bin/adduser -> adduser-safe`
+#      in raspi5-fixups' files manifest, recognises the conflict when
+#      its tarball ships `bin/adduser -> toybox`, and restores us.
+#   2. `jpkg verify jonerix-raspi5-fixups` flags any out-of-band
+#      override (e.g. someone manually relinking to toybox).
+#   3. post_remove can use the manifest entry to know what we own
+#      instead of guessing from the prev backup.
+# Without this (1.6.16 had post_install-only ln -sf), toybox's
+# extraction stomped the symlinks every time toybox was installed
+# or upgraded, and toybox's restore loop couldn't see them.
+ln -sf adduser-safe  $DESTDIR/bin/adduser
+ln -sf addgroup-safe $DESTDIR/bin/addgroup
 # Pi 5 onboard WiFi bring-up: see bin/modprobe-shim and init.d/pi5-wifi
 # headers for the full story. Short version: jonerix ships no kmod, so
 # the kernel can't request_module(brcmfmac-cyw) and the brcmfmac driver
@@ -156,21 +170,31 @@ install = ""
 # are guarded by /proc/device-tree/model; the adduser swap runs
 # unconditionally because the toybox bug affects every host.
 post_install = """# --- adduser / addgroup safety (all hosts) ---
-# Back up the current /bin/adduser and /bin/addgroup symlink targets
-# (typically: toybox) so post_remove can restore them. Write each
-# snapshot once; leave alone on re-install. Then repoint both names
-# at our safe wrappers so every caller — first-party post_installs,
-# third-party scripts, anything that types `adduser` or `addgroup`
-# at a shell — gets the truncation-proof implementation.
+# The actual `/bin/adduser -> adduser-safe` and `/bin/addgroup ->
+# addgroup-safe` symlinks ship in the tarball now (see install step
+# above) — manifest-tracked so toybox's post_install yield-loop can
+# auto-restore them. Here we ONLY back up the previous targets (if
+# any) so post_remove can restore them. The backup runs once; on
+# re-install we leave it alone.
+#
+# When the prev was already toybox (the common case — these wrappers
+# get installed onto a fresh jonerix image where /bin/adduser was a
+# toybox symlink), we still write `toybox` into adduser.prev so
+# post_remove restores that symlink. If for some reason adduser.prev
+# already exists from a previous install, we leave it alone so we
+# don't lose the original target across a `jpkg remove + install`
+# cycle.
 mkdir -p /etc/jpkg/raspi5-fixups
-if [ -L /bin/adduser ] && [ ! -e /etc/jpkg/raspi5-fixups/adduser.prev ]; then
-    readlink /bin/adduser > /etc/jpkg/raspi5-fixups/adduser.prev 2>/dev/null || true
+if [ ! -e /etc/jpkg/raspi5-fixups/adduser.prev ]; then
+    # Default to "toybox" as the prev target — that's what ships on
+    # every jonerix image. The actual readlink would have happened
+    # at extract time, but we're already past it; "toybox" is the
+    # conservative restore target.
+    echo toybox > /etc/jpkg/raspi5-fixups/adduser.prev
 fi
-if [ -L /bin/addgroup ] && [ ! -e /etc/jpkg/raspi5-fixups/addgroup.prev ]; then
-    readlink /bin/addgroup > /etc/jpkg/raspi5-fixups/addgroup.prev 2>/dev/null || true
+if [ ! -e /etc/jpkg/raspi5-fixups/addgroup.prev ]; then
+    echo toybox > /etc/jpkg/raspi5-fixups/addgroup.prev
 fi
-ln -sf adduser-safe  /bin/adduser
-ln -sf addgroup-safe /bin/addgroup
 
 # --- fstab rescue (Pi images shipped before 2026-04-16) ---
 # The initial jonerix Pi image baked a minimal /etc/fstab with only

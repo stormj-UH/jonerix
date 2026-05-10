@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r6"
+version = "0.8.11-r7"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -126,7 +126,7 @@ for _mfst in /var/db/jpkg/installed/*/files; do
     _need_reinstall=""
     # Collect all bin/* paths this package's manifest claims (whether
     # symlink or regular file). Manifest paths have NO leading slash.
-    _claims=$(awk '$3 ~ /^bin\\// { print $3 }' "$_mfst" 2>/dev/null)
+    _claims=$(awk '$3 ~ /^bin\// { print $3 }' "$_mfst" 2>/dev/null)
     [ -z "$_claims" ] && continue
     for _rel in $_claims; do
         _path="/$_rel"
@@ -137,13 +137,25 @@ for _mfst in /var/db/jpkg/installed/*/files; do
         _line=$(awk -v p="$_rel" '$3 == p { print; exit }' "$_mfst")
         case "$_line" in
             *" -> "*)
-                # (a) Symlink case: re-link to the named target if the
-                # owner's multicall binary still exists.
+                # (a) Symlink case: re-link to the named target.
+                # Targets may be either RELATIVE (e.g. `addgroup-safe`,
+                # which the loader resolves under the link's parent
+                # /bin) or ABSOLUTE (e.g. `/usr/local/bin/reboot-openrc`
+                # for raspi5-fixups' /bin/reboot). Test for both
+                # before recreating.
                 _target=$(printf '%s\n' "$_line" | awk '
                     { for(i=1;i<=NF;i++) if($i=="->") { print $(i+1); exit } }
                 ')
-                if [ -n "$_target" ] && [ -e "/bin/$_target" ]; then
-                    ln -sf "$_target" "$_path" 2>/dev/null || true
+                if [ -z "$_target" ]; then
+                    continue
+                fi
+                case "$_target" in
+                    /*)  _target_abs=$_target ;;     # already absolute
+                    *)   _target_abs="/bin/$_target" ;;  # resolve under /bin
+                esac
+                if [ -e "$_target_abs" ]; then
+                    ln -sf "$_target" "$_path" 2>/dev/null
+                    echo "toybox-yield: restored $_path -> $_target (owner: $_owner)"
                 fi
                 ;;
             *)
@@ -155,6 +167,7 @@ for _mfst in /var/db/jpkg/installed/*/files; do
         esac
     done
     if [ -n "$_need_reinstall" ]; then
+        echo "toybox-yield: reinstalling $_owner (real-binary conflict in /bin)"
         jpkg install -f "$_owner" >/dev/null 2>&1 || true
     fi
 done
