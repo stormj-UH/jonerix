@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.9"
+version = "1.0.10"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness, LFS smudge)"
 
@@ -100,18 +100,20 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # still returns success.  Test suite 502 passed, 0 failed, 3 ignored
 # (network-dependent integration tests).  0 warnings.
 #
-# 1.0.9: slim vendored tarball.  131 MB -> 68 MB compressed (47%
-# smaller).  Adds gitredoxide/scripts/vendor-prune.sh, a POSIX shell
-# tool that strips ~600 MB of dead-weight transitive crates from the
-# cargo vendor tree before tarball creation: windows-*, winapi-*-pc-
-# windows-*, aws-lc-sys, sqlite-wasm-rs, libsqlite3-sys, web-sys,
-# js-sys, wasm-bindgen-*.  None of these compile on aarch64/x86_64-
-# jonerix-linux-musl — they're behind cfg(target_os="windows") gates
-# in their consumers, so cargo never reaches for them.  Pruning is
-# behaviour-preserving; the resulting binary is byte-identical.
-# Per-CI-build LFS bandwidth cut by ~70%.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.9/gitredoxide-1.0.9-vendored.tar.gz"
-sha256 = "b0d01a22db1e21e59e60505008971c7fdb4c4719321f99498ded1b97c42898ea"
+# 1.0.9: ATTEMPTED slim vendor (vendor-prune.sh stripping cfg-gated
+# crates).  Local cargo build worked because host-target resolution
+# never reaches cfg(target_os="windows") deps, but CI's
+# 'cargo build --frozen --offline' validates the *entire* Cargo.lock
+# against the vendor directory and rejected pruned entries with
+# 'error: no matching package named "windows" found'.  Reverted in
+# 1.0.10.  Vendor trimming research deferred until we can regenerate
+# the lockfile target-aware (cargo doesn't currently support
+# generate-lockfile --target).
+#
+# 1.0.10: revert 1.0.9's vendor prune.  Full 990 MB vendor /
+# 131 MB compressed tarball restored.  CI build succeeds again.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.10/gitredoxide-1.0.10-vendored.tar.gz"
+sha256 = "e1e24deb67ce77cd237347cc6d880e81dbda5974af999576facf3b9c658dcdcd"
 
 [build]
 system = "custom"
