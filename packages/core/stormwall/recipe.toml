@@ -1,14 +1,76 @@
 [package]
 name = "stormwall"
-version = "1.1.8"
+version = "1.1.9"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.8
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.9
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 #
-# 1.1.8: complete the CONNMARK round-trip. 1.1.7's parser made
+# 1.1.9: Tier 2 feature expansion — TOS/DSCP/TTL/HL match modules and
+# their corresponding target families, plus -m statistic, -m connlimit,
+# -m helper (distinct from -j CT --helper), -m time, -m rpfilter, and
+# the CLASSIFY / CHECKSUM / NETMAP / SET targets.
+#
+# Match modules added:
+#   -m tos --tos N[/M]            nft `ip dscp N`
+#   -m dscp --dscp N |
+#           --dscp-class CLASS    nft `ip dscp N` (class names BE/EF/AFxx/CSx
+#                                  pre-resolved at parse time)
+#   -m ttl --ttl-eq|gt|lt N       nft `ip ttl == N` / `> N` / `< N`
+#   -m hl  --hl-eq|gt|lt N        IPv6 sibling of ttl
+#   -m statistic --mode random
+#                  --probability F nft `numgen random mod 1e9 < F*1e9`
+#                                  (probability stored as ppb to keep
+#                                  the AST `Eq`-friendly)
+#                --mode nth
+#                  --every N
+#                  --packet P     nft `numgen inc mod N == P`
+#   -m connlimit --connlimit-above|upto N
+#                [--connlimit-mask M]
+#                [--connlimit-saddr|--connlimit-daddr]
+#                                 nft `ct count over|le N` — install
+#                                 currently fails on jonerix kernel
+#                                 (nft_connlimit loaded; bare inline
+#                                 form needs a stateful object on this
+#                                 kernel-config; tracked as a known
+#                                 limitation in IPTABLES_COMPAT.md)
+#   -m helper --helper "ftp"     nft `ct helper "ftp"` (disambiguated
+#                                 from -j CT --helper via in_module
+#                                 parser state)
+#   -m time --timestart hh:mm[:ss]
+#           --timestop hh:mm[:ss]
+#           [--weekdays days]    nft `meta hour "..."-"..."` plus
+#                                 optional `meta day { … }`
+#   -m rpfilter [--invert]       nft `fib saddr . iif oif != 0`
+#                                 (`eq 0` for --invert)
+#
+# Targets added:
+#   -j TOS --set-tos|--and|--or|--xor-tos N
+#                                 nft `ip dscp set N` for Set; And/Or/Xor
+#                                 lower to comment markers (no nft form)
+#   -j DSCP --set-dscp N |
+#           --set-dscp-class C   nft `ip dscp set N`
+#   -j TTL --ttl-set|dec|inc N   nft `ip ttl set N` /
+#                                 `ip ttl set ip ttl - N` / `+ N`
+#   -j HL --hl-set|dec|inc N     nft `ip6 hoplimit set N` (and ± N)
+#   -j CLASSIFY --set-class M:N  nft `meta priority set 0xM:0xN`
+#   -j CHECKSUM --checksum-fill  comment marker (kernel auto-fills on egress)
+#   -j NETMAP --to PREFIX        nft `dnat to PREFIX` (POSTROUTING → snat)
+#   -j SET --add-set|--del-set NAME dirs
+#                                 nft `add @NAME { ip saddr [. ip daddr] }`
+#                                 / `delete @NAME { … }`
+#
+# 17 new unit tests (240/240 cargo total). Real-kernel install
+# verified for tos / dscp / ttl / statistic / time / rpfilter and
+# both directions of connmark (which 1.1.8 rounded out). connlimit
+# documented as a known limitation pending the stateful-object form.
+#
+# 1.1.8 (prior): CONNMARK register-width fix — complete bidirectional
+# `meta mark set ct mark and M` round-trip.
+# 1.1.7 (prior): CONNMARK --nfmask / --ctmask masks parsed and lowered.
+# 1.1.6 (prior): STORMWALL_TEST_MODE=iptables drop-in for tailscaled. 1.1.7's parser made
 # `meta mark set ct mark and M` parse, but the resulting expression
 # chain had a register-width mismatch — Expr::Ct/Bitwise picked
 # NFT_REG32_00 via reg_for_width(4) while Expr::MetaSet hard-codes
@@ -122,8 +184,8 @@ description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI d
 # 1.1.3 (prior): jump-target user-chain auto-create + `ct state { … }`.
 # 1.1.2 (prior): user-chain auto-create on the operating chain.
 # 1.1.1 (prior): help-text refresh.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.8/stormwall-1.1.8.tar.gz"
-sha256 = "db4f80d41a36e734a3cfd79d6b543a9a0229d476e313540247fdc1245aa33339"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.9/stormwall-1.1.9.tar.gz"
+sha256 = "03b81332b21d0996e84bc0e8ec526920de18c16a2846a8dc90da0eac225584ee"
 
 [build]
 system = "custom"
