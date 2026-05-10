@@ -8,6 +8,7 @@ sources/gitredoxide-1.0.5-vendored.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/gitredoxide-1.0.6-vendored.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/gitredoxide-1.0.7-vendored.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/gitredoxide-1.0.8-vendored.tar.gz filter=lfs diff=lfs merge=lfs -text
+sources/gitredoxide-1.0.9-vendored.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/brash-1.0.14.tar.gz filter=lfs diff=lfs merge=lfs -text
 sources/linux-6.14.2.tar.xz filter=lfs diff=lfs merge=lfs -text
 sources/llvm-project-21.1.2.src.tar.xz filter=lfs diff=lfs merge=lfs -text

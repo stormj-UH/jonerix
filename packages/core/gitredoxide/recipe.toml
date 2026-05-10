@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.8"
+version = "1.0.9"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness, LFS smudge)"
 
@@ -99,8 +99,19 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # smudge failed: <oid> from <url>: <reason>' and the outer command
 # still returns success.  Test suite 502 passed, 0 failed, 3 ignored
 # (network-dependent integration tests).  0 warnings.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.8/gitredoxide-1.0.8-vendored.tar.gz"
-sha256 = "88dbb4149eb945dd26aa13b50c90d944170dcaa2116f2ec345f5faf46df0ae36"
+#
+# 1.0.9: slim vendored tarball.  131 MB -> 68 MB compressed (47%
+# smaller).  Adds gitredoxide/scripts/vendor-prune.sh, a POSIX shell
+# tool that strips ~600 MB of dead-weight transitive crates from the
+# cargo vendor tree before tarball creation: windows-*, winapi-*-pc-
+# windows-*, aws-lc-sys, sqlite-wasm-rs, libsqlite3-sys, web-sys,
+# js-sys, wasm-bindgen-*.  None of these compile on aarch64/x86_64-
+# jonerix-linux-musl — they're behind cfg(target_os="windows") gates
+# in their consumers, so cargo never reaches for them.  Pruning is
+# behaviour-preserving; the resulting binary is byte-identical.
+# Per-CI-build LFS bandwidth cut by ~70%.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.9/gitredoxide-1.0.9-vendored.tar.gz"
+sha256 = "b0d01a22db1e21e59e60505008971c7fdb4c4719321f99498ded1b97c42898ea"
 
 [build]
 system = "custom"
