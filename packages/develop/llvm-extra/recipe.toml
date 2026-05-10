@@ -57,6 +57,30 @@ LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
 # libssp_nonshared.a stub — musl provides __stack_chk_fail natively.
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
+# Probe -m flags before passing them to cmake. The published clang.jpkg
+# defaults to '<arch>-jonerix-linux-musl' and clang's per-target option
+# validation rejects some -m flags for the unrecognized 'jonerix' vendor
+# (-mtls-dialect= was the reproducer; see d6e0c402 commit). Any -m flag
+# we add here goes through this probe so cmake's try_compile doesn't
+# blow up at configure time.
+probe_mflag() {
+    _flag="$1"
+    if echo 'int main(void){return 0;}' | clang -x c "$_flag" - -o /dev/null 2>/dev/null; then
+        printf '%s' "$_flag"
+    else
+        echo "note: clang rejects $_flag for $(clang -dumpmachine 2>/dev/null); dropping" >&2
+    fi
+}
+
+# -mno-outline-atomics: aarch64-only, prevents compiler-rt's atomic ops
+# from emitting calls to outlined LSE atomic helpers (which compiler-rt
+# itself provides — circular reference at link time). x86_64 doesn't
+# have the option at all so the probe falls through to empty.
+case $(uname -m) in
+    aarch64) NO_OUTLINE_ATOMICS=$(probe_mflag -mno-outline-atomics) ;;
+    *)       NO_OUTLINE_ATOMICS="" ;;
+esac
+
 SRC=$(pwd)
 # Helper: cmake invocation common bits. We can't put flags-with-spaces
 # in a single shell variable (word-split), so each cmake call lists
@@ -159,8 +183,8 @@ cmake -S llvm -B build-rt -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
-    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt -mno-outline-atomics -D__ASM_SIGCONTEXT_H" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -mno-outline-atomics -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt $NO_OUTLINE_ATOMICS -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind $NO_OUTLINE_ATOMICS -D__ASM_SIGCONTEXT_H" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt -L/lib/clang/21/lib/$(clang -dumpmachine) -l:libclang_rt.builtins.a" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \

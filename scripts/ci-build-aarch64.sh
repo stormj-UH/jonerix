@@ -374,6 +374,15 @@ install_target_build_deps() {
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
             install_local_jpkg "$local_pkg"
+        elif { [ "$dep_pkg" = clang ] || [ "$dep_pkg" = lld ]; } &&
+             command -v "$dep" >/dev/null 2>&1; then
+            # Bootstrap path: when neither /var/cache/jpkg nor jpkg-
+            # published has clang/lld for this arch (fresh-start cold
+            # builds), use the builder image's clang/lld. The chain
+            # itself produces the first jpkg; from the clang step onward
+            # /var/cache/jpkg/clang-*-aarch64.jpkg exists and the
+            # local_pkg branch wins. See x86_64 sibling for full notes.
+            echo "=== Bootstrap: using builder's $dep ($(command -v "$dep")) — no published $dep_pkg-*-aarch64.jpkg yet ==="
         else
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
             jpkg install --force "$dep_pkg"

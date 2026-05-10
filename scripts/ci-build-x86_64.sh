@@ -355,6 +355,18 @@ install_target_build_deps() {
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
             install_local_jpkg "$local_pkg"
+        elif { [ "$dep_pkg" = clang ] || [ "$dep_pkg" = lld ]; } &&
+             command -v "$dep" >/dev/null 2>&1; then
+            # Bootstrap path: x86_64 has no published clang/lld jpkg yet
+            # (the chain itself produces the first one). The builder image
+            # ships a working clang/lld on PATH; use that for the libllvm
+            # step so the chain can build the split clang/lld jpkgs. From
+            # the clang step onward /var/cache/jpkg/clang-*-x86_64.jpkg
+            # exists and the local_pkg branch wins. libllvm doesn't
+            # find_package(Clang), so the builder's stale Clang cmake
+            # configs are harmless until llvm-extra — by which point the
+            # just-built clang has been installed.
+            echo "=== Bootstrap: using builder's $dep ($(command -v "$dep")) — no published $dep_pkg-*-x86_64.jpkg yet ==="
         else
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) ==="
             jpkg install --force "$dep_pkg"
