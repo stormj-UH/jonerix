@@ -9,9 +9,9 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.7"
+version = "1.0.8"
 license = "MIT OR Apache-2.0"
-description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness)"
+description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness, LFS smudge)"
 
 [source]
 # Canonical source: Forgejo jonerik/gitoxide on castle.great-morpho.ts.net:3000.
@@ -83,8 +83,24 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # tests; 'git backfill' now actually fetches missing blobs from the
 # promisor remote in configurable batches instead of just reporting
 # them.  Test suite 491 passed, 0 failed, 0 warnings.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.7/gitredoxide-1.0.7-vendored.tar.gz"
-sha256 = "ef7e5afd2b26e3e0b7296efca84590ad12030007e26251680799b7d3c8beff4a"
+#
+# 1.0.8: Git LFS smudge-on-checkout.  clone / pull / checkout now
+# materialise real file content for LFS-tracked paths instead of
+# leaving the 132-byte LFS pointer in the working tree.  New module
+# gitredoxide/src/git_compat/lfs.rs implements the v1 pointer parser,
+# the .git/lfs/objects/<aa>/<bb>/<oid> on-disk cache, the LFS Batch
+# API client (POST <remote>/info/lfs/objects/batch with the
+# application/vnd.git-lfs+json content type), per-object download
+# via the resolved presigned URL, SHA-256 verification, and atomic
+# worktree writes.  Hooked into clone.rs (post-checkout walk),
+# pull.rs (FF + merge paths), rebase.rs (pull-merge integration
+# point), and mod.rs cmd_checkout (every variant).  Smudge failures
+# are non-fatal — a 403/404/auth/hash error logs 'warning: LFS
+# smudge failed: <oid> from <url>: <reason>' and the outer command
+# still returns success.  Test suite 502 passed, 0 failed, 3 ignored
+# (network-dependent integration tests).  0 warnings.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.8/gitredoxide-1.0.8-vendored.tar.gz"
+sha256 = "88dbb4149eb945dd26aa13b50c90d944170dcaa2116f2ec345f5faf46df0ae36"
 
 [build]
 system = "custom"
