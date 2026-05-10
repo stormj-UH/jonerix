@@ -1,14 +1,64 @@
 [package]
 name = "stormwall"
-version = "1.1.10"
+version = "1.1.11"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.10
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.11
 # Mirrored to GitHub for CI (castle is behind Tailscale).
 #
-# 1.1.10: -m recent + -m connbytes + meta day/hour parser fixes.
+# 1.1.11: parallel-worker integration — three Sonnet subagents
+# implemented orthogonal feature additions in isolated worktrees, then
+# the diffs were layer-merged into a single release.
+#
+# Match modules (10 new):
+#   -m hashlimit                 (rate-limit per IP/port hash)
+#                                core flags lower to nft `limit rate
+#                                [over] N/unit burst B packets`; hash-
+#                                config (mode/masks/htable tunables)
+#                                preserved as comment markers.
+#   -m policy                    (IPsec policy match)
+#                                --pol ipsec → `meta secpath exists`;
+#                                --pol none  → `meta secpath missing`;
+#                                xfrm-specific fields (reqid/spi/proto/
+#                                mode/tunnel-src/dst) preserved as
+#                                comment markers.
+#   -m ah                        `ah spi N`
+#   -m esp                       `esp spi N`
+#   -m frag                      `frag id N` / `frag length N` /
+#                                `frag more-fragments 1` / `frag
+#                                reserved 0`
+#   -m hbh                       `hbh hdrlength N` (TLV options as comment)
+#   -m mh                        `mh type N` (RFC 3775 symbolic names
+#                                resolved at parse time)
+#   -m rt                        `rt type T` / `rt segs-left N` /
+#                                `rt hdrlength N` (rt-0-* opts as comment)
+#   -m dst                       `dst hdrlength N` (TLV options as comment)
+#   -m ipv6header                `ip6 nexthdr N` or `ip6 nexthdr {…}`
+#                                (--soft as comment)
+#
+# Renderer fixes (4 round-trip bugs):
+#   - `ip dscp set N` was rendered as `ip dscp 0` because the iptables
+#     parser at the dscp branch consumed "set" as the value via parse_value.
+#     Now detects `peek == "set"` before parse_cmp_op and emits the
+#     correct Immediate + PayloadSet pair (nft format: `ip dscp set N`).
+#   - `meta day { monday, friday }` previously rendered as `{ }` because
+#     the AnonSet scalar parser had no weekday-name fallback. Added
+#     weekday→tm_wday lookup before the integer parse, paired with
+#     output.rs format_weekday_elem dispatch on NFT_META_TIME_DAY context.
+#   - `numgen` was an unhandled token in parse_rule_exprs and ended up
+#     as Expr::Unimplemented. Added a full `numgen (inc|random) mod M
+#     [offset N]` branch that recognises the < / <= / > / >= comparators
+#     parse_cmp_op doesn't, plus an Expr::Byteorder bridge to the cmp
+#     operand for ordered comparisons.
+#   - `fib saddr . iif oif != 0` cmp-fold path now emits ` eq ` (not
+#     bare ` `) for the non-type-result EQ case, so rpfilter rules
+#     round-trip through `nft list`.
+#
+# 21 new unit tests integrated; 261/261 cargo total (was 245).
+#
+# 1.1.10 (prior): -m recent + -m connbytes + meta day/hour parser fixes.
 #
 # Match modules added:
 #   -m recent --set | --rcheck | --update | --remove
@@ -221,8 +271,8 @@ description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI d
 # 1.1.3 (prior): jump-target user-chain auto-create + `ct state { … }`.
 # 1.1.2 (prior): user-chain auto-create on the operating chain.
 # 1.1.1 (prior): help-text refresh.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.10/stormwall-1.1.10.tar.gz"
-sha256 = "3eeee93a3a86caff7fea1793a2710d5213f392bb97398ac80a897c6ce56c103a"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.11/stormwall-1.1.11.tar.gz"
+sha256 = "697a67812920665c6d467d5af135a452ffd3ec076f45c4e92179239c193c5aa7"
 
 [build]
 system = "custom"
