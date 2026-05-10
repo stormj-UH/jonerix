@@ -27,12 +27,28 @@ JPKG_OUTPUT="${BUILD_DIR}/jpkg-output"
 JPKG_PUBLISHED="${BUILD_DIR}/jpkg-published"
 JPKG_BIN="${BUILD_DIR}/jpkg-bin-aarch64"
 SCCACHE="${BUILD_DIR}/sccache-cache"
+SCCACHE_BIN="${BUILD_DIR}/sccache-bin/sccache"
 
 BUILDER_IMAGE="${BUILDER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder-arm64}"
 GITHUB_REPO="${GITHUB_REPO:-stormj-UH/jonerix}"
 RELEASE_TAG="${RELEASE_TAG:-packages}"
 
-mkdir -p "$JPKG_OUTPUT" "$JPKG_PUBLISHED" "$JPKG_BIN" "$SCCACHE"
+mkdir -p "$JPKG_OUTPUT" "$JPKG_PUBLISHED" "$JPKG_BIN" "$SCCACHE" "$(dirname "$SCCACHE_BIN")"
+
+# Auto-fetch the static-musl sccache binary on first run.  The CI workflow
+# pulls v0.15.0 from GitHub releases; we mirror that exactly so cache keys
+# stay compatible.
+SCCACHE_VERSION="${SCCACHE_VERSION:-v0.15.0}"
+if [ ! -x "$SCCACHE_BIN" ]; then
+    echo "==> Fetching sccache $SCCACHE_VERSION (aarch64-unknown-linux-musl)"
+    tarball="${BUILD_DIR}/sccache-bin/sccache.tgz"
+    curl -fsSL -o "$tarball" \
+        "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-aarch64-unknown-linux-musl.tar.gz"
+    tar -xzf "$tarball" -C "$(dirname "$SCCACHE_BIN")" --strip-components=1 \
+        "sccache-${SCCACHE_VERSION}-aarch64-unknown-linux-musl/sccache"
+    chmod +x "$SCCACHE_BIN"
+    rm -f "$tarball"
+fi
 
 usage() {
     cat <<EOF
@@ -79,13 +95,20 @@ cmd_build() {
 
     for pkg in "$@"; do
         echo "==> Local hedge build: $pkg (aarch64)"
+        # The builder image's ENTRYPOINT is /bin/zsh (the runtime login shell
+        # for users who docker-exec into it).  --entrypoint /bin/sh swaps it
+        # out for the build invocation so the CMD ("sh ci-build-aarch64.sh")
+        # actually runs.  Without this, zsh tries to open "sh" as a script
+        # and dies with "/bin/zsh: can't open input file: sh".
         docker run --rm \
             --platform linux/arm64 \
+            --entrypoint /bin/sh \
             -v "$REPO_ROOT:/workspace" \
             -v "$JPKG_OUTPUT:/var/cache/jpkg" \
             -v "$JPKG_PUBLISHED:/var/cache/jpkg-published" \
             -v "$JPKG_BIN:/jpkg-bin" \
             -v "$SCCACHE:/var/cache/sccache" \
+            -v "$SCCACHE_BIN:/bin/sccache:ro" \
             -w /workspace \
             -e PKG_INPUT="$pkg" \
             -e REBUILD_INPUT="${REBUILD:-false}" \
@@ -94,7 +117,7 @@ cmd_build() {
             -e CC="sccache clang" \
             -e CXX="sccache clang++" \
             "$BUILDER_IMAGE" \
-            sh /workspace/scripts/ci-build-aarch64.sh
+            /workspace/scripts/ci-build-aarch64.sh
     done
 
     echo "==> Local artifacts:"
