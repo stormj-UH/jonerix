@@ -46,10 +46,13 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
 case $(uname -m) in
     # ubuntu-latest 16 GB — -j2 OOMs. -j1 is slower but stable.
-    x86_64)  LLVM_BUILD_JOBS=1 ;;
-    aarch64) LLVM_BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_BUILD_JOBS=$(nproc) ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1 ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
 esac
+
+LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
+LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
 
 # libssp_nonshared.a stub — musl provides __stack_chk_fail natively.
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
@@ -76,35 +79,62 @@ SRC=$(pwd)
 # clang-rebuild dependency, not via llvm-extra.
 
 # ──────────────────────────────────────────────────────────────────────
-# 1. lldb (standalone build against installed clang + libllvm)
+# 1. lldb (in-tree LLVM_ENABLE_PROJECTS build, like clang/lld recipes)
+#
+# Standalone (`cmake -S lldb -DLLDB_BUILT_STANDALONE=ON`) hits the
+# LLVM 21.x duplicate-rule bug for /lib/cmake/llvm/LLVM-Config.cmake
+# (LLVM_LIBRARY_DIR resolves to /lib in standalone mode and several
+# cmake helpers register build rules that target absolute paths there
+# — same trap clang/lld document and avoid). Using the in-tree
+# LLVM_ENABLE_PROJECTS pattern with sccache populated by the libllvm
+# build keeps wall time short: the LLVM-side compiles are near-100%
+# cache hits. The post-install file filter strips libllvm/clang/lld
+# overlap so only lldb-specific files end up in the jpkg.
 # ──────────────────────────────────────────────────────────────────────
 echo "=== Building lldb ==="
 mkdir -p build-lldb
-cmake -S lldb -B build-lldb -G Ninja \\
-    -DCMAKE_BUILD_TYPE=Release \\
-    -DCMAKE_C_COMPILER=clang \\
-    -DCMAKE_CXX_COMPILER=clang++ \\
-    -DCMAKE_C_FLAGS="-Os -fPIC" \\
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \\
-    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \\
-    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \\
-    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \\
-    -DLLVM_ENABLE_PIC=ON \\
-    -DCMAKE_INSTALL_PREFIX=/ \\
-    -DCMAKE_INSTALL_LIBDIR=lib \\
-    -DLLVM_DIR=/lib/cmake/llvm \\
-    -DClang_DIR=/lib/cmake/clang \\
-    -DLLDB_BUILT_STANDALONE=ON \\
-    -DLLDB_ENABLE_CURSES=OFF \\
-    -DLLDB_ENABLE_PYTHON=OFF \\
-    -DLLDB_ENABLE_LUA=OFF \\
-    -DLLDB_ENABLE_LIBEDIT=OFF \\
-    -DLLDB_ENABLE_LIBXML2=OFF \\
-    -DLLVM_INCLUDE_TESTS=OFF \\
-    -DLLDB_INCLUDE_TESTS=OFF \\
-    -DLLDB_USE_SYSTEM_DEBUGSERVER=OFF
-samu -C build-lldb -j"$LLVM_BUILD_JOBS"
-DESTDIR=$DESTDIR cmake --install build-lldb
+cmake -S llvm -B build-lldb -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_ENABLE_PROJECTS="clang;lldb" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
+    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DLLVM_ENABLE_PIC=ON \
+    -DLLVM_ENABLE_LIBCXX=ON \
+    -DLLVM_BUILD_LLVM_DYLIB=ON \
+    -DLLVM_LINK_LLVM_DYLIB=ON \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLDB_ENABLE_CURSES=OFF \
+    -DLLDB_ENABLE_PYTHON=OFF \
+    -DLLDB_ENABLE_LUA=OFF \
+    -DLLDB_ENABLE_LIBEDIT=OFF \
+    -DLLDB_ENABLE_LIBXML2=OFF \
+    -DLLDB_USE_SYSTEM_DEBUGSERVER=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLDB_INCLUDE_TESTS=OFF \
+    -DCLANG_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_BUILD_UTILS=OFF \
+    -DLLVM_INSTALL_UTILS=OFF \
+    -DLLVM_ENABLE_PLUGINS=OFF \
+    -DLLVM_PARALLEL_LINK_JOBS=2 \
+    -DPython3_EXECUTABLE=/usr/bin/python3
+samu -C build-lldb -j"$LLVM_BUILD_JOBS" lldb lldb-server lldb-argdumper lldb-instr liblldb
+for comp in lldb lldb-server lldb-argdumper lldb-instr liblldb \
+            lldb-headers lldb-cmake-exports; do
+    DESTDIR=$DESTDIR cmake --install build-lldb --component "$comp" 2>/dev/null || true
+done
 
 # ──────────────────────────────────────────────────────────────────────
 # 2. compiler-rt sanitizers (standalone, against installed libllvm)
@@ -113,30 +143,30 @@ DESTDIR=$DESTDIR cmake --install build-lldb
 # ──────────────────────────────────────────────────────────────────────
 echo "=== Building compiler-rt sanitizers ==="
 mkdir -p build-rt
-cmake -S compiler-rt -B build-rt -G Ninja \\
-    -DCMAKE_BUILD_TYPE=Release \\
-    -DCMAKE_C_COMPILER=clang \\
-    -DCMAKE_CXX_COMPILER=clang++ \\
-    -DCMAKE_C_FLAGS="-Os -fPIC" \\
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \\
-    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \\
-    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \\
-    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \\
-    -DCMAKE_INSTALL_PREFIX=/ \\
-    -DCMAKE_INSTALL_LIBDIR=lib \\
-    -DCOMPILER_RT_STANDALONE_BUILD=ON \\
-    -DLLVM_CMAKE_DIR=/lib/cmake/llvm \\
-    -DCOMPILER_RT_INCLUDE_TESTS=OFF \\
-    -DLLVM_INCLUDE_TESTS=OFF \\
-    -DCOMPILER_RT_BUILD_BUILTINS=OFF \\
-    -DCOMPILER_RT_BUILD_CRT=OFF \\
-    -DCOMPILER_RT_BUILD_SANITIZERS=ON \\
-    -DCOMPILER_RT_BUILD_PROFILE=ON \\
-    -DCOMPILER_RT_BUILD_XRAY=ON \\
-    -DCOMPILER_RT_BUILD_LIBFUZZER=ON \\
-    -DCOMPILER_RT_BUILD_MEMPROF=OFF \\
-    -DCOMPILER_RT_BUILD_ORC=OFF \\
-    -DCOMPILER_RT_USE_LIBCXX=ON \\
+cmake -S compiler-rt -B build-rt -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_FLAGS="-Os -fPIC" \
+    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCOMPILER_RT_STANDALONE_BUILD=ON \
+    -DLLVM_CMAKE_DIR=/lib/cmake/llvm \
+    -DCOMPILER_RT_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DCOMPILER_RT_BUILD_BUILTINS=OFF \
+    -DCOMPILER_RT_BUILD_CRT=OFF \
+    -DCOMPILER_RT_BUILD_SANITIZERS=ON \
+    -DCOMPILER_RT_BUILD_PROFILE=ON \
+    -DCOMPILER_RT_BUILD_XRAY=ON \
+    -DCOMPILER_RT_BUILD_LIBFUZZER=ON \
+    -DCOMPILER_RT_BUILD_MEMPROF=OFF \
+    -DCOMPILER_RT_BUILD_ORC=OFF \
+    -DCOMPILER_RT_USE_LIBCXX=ON \
     -DCOMPILER_RT_DEFAULT_TARGET_TRIPLE="$(clang -dumpmachine)"
 samu -C build-rt -j"$LLVM_BUILD_JOBS"
 DESTDIR=$DESTDIR cmake --install build-rt
@@ -158,13 +188,13 @@ fi
 # install). Standalone builds shouldn't produce most of these, but
 # clang-tools-extra's install can sometimes drop a stray clang or
 # libclang-cpp.so.
-for f in clang clang++ clang-21 clang-cl clang-cpp cc c++ \\
-         lld ld.lld ld64.lld lld-link wasm-ld ld \\
-         llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip \\
-         llvm-objdump llvm-readobj llvm-readelf llvm-symbolizer \\
-         llvm-addr2line llvm-cxxfilt llvm-cov llvm-config \\
-         opt llc llvm-dlltool llvm-lib llvm-bitcode-strip \\
-         llvm-install-name-tool llvm-otool ar nm objcopy strip \\
+for f in clang clang++ clang-21 clang-cl clang-cpp cc c++ \
+         lld ld.lld ld64.lld lld-link wasm-ld ld \
+         llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip \
+         llvm-objdump llvm-readobj llvm-readelf llvm-symbolizer \
+         llvm-addr2line llvm-cxxfilt llvm-cov llvm-config \
+         opt llc llvm-dlltool llvm-lib llvm-bitcode-strip \
+         llvm-install-name-tool llvm-otool ar nm objcopy strip \
          objdump; do
     rm -f "$DESTDIR/bin/$f"
 done
@@ -180,16 +210,16 @@ rm -rf "$DESTDIR/include/clang"      "$DESTDIR/include/clang-c"
 rm -rf "$DESTDIR/include/lld"
 
 # Strip binaries
-find "$DESTDIR/bin" -type f -executable \\
-    -exec llvm-strip {} \\; 2>/dev/null || true
-find "$DESTDIR/lib" -type f -name '*.so*' \\
-    -exec llvm-strip --strip-debug {} \\; 2>/dev/null || true
+find "$DESTDIR/bin" -type f -executable \
+    -exec llvm-strip {} \; 2>/dev/null || true
+find "$DESTDIR/lib" -type f -name '*.so*' \
+    -exec llvm-strip --strip-debug {} \; 2>/dev/null || true
 
 # Drop man/docs to keep the package small
 rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc"
 
 # Normalize /lib64 references
-python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \\
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
     "$DESTDIR/bin" "$DESTDIR/lib" 2>/dev/null || true
 
 echo "=== llvm-extra payload ==="
@@ -200,4 +230,4 @@ install = ""
 
 [depends]
 runtime = ["musl", "libllvm", "libcxx", "xz", "zstd", "zlib"]
-build = ["libllvm", "clang", "lld", "cmake", "samurai", "libcxx", "jonerix-headers"]
+build = ["libllvm", "clang", "lld", "cmake", "samurai", "libcxx", "jonerix-headers", "python3"]
