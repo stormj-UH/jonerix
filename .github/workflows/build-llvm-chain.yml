@@ -96,9 +96,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p /tmp/jpkg-published /tmp/jpkg-output
+          # Arch-pinned: chain run 25622994033 hit cross-arch contamination
+          # because the script-side glob was "${dep_pkg}-*-*.jpkg". This
+          # filter is the second line of defense.
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "*.jpkg" \
+            --pattern "*-x86_64.jpkg" \
             --dir /tmp/jpkg-published 2>/dev/null || true
           echo "Existing x86_64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
 
@@ -279,9 +282,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p /tmp/jpkg-published /tmp/jpkg-output
+          # Arch-pinned: see x86_64 sibling for rationale (run 25622994033).
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "*.jpkg" \
+            --pattern "*-aarch64.jpkg" \
             --dir /tmp/jpkg-published 2>/dev/null || true
           echo "Existing aarch64 packages: $(ls /tmp/jpkg-published/*.jpkg 2>/dev/null | wc -l)"
 

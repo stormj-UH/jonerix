@@ -112,7 +112,7 @@ fi
 
 install_cached_pkg_if_available() {
     pkg="$1"
-    cached_pkg=$(ls /var/cache/jpkg/${pkg}-*-*.jpkg 2>/dev/null | sort -V | tail -1)
+    cached_pkg=$(ls /var/cache/jpkg/${pkg}-*-aarch64.jpkg 2>/dev/null | sort -V | tail -1)
     if [ -z "$cached_pkg" ] || [ ! -f "$cached_pkg" ]; then
         return 1
     fi
@@ -360,9 +360,16 @@ install_target_build_deps() {
         # workflow mirrors freshly-built jpkgs to /var/cache/jpkg-
         # published which is read-only from jpkg's perspective —
         # safe from the purge.
+        # Pin the glob to -aarch64.jpkg: build-llvm-chain.yml downloads
+        # ALL release assets into /var/cache/jpkg-published, including
+        # the x86_64 variants. Without the arch suffix the glob hits both
+        # arches and `sort -V | tail -1` picks x86_64 lexicographically
+        # ('a' < 'x'), so an aarch64 chain extracts an x86_64 libc++.so
+        # and aarch64 musl chokes with 'unsupported relocation type 7'
+        # (= R_X86_64_JUMP_SLOT). See chain run 25622994033 aarch64.
         # Pick the highest-sorting version; sort -V so r10 > r2.
-        local_pkg=$( ( ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg \
-                          /var/cache/jpkg-published/${dep_pkg}-*-*.jpkg \
+        local_pkg=$( ( ls /var/cache/jpkg/${dep_pkg}-*-aarch64.jpkg \
+                          /var/cache/jpkg-published/${dep_pkg}-*-aarch64.jpkg \
                           2>/dev/null ) | sort -V | tail -1)
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="

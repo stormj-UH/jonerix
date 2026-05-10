@@ -118,7 +118,7 @@ fi
 
 install_cached_pkg_if_available() {
     pkg="$1"
-    cached_pkg=$(ls /var/cache/jpkg/${pkg}-*-*.jpkg 2>/dev/null | sort -V | tail -1)
+    cached_pkg=$(ls /var/cache/jpkg/${pkg}-*-x86_64.jpkg 2>/dev/null | sort -V | tail -1)
     if [ -z "$cached_pkg" ] || [ ! -f "$cached_pkg" ]; then
         return 1
     fi
@@ -343,8 +343,14 @@ install_target_build_deps() {
         # uploaded jpkgs — jpkg doesn't manage this dir so its
         # 'update' step won't purge entries with mismatched INDEX
         # hashes). See aarch64 sibling for full rationale.
-        local_pkg=$( ( ls /var/cache/jpkg/${dep_pkg}-*-*.jpkg \
-                          /var/cache/jpkg-published/${dep_pkg}-*-*.jpkg \
+        # Pin the glob to -x86_64.jpkg: build-llvm-chain.yml downloads
+        # ALL release assets into /var/cache/jpkg-published, so without
+        # the arch suffix the glob hits both arches and the wrong one
+        # gets extracted. On x86_64 we picked the aarch64 clang and then
+        # sccache failed to spawn /bin/clang ('Compiler not supported:
+        # failed to spawn ... /bin/clang'). See chain run 25622994033.
+        local_pkg=$( ( ls /var/cache/jpkg/${dep_pkg}-*-x86_64.jpkg \
+                          /var/cache/jpkg-published/${dep_pkg}-*-x86_64.jpkg \
                           2>/dev/null ) | sort -V | tail -1)
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
