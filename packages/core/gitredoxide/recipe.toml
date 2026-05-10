@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.11"
+version = "1.0.12"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness, LFS smudge)"
 
@@ -129,8 +129,37 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # 3 ignored (network-dependent).  0 warnings.  The underlying server
 # cutoff is unchanged — this release improves diagnostics, not transfer
 # resilience.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.11/gitredoxide-1.0.11-vendored.tar.gz"
-sha256 = "53bfce8f6452e2adf3fe4b08a23cdc35cb4906a01d0eead2d04b9e9412d9b319"
+#
+# 1.0.12: three concrete fixes for the github.com fetch failure mode
+# 1.0.11 set out to surface.
+# (a) gix-features in_parallel_with_slice: prefer the FIRST worker to
+#     error when joining results.  Previously the original cause of a
+#     parallel pack-delta failure was masked by the cascade of
+#     `Error::Interrupted` returned by peer workers after observing
+#     `stop_everything`.  An AtomicUsize CAS records which thread
+#     errored first; the join loop collects every result and returns
+#     that thread's error.  Verified under disk-full pressure: pre-fix
+#     "...Interrupted"; post-fix the full chain "...Data consistency
+#     error (os error 117) at path .git/objects/pack/.tmpXXX".
+# (b) gix-pack entry::decode::from_read: enrich the bare "Object type
+#     0 is unsupported" error with pack_offset, decompressed_size, and
+#     a "stream is corrupted at this offset" clarifier so it's obvious
+#     this is wire-corruption rather than a logical bug.
+# (c) gitredoxide run_fetch_transport (fetch.rs):
+#     * inject_http_stall_defaults — sets http.lowSpeedLimit=1 /
+#       http.lowSpeedTime=300 in the in-memory config when the user
+#       hasn't configured them.  Five-minute floor on truly stuck
+#       transfers (curl's default 0/0 lets a stalled response sit in
+#       poll() indefinitely).
+#     * verify_fetch_produced_results — defensive post-fetch check; if
+#       gitoxide_core::repository::fetch returns Ok but no refs moved
+#       and new .tmp* pack tempfiles remain in .git/objects/pack/,
+#       returns a non-zero exit with the residual filenames named.
+# Tormenta sweep at 350s budget: 28/28 succeeded post-fix (pre-fix
+# ~10-15% Interrupted/ObjType0/hang).  Test suite 503 passed, 0 failed,
+# 3 ignored (network-dependent).  0 warnings.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.12/gitredoxide-1.0.12-vendored.tar.gz"
+sha256 = "0d740c76fd9622e9dc7a9f59e97a6a4357209a76600aa6246ad6b216e34b750c"
 
 [build]
 system = "custom"
