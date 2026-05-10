@@ -2,7 +2,7 @@
 name = "llvm-extra"
 version = "21.1.2"
 license = "Apache-2.0"
-description = "LLVM extra tooling — clang-tools-extra (clang-tidy, clang-format, clangd), lldb, compiler-rt sanitizers (asan/msan/tsan/ubsan/lsan/hwasan)"
+description = "LLVM extras — lldb debugger + compiler-rt sanitizers (asan/msan/tsan/ubsan/lsan/hwasan/scudo). Built standalone against installed libllvm + clang."
 
 # llvm-extra ships the long tail of clang/llvm tooling that isn't part
 # of the core toolchain. It builds out-of-tree against the installed
@@ -58,34 +58,24 @@ SRC=$(pwd)
 # in a single shell variable (word-split), so each cmake call lists
 # the C/CXX flag args inline.
 
-# ──────────────────────────────────────────────────────────────────────
-# 1. clang-tools-extra (standalone build against installed clang)
-# ──────────────────────────────────────────────────────────────────────
-echo "=== Building clang-tools-extra ==="
-mkdir -p build-cte
-cmake -S clang-tools-extra -B build-cte -G Ninja \\
-    -DCMAKE_BUILD_TYPE=Release \\
-    -DCMAKE_C_COMPILER=clang \\
-    -DCMAKE_CXX_COMPILER=clang++ \\
-    -DCMAKE_C_FLAGS="-Os -fPIC" \\
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++" \\
-    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \\
-    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \\
-    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \\
-    -DLLVM_ENABLE_PIC=ON \\
-    -DCMAKE_INSTALL_PREFIX=/ \\
-    -DCMAKE_INSTALL_LIBDIR=lib \\
-    -DLLVM_DIR=/lib/cmake/llvm \\
-    -DClang_DIR=/lib/cmake/clang \\
-    -DLLVM_INCLUDE_TESTS=OFF \\
-    -DCLANG_INCLUDE_TESTS=OFF \\
-    -DCLANG_TOOLS_EXTRA_INCLUDE_DOCS=OFF \\
-    -DLLVM_HAVE_LINK_VERSION_SCRIPT=ON
-samu -C build-cte -j"$LLVM_BUILD_JOBS"
-DESTDIR=$DESTDIR cmake --install build-cte
+# clang-tools-extra is intentionally NOT built here.
+#
+# clang-tools-extra/CMakeLists.txt in LLVM 21 has no standalone-build
+# boilerplate (no find_package(Clang) / include(AddClang) at the top).
+# Running `cmake -S clang-tools-extra` therefore fails immediately at
+# clang-apply-replacements/CMakeLists.txt:5 with:
+#
+#   CMake Error at clang-apply-replacements/CMakeLists.txt:5
+#   (add_clang_library): Unknown CMake command "add_clang_library".
+#
+# Building it would require -S llvm with LLVM_ENABLE_PROJECTS=
+# "clang;clang-tools-extra", which rebuilds clang too. That defeats
+# the libllvm/clang split's whole point. If clang-tidy / clang-format
+# / clangd become a hard need, ship them as their own jpkg with a
+# clang-rebuild dependency, not via llvm-extra.
 
 # ──────────────────────────────────────────────────────────────────────
-# 2. lldb (standalone build against installed clang + libllvm)
+# 1. lldb (standalone build against installed clang + libllvm)
 # ──────────────────────────────────────────────────────────────────────
 echo "=== Building lldb ==="
 mkdir -p build-lldb
@@ -116,7 +106,7 @@ samu -C build-lldb -j"$LLVM_BUILD_JOBS"
 DESTDIR=$DESTDIR cmake --install build-lldb
 
 # ──────────────────────────────────────────────────────────────────────
-# 3. compiler-rt sanitizers (standalone, against installed libllvm)
+# 2. compiler-rt sanitizers (standalone, against installed libllvm)
 #    BUILD_BUILTINS=OFF — clang already shipped builtins.
 #    Sanitizer libs land in /lib/clang/21/lib/linux/.
 # ──────────────────────────────────────────────────────────────────────
