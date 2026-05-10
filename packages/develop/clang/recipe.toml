@@ -33,7 +33,7 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 case $(uname -m) in
     # ubuntu-latest is 16 GB; -j2 OOMs during clang's diagnostic
     # tablegen and Sema compile. -j1 is slower but stable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=1 ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
     aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
     *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
 esac

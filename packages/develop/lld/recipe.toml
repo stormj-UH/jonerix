@@ -27,7 +27,7 @@ export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 case $(uname -m) in
     # ubuntu-latest 16 GB — -j2 OOMs in libllvm/clang. lld is smaller
     # but the same trigger applies in the LLVM-rebuild section. -j1.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=1 ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
     aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
     *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
 esac

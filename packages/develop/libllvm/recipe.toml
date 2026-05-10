@@ -32,7 +32,7 @@ case $(uname -m) in
     # GitHub's ubuntu-latest runner has 16 GB RAM; -j2 OOMs and stalls
     # the build for 20+ minutes at a time during the heaviest compile
     # ranges (clang/Sema, LLVM Support). -j1 is slower but predictable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=1 ;;
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
     aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
     *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
 esac
