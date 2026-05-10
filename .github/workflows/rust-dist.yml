@@ -60,6 +60,134 @@ jobs:
           mkdir rust-src && tar xJf rustc-src.tar.xz -C rust-src --strip-components=1
           cd rust-src
 
+          # ---------------------------------------------------------------
+          # Bake aarch64-jonerix-linux-musl + x86_64-jonerix-linux-musl into
+          # rustc's builtin target table.  Without this, stable rustc rejects
+          # the triple with "could not find specification for target ..."
+          # because custom JSON specs require -Zunstable-options.  The 1.94
+          # dist had this patch; for 1.95 we re-apply it inline.
+          # ---------------------------------------------------------------
+          # 1. Insert two new entries in `supported_targets!{}` in mod.rs,
+          #    placed right after their `*-unknown-linux-musl` siblings so
+          #    the new files hash next to the existing ones.  Done via
+          #    python rather than sed because the jonerix/uutils sed
+          #    surface doesn't reliably accept '\n' in replacements.
+          python3 - <<'PYTHON_PATCH'
+          import pathlib, sys
+          mod = pathlib.Path("compiler/rustc_target/src/spec/mod.rs")
+          src = mod.read_text()
+          for tuple_str, mod_ident in [
+              ("aarch64-unknown-linux-musl", "aarch64_unknown_linux_musl"),
+              ("x86_64-unknown-linux-musl", "x86_64_unknown_linux_musl"),
+          ]:
+              old = f'    ("{tuple_str}", {mod_ident}),'
+              jonerix_tuple = tuple_str.replace("-unknown-", "-jonerix-")
+              jonerix_mod = mod_ident.replace("_unknown_", "_jonerix_")
+              new = f'{old}\n    ("{jonerix_tuple}", {jonerix_mod}),'
+              if old not in src:
+                  sys.exit(f"FATAL: {old!r} not found in mod.rs")
+              if jonerix_tuple in src:
+                  print(f"already patched: {jonerix_tuple}")
+                  continue
+              src = src.replace(old, new, 1)
+          mod.write_text(src)
+          for line in src.splitlines():
+              if "jonerix-linux-musl" in line:
+                  print(f"  {line}")
+          PYTHON_PATCH
+
+          # 2. Drop the new target spec files.  Each is a verbatim copy of
+          #    the corresponding `*-unknown-linux-musl` file with vendor
+          #    bumped to "jonerix" (TargetOptions::vendor) and the metadata
+          #    description tagged so `rustc --print target-list-detailed`
+          #    distinguishes them.
+          cat > compiler/rustc_target/src/spec/targets/aarch64_jonerix_linux_musl.rs <<'JONERIX_AARCH64'
+          use crate::spec::{
+              Arch, FramePointer, SanitizerSet, StackProbeType, Target, TargetMetadata, TargetOptions, base,
+          };
+
+          pub(crate) fn target() -> Target {
+              let mut base = base::linux_musl::opts();
+              base.max_atomic_width = Some(128);
+              base.supports_xray = true;
+              base.features = "+v8a,+outline-atomics".into();
+              base.stack_probes = StackProbeType::Inline;
+              base.supported_sanitizers = SanitizerSet::ADDRESS
+                  | SanitizerSet::CFI
+                  | SanitizerSet::LEAK
+                  | SanitizerSet::MEMORY
+                  | SanitizerSet::THREAD;
+              base.crt_static_default = true;
+              base.vendor = "jonerix".into();
+
+              Target {
+                  llvm_target: "aarch64-unknown-linux-musl".into(),
+                  metadata: TargetMetadata {
+                      description: Some("ARM64 Linux with musl 1.2.5 (jonerix)".into()),
+                      tier: Some(3),
+                      host_tools: Some(true),
+                      std: Some(true),
+                  },
+                  pointer_width: 64,
+                  data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32".into(),
+                  arch: Arch::AArch64,
+                  options: TargetOptions {
+                      frame_pointer: FramePointer::NonLeaf,
+                      mcount: "\u{1}_mcount".into(),
+                      ..base
+                  },
+              }
+          }
+          JONERIX_AARCH64
+
+          cat > compiler/rustc_target/src/spec/targets/x86_64_jonerix_linux_musl.rs <<'JONERIX_X86_64'
+          use crate::spec::{
+              Arch, Cc, LinkerFlavor, Lld, SanitizerSet, StackProbeType, Target, TargetMetadata, base,
+          };
+
+          pub(crate) fn target() -> Target {
+              let mut base = base::linux_musl::opts();
+              base.cpu = "x86-64".into();
+              base.plt_by_default = false;
+              base.max_atomic_width = Some(64);
+              base.add_pre_link_args(LinkerFlavor::Gnu(Cc::Yes, Lld::No), &["-m64"]);
+              base.stack_probes = StackProbeType::Inline;
+              base.static_position_independent_executables = true;
+              base.supported_sanitizers = SanitizerSet::ADDRESS
+                  | SanitizerSet::CFI
+                  | SanitizerSet::LEAK
+                  | SanitizerSet::MEMORY
+                  | SanitizerSet::THREAD;
+              base.supports_xray = true;
+              base.crt_static_default = true;
+              base.vendor = "jonerix".into();
+
+              Target {
+                  llvm_target: "x86_64-unknown-linux-musl".into(),
+                  metadata: TargetMetadata {
+                      description: Some("64-bit Linux with musl 1.2.5 (jonerix)".into()),
+                      tier: Some(3),
+                      host_tools: Some(true),
+                      std: Some(true),
+                  },
+                  pointer_width: 64,
+                  data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128".into(),
+                  arch: Arch::X86_64,
+                  options: base,
+              }
+          }
+          JONERIX_X86_64
+
+          # 3. Sanity-check the patch landed.
+          grep -q "aarch64-jonerix-linux-musl" compiler/rustc_target/src/spec/mod.rs || \
+              { echo "FATAL: aarch64-jonerix entry missing from mod.rs"; exit 1; }
+          grep -q "x86_64-jonerix-linux-musl" compiler/rustc_target/src/spec/mod.rs || \
+              { echo "FATAL: x86_64-jonerix entry missing from mod.rs"; exit 1; }
+          test -f compiler/rustc_target/src/spec/targets/aarch64_jonerix_linux_musl.rs || \
+              { echo "FATAL: aarch64_jonerix_linux_musl.rs missing"; exit 1; }
+          test -f compiler/rustc_target/src/spec/targets/x86_64_jonerix_linux_musl.rs || \
+              { echo "FATAL: x86_64_jonerix_linux_musl.rs missing"; exit 1; }
+
           # JSON target spec so stage0 can resolve the jonerix vendor triple.
           # Identical to x86_64-unknown-linux-musl with vendor = "jonerix".
           cat > x86_64-jonerix-linux-musl.json <<'TGTSPEC'
@@ -93,6 +221,11 @@ jobs:
           change-id = 999999
 
           [build]
+          # description sets CFG_VER_DESCRIPTION which becomes the trailing
+          # parenthesised tag in `rustc --version` output.  Without it,
+          # bootstrap defaults to "built from a source tarball" because the
+          # source is unpacked from a downloaded tarball (no .git dir).
+          description = "jonerix"
           target = ["${TRIPLE}"]
           host = ["${TRIPLE}"]
           cargo-native-static = false
@@ -250,6 +383,102 @@ jobs:
           mkdir rust-src && tar xJf rustc-src.tar.xz -C rust-src --strip-components=1
           cd rust-src
 
+          # ---------------------------------------------------------------
+          # Bake aarch64-jonerix-linux-musl + x86_64-jonerix-linux-musl into
+          # rustc's builtin target table.  See the equivalent block in the
+          # x86_64 job above for the full rationale.
+          # ---------------------------------------------------------------
+          sed -i 's|^    ("aarch64-unknown-linux-musl", aarch64_unknown_linux_musl),$|&\n    ("aarch64-jonerix-linux-musl", aarch64_jonerix_linux_musl),|' \
+              compiler/rustc_target/src/spec/mod.rs
+          sed -i 's|^    ("x86_64-unknown-linux-musl", x86_64_unknown_linux_musl),$|&\n    ("x86_64-jonerix-linux-musl", x86_64_jonerix_linux_musl),|' \
+              compiler/rustc_target/src/spec/mod.rs
+
+          cat > compiler/rustc_target/src/spec/targets/aarch64_jonerix_linux_musl.rs <<'JONERIX_AARCH64'
+          use crate::spec::{
+              Arch, FramePointer, SanitizerSet, StackProbeType, Target, TargetMetadata, TargetOptions, base,
+          };
+
+          pub(crate) fn target() -> Target {
+              let mut base = base::linux_musl::opts();
+              base.max_atomic_width = Some(128);
+              base.supports_xray = true;
+              base.features = "+v8a,+outline-atomics".into();
+              base.stack_probes = StackProbeType::Inline;
+              base.supported_sanitizers = SanitizerSet::ADDRESS
+                  | SanitizerSet::CFI
+                  | SanitizerSet::LEAK
+                  | SanitizerSet::MEMORY
+                  | SanitizerSet::THREAD;
+              base.crt_static_default = true;
+              base.vendor = "jonerix".into();
+
+              Target {
+                  llvm_target: "aarch64-unknown-linux-musl".into(),
+                  metadata: TargetMetadata {
+                      description: Some("ARM64 Linux with musl 1.2.5 (jonerix)".into()),
+                      tier: Some(3),
+                      host_tools: Some(true),
+                      std: Some(true),
+                  },
+                  pointer_width: 64,
+                  data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32".into(),
+                  arch: Arch::AArch64,
+                  options: TargetOptions {
+                      frame_pointer: FramePointer::NonLeaf,
+                      mcount: "\u{1}_mcount".into(),
+                      ..base
+                  },
+              }
+          }
+          JONERIX_AARCH64
+
+          cat > compiler/rustc_target/src/spec/targets/x86_64_jonerix_linux_musl.rs <<'JONERIX_X86_64'
+          use crate::spec::{
+              Arch, Cc, LinkerFlavor, Lld, SanitizerSet, StackProbeType, Target, TargetMetadata, base,
+          };
+
+          pub(crate) fn target() -> Target {
+              let mut base = base::linux_musl::opts();
+              base.cpu = "x86-64".into();
+              base.plt_by_default = false;
+              base.max_atomic_width = Some(64);
+              base.add_pre_link_args(LinkerFlavor::Gnu(Cc::Yes, Lld::No), &["-m64"]);
+              base.stack_probes = StackProbeType::Inline;
+              base.static_position_independent_executables = true;
+              base.supported_sanitizers = SanitizerSet::ADDRESS
+                  | SanitizerSet::CFI
+                  | SanitizerSet::LEAK
+                  | SanitizerSet::MEMORY
+                  | SanitizerSet::THREAD;
+              base.supports_xray = true;
+              base.crt_static_default = true;
+              base.vendor = "jonerix".into();
+
+              Target {
+                  llvm_target: "x86_64-unknown-linux-musl".into(),
+                  metadata: TargetMetadata {
+                      description: Some("64-bit Linux with musl 1.2.5 (jonerix)".into()),
+                      tier: Some(3),
+                      host_tools: Some(true),
+                      std: Some(true),
+                  },
+                  pointer_width: 64,
+                  data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128".into(),
+                  arch: Arch::X86_64,
+                  options: base,
+              }
+          }
+          JONERIX_X86_64
+
+          grep -q "aarch64-jonerix-linux-musl" compiler/rustc_target/src/spec/mod.rs || \
+              { echo "FATAL: aarch64-jonerix entry missing from mod.rs"; exit 1; }
+          grep -q "x86_64-jonerix-linux-musl" compiler/rustc_target/src/spec/mod.rs || \
+              { echo "FATAL: x86_64-jonerix entry missing from mod.rs"; exit 1; }
+          test -f compiler/rustc_target/src/spec/targets/aarch64_jonerix_linux_musl.rs || \
+              { echo "FATAL: aarch64_jonerix_linux_musl.rs missing"; exit 1; }
+          test -f compiler/rustc_target/src/spec/targets/x86_64_jonerix_linux_musl.rs || \
+              { echo "FATAL: x86_64_jonerix_linux_musl.rs missing"; exit 1; }
+
           # JSON target spec for aarch64-jonerix-linux-musl.
           # Identical to aarch64-unknown-linux-musl with vendor = "jonerix".
           cat > aarch64-jonerix-linux-musl.json <<'TGTSPEC'
@@ -285,6 +514,8 @@ jobs:
           change-id = 999999
 
           [build]
+          # CFG_VER_DESCRIPTION — see x86_64 job above for rationale.
+          description = "jonerix"
           target = ["${TRIPLE}"]
           host = ["${TRIPLE}"]
           cargo-native-static = false
