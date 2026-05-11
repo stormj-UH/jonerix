@@ -16,5 +16,9 @@
 # Why not a busier interval: when disable-eee DOES find EEE on and has
 # to retry with -b (link bounce), the link drops for a moment, so we
 # want to minimise the chance of stepping on a long-running transfer.
-SNOOZE_ARGS="-H* -M*/15 -S0"
+#
+# NOTE on syntax: snooze uses `/N` (every N-th unit), NOT cron's `*/N`.
+# `-M */15` parses as `-M *` and fires every minute. `-M /15` is what
+# we actually want — see /bin/snooze-crond header comment.
+SNOOZE_ARGS="-M /15 -S 0"
 COMMAND="/bin/disable-eee eth0"

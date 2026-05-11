@@ -1,0 +1,28 @@
+#!/bin/openrc-run
+# Supervise /bin/snooze-crond — the dispatcher that reads /etc/cron.d/*
+# and fires each entry on its snooze(1) schedule. Without this service
+# nothing actually triggers the cron files (snooze-crond is just a
+# shell script that needs to be running for any of them to fire).
+#
+# Why this service ships in raspi5-fixups rather than the snooze
+# package: the snooze package upstream is just the binaries (snooze +
+# snooze-crond) with no init layer, and we already have a habit of
+# parking jonerix-specific OpenRC glue in this package. If the snooze
+# package grows its own service later this one can be removed.
+#
+# Part of jonerix - MIT License
+
+description="Cron dispatcher (snooze-crond) reading /etc/cron.d/*"
+
+supervisor="supervise-daemon"
+command="/bin/snooze-crond"
+pidfile="/run/snooze-crond.pid"
+respawn_delay=5
+
+depend() {
+    need localmount
+    after dhcpcd
+    # cron jobs may legitimately depend on networking and the clock;
+    # don't gate sshd/tailscale on us.
+    keyword -jail -prefix -vserver
+}

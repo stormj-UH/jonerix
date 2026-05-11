@@ -1,9 +1,23 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.18"
+version = "1.6.19"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.19: fix 1.6.18 in two ways.
+# (a) wrong snooze timespec.  1.6.18 shipped `-M */15` which snooze
+#     interprets as `-M *` (every minute) — see /bin/snooze-crond
+#     header.  Corrected to `-M /15` (every 15th minute).
+# (b) snooze-crond was never running.  The snooze package ships
+#     /bin/snooze-crond with no init layer, so every /etc/cron.d/*
+#     entry on jonerix has been silently broken since first install
+#     (pi5-rtc-battery had only fired ~4 times in the cron log,
+#     each one coincident with a package install hook re-running
+#     it once).  1.6.19 ships init.d/snooze-crond as a supervised
+#     OpenRC service, adds it to the default runlevel, and
+#     live-starts it in post_install so cron entries fire on this
+#     install rather than waiting for the next reboot.
+#
 # 1.6.18: periodic disable-eee watchdog.  The init.d/disable-eee
 # OpenRC service only runs once at boot, after dhcpcd brings the
 # link up.  That handled the common case, but reproducer 2026-05-10
@@ -176,6 +190,14 @@ install -Dm644 cron.d/pi5-rtc-battery     $DESTDIR/etc/cron.d/pi5-rtc-battery
 # is idempotent — when EEE is already off, this is a fast no-op that
 # does not bounce the link.
 install -Dm644 cron.d/disable-eee-watchdog $DESTDIR/etc/cron.d/disable-eee-watchdog
+
+# snooze-crond OpenRC service. The snooze package ships /bin/snooze-crond
+# but no init layer, so prior to 1.6.19 every /etc/cron.d/* entry on
+# jonerix was silently broken — cron files existed, no daemon dispatched
+# them. This service fixes that for the whole system; without it the
+# disable-eee-watchdog cron entry above (and pi5-rtc-battery, and
+# ntp-set) would never fire.
+install -Dm755 init.d/snooze-crond $DESTDIR/etc/init.d/snooze-crond
 
 # jonerix is merged-usr-flat: /usr is a runtime symlink to /. jpkg >= 1.1.0
 # refuses to silently flatten a DESTDIR/usr/ tree (layout bugs used to
@@ -354,7 +376,7 @@ rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
 for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
 done
-for svc in ntp-bootstrap ntpd shadow-login syslogd wpa_supplicant_wlan0; do
+for svc in ntp-bootstrap ntpd shadow-login syslogd snooze-crond wpa_supplicant_wlan0; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/default/$svc" 2>/dev/null || true
 done
 [ -f /etc/init.d/reboot-trace-shutdown ] && ln -sf /etc/init.d/reboot-trace-shutdown /etc/runlevels/shutdown/reboot-trace-shutdown 2>/dev/null || true
@@ -437,6 +459,13 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     fi
     if command -v rc-service >/dev/null 2>&1; then
         rc-service shadow-login restart 2>/dev/null || true
+    fi
+
+    # Live-start snooze-crond so the cron entries (disable-eee-watchdog,
+    # pi5-rtc-battery, ntp-set) actually fire on this install — without
+    # this, the cron daemon only comes up on the next reboot.
+    if command -v rc-service >/dev/null 2>&1; then
+        rc-service snooze-crond start 2>/dev/null || true
     fi
 
     # --- cold-reboot: patch cmdline.txt once + live-flip sysfs ---
