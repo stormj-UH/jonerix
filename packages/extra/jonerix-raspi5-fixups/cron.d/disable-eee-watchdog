@@ -18,7 +18,9 @@
 # want to minimise the chance of stepping on a long-running transfer.
 #
 # NOTE on syntax: snooze uses `/N` (every N-th unit), NOT cron's `*/N`.
-# `-M */15` parses as `-M *` and fires every minute. `-M /15` is what
-# we actually want — see /bin/snooze-crond header comment.
-SNOOZE_ARGS="-M /15 -S 0"
+# `-M */15` parses as `-M *` and fires every minute.  Also: without an
+# `-H` flag, snooze defaults to hour 0 (midnight only).  `-H /1` means
+# every hour.  Verified with `snooze -nv -H /1 -M /15 -S 0` listing the
+# next fires :00, :15, :30, :45 across every hour.
+SNOOZE_ARGS="-H /1 -M /15 -S 0"
 COMMAND="/bin/disable-eee eth0"

@@ -1,9 +1,16 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.19"
+version = "1.6.20"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.20: fix the disable-eee-watchdog snooze timespec one more time.
+# 1.6.19 changed `-M */15` -> `-M /15` (correct for the minute axis),
+# but missed that snooze defaults `-H` to hour 0 when not specified,
+# which made the cron fire only at midnight :00/:15/:30/:45 rather
+# than every hour.  Verified with `snooze -nv ...`.  Now uses
+# `-H /1 -M /15 -S 0` (every hour, every 15th minute).
+#
 # 1.6.19: fix 1.6.18 in two ways.
 # (a) wrong snooze timespec.  1.6.18 shipped `-M */15` which snooze
 #     interprets as `-M *` (every minute) — see /bin/snooze-crond
