@@ -1,8 +1,18 @@
 [package]
 name = "musl"
-version = "1.2.6"
+version = "1.2.6-r1"
 license = "MIT"
 description = "Lightweight, fast, and standards-conformant C library"
+
+# r1: stamp jonerix distro fingerprint into the version banner.
+# Two visible surfaces:
+#   - ldso usage banner (run `ld-musl-${arch}.so.1` with no args)
+#     gains "musl libc (jonerix; ${arch})" instead of "musl libc (${arch})".
+#   - The __libc_version[] symbol (and VERSION macro) becomes
+#     "1.2.6-jonerix-${JONERIX_VERSION}" so it shows up in `strings` and
+#     anyone reading the libc.so.1 ELF or calling the symbol sees it.
+# These are surgical edits — no behavioural change to libc, just brand
+# strings — so we don't bump dependent rebuilds.
 
 [source]
 url = "https://musl.libc.org/releases/musl-1.2.6.tar.gz"
@@ -10,12 +20,45 @@ sha256 = "d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-Os -fomit-frame-pointer\" ./configure --prefix=/ --syslibdir=/lib CC=clang"
+configure = """
+# Patch ldso banner to identify as jonerix. POSIX-safe sed pattern
+# (no -i): rewrite to a tmp file, copy back with `cat`.
+tmp=ldso/dynlink.c.tmp
+sed 's|"musl libc (" LDSO_ARCH ")\\\\n"|"musl libc (jonerix; " LDSO_ARCH ")\\\\n"|' ldso/dynlink.c > "$tmp"
+cat "$tmp" > ldso/dynlink.c
+rm -f "$tmp"
+
+# Stamp the libc VERSION string with the distro version. Read
+# /etc/os-release VERSION_ID if available; fall back to "jonerix"
+# alone if the builder is mid-bootstrap and hasn't been packaged yet.
+JONERIX_VERSION=jonerix
+if [ -r /etc/os-release ]; then
+    v=$(awk -F= '$1=="VERSION_ID"{gsub(/"/,"",$2);print $2;exit}' /etc/os-release)
+    [ -n "$v" ] && JONERIX_VERSION="jonerix-$v"
+fi
+echo "1.2.6-${JONERIX_VERSION}" > VERSION
+echo "musl: VERSION stamp = $(cat VERSION)"
+
+CFLAGS="-Os -fomit-frame-pointer" ./configure --prefix=/ --syslibdir=/lib CC=clang
+"""
 build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/lib -name "libc.musl-*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+# Verify the jonerix fingerprint landed in libc.so.
+ok=0
+for so in "$DESTDIR/lib/libc.so" "$DESTDIR"/lib/libc.musl-*.so.1; do
+    [ -f "$so" ] || continue
+    if strings "$so" | grep -q 'jonerix'; then
+        echo "musl: jonerix fingerprint OK in $so"
+        ok=1
+        break
+    fi
+done
+if [ "$ok" = "0" ]; then
+    echo "musl: WARN no jonerix fingerprint found in any libc.so"
+fi
+find $DESTDIR/lib -name "libc.musl-*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
 
 [depends]
 runtime = []
