@@ -135,6 +135,14 @@ docker run --rm \
         export LLVM=1
         export LD=ld.lld
 
+        # Clang 21 (Alpine latest) enables -Wdefault-const-init-var-unsafe and
+        # -Wdefault-const-init-field-unsafe by default. Linux 6.14.2 has not
+        # caught up with these and the kernel build promotes warnings to
+        # errors. Suppress the unsafe-default-init warnings via KCFLAGS so the
+        # build completes. This is a build-environment workaround, not a code
+        # correctness change.
+        export KCFLAGS="-Wno-default-const-init-unsafe -Wno-default-const-init-var-unsafe -Wno-default-const-init-field-unsafe"
+
         # Parallelism: cap at RAM/2 GB to avoid OOM during linking
         NCPUS=$(nproc)
         RAM_GB=$(awk "/MemTotal/ { printf \"%d\", \$2/1024/1024 }" /proc/meminfo 2>/dev/null || echo 4)
