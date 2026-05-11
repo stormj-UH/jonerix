@@ -65,8 +65,11 @@ docker run --rm \
         set -e
 
         echo "==> Installing Alpine build dependencies"
+        # llvm provides llvm-ar, llvm-nm, llvm-objcopy, llvm-strip — all
+        # required by the kernel build when LLVM=1 is set; clang+lld alone
+        # are not enough.
         apk add --no-cache \
-            clang lld compiler-rt musl-dev \
+            clang lld llvm compiler-rt musl-dev \
             make perl bash bc flex bison \
             elfutils-dev openssl-dev linux-headers \
             diffutils findutils coreutils \
