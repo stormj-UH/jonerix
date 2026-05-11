@@ -135,13 +135,16 @@ docker run --rm \
         export LLVM=1
         export LD=ld.lld
 
-        # Clang 21 (Alpine latest) enables -Wdefault-const-init-var-unsafe and
-        # -Wdefault-const-init-field-unsafe by default. Linux 6.14.2 has not
-        # caught up with these and the kernel build promotes warnings to
-        # errors. Suppress the unsafe-default-init warnings via KCFLAGS so the
-        # build completes. This is a build-environment workaround, not a code
-        # correctness change.
-        export KCFLAGS="-Wno-default-const-init-unsafe -Wno-default-const-init-var-unsafe -Wno-default-const-init-field-unsafe"
+        # Clang 21 (Alpine latest) enables several warnings by default that
+        # Linux 6.14.2 has not adopted fixes for. The kernel build promotes
+        # warnings to errors, so suppress these via KCFLAGS:
+        #   * -Wdefault-const-init-var-unsafe / -field-unsafe: triggers in
+        #     include/net/ip.h and arch/x86/kernel/alternative.c
+        #   * -Wunterminated-string-initialization: triggers throughout
+        #     drivers/acpi/tables.c (ACPI signatures are exactly 4 chars,
+        #     stored in char[4] without the trailing NUL)
+        # These are build-environment workarounds; no runtime change.
+        export KCFLAGS="-Wno-default-const-init-unsafe -Wno-default-const-init-var-unsafe -Wno-default-const-init-field-unsafe -Wno-unterminated-string-initialization"
 
         # Parallelism: cap at RAM/2 GB to avoid OOM during linking
         NCPUS=$(nproc)
