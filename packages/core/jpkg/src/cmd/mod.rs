@@ -15,6 +15,7 @@ pub mod keygen;
 pub mod sign;
 pub mod resign;
 pub mod update;
+pub mod update_upgrade;
 pub mod verify;
 pub mod install;
 pub mod remove;

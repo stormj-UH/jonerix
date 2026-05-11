@@ -21,6 +21,7 @@ jpkg — jonerix package manager
 
 USAGE:
     jpkg [GLOBAL_OPTS] <COMMAND> [ARGS...]
+    jpkg -uu [UPGRADE_ARGS...]    Refresh repos then upgrade everything (Arch-style `pacman -Syu`)
 
 GLOBAL OPTIONS:
     -v, --verbose         Set log level to DEBUG
@@ -34,6 +35,7 @@ BUILT-IN COMMANDS:
     install <pkg>...      (alias: add)    Install one or more packages
     remove  <pkg>...      (alias: del)    Remove one or more packages
     upgrade               Upgrade all installed packages
+    -uu                   Run `update` then `upgrade` (stop on update failure)
     search  <query>       Search the index by name and description
     info    <pkg>         Show package metadata
     verify  [<pkg>...]    Verify installed files against their manifests
@@ -82,6 +84,12 @@ fn main() -> ExitCode {
                 root = Some(argv[idx + 1].clone());
                 idx += 2;
             }
+            // `-uu` is the only short-option-shaped verb: Arch-style
+            // "refresh repos then upgrade everything".  Break out of the
+            // global-option loop so the normal verb dispatcher below picks
+            // it up — keeping the dispatch table the single source of truth
+            // for what every verb does.
+            "-uu" => break,
             // First non-option token is the verb.
             s if !s.starts_with('-') => break,
             other => {
@@ -122,6 +130,7 @@ fn main() -> ExitCode {
         "install" | "add" => cmd::install::run(&verb_args),
         "remove" | "del" => cmd::remove::run(&verb_args),
         "upgrade" => cmd::upgrade::run(&verb_args),
+        "-uu" => cmd::update_upgrade::run(&verb_args),
         "search" => cmd::search::run(&verb_args),
         "info" => cmd::info::run(&verb_args),
         "verify" => cmd::verify::run(&verb_args),

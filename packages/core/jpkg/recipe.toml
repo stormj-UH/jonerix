@@ -1,8 +1,15 @@
 [package]
 name = "jpkg"
-version = "2.2.1"
+version = "2.2.2"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.2 — add the `jpkg -uu` shortcut (Arch-style "refresh repos then
+# upgrade everything", equivalent to `pacman -Syu`).  Composes the existing
+# `update` and `upgrade` entry points so all flag handling stays in one
+# place; if `update` fails, `upgrade` is skipped and the combined op exits
+# with `update`'s exit code.  Help text and the verb-dispatch table both
+# advertise the new form.
+#
 # jpkg 2.0 is the from-scratch Rust port of the C jpkg 1.1.5 — same wire
 # format (`JPKG\x00\x01\x00\x00` magic + LE32 hdr + TOML metadata + zstd(tar)
 # payload), same /var/db/jpkg/installed/<name>/{metadata.toml,files} on-disk
