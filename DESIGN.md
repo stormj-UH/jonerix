@@ -549,6 +549,12 @@ build = ["clang"]
 
 ### Roadmap (deferred — not blocking any current release)
 
+- [ ] **Cross-compile between x86_64 and aarch64** — make the LLVM family
+  multi-target (`LLVM_TARGETS_TO_BUILD="X86;AArch64"`) plus ship per-arch
+  sysroot jpkgs (`musl-cross-*`, `libcxx-cross-*`, `compiler-rt-builtins-cross-*`)
+  so either host arch can produce jpkgs for either target arch. Eliminates
+  the castle x86_64 / cloud-arm64 round-trip. Two arches only — no plans
+  for a third. Full plan in [docs/cross-compile-design.md](docs/cross-compile-design.md).
 - [ ] **`gitredoxide` upload-pack `filter` capability** — server-side support
   for partial-clone filter advertising (`git clone --filter=blob:none` against
   a gitredoxide-served upstream). Client-side `git backfill` already lands
