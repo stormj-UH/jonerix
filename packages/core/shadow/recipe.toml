@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r6"
+version = "4.19.4-r7"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Installing this package redirects these /bin entries away from
@@ -178,14 +178,37 @@ llvm-strip --strip-all "$DESTDIR/bin/shadow-getty" 2>/dev/null || true
 # /etc/shadow/no-console (opt-out).
 install -Dm755 "$RECIPE_DIR/init.d/shadow-login" \
     "$DESTDIR/etc/init.d/shadow-login"
+
+# Ship /bin/<bin> -> shadow-<bin> as MANIFEST-TRACKED symlinks (in the
+# install step, not lazily in post_install). Without this, every
+# `jpkg upgrade toybox` overwrites /bin/login -> shadow-login with
+# /bin/login -> toybox from the toybox tarball, and toybox's yield-loop
+# in post_install only restores symlinks that the OTHER package's
+# manifest claims (toybox r7 yield-loop, scripts/recipe.toml:141-).
+# Without a manifest entry, /bin/login silently flips to the toybox
+# login applet, which has a hard-coded 60-second username-input
+# timeout — observed on tormenta 2026-05-11 as the recurring "60s
+# loop" regression on HDMI console. Manifest entries here let the
+# yield-loop see what we own and re-link automatically.
+#
+# This mirrors raspi5-fixups 1.6.17 (commit f05526a9) shipping
+# /bin/adduser -> adduser-safe the same way.
+SHADOW_BINS_LINK="passwd login chpasswd chage chfn chgpasswd useradd userdel usermod groupadd groupdel groupmod gpasswd newgrp newusers nologin vipw pwck grpck pwconv pwunconv grpconv grpunconv expiry logoutd newgidmap newuidmap faillog lastlog sulogin"
+for bin in $SHADOW_BINS_LINK; do
+    [ -e "$DESTDIR/bin/shadow-$bin" ] || continue
+    ln -sf "shadow-$bin" "$DESTDIR/bin/$bin"
+done
 """
 
 [hooks]
-# Repoint /bin/passwd, /bin/login, /bin/chpasswd, /bin/useradd,
-# etc. at shadow's prefixed binaries. The original targets
-# (usually `toybox` for login/passwd/useradd/groupadd, or a
-# jonerix-util binary for chsh) are snapshotted to
-# /etc/jpkg/shadow/toybox-prev/ so post_remove reverts them.
+# r7+: The /bin/<bin> -> shadow-<bin> symlinks are now MANIFEST-TRACKED
+# (created in the install step, present in the tarball) so toybox's
+# yield-loop auto-restores them on every `jpkg upgrade toybox`. By the
+# time post_install runs, the tarball has already laid the symlinks
+# down, so this hook can't see the pre-shadow target via readlink any
+# more. Instead we SEED the backup_dir with "symlink:toybox" as the
+# default-pre-shadow state on every fresh jonerix image — that's what
+# post_remove restores. This matches raspi5-fixups 1.6.17 (f05526a9).
 post_install = """set -e
 
 backup_dir=/etc/jpkg/shadow/toybox-prev
@@ -198,19 +221,19 @@ do
     dst=/bin/$bin
     [ -x "$src" ] || continue
 
-    # Snapshot whatever is currently at $dst (first install only)
-    # so post_remove can restore it.
-    if [ -e "$dst" ] && [ ! -e "$backup_dir/$bin" ]; then
-        if [ -L "$dst" ]; then
-            link=$(readlink "$dst" 2>/dev/null || true)
-            printf 'symlink:%s' "$link" > "$backup_dir/$bin"
-        else
-            printf 'file' > "$backup_dir/$bin"
-            cp -a "$dst" "$backup_dir/$bin.bin"
-        fi
+    # Seed pre-shadow snapshot (first install only). Default to toybox
+    # since every jonerix image ships /bin/<bin> -> toybox out of the
+    # box. The tarball symlink has already been laid down by now so we
+    # don't readlink $dst — that would just snapshot ourselves.
+    if [ ! -e "$backup_dir/$bin" ]; then
+        printf 'symlink:toybox' > "$backup_dir/$bin"
     fi
 
-    ln -sf "shadow-$bin" "$dst"
+    # Safety net: if the tarball symlink isn't already in place for any
+    # reason (manual deletion, partial extract), re-create it.
+    if [ "$(readlink "$dst" 2>/dev/null)" != "shadow-$bin" ]; then
+        ln -sf "shadow-$bin" "$dst"
+    fi
 done
 
 # r6: /bin/chsh moved back to jonerix-util. On upgrade from r5,
