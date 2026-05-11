@@ -86,16 +86,22 @@ docker run --rm \
         # jpkg build is blocked by the GPL license gate, so the kernel build
         # stays manual here.
         RECIPE_DIR=/workspace/packages/extra/linux
-        VERSION=$(awk -F\" "/^version/ {print \$2; exit}" "$RECIPE_DIR/recipe.toml")
-        TARBALL="linux-${VERSION}.tar.xz"
+        # PKG_VERSION may be e.g. "6.14.2-r1" (recipe-level revision).
+        # KERNEL_VERSION is the upstream Linux version used to fetch the tarball
+        # (e.g. "6.14.2"). Strip any -rN suffix to recover it.
+        PKG_VERSION=$(awk -F\" "/^version/ {print \$2; exit}" "$RECIPE_DIR/recipe.toml")
+        KERNEL_VERSION=${PKG_VERSION%-r*}
+        TARBALL="linux-${KERNEL_VERSION}.tar.xz"
         KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v6.x/${TARBALL}"
 
         mkdir -p /build
         cd /build
 
-        echo "==> Downloading Linux ${VERSION}"
+        echo "==> Downloading Linux ${KERNEL_VERSION}"
         if [ ! -f "${TARBALL}" ]; then
-            wget -q --show-progress "${KERNEL_URL}" -O "${TARBALL}"
+            # BusyBox wget (Alpine default) does not support --show-progress.
+            # Use -q and emit our own progress dot per chunk via -S, or just be silent.
+            wget -q "${KERNEL_URL}" -O "${TARBALL}"
         fi
 
         echo "==> Verifying sha256 (update recipe.toml with the real hash)"
@@ -112,9 +118,9 @@ docker run --rm \
             fi
         fi
 
-        echo "==> Extracting Linux ${VERSION}"
+        echo "==> Extracting Linux ${KERNEL_VERSION}"
         tar -xf "${TARBALL}"
-        cd "linux-${VERSION}"
+        cd "linux-${KERNEL_VERSION}"
 
         ARCH=$(uname -m)
         case "$ARCH" in
@@ -167,7 +173,10 @@ docker run --rm \
         # Build a minimal .jpkg using jpkg internals or a direct tar+zstd pack.
         # Until the license gate is fixed, create the archive manually.
         cd "$DESTDIR"
-        PKGNAME="linux-${VERSION}-${ARCH}.jpkg"
+        # Use the upstream kernel version in the raw archive name; the wrapper
+        # step that produces the real .jpkg will use the full PKG_VERSION
+        # (e.g. 6.14.2-r1) in the final file name.
+        PKGNAME="linux-${KERNEL_VERSION}-${ARCH}.jpkg"
         tar -cf - . | zstd -19 -o "/output/${PKGNAME}"
         echo "==> Built: /output/${PKGNAME}"
         ls -lh "/output/${PKGNAME}"
