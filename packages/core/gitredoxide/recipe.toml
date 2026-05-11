@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.13"
+version = "1.0.14"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness, LFS smudge)"
 
@@ -180,8 +180,41 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # config), zero-match fall-through to the pathspec error, and
 # multi-match error without side effects.  Test suite 506 passed,
 # 0 failed, 3 ignored.  0 warnings.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.13/gitredoxide-1.0.13-vendored.tar.gz"
-sha256 = "40b3769e0e5267dfdffbf10691699d223784db264afcad41be95ec14361d819a"
+#
+# 1.0.14: closes the second half of the cpython workflow — `fetch`
+# was silently dropping explicit refspecs against single-branch
+# clones.  Concretely, after `gitredoxide clone --depth=N cpython`
+# (which leaves remote.origin.fetch as +refs/heads/main:...origin/main),
+# `gitredoxide fetch --depth=N origin "+refs/heads/3.14:refs/remotes/
+# origin/3.14"` returned exit 0 in under a second, wrote no
+# refs/remotes/origin/3.14, and silently produced nothing on the
+# wire.  Root cause: fetch_refspec_is_default_tracking treated the
+# explicit refspec as redundant with default tracking because the
+# target syntactically matched refs/remotes/origin/3.14 and the
+# explicit-sources set contained "3.14", WITHOUT checking that any
+# configured refspec actually mapped refs/heads/3.14.  The rebuild
+# loop then iterated explicit_sources × configured_specs and
+# produced nothing (configured spec is for main, no wildcard).
+# 1.0.14 tightens the check to also require that at least one
+# configured refspec covers the branch — exact match
+# refs/heads/<branch>:... or a wildcard whose source side matches.
+# When no configured spec covers the branch, the explicit refspec
+# stays on the wire and the fetch succeeds, restoring the user's
+# `gitredoxide checkout 3.14` workflow.  Six new tests cover the
+# fix (four unit tests on the predicate + two integration tests
+# on the full clone→fetch→checkout pipeline).
+#
+# 1.0.14 also adds a defensive guard for `gitredoxide clone <url>`
+# default semantics.  gix-core's clone is a porcelain tool with
+# shallow-friendly fallbacks; gitredoxide is /bin/git on jonerix
+# and must mirror real git's defaults exactly.  Three integration
+# tests pin: no-flags clone → wildcard refspec + no .git/shallow
+# + all remote branches as tracking refs; --depth=N → single-branch
+# refspec + .git/shallow (per real git's man page); --depth=N
+# --no-single-branch → wildcard + shallow.  Test suite 515 passed,
+# 0 failed, 3 ignored.  0 warnings.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.14/gitredoxide-1.0.14-vendored.tar.gz"
+sha256 = "4a2bbd4c6f665a3946fe68a6fe401b1e90db11788c1b69743d52f6a481646b00"
 
 [build]
 system = "custom"
