@@ -95,7 +95,7 @@ RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 RUN jpkg --root /jonerix update && \
     for pkg in \
       musl ncurses libressl zlib xz lz4 zstd ca-certificates \
-      toybox bsdtar \
+      toybox bsdtar iproute-go \
       llvm \
       cmake jmake samurai flex bc byacc \
       perl python3 nodejs \

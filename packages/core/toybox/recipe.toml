@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r7"
+version = "0.8.11-r8"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -11,6 +11,25 @@ description = "BSD-licensed coreutils replacement"
 # manifest and restores its winning symlinks for every /bin/* entry it
 # claims.  Together with uutils 0.7.0-r2 this keeps the takeover sticky
 # across toybox upgrades.
+#
+# 0.8.11-r8: fix the real-binary case of the yield loop. r7 recovered
+# symlink-case conflicts (uutils, shadow, exproxide — `replaces=["toybox"]`
+# packages whose manifest entries are themselves symlinks) but the
+# real-binary case (iproute-go — owns /bin/ip as a Go-built ELF binary)
+# tried to recover via a recursive `jpkg install -f $owner` from inside
+# toybox's own post_install. That always failed silently: jpkg's install
+# lock is `flock(LockExclusiveNonblock)` (packages/core/jpkg/src/db.rs:380),
+# so the inner call gets EWOULDBLOCK, and the `>/dev/null 2>&1 || true`
+# swallowed the failure. Reproduced 2026-05-11 on tormenta: `ip a` returned
+# "Invalid link." because /bin/ip was a toybox symlink (toybox's `ip` applet
+# bails on Tailscale's tailscale0 TUN device, type ARPHRD_NONE / 65534);
+# `jpkg verify iproute-go` confirmed the bin/ip hash mismatch.
+#
+# Fix: extract the conflicting package's payload directly from its cached
+# .jpkg under /var/cache/jpkg, using the same magic+hdr_len+zstd-tar
+# pattern that ci-build-*.sh uses for cached pkgs. No recursive jpkg
+# call, no lock contention. If the cache is empty (rare), we print a
+# pointer to the manual recovery command rather than silently failing.
 
 [source]
 url = "http://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
@@ -167,8 +186,26 @@ for _mfst in /var/db/jpkg/installed/*/files; do
         esac
     done
     if [ -n "$_need_reinstall" ]; then
-        echo "toybox-yield: reinstalling $_owner (real-binary conflict in /bin)"
-        jpkg install -f "$_owner" >/dev/null 2>&1 || true
+        # Real-binary case: extract the conflicting package's payload
+        # directly from its cached .jpkg.  We CANNOT call `jpkg install
+        # -f $_owner` here — jpkg's install lock is non-blocking exclusive
+        # (db.rs:380, LockExclusiveNonblock), so the recursive call would
+        # return EWOULDBLOCK and the previous `|| true` swallowed it.
+        _arch=$(uname -m)
+        _cached=$(ls /var/cache/jpkg/${_owner}-*-${_arch}.jpkg 2>/dev/null | sort -V | tail -1)
+        if [ -n "$_cached" ] && [ -f "$_cached" ]; then
+            _hdr=$(od -An -v -tu4 -N4 -j8 "$_cached" 2>/dev/null | tr -d ' ')
+            if [ -n "$_hdr" ]; then
+                _skip=$((12 + _hdr))
+                if tail -c +$((_skip + 1)) "$_cached" | zstd -dc 2>/dev/null \
+                    | tar xpf - -C / 2>/dev/null
+                then
+                    echo "toybox-yield: restored $_owner from $(basename "$_cached") (real-binary)"
+                    continue
+                fi
+            fi
+        fi
+        echo "toybox-yield: WARN could not auto-restore $_owner — run 'sudo jpkg install -f $_owner'"
     fi
 done
 exit 0
