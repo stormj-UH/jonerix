@@ -82,7 +82,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       dropbear dhcpcd ifupdown-ng unbound openntpd \
       shadow \
       libarchive bsdtar openrsync \
-      pigz mandoc onetrueawk \
+      mandoc \
       anvil exproxide \
       pico libcxx fastfetch ripgrep gitredoxide \
       iproute-go zsh; \

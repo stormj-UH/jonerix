@@ -85,7 +85,6 @@ Generated from tracked `packages/**/recipe.toml` -- **103 recipes**. All jonerix
 | **`rust`** | `develop` | 1.94.1-r4 | MIT | any | `musl`, `libcxx`, `libllvm` | - | Systems programming language (jonerix-linux-musl triple, no GNU runtime) |
 | **`samurai`** | `develop` | 1.2 | Apache-2.0 | any | `musl` | `clang`, `make` | ninja-compatible build tool written in C |
 | **`strace`** | `develop` | 4.25-r2 | BSD-3-Clause | any | `musl` | `clang`, `make`, `exproxide`, `jonerix-headers` | ptrace-based syscall tracer (last BSD-3-Clause release) |
-| **`bsdsed`** | `extra` | 0.99.2-r1 | BSD-2-Clause | any | `musl` | `clang`, `make` | FreeBSD sed made portable — POSIX stream editor |
 | **`btop`** | `extra` | 1.4.5-r5 | Apache-2.0 | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | Terminal resource monitor with CPU, memory, disk, network, and process views |
 | **`buildkit`** | `extra` | 0.20.2-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc` | `go` | BuildKit — high-performance OCI image build backend (buildkitd + buildctl) used by `docker build` |
 | **`bzip2`** | `extra` | 1.0.8-r2 | bzip2-1.0.6 | any | `musl` | `clang`, `make` | Block-sorting file compressor (bzip2 + libbz2, clang/musl build, no GNU) |

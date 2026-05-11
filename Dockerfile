@@ -103,7 +103,7 @@ RUN jpkg --root /jonerix update && \
       curl dropbear openrc \
       snooze dhcpcd ifupdown-ng unbound \
       shadow \
-      mandoc pigz fastfetch \
+      mandoc fastfetch \
       pico \
       gitredoxide \
       strace zsh; \
