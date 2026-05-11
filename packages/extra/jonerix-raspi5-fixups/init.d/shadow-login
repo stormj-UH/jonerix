@@ -1,58 +1,48 @@
 #!/bin/openrc-run
-# shadow-login — tty1 login prompt via shadow-getty.
+# shadow-login — supervise-daemon respawns shadow-getty on /dev/tty1.
 #
-# /bin/login is shadow login and reads LOGIN_TIMEOUT from /etc/login.defs.
-# LOGIN_TIMEOUT 0 keeps an idle tty prompt up indefinitely. This service only
-# loops after real logouts so tty1 comes back after an interactive session ends.
+# Pre-history (the bad shape we keep coming back to): a manual mksh
+# while-loop running shadow-getty in a backgrounded subshell. Worked
+# but lost OpenRC's supervisor — the pidfile pointed at mksh not the
+# getty, `rc-service shadow-login stop` had to pkill by name, and a
+# crashing mksh would silently break the loop forever. Reverted to
+# supervise-daemon in r8 after the layering surfaced again on tormenta
+# (2026-05-11). OpenRC ships /bin/supervise-daemon precisely for the
+# "respawn this small daemon when it exits" job — no shell layer.
+#
+# shadow-getty (a ~100-line C helper shipped by this package) does
+# the full getty dance directly: setsid → open /dev/ttyN → TIOCSCTTY
+# → dup2 0/1/2 → tcsetattr → execl /bin/login -p. supervise-daemon
+# respawns this single C process once per second after login(1)
+# returns (or shadow-getty crashes, which it shouldn't).
+#
+# /bin/login is shadow's login(1) and reads LOGIN_TIMEOUT from
+# /etc/login.defs. LOGIN_TIMEOUT 0 keeps an idle tty prompt up
+# indefinitely — the shadow recipe forces this on install and on
+# every upgrade.
+#
+# Part of shadow (BSD-3-Clause jonerix core jpkg).
 
 name="shadow-login"
 description="shadow-utils login(1) on /dev/tty1 via shadow-getty"
-pidfile="/run/shadow-login.pid"
-logfile="/var/log/shadow-login.log"
+
+supervisor="supervise-daemon"
+
+command="/bin/shadow-getty"
+command_args="/dev/tty1"
+
+# Respawn cadence — 1s delay, no retry cap. shadow-getty doesn't
+# return until login(1) returns, so a real "logout → re-prompt"
+# completes one full respawn per second. If shadow-getty itself
+# crashed in a tight loop the kernel would back us off via the
+# normal fork/exec rate-limit, but we don't expect that.
+respawn_delay=1
+respawn_max=0
 
 start_pre() {
+    # Make sure /dev/tty1 exists. On devtmpfs kernels it does;
+    # this is a no-op safety check for minimal environments.
     [ -c /dev/tty1 ] || mknod /dev/tty1 c 4 1 2>/dev/null || true
-    touch "$logfile" 2>/dev/null || true
-}
-
-is_running() {
-    local pid
-    [ -f "$pidfile" ] || return 1
-    pid="$(cat "$pidfile" 2>/dev/null || true)"
-    [ -n "$pid" ] || return 1
-    [ -d "/proc/$pid" ]
-}
-
-start() {
-    ebegin "Starting shadow-login"
-    if is_running; then
-        eend 0
-        return 0
-    fi
-    /bin/mksh -c 'while :; do /bin/shadow-getty /dev/tty1; sleep 1; done' >>"$logfile" 2>&1 &
-    echo $! > "$pidfile"
-    eend 0
-}
-
-stop() {
-    ebegin "Stopping shadow-login"
-    if [ -f "$pidfile" ]; then
-        loop_pid="$(cat "$pidfile" 2>/dev/null || true)"
-        [ -n "$loop_pid" ] && kill "$loop_pid" 2>/dev/null || true
-    fi
-    pkill -x shadow-getty 2>/dev/null || true
-    pkill -x login 2>/dev/null || true
-    rm -f "$pidfile"
-    eend 0
-}
-
-status() {
-    if is_running; then
-        einfo "shadow-login running (pid $(cat "$pidfile"))"
-        return 0
-    fi
-    einfo "shadow-login not running"
-    return 3
 }
 
 depend() {
