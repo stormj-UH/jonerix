@@ -1,0 +1,47 @@
+#!/bin/openrc-run
+# disable-eee-late - second-pass EEE-off for the Raspberry Pi 5
+# BCM54213PE PHY.
+#
+# Why: init.d/disable-eee is in the boot runlevel ordered after dhcpcd
+# but before sshd/tailscale-up. On a cold boot we have observed the
+# kernel's PHY re-init firing AFTER disable-eee has already run, which
+# re-enables EEE on both ends (lp_advertised flips from 0x0 to 0x28
+# and eee_active goes to 1). Once that has happened the link enters
+# the classic ~12 s flap loop until something disables EEE again. The
+# cron.d/disable-eee-watchdog catches this eventually but only on a
+# 15-min boundary, leaving up to a 15-minute flap window after every
+# boot.
+#
+# This service runs after the default runlevel has come up, sleeps a
+# settle interval to let any kernel-driven PHY renegotiations finish,
+# then runs disable-eee a final time. Idempotent — if EEE is already
+# off this is a no-op (eee-tool's "already off" fast path).
+#
+# Three short retries (15 s apart) cover the typical post-boot window
+# during which the PHY can renegotiate. Cheap, no link bounce when
+# EEE is already off.
+#
+# Part of jonerix - MIT License
+
+description="Late-boot EEE-off retry for the BCM54213PE PHY"
+
+depend() {
+    keyword -jail -prefix -vserver
+    # We want to run AFTER networking has fully come up, so that any
+    # tailscaled / sshd-induced PHY re-inits are out of the way before
+    # we settle the EEE state.
+    after net dhcpcd tailscale-up sshd
+}
+
+start() {
+    ebegin "Late-boot EEE-off retry (3x15s)"
+    (
+        i=0
+        while [ $i -lt 3 ]; do
+            sleep 15
+            /bin/disable-eee eth0 >/dev/null 2>&1 || true
+            i=$((i + 1))
+        done
+    ) &
+    eend 0
+}

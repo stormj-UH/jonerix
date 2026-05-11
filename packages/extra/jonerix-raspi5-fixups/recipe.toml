@@ -1,9 +1,42 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.23"
+version = "1.6.24"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.24: three fixes for problems uncovered when 1.6.23's
+# pi5-cold-poweroff was first exercised on tormenta.
+#
+# (a) pi5-cold-poweroff: EEPROM flip moved from the OpenRC service
+#     into the CLI itself.  1.6.23 wrote POWER_OFF_ON_HALT=1 from
+#     inside pi5-cold-shutdown's start() during the shutdown
+#     runlevel; OpenRC ran that in parallel with mount-ro and
+#     killprocs and the kernel was at the reboot syscall before the
+#     /dev/vcio mailbox write returned, so the EEPROM never got =1
+#     and the Pi landed in standby (red LED, no software wake) on
+#     each test.  Now the CLI does `pi5-wake-on-power disable`
+#     synchronously and reads back to confirm BEFORE invoking
+#     openrc-shutdown.  Aborts the halt if the EEPROM write didn't
+#     stick — preferable to standby-with-no-button.
+#
+# (b) pi5-cold-shutdown service: now boot-side only.  The shutdown-
+#     runlevel branch is gone (moved to the CLI per above).  Shebang
+#     corrected from /sbin/openrc-run to /bin/openrc-run (jonerix
+#     openrc lives at /usr/bin with a /bin alias).  rc-update del
+#     replaced with rm -f on the runlevel symlinks because rc-update
+#     on jonerix rejects `default` and `shutdown` as runlevel names
+#     from the CLI.
+#
+# (c) init.d/disable-eee-late: new default-runlevel service.  The
+#     existing boot-runlevel disable-eee runs after dhcpcd but
+#     BEFORE the kernel's PHY re-init that happens later on cold
+#     boots — observed on tormenta 2026-05-10 where eee_enabled=1 /
+#     lp_advertised=0x28 for several minutes after a fresh boot.
+#     disable-eee-late sleeps 15 s after the default runlevel comes
+#     up, then runs disable-eee three times at 15-second intervals
+#     to catch the kernel-driven renegotiation window.  Idempotent;
+#     no link bounce when EEE is already off.
+#
 # 1.6.23: one-shot cold-poweroff (full SoC power cut without
 # permanently changing EEPROM).
 #
@@ -222,8 +255,16 @@ ln -sf /usr/local/bin/poweroff-openrc $DESTDIR/bin/poweroff
 # bootloader fully cuts SoC power instead of entering ~0.5 W standby)
 # and restores =0 at the next boot, then unhooks itself.  See header
 # comments in both files for the lifecycle.
-install -Dm755 bin/pi5-cold-poweroff   $DESTDIR/usr/local/bin/pi5-cold-poweroff
+install -Dm755 bin/pi5-cold-poweroff    $DESTDIR/usr/local/bin/pi5-cold-poweroff
 install -Dm755 init.d/pi5-cold-shutdown $DESTDIR/etc/init.d/pi5-cold-shutdown
+
+# disable-eee-late: post-default-runlevel retry of /bin/disable-eee
+# to catch the case where the kernel re-inits the PHY AFTER the
+# boot-runlevel disable-eee service has already run.  Reproduced on
+# tormenta 2026-05-10: post-cold-boot eee_enabled=1 / lp_advertised=0x28
+# for several minutes until the watchdog cron caught it on its
+# /15 boundary.
+install -Dm755 init.d/disable-eee-late  $DESTDIR/etc/init.d/disable-eee-late
 
 # pi5-cold-reboot: OpenRC boot service that forces
 # /sys/kernel/reboot/mode=cold every boot (belt-and-suspenders for
@@ -450,7 +491,7 @@ rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
 for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
 done
-for svc in ntp-bootstrap ntpd shadow-login syslogd snooze-crond wpa_supplicant_wlan0; do
+for svc in ntp-bootstrap ntpd shadow-login syslogd snooze-crond wpa_supplicant_wlan0 disable-eee-late; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/default/$svc" 2>/dev/null || true
 done
 [ -f /etc/init.d/reboot-trace-shutdown ] && ln -sf /etc/init.d/reboot-trace-shutdown /etc/runlevels/shutdown/reboot-trace-shutdown 2>/dev/null || true
@@ -547,6 +588,14 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
         else
             rc-service snooze-crond start 2>/dev/null || true
         fi
+    fi
+
+    # Live-start disable-eee-late so the post-default-runlevel retry
+    # runs once now (in addition to every subsequent boot).  Idempotent
+    # — if EEE is already off the underlying disable-eee invocations
+    # are no-ops.
+    if command -v rc-service >/dev/null 2>&1; then
+        rc-service disable-eee-late start 2>/dev/null || true
     fi
 
     # --- cold-reboot: patch cmdline.txt once + live-flip sysfs ---

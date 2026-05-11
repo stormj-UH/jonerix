@@ -1,72 +1,45 @@
-#!/sbin/openrc-run
-# pi5-cold-shutdown - one-shot cold-poweroff hook for Raspberry Pi 5.
+#!/bin/openrc-run
+# pi5-cold-shutdown - boot-time restore service for pi5-cold-poweroff.
 #
-# Pi 5 firmware behaviour: when the kernel issues a poweroff, the
-# bootloader reads EEPROM POWER_OFF_ON_HALT:
-#   = 0 (jonerix default) -- SoC enters ~0.5 W standby, button wakes
-#   = 1                   -- SoC fully cuts power, only button to wake
-# There is no software-only path to force a one-time full cut without
-# flipping that bit.
+# Pairs with /usr/local/bin/pi5-cold-poweroff. The CLI does the EEPROM
+# flip to POWER_OFF_ON_HALT=1 synchronously before halting, then drops
+# this service into /etc/runlevels/default/ so that the very next boot
+# restores POWER_OFF_ON_HALT=0 and unhooks itself. Future shutdowns
+# are warm halts again until the user re-invokes pi5-cold-poweroff.
 #
-# This service is the bit-flip mechanism, scoped to a single shutdown:
-#
-#   At shutdown (RC_RUNLEVEL=shutdown):
-#       set POWER_OFF_ON_HALT=1 via /bin/pi5-wake-on-power disable.
-#       The very next halt then cuts power fully.
-#
-#   At next boot (RC_RUNLEVEL=default):
-#       set POWER_OFF_ON_HALT=0 via /bin/pi5-wake-on-power enable.
-#       Read back to confirm.  On confirmation, remove ourselves from
-#       both runlevels with `rc-update del` so future shutdowns are
-#       warm halts again until the user opts back in.
-#
-# User-facing CLI: /usr/local/bin/pi5-cold-poweroff (adds this service
-# to both runlevels and immediately invokes openrc-shutdown -p now).
+# The previous design (1.6.23) ran the EEPROM flip inside this
+# service's start() during the shutdown runlevel. It was racy — OpenRC
+# ran shutdown-runlevel services in parallel with mount-ro and the
+# kernel was at the reboot syscall before the mailbox write returned,
+# so the EEPROM never got =1 and the halt landed in standby. Moved
+# the flip to the CLI in 1.6.24; this script now only handles the
+# boot-side restore.
 #
 # Part of jonerix - MIT License
 
-description="One-shot cold-poweroff (flip POWER_OFF_ON_HALT for this halt, restore at boot)"
+description="Restore POWER_OFF_ON_HALT=0 after a pi5-cold-poweroff cycle, then self-unhook"
 
 depend() {
     keyword -jail -prefix -vserver
-    # The pi5-wake-on-power script needs /dev/vcio to be present, which
-    # it is by the time devfs / sysinit has run.  No filesystem dep —
-    # the mailbox write is independent of /boot being mounted.
     need devfs
 }
 
 start() {
-    case "${RC_RUNLEVEL}" in
-        shutdown)
-            ebegin "Setting POWER_OFF_ON_HALT=1 (cold shutdown for this halt)"
-            if [ -x /usr/local/bin/pi5-wake-on-power ]; then
-                /usr/local/bin/pi5-wake-on-power disable >/dev/null 2>&1
-                eend $?
-            else
-                eerror "/usr/local/bin/pi5-wake-on-power not found; cannot flip EEPROM"
-                eend 1
-            fi
-            ;;
-        *)
-            ebegin "Restoring POWER_OFF_ON_HALT=0 (warm-halt default) after cold shutdown"
-            if [ ! -x /usr/local/bin/pi5-wake-on-power ]; then
-                ewarn "/usr/local/bin/pi5-wake-on-power not found; leaving EEPROM as-is"
-                eend 0
-                return 0
-            fi
-            /usr/local/bin/pi5-wake-on-power enable >/dev/null 2>&1
-            if /usr/local/bin/pi5-wake-on-power 2>/dev/null \
-                    | grep -q "POWER_OFF_ON_HALT *= *0"; then
-                # Confirmed.  Remove ourselves so we don't fire on the
-                # next normal shutdown.
-                rc-update del pi5-cold-shutdown default  2>/dev/null || true
-                rc-update del pi5-cold-shutdown shutdown 2>/dev/null || true
-                einfo "POWER_OFF_ON_HALT=0 confirmed; pi5-cold-shutdown unhooked from boot."
-                eend 0
-            else
-                ewarn "Could not confirm POWER_OFF_ON_HALT=0; will retry on next boot."
-                eend 0
-            fi
-            ;;
-    esac
+    ebegin "Restoring POWER_OFF_ON_HALT=0 after cold shutdown"
+    if [ ! -x /usr/local/bin/pi5-wake-on-power ]; then
+        ewarn "/usr/local/bin/pi5-wake-on-power not found; leaving EEPROM as-is"
+        eend 0
+        return 0
+    fi
+    /usr/local/bin/pi5-wake-on-power enable >/dev/null 2>&1
+    if /usr/local/bin/pi5-wake-on-power 2>/dev/null \
+            | grep -q "POWER_OFF_ON_HALT *= *0"; then
+        rm -f /etc/runlevels/default/pi5-cold-shutdown
+        einfo "POWER_OFF_ON_HALT=0 confirmed; pi5-cold-shutdown unhooked from boot."
+        eend 0
+    else
+        ewarn "Could not confirm POWER_OFF_ON_HALT=0; will retry on next boot."
+        ewarn "Manual recovery: sudo /usr/local/bin/pi5-wake-on-power enable"
+        eend 0
+    fi
 }

@@ -2,28 +2,39 @@
 # pi5-cold-poweroff - do one full power-cut shutdown without permanently
 # changing EEPROM POWER_OFF_ON_HALT.
 #
-# Pairs with /etc/init.d/pi5-cold-shutdown: arms that service in both
-# the shutdown and default runlevels, then immediately invokes the
-# orderly OpenRC poweroff.  OpenRC enters the shutdown runlevel,
-# starts pi5-cold-shutdown which flips POWER_OFF_ON_HALT=1 in EEPROM,
-# and only then issues the kernel poweroff.  The bootloader sees =1
-# and cuts SoC power fully (instead of the ~0.5 W standby that
-# POWER_OFF_ON_HALT=0 produces).  After you physically wake the Pi
-# again, pi5-cold-shutdown's boot-time start() restores =0 and
-# removes itself from both runlevels.
+# Pi 5 firmware behaviour: the bootloader reads EEPROM POWER_OFF_ON_HALT
+# at halt time. =0 (jonerix default) -> SoC enters ~0.5 W standby with
+# the red LED on, only the physical GLOBAL_EN button wakes it. =1 -> SoC
+# cuts power fully. There is no software-only wake from standby on a
+# headless / button-less host (no keyboard / HDMI / USB wake source on
+# Pi 5), so on those hosts a halt to standby is effectively a soft brick
+# until someone unplugs the cable. The whole point of this tool is to
+# avoid that and do a real off-with-auto-restart-on-button-press halt.
+#
+# Lifecycle:
+#   1. Flip EEPROM POWER_OFF_ON_HALT=1 via pi5-wake-on-power disable
+#      (synchronous mailbox write, persistent immediately).
+#   2. Read back to confirm the write took; abort if not.
+#   3. Arm /etc/init.d/pi5-cold-shutdown in the default runlevel so the
+#      NEXT boot restores POWER_OFF_ON_HALT=0 and unhooks the service.
+#   4. exec openrc-shutdown -p now. OpenRC walks the orderly shutdown,
+#      kernel issues poweroff, bootloader sees =1 and cuts power.
+#
+# Why the EEPROM flip is in this CLI rather than in a shutdown-runlevel
+# service: an earlier design did the flip from inside the service's
+# start() during the shutdown runlevel. OpenRC ran that in parallel with
+# mount-ro / killprocs / etc., and on at least one tormenta test the
+# kernel was already at the reboot syscall before the /dev/vcio mailbox
+# write returned, so the EEPROM never actually got =1. Doing it
+# synchronously in the CLI before openrc-shutdown removes that race.
 #
 # Usage:
 #     sudo pi5-cold-poweroff [-d DELAY]
 #
-# The wrapper is a thin one-liner over openrc-shutdown so you can use
-# it just like /bin/poweroff; we don't add a -f fallback because the
-# whole point is to go through openrc-shutdown so pi5-cold-shutdown
-# fires before the halt.
-#
-# To CANCEL after running this, before the halt completes:
+# To cancel after running this, before the halt completes:
 #     sudo openrc-shutdown -c
-#     sudo rc-update del pi5-cold-shutdown shutdown
-#     sudo rc-update del pi5-cold-shutdown default
+#     sudo rm -f /etc/runlevels/default/pi5-cold-shutdown
+#     sudo /usr/local/bin/pi5-wake-on-power enable   # restore EEPROM=0
 #
 # Part of jonerix - MIT License
 
@@ -58,7 +69,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "pi5-cold-poweroff: must run as root (needs /dev/vcio + rc-update + openrc-shutdown)" >&2
+    echo "pi5-cold-poweroff: must run as root (needs /dev/vcio + openrc-shutdown)" >&2
     exit 1
 fi
 
@@ -67,13 +78,42 @@ if [ ! -f /etc/init.d/pi5-cold-shutdown ]; then
     exit 1
 fi
 
-# Arm the service in both runlevels.  rc-update is idempotent on
-# duplicate adds and doesn't fail if the link already exists.
-rc-update add pi5-cold-shutdown shutdown 2>/dev/null || true
-rc-update add pi5-cold-shutdown default  2>/dev/null || true
+if [ ! -x /usr/local/bin/pi5-wake-on-power ]; then
+    echo "pi5-cold-poweroff: /usr/local/bin/pi5-wake-on-power missing — reinstall jonerix-raspi5-fixups" >&2
+    exit 1
+fi
 
+# Step 1: flip EEPROM to POWER_OFF_ON_HALT=1 SYNCHRONOUSLY. If this
+# fails, do NOT proceed — a halt under POWER_OFF_ON_HALT=0 would land
+# the host in inaccessible standby with no software wake path.
+echo "pi5-cold-poweroff: setting POWER_OFF_ON_HALT=1 in EEPROM..."
+if ! /usr/local/bin/pi5-wake-on-power disable; then
+    echo "pi5-cold-poweroff: pi5-wake-on-power disable failed; aborting halt" >&2
+    exit 1
+fi
+
+# Step 2: read back the EEPROM to confirm =1 actually landed. The
+# bootloader will be reading whatever EEPROM holds now, so a
+# successful read-back gates the halt.
+if ! /usr/local/bin/pi5-wake-on-power 2>/dev/null \
+        | grep -q "POWER_OFF_ON_HALT *= *1"; then
+    echo "pi5-cold-poweroff: could not confirm POWER_OFF_ON_HALT=1; aborting halt" >&2
+    echo "pi5-cold-poweroff: trying to restore =0 just in case..." >&2
+    /usr/local/bin/pi5-wake-on-power enable >/dev/null 2>&1 || true
+    exit 1
+fi
+echo "pi5-cold-poweroff: EEPROM confirmed POWER_OFF_ON_HALT=1"
+
+# Step 3: arm the boot-time restore. This is a manual symlink because
+# rc-update on jonerix doesn't accept `default` / `shutdown` as
+# runlevel names from the CLI (works only on `boot` here); the package
+# follows the same ln -sf pattern everywhere else.
+mkdir -p /etc/runlevels/default
+ln -sf /etc/init.d/pi5-cold-shutdown /etc/runlevels/default/pi5-cold-shutdown
+
+# Step 4: optional sleep, then orderly halt.
 if [ -n "$delay" ]; then
     sleep "$delay" || exit 2
 fi
-
-exec /bin/openrc-shutdown -p now
+echo "pi5-cold-poweroff: invoking openrc-shutdown -p now"
+exec /usr/bin/openrc-shutdown -p now
