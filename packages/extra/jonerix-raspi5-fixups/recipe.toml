@@ -1,9 +1,28 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.22"
+version = "1.6.23"
 arch = "aarch64"
 license = "0BSD"
-description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.23: one-shot cold-poweroff (full SoC power cut without
+# permanently changing EEPROM).
+#
+# /usr/local/bin/pi5-cold-poweroff is the user-facing CLI: arms a
+# new OpenRC service in both the `shutdown` and `default` runlevels
+# and `exec`s `openrc-shutdown -p now`.
+#
+# /etc/init.d/pi5-cold-shutdown is that service.  Its `start()`
+# detects `$RC_RUNLEVEL`:
+#   shutdown -> pi5-wake-on-power disable (EEPROM POWER_OFF_ON_HALT=1)
+#               so the immediately-following halt cuts SoC power.
+#   default  -> pi5-wake-on-power enable (POWER_OFF_ON_HALT=0), read
+#               back to confirm, then rc-update del from both
+#               runlevels so future shutdowns are warm halts again.
+# Failure path: if the next-boot restore can't confirm =0, the
+# service stays in the default runlevel and retries on the next
+# boot — leaving the user a manual `pi5-wake-on-power enable` as
+# the escape hatch.
+#
 # 1.6.22: ship /bin/poweroff -> /usr/local/bin/poweroff-openrc, the
 # sibling of /bin/reboot -> /usr/local/bin/reboot-openrc.  Without
 # this, `poweroff` resolves to the toybox alias that calls reboot(2)
@@ -197,6 +216,14 @@ ln -sf /usr/local/bin/reboot-openrc $DESTDIR/bin/reboot
 # orderly stop/sync/remount-ro path — likely to leave the rootfs dirty.
 install -Dm755 bin/poweroff-openrc $DESTDIR/usr/local/bin/poweroff-openrc
 ln -sf /usr/local/bin/poweroff-openrc $DESTDIR/bin/poweroff
+
+# pi5-cold-poweroff + pi5-cold-shutdown: one-shot cold-poweroff that
+# flips EEPROM POWER_OFF_ON_HALT=1 just before the halt (so the
+# bootloader fully cuts SoC power instead of entering ~0.5 W standby)
+# and restores =0 at the next boot, then unhooks itself.  See header
+# comments in both files for the lifecycle.
+install -Dm755 bin/pi5-cold-poweroff   $DESTDIR/usr/local/bin/pi5-cold-poweroff
+install -Dm755 init.d/pi5-cold-shutdown $DESTDIR/etc/init.d/pi5-cold-shutdown
 
 # pi5-cold-reboot: OpenRC boot service that forces
 # /sys/kernel/reboot/mode=cold every boot (belt-and-suspenders for
