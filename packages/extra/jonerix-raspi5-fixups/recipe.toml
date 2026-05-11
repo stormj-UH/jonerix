@@ -1,9 +1,15 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.25"
+version = "1.6.26"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.26: 1.6.25's revert hook didn't actually delete the old
+# /usr/local/bin/pi5-cold-poweroff and /etc/init.d/pi5-cold-shutdown
+# files on tormenta upgrade — jpkg's upgrade path leaves files that
+# drop out of the manifest in place rather than removing them.
+# 1.6.26 adds explicit rm -f for those two paths in post_install.
+#
 # 1.6.25: revert pi5-cold-poweroff (1.6.23, 1.6.24) — Pi 5 firmware
 # doesn't support what the feature was trying to do.
 #
@@ -461,15 +467,19 @@ if [ -f /etc/fstab ]; then
 fi
 
 # --- pi5-cold-shutdown cleanup (1.6.23–1.6.24 leftovers) ---
-# 1.6.23/1.6.24 shipped a /etc/init.d/pi5-cold-shutdown service plus a
-# /usr/local/bin/pi5-cold-poweroff CLI that armed runlevel symlinks
-# dynamically.  1.6.25 reverted both: the Pi 5 firmware caches EEPROM at
-# boot, so a single-cycle cold-poweroff isn't actually achievable in
-# software.  jpkg removes the manifest-tracked files at upgrade, but
-# the runlevel symlinks the CLI might have created aren't manifest-
-# tracked.  Sweep them up here.
-rm -f /etc/runlevels/shutdown/pi5-cold-shutdown 2>/dev/null || true
-rm -f /etc/runlevels/default/pi5-cold-shutdown  2>/dev/null || true
+# 1.6.23/1.6.24 shipped /etc/init.d/pi5-cold-shutdown and
+# /usr/local/bin/pi5-cold-poweroff; 1.6.25 reverted both because Pi 5
+# firmware caches EEPROM at boot and runtime writes don't take effect
+# in the same halt cycle.  jpkg's upgrade path does NOT auto-remove
+# files that drop out of a recipe's manifest (verified during 1.6.25
+# upgrade on tormenta where the files remained on disk after the
+# upgrade), so we explicitly rm them here.  Also sweep the runlevel
+# symlinks the old CLI armed dynamically (those were never manifest-
+# tracked).
+rm -f /usr/local/bin/pi5-cold-poweroff           2>/dev/null || true
+rm -f /etc/init.d/pi5-cold-shutdown              2>/dev/null || true
+rm -f /etc/runlevels/shutdown/pi5-cold-shutdown  2>/dev/null || true
+rm -f /etc/runlevels/default/pi5-cold-shutdown   2>/dev/null || true
 
 # --- Legacy bootstrap cleanup (all hosts) ---
 # Some pre-jonerix Pi images shipped a bare /etc/init.d/networking
