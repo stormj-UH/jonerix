@@ -1,9 +1,21 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.21"
+version = "1.6.22"
 arch = "aarch64"
 license = "0BSD"
-description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.22: ship /bin/poweroff -> /usr/local/bin/poweroff-openrc, the
+# sibling of /bin/reboot -> /usr/local/bin/reboot-openrc.  Without
+# this, `poweroff` resolves to the toybox alias that calls reboot(2)
+# RB_POWER_OFF directly and skips OpenRC's service-stop / sync /
+# remount-ro choreography — same dirty-rootfs risk that reboot-openrc
+# was originally introduced to solve.  The new wrapper runs
+# `openrc-shutdown -p now`, so an orderly poweroff is now just
+# `sudo poweroff`.  post_install backs up the previous /bin/poweroff
+# target into /etc/jpkg/raspi5-fixups/poweroff.prev and refreshes the
+# /sbin / /usr/sbin aliases; post_remove restores the prior target
+# (typically toybox) the same way the reboot path does.
+#
 # 1.6.21: post_install now `rc-service snooze-crond restart` when the
 # daemon is already up, instead of plain `start` (which is a no-op
 # against an already-running daemon).  Without restart, cron.d/*
@@ -178,6 +190,13 @@ install -Dm755 bin/apply-pi5-boot-settings $DESTDIR/usr/local/bin/apply-pi5-boot
 install -Dm755 bin/reboot-openrc $DESTDIR/usr/local/bin/reboot-openrc
 mkdir -p $DESTDIR/bin
 ln -sf /usr/local/bin/reboot-openrc $DESTDIR/bin/reboot
+
+# poweroff-openrc: same pattern, sibling wrapper around
+# `openrc-shutdown -p now`. Without this, /bin/poweroff is the toybox
+# alias that calls reboot(2) RB_POWER_OFF directly and skips OpenRC's
+# orderly stop/sync/remount-ro path — likely to leave the rootfs dirty.
+install -Dm755 bin/poweroff-openrc $DESTDIR/usr/local/bin/poweroff-openrc
+ln -sf /usr/local/bin/poweroff-openrc $DESTDIR/bin/poweroff
 
 # pi5-cold-reboot: OpenRC boot service that forces
 # /sys/kernel/reboot/mode=cold every boot (belt-and-suspenders for
@@ -385,6 +404,18 @@ if [ -x /usr/local/bin/reboot-openrc ]; then
     [ -d /usr/sbin ] && ln -sf /usr/local/bin/reboot-openrc /usr/sbin/reboot
 fi
 
+# Same pattern for /bin/poweroff.  Stash the prior target so
+# post_remove can restore it (typically toybox).
+if [ -x /usr/local/bin/poweroff-openrc ]; then
+    if [ -L /bin/poweroff ] && [ ! -e /etc/jpkg/raspi5-fixups/poweroff.prev ]; then
+        mkdir -p /etc/jpkg/raspi5-fixups
+        readlink /bin/poweroff > /etc/jpkg/raspi5-fixups/poweroff.prev 2>/dev/null || true
+    fi
+    ln -sf /usr/local/bin/poweroff-openrc /bin/poweroff
+    [ -d /sbin ] && ln -sf /usr/local/bin/poweroff-openrc /sbin/poweroff
+    [ -d /usr/sbin ] && ln -sf /usr/local/bin/poweroff-openrc /usr/sbin/poweroff
+fi
+
 # --- Pi 5 hardware fixups (only on a live Pi 5) ---
 mkdir -p /etc/runlevels/boot /etc/runlevels/default /etc/runlevels/shutdown
 rm -f /etc/runlevels/boot/devfs /etc/runlevels/boot/modules
@@ -581,6 +612,39 @@ fi
 _restore_reboot_link /bin/reboot "$_reboot_bin_target"
 _restore_reboot_link /sbin/reboot ../bin/toybox
 _restore_reboot_link /usr/sbin/reboot ../bin/toybox
+
+# Sibling cleanup for /bin/poweroff added in 1.6.22.
+_restore_poweroff_link() {
+    _path=$1
+    _target=$2
+    _parent=$(dirname "$_path")
+    [ -d "$_parent" ] || return 0
+    if [ -L "$_path" ]; then
+        _cur=$(readlink "$_path" 2>/dev/null || true)
+        case "$_cur" in
+            /usr/local/bin/poweroff-openrc|/local/bin/poweroff-openrc)
+                rm -f "$_path"
+                ;;
+        esac
+    fi
+    [ ! -e "$_path" ] && [ -x /bin/toybox ] && ln -sf "$_target" "$_path"
+}
+_poweroff_bin_target=toybox
+if [ -f /etc/jpkg/raspi5-fixups/poweroff.prev ]; then
+    _saved=$(cat /etc/jpkg/raspi5-fixups/poweroff.prev)
+    case "$_saved" in
+        ""|/usr/local/bin/poweroff-openrc|/local/bin/poweroff-openrc)
+            ;;
+        *)
+            _poweroff_bin_target=$_saved
+            ;;
+    esac
+    rm -f /etc/jpkg/raspi5-fixups/poweroff.prev
+fi
+_restore_poweroff_link /bin/poweroff "$_poweroff_bin_target"
+_restore_poweroff_link /sbin/poweroff ../bin/toybox
+_restore_poweroff_link /usr/sbin/poweroff ../bin/toybox
+
 rmdir /etc/jpkg/raspi5-fixups 2>/dev/null || true
 rmdir /etc/jpkg 2>/dev/null || true
 exit 0"""

@@ -1,0 +1,65 @@
+#!/bin/mksh
+# poweroff-openrc - Pi 5-safe poweroff wrapper for OpenRC systems.
+#
+# Counterpart to reboot-openrc: plain toybox poweroff invokes
+# reboot(2) with RB_POWER_OFF directly, skipping OpenRC's service
+# stop / sync / remount-ro choreography. On Pi 5 in particular that
+# can leave the rootfs dirty enough to need an fsck on the next boot.
+# OpenRC's `openrc-shutdown -p now` runs the orderly shutdown path
+# and then issues the same kernel poweroff, so this wrapper backs
+# /bin/poweroff on Pi 5 installs.
+#
+# What "power off" actually does on Pi 5 depends on the EEPROM
+# POWER_OFF_ON_HALT bit:
+#   POWER_OFF_ON_HALT=0 (jonerix default) — SoC enters a low-power
+#     state, ~0.5 W standby, power button wakes it.
+#   POWER_OFF_ON_HALT=1                  — SoC cuts power fully,
+#     only physical power button / unplug brings it back.
+# Flip with `pi5-wake-on-power disable` (sets POWER_OFF_ON_HALT=1)
+# or `pi5-wake-on-power enable` (back to defaults).
+
+delay=
+force=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            echo "usage: poweroff [-d DELAY] [-f] [-n]"
+            echo "OpenRC-backed poweroff wrapper for Raspberry Pi 5."
+            exit 0
+            ;;
+        -d)
+            shift
+            delay=${1:-}
+            ;;
+        -d*)
+            delay=${1#-d}
+            ;;
+        -f)
+            force=1
+            ;;
+        -n)
+            # OpenRC performs the orderly shutdown path; keep this
+            # accepted for toybox compatibility but don't skip sync.
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "poweroff: unsupported argument: $1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if [ "$force" = 1 ]; then
+    exec /bin/toybox poweroff -f
+fi
+
+if [ -n "$delay" ]; then
+    sleep "$delay" || exit 2
+fi
+
+exec /bin/openrc-shutdown -p now
