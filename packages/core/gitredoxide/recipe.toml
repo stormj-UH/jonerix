@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.12"
+version = "1.0.13"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (77 commands, 100% parity harness, LFS smudge)"
 
@@ -158,8 +158,30 @@ description = "Permissively licensed drop-in /bin/git replacement (77 commands, 
 # Tormenta sweep at 350s budget: 28/28 succeeded post-fix (pre-fix
 # ~10-15% Interrupted/ObjType0/hang).  Test suite 503 passed, 0 failed,
 # 3 ignored (network-dependent).  0 warnings.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.12/gitredoxide-1.0.12-vendored.tar.gz"
-sha256 = "0d740c76fd9622e9dc7a9f59e97a6a4357209a76600aa6246ad6b216e34b750c"
+#
+# 1.0.13: implements git's DWIM rule for `gitredoxide checkout <name>`.
+# Previously, `gitredoxide checkout 3.15` against a fresh clone of
+# python/cpython errored with "pathspec '3.15' did not match any
+# file(s) known to gitredoxide" — even though refs/remotes/origin/3.15
+# was right there.  Workarounds existed (`checkout origin/3.15` for
+# detached, `checkout -b 3.15 origin/3.15` for a manual track), but
+# they aren't what users type.  After 1.0.13, if <name> doesn't
+# resolve to a local branch/tag/commit/path and exactly one remote
+# has refs/remotes/<remote>/<name>, gitredoxide creates a local
+# branch <name> tracking <remote>/<name> and prints the same
+# "Switched to a new branch '<name>'" + "branch '<name>' set up to
+# track '<remote>/<name>'." stderr that real git emits.  Multi-match
+# returns git's "matched multiple (N) remote tracking branches"
+# fatal (exit 128) with the hint block; checkout.defaultRemote
+# disambiguation is honored.  Slash-bearing names (e.g.
+# `gitredoxide checkout some/branch`) and `HEAD` are excluded from
+# DWIM, matching git's behaviour.  Three integration tests cover
+# single-match success (HEAD update + branch.<name>.remote/merge
+# config), zero-match fall-through to the pathspec error, and
+# multi-match error without side effects.  Test suite 506 passed,
+# 0 failed, 3 ignored.  0 warnings.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.13/gitredoxide-1.0.13-vendored.tar.gz"
+sha256 = "40b3769e0e5267dfdffbf10691699d223784db264afcad41be95ec14361d819a"
 
 [build]
 system = "custom"
