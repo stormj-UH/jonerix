@@ -165,7 +165,14 @@ docker run --rm \
         make ARCH="$KARCH" -j"$MAX_JOBS" all
 
         echo "==> Installing to DESTDIR"
-        KVER=$(make ARCH="$KARCH" -s kernelversion)
+        # KVER must be the FULL release string (kernelrelease), not just
+        # kernelversion. kernelversion returns "6.14.2", but with
+        # CONFIG_LOCALVERSION="-jonerix-1.2.1" the actual `uname -r` value
+        # and the modules_install directory name are "6.14.2-jonerix-1.2.1".
+        # Naming /boot/vmlinuz, System.map and config with the full release
+        # ensures bootloaders and initramfs hooks that key on `uname -r`
+        # find the right files.
+        KVER=$(make ARCH="$KARCH" -s kernelrelease)
         DESTDIR="/build/destdir"
         mkdir -p "$DESTDIR/boot"
 
