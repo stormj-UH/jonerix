@@ -1,9 +1,15 @@
 [package]
 name = "nodejs"
-version = "24.15.0-r4"
+version = "24.15.0-r5"
 license = "MIT"
 description = "JavaScript runtime built on V8 (libc++ / compiler-rt / small-icu / zero GNU)"
 
+# r5: cap CI parallelism at -j2 (was -j3). run 25658191102 OOM-killed
+# at file 3318/4386 of v8 compile under -j3 — some torque-generated
+# v8 files peak above 4 GB per cc1, so three in flight blew through
+# the ~14 GB GitHub runners offer. -j2 gives one big file room while
+# a smaller sibling keeps the pipeline warm.
+#
 # r4: bake distro identity into process.config.variables. Node has no
 # built-in distro-identification API (process.platform is just "linux"),
 # but the gyp variables it was configured with are dumped verbatim into
@@ -212,15 +218,19 @@ cfg["variables"]["distro_version"] = os.environ["DISTRO_VERSION"]
 p.write_text(banner + json.dumps(cfg, indent=2) + "\n")
 '
 
-# Parallelism. V8 compilation peaks at ~2 GB per job; the final
-# link pulls another ~3 GB. GitHub runners give us 4 vCPU / ~14
-# GiB, so -j3 fits without swap thrash. On a bigger local box
-# (>= 28 GiB) we scale to nproc.
+# Parallelism. V8 compilation peaks at ~2 GB for ordinary files but
+# torque-generated files (builtins-*-from-dsl-gen.cc, regexp-bytecode-
+# generator.cc) can spike past 4 GB per cc1 alone. The final link
+# pulls another ~3 GB. GitHub runners give us 4 vCPU / ~14 GiB
+# MemAvailable, so two of those big files in flight already eats
+# the budget — drop to -j2 in CI (run 25658191102 OOM'd at file
+# 3318/4386 under -j3). On a bigger local box (>= 28 GiB) we scale
+# to nproc.
 MEM_GB=$(awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 2)
 CPUS=$(nproc 2>/dev/null || echo 2)
 
 if [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
-  JOBS=3
+  JOBS=2
   [ "$MEM_GB" -ge 28 ] && JOBS=$CPUS
   [ "$JOBS" -gt "$CPUS" ] && JOBS=$CPUS
 else

@@ -241,6 +241,11 @@ package_timeout() {
         # to similar wall-time. Keep the legacy llvm at the same cap so
         # rebuilds of the metapackage scenario stay safe.
         llvm|libllvm|clang|lld|llvm-extra) echo 20000 ;;
+        # nodejs: v8 compile at -j2 (memory-safe under GitHub runners)
+        # is ~100 min, plus configure + install + jpkg packaging. Give
+        # it 2h to keep margin for the longest torque-generated v8
+        # files which can sit on a single core for many minutes each.
+        nodejs) echo 7200 ;;
         *) echo 3600 ;;
     esac
 }

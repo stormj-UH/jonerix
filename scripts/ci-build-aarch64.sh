@@ -238,6 +238,11 @@ package_timeout() {
         # so these are faster than the x86_64 sibling, but still need
         # well over 1h). Keep the legacy llvm at the same cap.
         llvm|libllvm|clang|lld|llvm-extra) echo 14400 ;;
+        # nodejs: v8 compile at -j2 (memory-safe under GitHub runners)
+        # is ~100 min, plus configure + install + jpkg packaging. Give
+        # it 2h to keep margin for the longest torque-generated v8
+        # files which can sit on a single core for many minutes each.
+        nodejs) echo 7200 ;;
         *) echo 3600 ;;
     esac
 }
