@@ -1,8 +1,42 @@
 [package]
 name = "jmake"
-version = "1.2.5"
+version = "1.2.6"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.2.6: turn 1.2.5's two queued cosmetic stderr issues into real fixes.
+#
+# Bug A (Valkey @printf leak in -include rebuild): jmake had two
+# separate prefix scanners for recipe-line modifiers (@/-/+). The main
+# execute_recipe path correctly re-scanned the post-expansion text, so
+# `\t-$(SERVER_CC) -MM ...` where $(SERVER_CC) starts with @printf
+# stripped both - and @ before shelling out. But the
+# expand_include_recipe_lines path (used to rebuild Makefile.dep and
+# other -include'd auto-generated files) only scanned the raw template
+# before expansion, so the @ introduced by $(QUIET_CC)$(CC) leaked
+# through to /bin/sh as @printf and the recipe was also displayed
+# verbatim instead of being silenced. Added the second strip pass to
+# match the main path. src/eval/mod.rs ~line 3878.
+#
+# Bug B (Valkey FINAL_LIBS literal-text leak): the VariableAssignment
+# dispatch had two paths: pre-expansion path correctly expanded
+# := / ::= RHS at definition time, but the tab-prefixed shortcut path
+# (taken by `\tFINAL_LIBS := ...` inside an active ifeq block) fell
+# through to set_variable() with the unexpanded value. Valkey's
+# USE_JEMALLOC branch contains
+# `\\tFINAL_LIBS := ../jemalloc.a $(FINAL_LIBS)` — the literal
+# $(FINAL_LIBS) text was being stored, then the LINK recipe expanded
+# $(FINAL_LIBS) and the shell saw `$(FINAL_LIBS)` (subshell) and
+# tried to exec FINAL_LIBS as a command. Fix: expand RHS for Simple /
+# PosixSimple flavor before set_variable in the shortcut dispatch.
+# src/eval/mod.rs ~line 2222.
+#
+# Both reproduced in clean-room and verified end-to-end on Pi 5
+# (tormenta) — Valkey 9.0.4 builds with ZERO stderr noise after this
+# release.
+#
+# Tests: 17 unit + 251 feature pass (added 4 regression tests across
+# both fixes). 0 warnings.
+#
 # 1.2.5: Valkey/jemalloc unblock + perf + security + safety audit.
 #
 # Static pattern rule recipe-loss (Valkey/jemalloc blocker): GNU Make
@@ -258,8 +292,8 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.5/jmake-v1.2.5.tar.gz"
-sha256 = "9b8fb2547beb6459e1ba7036d83b68ebc362fe399af7a243bdb4a41b261260c0"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.6/jmake-v1.2.6.tar.gz"
+sha256 = "684157f222eeee3a3e7fed13d43d1b297b295a577be2ff81b3be7c1feea3bfce"
 
 [build]
 system = "custom"
