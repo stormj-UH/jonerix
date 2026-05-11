@@ -1,9 +1,18 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.20"
+version = "1.6.21"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.21: post_install now `rc-service snooze-crond restart` when the
+# daemon is already up, instead of plain `start` (which is a no-op
+# against an already-running daemon).  Without restart, cron.d/*
+# edits don't take effect on upgrade — snooze-crond forks a snooze
+# child per cron file at startup and never re-reads the directory.
+# Hit during the 1.6.19 -> 1.6.20 upgrade on tormenta: the new
+# `-H /1` schedule sat in the file unfired because the live daemon
+# was still running the previous `-M /15` (midnight-only) schedule.
+#
 # 1.6.20: fix the disable-eee-watchdog snooze timespec one more time.
 # 1.6.19 changed `-M */15` -> `-M /15` (correct for the minute axis),
 # but missed that snooze defaults `-H` to hour 0 when not specified,
@@ -468,11 +477,18 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
         rc-service shadow-login restart 2>/dev/null || true
     fi
 
-    # Live-start snooze-crond so the cron entries (disable-eee-watchdog,
-    # pi5-rtc-battery, ntp-set) actually fire on this install — without
-    # this, the cron daemon only comes up on the next reboot.
+    # Live-(re)start snooze-crond so the cron entries (disable-eee-watchdog,
+    # pi5-rtc-battery, ntp-set) actually fire on this install.  snooze-crond
+    # forks a snooze child per cron file at startup and never re-reads the
+    # directory afterwards, so a `start` when already running would silently
+    # keep the old cron contents.  Use `restart` so any cron.d/* file we
+    # just updated takes effect.
     if command -v rc-service >/dev/null 2>&1; then
-        rc-service snooze-crond start 2>/dev/null || true
+        if rc-service snooze-crond status >/dev/null 2>&1; then
+            rc-service snooze-crond restart 2>/dev/null || true
+        else
+            rc-service snooze-crond start 2>/dev/null || true
+        fi
     fi
 
     # --- cold-reboot: patch cmdline.txt once + live-flip sysfs ---
