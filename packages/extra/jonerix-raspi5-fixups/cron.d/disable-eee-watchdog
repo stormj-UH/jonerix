@@ -1,0 +1,20 @@
+# Periodically re-disable EEE on eth0 in case something re-enables it.
+#
+# Why: the boot-time disable-eee OpenRC service (etc/init.d/disable-eee)
+# turns EEE off once after dhcpcd brings the link up. That covers the
+# common case, but the BCM54213PE PHY on the Pi 5 has been observed to
+# re-enable EEE in the wild — typically after a kernel-driven link
+# renegotiation, a dhcpcd renew that resets the PHY, or anything that
+# triggers an mdio bus reinit. When that happens you get the classic
+# 30-60-second link-flap loop until something disables EEE again.
+#
+# Why every 15 minutes: disable-eee is idempotent — when EEE is already
+# off, eee-tool exits with "already off" without bouncing the link, so
+# a periodic run costs nothing. Fifteen minutes bounds the worst-case
+# flap window to a quarter hour without spamming logs.
+#
+# Why not a busier interval: when disable-eee DOES find EEE on and has
+# to retry with -b (link bounce), the link drops for a moment, so we
+# want to minimise the chance of stepping on a long-running transfer.
+SNOOZE_ARGS="-H* -M*/15 -S0"
+COMMAND="/bin/disable-eee eth0"

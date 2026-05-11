@@ -1,9 +1,29 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.17"
+version = "1.6.18"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.18: periodic disable-eee watchdog.  The init.d/disable-eee
+# OpenRC service only runs once at boot, after dhcpcd brings the
+# link up.  That handled the common case, but reproducer 2026-05-10
+# on tormenta confirmed BCM54213PE EEE flapping still happens
+# whenever the link partner picks up EEE on a subsequent renegotiate
+# (kernel-driven mdio reset, dhcpcd renew, switch port re-enable,
+# cable-swap with a different upstream).  Pattern: ~12-second
+# regular flap cadence, ~3 s down each, accompanied by lp_advertised
+# flipping 0x0 -> 0x28.  Distinct from the cable-induced flap
+# pattern we ALSO had on that host (~13-60 s irregular, accompanied
+# by climbing RX frame/FIFO error counters); the cable-swap fixed
+# THAT issue, but `eee-tool on -b` proved EEE on its own reproduces
+# the flap loop with a known-good cable, so a re-disable watchdog
+# is justified.
+#
+# Implementation: etc/cron.d/disable-eee-watchdog runs disable-eee
+# every 15 minutes via snooze (idempotent, no link bounce when EEE
+# is already off).  Worst-case flap window is therefore 15 minutes;
+# typical wait until the next no-op confirmation is also 15 minutes.
+#
 # 1.6.0: absorbs the tty1-console HDMI getty from the retired
 # jonerix-boot-helpers package (reboot-clean was already
 # superseded by reboot-openrc, ntp-set-http / ntp-bootstrap
@@ -148,6 +168,14 @@ install -Dm755 init.d/pi5-cold-reboot $DESTDIR/etc/init.d/pi5-cold-reboot
 # with a snooze-cron entry that runs it daily.
 install -Dm755 bin/pi5-rtc-battery-check $DESTDIR/usr/local/bin/pi5-rtc-battery-check
 install -Dm644 cron.d/pi5-rtc-battery     $DESTDIR/etc/cron.d/pi5-rtc-battery
+
+# Periodic disable-eee re-apply. The init.d/disable-eee OpenRC service
+# only runs once at boot; this cron entry catches the case where the
+# BCM54213PE PHY's EEE setting gets re-enabled later (observed in the
+# wild after kernel-driven mdio resets / dhcpcd renews). disable-eee
+# is idempotent — when EEE is already off, this is a fast no-op that
+# does not bounce the link.
+install -Dm644 cron.d/disable-eee-watchdog $DESTDIR/etc/cron.d/disable-eee-watchdog
 
 # jonerix is merged-usr-flat: /usr is a runtime symlink to /. jpkg >= 1.1.0
 # refuses to silently flatten a DESTDIR/usr/ tree (layout bugs used to
