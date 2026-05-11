@@ -1,8 +1,18 @@
 [package]
 name = "ripgrep"
-version = "15.1.0"
+version = "15.1.0-r1"
 license = "MIT"
 description = "Fast line-oriented search tool (grep replacement)"
+
+# r1: drop `--frozen` from the cargo build line.  The recipe edits
+# Cargo.toml to strip the jemallocator dep (jemalloc's 4 K page default
+# blows up on the RPi5's 16 K page kernel), which invalidates the
+# checked-in Cargo.lock.  --frozen refuses to regenerate the lock and
+# errors with:
+#   cannot update the lock file ... because --frozen was passed
+# --offline already prevents network access; with --frozen removed,
+# cargo regenerates the lock from the locally-cached registry. Same
+# pattern other Rust recipes here use after touching Cargo.toml.
 
 [source]
 url = "https://github.com/BurntSushi/ripgrep/archive/refs/tags/15.1.0.tar.gz"
@@ -22,7 +32,7 @@ tmp=crates/core/main.rs.tmp
 sed '/cfg(all(target_env = "musl", target_pointer_width = "64"))/,/static ALLOC: tikv_jemallocator/d; /tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;/d' crates/core/main.rs > "$tmp"
 cat "$tmp" > crates/core/main.rs
 rm -f "$tmp"
-RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release --frozen --offline"""
+RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static" cargo build --release --offline"""
 install = """install -Dm755 target/release/rg $DESTDIR/bin/rg
 ln -sf rg $DESTDIR/bin/ripgrep
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

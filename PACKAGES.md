@@ -90,7 +90,6 @@ Generated from tracked `packages/**/recipe.toml` -- **103 recipes**. All jonerix
 | **`buildkit`** | `extra` | 0.20.2-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc` | `go` | BuildKit — high-performance OCI image build backend (buildkitd + buildctl) used by `docker build` |
 | **`bzip2`** | `extra` | 1.0.8-r2 | bzip2-1.0.6 | any | `musl` | `clang`, `make` | Block-sorting file compressor (bzip2 + libbz2, clang/musl build, no GNU) |
 | **`ca-certificates`** | `extra` | 20260211-r2 | MPL-2.0 | any | - | - | Mozilla CA certificate bundle for TLS verification (sourced from curl.se) |
-| **`chimerautils`** | `extra` | 15.0.3-r1 | BSD-3-Clause | any | `musl`, `ncurses`, `libressl`, `zlib`, `xz`, `bzip2`, `zstd` | `clang`, `samurai`, `meson`, `pkgconf`, `ncurses`, `libressl`, `zlib`, `xz`, `bzip2`, `zstd` | Chimera Linux's FreeBSD-derived BSD coreutils — ls, cat, cp, mv, sed, grep, awk, find, tar, ed, ee, jot, nc, gzip, m4, patch, ... — installed under /share/chimerautils/ so it coexists with toybox + uutils + bsdsed + onetrueawk without clobbering /bin paths |
 | **`cni-plugins`** | `extra` | 1.9.1 | Apache-2.0 | any | `musl` | `go` | CNI network plugins for container networking |
 | **`containerd`** | `extra` | 2.2.2-r1 | Apache-2.0 | any | `musl` | `go` | Industry-standard container runtime |
 | **`derper`** | `extra` | 1.96.5 | BSD-3-Clause | any | `musl` | `go` | Tailscale DERP relay server |
