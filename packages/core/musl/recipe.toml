@@ -1,6 +1,6 @@
 [package]
 name = "musl"
-version = "1.2.6-r1"
+version = "1.2.6-r2"
 license = "MIT"
 description = "Lightweight, fast, and standards-conformant C library"
 
@@ -21,12 +21,22 @@ sha256 = "d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a"
 [build]
 system = "autoconf"
 configure = """
-# Patch ldso banner to identify as jonerix. POSIX-safe sed pattern
-# (no -i): rewrite to a tmp file, copy back with `cat`.
+# Patch ldso banner to identify as jonerix. POSIX-safe sed (no -i).
+# Match the literal opening string `"musl libc (` and prepend
+# `jonerix; ` inside the parens. Plain pattern, no backslash-n
+# escapes — avoids any double-escape interaction with the TOML
+# string parser. Verify with `grep jonerix` after the substitution
+# so a future upstream wording change fails the recipe loudly.
 tmp=ldso/dynlink.c.tmp
-sed 's|"musl libc (" LDSO_ARCH ")\\\\n"|"musl libc (jonerix; " LDSO_ARCH ")\\\\n"|' ldso/dynlink.c > "$tmp"
+sed 's/"musl libc (/"musl libc (jonerix; /' ldso/dynlink.c > "$tmp"
 cat "$tmp" > ldso/dynlink.c
 rm -f "$tmp"
+if ! grep -q 'musl libc (jonerix; ' ldso/dynlink.c; then
+    echo "musl recipe: FATAL ldso banner patch did not apply" >&2
+    grep -n 'musl libc' ldso/dynlink.c >&2 || true
+    exit 1
+fi
+echo "musl recipe: ldso banner patched OK"
 
 # Stamp the libc VERSION string with the distro version. Read
 # /etc/os-release VERSION_ID if available; fall back to "jonerix"
