@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_heavies:
-        description: 'Skip rust, llvm, nodejs, go, cmake (saves ~90 min of build time)'
+        description: 'Skip rust, libllvm/clang/lld/llvm-extra/libcxx, nodejs, go, cmake, python3, ruby, perl, linux, lldb, tmux, gitredoxide. Equivalent to skipping every LFS-tracked source recipe + the slow interpreter / cmake builds. Saves several hours.'
         type: boolean
         default: true
       stop_on_first_failure:

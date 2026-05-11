@@ -85,13 +85,22 @@ if [ -z "${JPKG_SOURCE_CACHE:-}" ] && [ -d /workspace/sources ]; then
     echo ">>> JPKG_SOURCE_CACHE=$JPKG_SOURCE_CACHE ($(ls /workspace/sources | wc -l) tarballs)"
 fi
 
-# Heavy packages whose build dominates wall time. Filter applied as substring
-# match against the recipe directory name. `cmake` is included because it
-# pulls in a lot of compile time; trim if you ever want a tighter set.
-# `python3` and `ruby` and `perl` are slow interpreter builds — added because
-# we mostly want this CI to validate the lightweight package set, not the
-# language-runtime tail (which is exercised by publish-packages.yml anyway).
-HEAVIES="rust llvm llvm-all nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux"
+# Heavy packages whose build dominates wall time. is_heavy() does an exact
+# word match against this space-separated list — `*" $1 "*` — so each
+# package has to appear literally (no substring magic). New entries that
+# pulled the heavy-package filter in were the LLVM split (libllvm, clang,
+# lld, llvm-extra, libcxx all live on the llvm-project tarball) and
+# gitredoxide (its vendored archive is on LFS too). Without those entries
+# SKIP_HEAVIES=true left them building, which (a) burned hours of CI time
+# and (b) burned LFS bandwidth on every full-bootstrap run.
+#
+# `python3` / `ruby` / `perl` are slow interpreter builds — exercised by
+# publish-packages.yml separately; this CI validates the lightweight
+# package set.
+#
+# `cmake` is heavy because of its compile time, even though its source is
+# not on LFS.
+HEAVIES="rust llvm llvm-all libllvm clang lld llvm-extra libcxx nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux gitredoxide"
 # hostapd / wpa_supplicant used to live in HEAVIES because their hostap.git
 # Makefiles tripped the jmake MAKEFLAGS escape bug fixed in jmake 1.1.14.
 # They're regular recipes now: build under jmake against nloxide (the in-house
