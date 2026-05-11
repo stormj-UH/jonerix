@@ -54,7 +54,17 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          lfs: true
+          # lfs: false — the repo's LFS-tracked source tarballs
+          # (kernel, llvm-project, node, rust×2, gitredoxide-vendored)
+          # push the repo past GitHub's free-tier LFS bandwidth budget
+          # within a handful of runs, and the docker bootstrap step
+          # blows up at "Checkout source" with:
+          #   "This repository exceeded its LFS budget."
+          # publish-packages.yml hits the same constraint and the
+          # workaround is identical: check out the pointer files, then
+          # let ci-full-bootstrap.sh purge them so jpkg falls through
+          # to each recipe's source.url at build time.
+          lfs: false
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
