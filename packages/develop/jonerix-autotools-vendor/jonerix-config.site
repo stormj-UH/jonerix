@@ -1,0 +1,14 @@
+# /etc/jonerix-config.site — sourced by autotools-generated configure scripts.
+# Forces the build/host triple to identify as jonerix.
+#
+# Override by setting CONFIG_SITE elsewhere, or by passing --build/--host
+# explicitly on the configure command line.
+
+if [ -r /etc/os-release ] && grep -q '^ID=jonerix' /etc/os-release; then
+    case "$(uname -m)" in
+        aarch64) ac_cv_build=aarch64-jonerix-linux-musl ;;
+        x86_64)  ac_cv_build=x86_64-jonerix-linux-musl ;;
+        *) ;;
+    esac
+    [ -n "${ac_cv_build-}" ] && ac_cv_host=$ac_cv_build
+fi

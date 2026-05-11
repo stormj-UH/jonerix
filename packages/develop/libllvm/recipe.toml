@@ -1,8 +1,17 @@
 [package]
 name = "libllvm"
-version = "21.1.2"
+version = "21.1.2-r1"
 license = "Apache-2.0"
 description = "LLVM core libraries, headers, cmake configs, and base tools (shared libLLVM-21.so)"
+
+# r1: add jonerix-autotools-vendor as a runtime dep so every host with
+# the compiler toolchain installed automatically gets the autotools
+# build/host triple fix (autoconf-generated ./configure scripts pick
+# up /etc/jonerix-config.site and identify as aarch64-jonerix-linux-musl
+# or x86_64-jonerix-linux-musl instead of *-unknown-linux-musl).
+# libllvm is the foundational toolchain package — clang, lld, llvm,
+# llvm-extra, rust all depend on it at runtime — so the fixup drags
+# in via dep-graph for everyone who has the compiler toolchain.
 
 # libllvm builds JUST the LLVM core — no clang, no lld, no lldb.
 # Ships libLLVM-21.so so clang, lld, and rust can all link against
@@ -130,5 +139,5 @@ ls -lh "$DESTDIR/lib/libLLVM"* 2>/dev/null || true
 install = ""
 
 [depends]
-runtime = ["musl", "libcxx", "zstd", "zlib"]
+runtime = ["musl", "libcxx", "zstd", "zlib", "jonerix-autotools-vendor"]
 build = ["clang", "cmake", "samurai", "python3", "libcxx", "jonerix-headers"]

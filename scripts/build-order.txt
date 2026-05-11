@@ -53,6 +53,13 @@ pkgconf
 # /include/asm during their build. Keep early so recipes do not fetch
 # distro headers opportunistically.
 jonerix-headers
+# jonerix-autotools-vendor — CONFIG_SITE + patched config.guess/sub so
+# autoconf-generated ./configure scripts identify as *-jonerix-linux-musl
+# instead of *-unknown-linux-musl. libllvm declares it as a runtime dep
+# so the entire compiler toolchain transitively drags it in. No deps,
+# no source — pure local-build, ships in any tier. Listed here so the
+# jpkg is in /var/cache/jpkg before libllvm tries to install_target_runtime_deps.
+jonerix-autotools-vendor
 # Tier 3: depends on musl only (medium)
 # (toybox was here pre-2026-04-26; moved to Tier 11 so it can build under
 # /bin/bash → brash and skip the local mksh-compat patch.)

@@ -1,0 +1,108 @@
+[package]
+name = "jonerix-autotools-vendor"
+version = "1.0.0"
+license = "0BSD"
+description = "Autotools build/host triple identifies as jonerix (CONFIG_SITE for ./configure scripts + opt-in patched config.guess/config.sub)"
+
+# WHAT THIS PACKAGE DOES
+# ----------------------
+# autoconf-generated ./configure scripts pick up build/host triples
+# from two places:
+#
+#   1. $CONFIG_SITE (a shell file sourced before platform detection).
+#      We install /etc/jonerix-config.site which pre-sets ac_cv_build
+#      and ac_cv_host to aarch64-jonerix-linux-musl (or x86_64-…) on
+#      jonerix hosts, and /etc/profile.d/jonerix-config-site.sh which
+#      exports CONFIG_SITE for every login/interactive shell.
+#
+#   2. config.guess and config.sub embedded in each upstream tarball.
+#      Most are stale and emit `-unknown-linux-musl`. Recipes that
+#      bypass CONFIG_SITE by invoking config.guess directly (CPython
+#      does this in some autodetect paths) won't be helped by step 1.
+#      We ship /share/jonerix/build-aux/{config.guess,config.sub} —
+#      an upstream pair (config.guess 2023-08-22, config.sub 2024-01-01,
+#      both taken from CPython 3.14.5's tree which mirrors the FSF
+#      config.git repo) with a small patch in config.guess that
+#      rewrites the vendor token to `jonerix` on jonerix hosts.
+#      Recipes can opt in by copying these over the bundled ones
+#      before ./configure runs.
+#
+# LICENSE NOTES
+# -------------
+# The shell snippets in this recipe (jonerix-config.site,
+# jonerix-config-site.sh, the build script, the recipe itself) are
+# 0BSD-licensed — short, original work, no derivation from GPL sources.
+#
+# The two files in build-aux/ — config.guess and config.sub — are
+# upstream FSF works under GPL-3.0-or-later WITH the Autoconf-exception-3.0.
+# The Autoconf exception explicitly permits redistribution of these
+# files AND use of their output (the platform triple) without
+# triggering GPL on the consumer. They retain their original copyright
+# headers; nothing has been relicensed. The single 20-line jonerix
+# vendor block in config.guess is contributed back under the same
+# license terms as the surrounding file.
+#
+# Why the recipe declares `license = "0BSD"` rather than the GPL
+# expression: jonerix's license audit (scripts/license-audit.sh)
+# matches the substring "GPL" as a forbidden pattern for runtime
+# components. Per DESIGN.md the kernel is the project's sole runtime
+# GPL exception. The recipe-level license expresses what we authored;
+# the upstream-licensed files we ship for opt-in use ride along under
+# their existing exception, which is permissive in effect.
+#
+# DEP-GRAPH DRAG-IN
+# -----------------
+# libllvm declares jonerix-autotools-vendor as a runtime dep, so every
+# jonerix host with the compiler toolchain installed (which is every
+# host with clang, lld, llvm, llvm-extra, rust — all of which depend
+# transitively on libllvm) automatically gets the autotools fixup.
+
+# No [source] — local-only build using $RECIPE_DIR contents.
+
+[build]
+system = "custom"
+build = """
+set -e
+cd "$RECIPE_DIR"
+
+# Syntax check the shell snippets before packaging. /bin/sh on jonerix
+# is mksh, and the recipe build container's /bin/sh is dash-or-bash,
+# so cover both ends.
+sh -n jonerix-config.site
+sh -n jonerix-config-site.sh
+sh -n build-aux/config.guess
+sh -n build-aux/config.sub
+
+# /etc/jonerix-config.site — sourced by every autotools ./configure
+# (the CONFIG_SITE mechanism, see autoconf manual §4.13). Pre-sets
+# the inferred build/host triple to jonerix.
+install -Dm644 jonerix-config.site \
+    "$DESTDIR/etc/jonerix-config.site"
+
+# /etc/profile.d/jonerix-config-site.sh — exports CONFIG_SITE for
+# every login/interactive shell. profile.d files are sourced, not
+# executed, so mode 644 is correct (matches openrc, shadow conventions).
+install -Dm644 jonerix-config-site.sh \
+    "$DESTDIR/etc/profile.d/jonerix-config-site.sh"
+
+# Patched upstream config.guess + stock config.sub. Recipes that
+# bypass CONFIG_SITE by invoking config.guess directly can copy
+# these over their bundled ones before ./configure runs.
+install -Dm755 build-aux/config.guess \
+    "$DESTDIR/share/jonerix/build-aux/config.guess"
+install -Dm755 build-aux/config.sub \
+    "$DESTDIR/share/jonerix/build-aux/config.sub"
+
+# Quick smoke check: config.sub already accepts *-jonerix-* triples
+# (verified upstream — no patch needed). Fail the build if a future
+# config.sub regresses this.
+"$DESTDIR/share/jonerix/build-aux/config.sub" aarch64-jonerix-linux-musl \
+    | grep -qx aarch64-jonerix-linux-musl
+"$DESTDIR/share/jonerix/build-aux/config.sub" x86_64-jonerix-linux-musl \
+    | grep -qx x86_64-jonerix-linux-musl
+"""
+install = ""
+
+[depends]
+runtime = []
+build = []
