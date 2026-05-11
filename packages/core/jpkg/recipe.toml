@@ -1,8 +1,30 @@
 [package]
 name = "jpkg"
-version = "2.2.2"
+version = "2.2.3"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.3 — proper upgrade-clean + better collision error messages.  Fixes
+# the ncurses-6.5-r3 -> r4 upgrade failure where `sudo jpkg install --force
+# ncurses` died with `I/O error: File exists (os error 17)` and no path:
+# r3 ships /lib/terminfo as a populated directory, r4 ships it as a symlink
+# to ../share/terminfo, and install_files' fs::remove_dir only succeeds on
+# empty directories so the symlink call hit EEXIST.  Three compounding
+# changes ship together:
+#   1. Implement real upgrade-clean.  When db.get(name) returns an old
+#      version, diff the old manifest against the new manifest and remove
+#      old-owned files that no longer exist in the new layout.  This is
+#      what apt/rpm/pacman have always done.
+#   2. Allow dir -> symlink (and symlink -> dir) layout flips when the same
+#      package owned the directory before.  remove_dir_all is gated on
+#      every file under the doomed dir appearing in the OLD manifest — any
+#      foreign content (user data, another package's file) aborts the
+#      upgrade with a clear message naming the offending paths instead of
+#      silently nuking it.
+#   3. Plumb the conflicting path into the InstallError display.  The
+#      bare `File exists (os error 17)` is replaced with `cannot create
+#      symlink at /lib/terminfo: File exists (os error 17)` so the
+#      failing path is visible in the first line of the user's terminal.
+#
 # 2.2.2 — add the `jpkg -uu` shortcut (Arch-style "refresh repos then
 # upgrade everything", equivalent to `pacman -Syu`).  Composes the existing
 # `update` and `upgrade` entry points so all flag handling stays in one

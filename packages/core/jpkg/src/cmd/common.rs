@@ -32,6 +32,22 @@ pub enum InstallError {
     SignatureInvalid { name: String, version: String, reason: String },
     /// Package carries a signature referencing an unknown key.
     UnknownSigningKey { name: String, key_id: String },
+    /// I/O error tied to a specific filesystem path.
+    ///
+    /// Used wherever the bare `io::Error` would lose the path that triggered
+    /// it — e.g. `symlinkat` returning `EEXIST` with no path attached.  See
+    /// `install_files` for the canonical use site.
+    FileOp { path: PathBuf, op: &'static str, source: io::Error },
+    /// Upgrade-clean discovered a foreign file under a directory the new
+    /// package wants to replace with a symlink.  The user must remove the
+    /// foreign file by hand (or pass an as-yet-unwritten escape hatch); we
+    /// refuse to nuke unowned data.
+    UpgradeForeignFiles {
+        pkg: String,
+        new_version: String,
+        dir: PathBuf,
+        foreign: Vec<PathBuf>,
+    },
 }
 
 impl fmt::Display for InstallError {
@@ -56,6 +72,30 @@ impl fmt::Display for InstallError {
             InstallError::UnknownSigningKey { name, key_id } => {
                 write!(f, "unknown signing key {key_id} for package {name}")
             }
+            InstallError::FileOp { path, op, source } => {
+                write!(f, "cannot {op} at {}: {source}", path.display())
+            }
+            InstallError::UpgradeForeignFiles { pkg, new_version, dir, foreign } => {
+                // List up to 5 paths verbatim; truncate the rest.
+                let shown: Vec<String> = foreign
+                    .iter()
+                    .take(5)
+                    .map(|p| p.display().to_string())
+                    .collect();
+                let more = foreign.len().saturating_sub(shown.len());
+                write!(
+                    f,
+                    "cannot install {pkg}-{new_version}: target path {} \
+                     conflicts with existing directory (still populated \
+                     after old-manifest cleanup); foreign files present: {}",
+                    dir.display(),
+                    if more > 0 {
+                        format!("{} (+{} more)", shown.join(", "), more)
+                    } else {
+                        shown.join(", ")
+                    }
+                )
+            }
         }
     }
 }
@@ -67,6 +107,7 @@ impl std::error::Error for InstallError {
             InstallError::Archive(e) => Some(e),
             InstallError::Db(e) => Some(e),
             InstallError::Recipe(e) => Some(e),
+            InstallError::FileOp { source, .. } => Some(source),
             _ => None,
         }
     }
@@ -342,6 +383,25 @@ fn flatten_dir_into(destdir: &Path, src_name: &str, dest_dir: &Path) -> io::Resu
 
 // ─── install_files ────────────────────────────────────────────────────────────
 
+/// Wrap a path-bound `io::Result` into an `InstallError::FileOp` so the
+/// final error message tells the user which path tripped over which syscall.
+///
+/// Without this wrapper, the bare `io::Error` from `symlinkat(2)` is something
+/// like `File exists (os error 17)` with no file path — useless triage info.
+/// Every callsite in `install_files` and `clean_old_files_for_upgrade` that
+/// touches the filesystem goes through this helper.
+fn wrap_io<T>(
+    result: io::Result<T>,
+    path: &Path,
+    op: &'static str,
+) -> Result<T, InstallError> {
+    result.map_err(|e| InstallError::FileOp {
+        path: path.to_path_buf(),
+        op,
+        source: e,
+    })
+}
+
 /// Copy all files from `stage_dir` into `rootfs`.
 ///
 /// Uses `WalkDir` + atomic per-file copy (regular files) / symlink recreation
@@ -352,11 +412,19 @@ fn flatten_dir_into(destdir: &Path, src_name: &str, dest_dir: &Path) -> io::Resu
 /// Directories are created first; symlinks are recreated verbatim; regular files
 /// are overwritten.  This mirrors `tar -x` semantics: a destination symlink is
 /// replaced by the new file, not followed.
-fn install_files(stage_dir: &Path, rootfs: &Path) -> io::Result<()> {
+///
+/// # Errors
+///
+/// Returns [`InstallError::FileOp`] with the offending path on any filesystem
+/// failure.  The 2.2.2-and-earlier behaviour of returning a bare `io::Error`
+/// with no path attached made triage of upgrade-time collisions impossible
+/// (see the 2.2.3 changelog: `symlinkat ... = -1 EEXIST` with no path).
+fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
     for entry in WalkDir::new(stage_dir).sort_by_file_name().into_iter() {
-        let entry = entry.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("walkdir: {e}"))
-        })?;
+        let entry = entry.map_err(|e| InstallError::Io(io::Error::new(
+            io::ErrorKind::Other,
+            format!("walkdir: {e}"),
+        )))?;
         let abs = entry.path();
 
         if abs == stage_dir {
@@ -368,38 +436,269 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> io::Result<()> {
             .expect("walkdir child of stage_dir");
         let dest = rootfs.join(rel);
 
-        let m = abs.symlink_metadata()?;
+        let m = wrap_io(abs.symlink_metadata(), abs, "stat staged file")?;
 
         if m.file_type().is_symlink() {
-            let target = fs::read_link(abs)?;
+            let target = wrap_io(fs::read_link(abs), abs, "read staged symlink")?;
             // Remove any existing dest (symlink, file, or empty dir) before
-            // recreating — matches tar -x "replace symlinks, not follow" behaviour.
-            if dest.symlink_metadata().is_ok() {
-                let dm = dest.symlink_metadata()?;
+            // recreating — matches tar -x "replace symlinks, not follow"
+            // behaviour.  If the existing dest is a populated directory the
+            // upgrade-clean step in extract_and_register should have already
+            // emptied it; if it didn't, fall through and let the symlink call
+            // surface the EEXIST with its path so the user can see exactly
+            // what got in the way.
+            if let Ok(dm) = dest.symlink_metadata() {
                 if dm.is_dir() && !dm.file_type().is_symlink() {
+                    // Try a plain rmdir first (empty dir case).  If that
+                    // fails (ENOTEMPTY) leave the directory in place — the
+                    // subsequent symlink() will fail with EEXIST and surface
+                    // dest as the conflicting path.  We deliberately do NOT
+                    // remove_dir_all here unconditionally; the caller is
+                    // responsible for proving the directory is owned by the
+                    // old version (see clean_old_files_for_upgrade).
                     let _ = fs::remove_dir(&dest);
                 } else {
-                    let _ = fs::remove_file(&dest);
+                    wrap_io(fs::remove_file(&dest), &dest, "remove existing file")?;
                 }
             }
             if let Some(p) = dest.parent() {
-                fs::create_dir_all(p)?;
+                wrap_io(fs::create_dir_all(p), p, "create parent directory")?;
             }
-            std::os::unix::fs::symlink(target, &dest)?;
+            wrap_io(
+                std::os::unix::fs::symlink(&target, &dest),
+                &dest,
+                "create symlink",
+            )?;
         } else if m.is_dir() {
-            fs::create_dir_all(&dest)?;
+            wrap_io(fs::create_dir_all(&dest), &dest, "create directory")?;
         } else {
             // Regular file — remove any existing symlink/file at dest first so
-            // we do not inadvertently write through a symlink.
-            if dest.symlink_metadata().is_ok() {
-                let _ = fs::remove_file(&dest);
+            // we do not inadvertently write through a symlink.  Tolerate
+            // missing files (first install) and existing-as-symlink (upgrade
+            // from symlink → regular file).
+            if let Ok(dm) = dest.symlink_metadata() {
+                if dm.is_dir() && !dm.file_type().is_symlink() {
+                    // Populated dir where a file should go — same constraint
+                    // as the symlink branch: caller must have cleaned it.
+                    let _ = fs::remove_dir(&dest);
+                } else {
+                    wrap_io(fs::remove_file(&dest), &dest, "remove existing file")?;
+                }
             }
             if let Some(p) = dest.parent() {
-                fs::create_dir_all(p)?;
+                wrap_io(fs::create_dir_all(p), p, "create parent directory")?;
             }
-            fs::copy(abs, &dest)?;
+            wrap_io(fs::copy(abs, &dest), &dest, "copy file")?;
         }
     }
+    Ok(())
+}
+
+// ─── upgrade-clean ────────────────────────────────────────────────────────────
+
+/// Remove old-manifest files that are no longer in the new manifest, and
+/// resolve dir→symlink (or symlink→dir) collisions for the same package
+/// being upgraded.
+///
+/// This is what every real package manager does on upgrade (apt's dpkg
+/// backend, rpm, pacman, …): the manifest of the previous version tells you
+/// which files YOU put on disk, so you know which files YOU are allowed to
+/// take back.  Anything you find under a path you used to own that isn't in
+/// the old manifest is unowned data — the user's, or another package's — and
+/// must not be silently destroyed.
+///
+/// # Algorithm
+///
+/// 1. Read the OLD installed pkg from the db (caller guarantees same name).
+/// 2. Build a set of paths in the NEW manifest (`new_paths`).
+/// 3. For each entry in `old_files - new_files`, delete it from rootfs:
+///    - Regular file or symlink → `remove_file`
+///    - Directory → defer (we collect them and rmdir at the end in reverse
+///      sorted order so leaves come before parents).
+/// 4. For each path that is a populated directory in old_files but a SYMLINK
+///    in the new manifest (`dir_to_symlink`):
+///    - Walk the on-disk directory.
+///    - Every file underneath must be in the OLD manifest (i.e. owned by us).
+///    - If any foreign file is found, return [`InstallError::UpgradeForeignFiles`].
+///    - Otherwise `remove_dir_all` it.
+///
+/// The reverse for symlink→dir is handled by `install_files`' `remove_file`
+/// branch (symlinks always rm cheaply, no contents to worry about).
+///
+/// # Why we tolerate failures at this stage
+///
+/// Old-manifest entries that are already gone (because a previous failed
+/// upgrade half-cleaned, or an admin deleted them) must not abort the new
+/// install.  ENOENT is silently tolerated; any other error is propagated.
+fn clean_old_files_for_upgrade(
+    rootfs: &Path,
+    old_pkg: &InstalledPkg,
+    new_files: &[FileEntry],
+    new_pkg_name: &str,
+    new_pkg_version: &str,
+) -> Result<(), InstallError> {
+    use std::collections::HashMap;
+
+    // Build a lookup of new manifest entries keyed by path.
+    let new_by_path: HashMap<&str, &FileEntry> =
+        new_files.iter().map(|e| (e.path.as_str(), e)).collect();
+
+    // Collect dir paths to rmdir at the very end, leaves first.
+    let mut stale_dirs: Vec<PathBuf> = Vec::new();
+
+    // First pass — handle dir→symlink transitions before bulk file removal.
+    // We need to validate ownership of dir contents BEFORE we start removing
+    // anything, so a failed validation leaves the system untouched (atomicity:
+    // either we succeed and the dir is gone, or we error and on-disk state
+    // matches the pre-upgrade db).
+    let mut dirs_to_blast: Vec<PathBuf> = Vec::new();
+
+    // Build a set of file paths (no-leading-slash, relative to rootfs)
+    // that the OLD package owned, for the foreign-file check below.
+    let old_owned: std::collections::HashSet<&str> =
+        old_pkg.files.iter().map(|e| e.path.as_str()).collect();
+
+    for old in &old_pkg.files {
+        let new_entry = new_by_path.get(old.path.as_str()).copied();
+        let is_dir_in_old = old.is_dir;
+        let is_symlink_in_new = new_entry
+            .map(|e| e.symlink_target.is_some())
+            .unwrap_or(false);
+        if is_dir_in_old && is_symlink_in_new {
+            // Verify the on-disk dir is entirely owned by the old package.
+            let on_disk = rootfs.join(&old.path);
+            // Use symlink_metadata to avoid following a stray symlink at the
+            // ownership-check target (defence in depth — the old manifest
+            // says it's a dir, but if reality differs we just bail).
+            let md = match on_disk.symlink_metadata() {
+                Ok(m) => m,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    // Old dir already gone (admin cleanup or prior failed
+                    // upgrade) — nothing to do.
+                    continue;
+                }
+                Err(e) => {
+                    return Err(InstallError::FileOp {
+                        path: on_disk,
+                        op: "stat old directory",
+                        source: e,
+                    });
+                }
+            };
+            if !md.is_dir() || md.file_type().is_symlink() {
+                // Manifest says dir but reality says something else — leave
+                // it alone and let install_files surface the collision.
+                continue;
+            }
+            // Walk the on-disk dir, checking every contained path is in
+            // old_owned (with the rootfs-relative form).
+            let mut foreign: Vec<PathBuf> = Vec::new();
+            for entry in WalkDir::new(&on_disk).into_iter() {
+                let entry = entry.map_err(|e| InstallError::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("walkdir while scanning {}: {e}", on_disk.display()),
+                )))?;
+                let abs = entry.path();
+                if abs == on_disk {
+                    continue;
+                }
+                // Compute the rootfs-relative key for old_owned lookup.
+                let rel = match abs.strip_prefix(rootfs) {
+                    Ok(r) => r,
+                    Err(_) => continue,
+                };
+                let rel_str = rel.to_string_lossy();
+                // If the entry isn't in the old manifest, it's foreign.
+                // is_dir entries get skipped: directories on disk that
+                // happen to be unowned (e.g. an empty subdir made by the
+                // user) shouldn't be flagged — only their CONTENTS matter
+                // for the "is it safe to nuke?" question.  But a foreign
+                // FILE inside a foreign DIR still surfaces correctly
+                // because the file's path itself isn't in old_owned.
+                let on_disk_md = match abs.symlink_metadata() {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                if !on_disk_md.is_dir() || on_disk_md.file_type().is_symlink() {
+                    if !old_owned.contains(rel_str.as_ref()) {
+                        foreign.push(abs.to_path_buf());
+                    }
+                }
+            }
+            if !foreign.is_empty() {
+                foreign.sort();
+                return Err(InstallError::UpgradeForeignFiles {
+                    pkg: new_pkg_name.to_string(),
+                    new_version: new_pkg_version.to_string(),
+                    dir: on_disk,
+                    foreign,
+                });
+            }
+            dirs_to_blast.push(on_disk);
+        }
+    }
+
+    // Second pass — bulk-delete old files that aren't in the new manifest.
+    // (Same-path-different-kind transitions get handled in install_files,
+    // EXCEPT for the populated-dir-to-symlink case, which we just validated
+    // above and are about to blast.)
+    for old in &old_pkg.files {
+        if new_by_path.contains_key(old.path.as_str()) {
+            // Path still owned in new manifest — install_files will overwrite
+            // appropriately.  Don't remove it here or there'd be a window
+            // where the rootfs is missing the file.
+            continue;
+        }
+        let on_disk = rootfs.join(&old.path);
+        if old.is_dir {
+            // Defer; remove after all child files are unlinked.
+            stale_dirs.push(on_disk);
+            continue;
+        }
+        // Regular file or symlink.  Tolerate ENOENT (admin cleanup, prior
+        // failed upgrade).  symlink_metadata to avoid following symlinks.
+        match fs::symlink_metadata(&on_disk) {
+            Ok(_) => {
+                wrap_io(
+                    fs::remove_file(&on_disk),
+                    &on_disk,
+                    "remove old-manifest file",
+                )?;
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => { /* already gone */ }
+            Err(e) => {
+                return Err(InstallError::FileOp {
+                    path: on_disk,
+                    op: "stat old-manifest file",
+                    source: e,
+                });
+            }
+        }
+    }
+
+    // Blast the validated dir→symlink directories.
+    for dir in &dirs_to_blast {
+        wrap_io(
+            fs::remove_dir_all(dir),
+            dir,
+            "remove old-manifest directory contents",
+        )?;
+    }
+
+    // Sort stale dirs longest-first so we rmdir leaves before parents.
+    stale_dirs.sort_by(|a, b| b.as_os_str().len().cmp(&a.as_os_str().len()));
+    for d in &stale_dirs {
+        // rmdir, not remove_dir_all — only succeed if empty, otherwise
+        // leave it.  Matches `db.remove` semantics in db.rs (line 512).
+        // ENOENT and ENOTEMPTY are both silently ignored (same as the C
+        // jpkg-1.1.5 behaviour).
+        match fs::remove_dir(d) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => { /* ENOTEMPTY etc. — leave it */ }
+        }
+    }
+
     Ok(())
 }
 
@@ -413,16 +712,30 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> io::Result<()> {
 /// 2. Create a temp staging directory under `/tmp`.
 /// 3. `archive.extract(stage)` — decompresses the zstd(tar) payload.
 /// 4. `flatten_merged_usr(stage)` — jonerix merged-usr layout.
-/// 5. `install_files(stage, rootfs)` — copy to final destination.
-/// 6. `build_manifest(stage)` — walk the stage dir for the file list.
-/// 7. `db.insert(InstalledPkg { metadata, files })`.
-/// 8. For each name in `metadata.package.replaces`:
+/// 5. Build the NEW file manifest from the staged tree (needed before step 6).
+/// 6. Upgrade-clean: if `db.get(name)?` returns Some(old), remove old-manifest
+///    files that aren't in the new manifest, and resolve dir→symlink layout
+///    flips owned by the same package.
+/// 7. `install_files(stage, rootfs)` — copy to final destination.
+/// 8. `db.insert(InstalledPkg { metadata, files })`.
+/// 9. For each name in `metadata.package.replaces`:
 ///    `db.transfer_ownership(replaced, pkg_name, &shared_paths)`.
-/// 9. Clean up the staging directory.
+/// 10. Clean up the staging directory.
+///
+/// # 2.2.3 — upgrade-clean
+///
+/// Steps 5 & 6 are new in 2.2.3.  Without them, replacing `/lib/terminfo`
+/// (populated dir, owned by ncurses-r3) with a symlink (`lib/terminfo ->
+/// ../share/terminfo` in ncurses-r4) failed at step 7 with `EEXIST` because
+/// install_files' `remove_dir` only succeeds on empty dirs.  Now we read
+/// old_pkg's manifest, verify every file under the doomed dir is owned by
+/// the same package being upgraded, and only then `remove_dir_all` it.  If
+/// foreign files are found, we surface them in the error message and refuse
+/// to nuke user data.
 ///
 /// Divergences from C:
-/// - We build the manifest from the staging dir (step 6), not from the rootfs,
-///   so paths are relative without the rootfs prefix — matching db.c's format.
+/// - We build the manifest from the staging dir, not from the rootfs, so
+///   paths are relative without the rootfs prefix — matching db.c's format.
 /// - We do the flatten before copying so the staging dir is canonical; the C
 ///   code's `install_files` does a safety-re-flatten inline (cmd_install.c:268).
 /// - No `audit_layout_tree` call; the archive crate already enforces this at
@@ -442,6 +755,12 @@ pub fn extract_and_register(
         .as_deref()
         .unwrap_or("(unnamed)")
         .to_string();
+    let pkg_version = metadata
+        .package
+        .version
+        .as_deref()
+        .unwrap_or("(unversioned)")
+        .to_string();
 
     // ── 2. Staging dir ────────────────────────────────────────────────────
     let stage_dir = std::env::temp_dir().join(format!(
@@ -460,20 +779,42 @@ pub fn extract_and_register(
     // ── 4. Flatten usr/ and lib64/ ────────────────────────────────────────
     flatten_merged_usr(&stage_dir)?;
 
-    // ── 5. Install files into rootfs ──────────────────────────────────────
-    install_files(&stage_dir, rootfs)?;
-
-    // ── 6. Build manifest from staging dir ───────────────────────────────
+    // ── 5. Build the new manifest now (before install) so upgrade-clean can
+    //       diff it against the old manifest.  Built from the staging dir so
+    //       sha256s etc. are computed exactly once.
     let files = build_manifest(&stage_dir)?;
 
-    // ── 7. Register in DB ─────────────────────────────────────────────────
+    // ── 6. Upgrade-clean — only when an older version of this package is
+    //       already in the db.  We do this BEFORE install_files so the
+    //       populated-dir-to-symlink case (the ncurses bug) doesn't trip the
+    //       symlink call's `EEXIST`.
+    if let Some(old_pkg) = db.get(&pkg_name)? {
+        log::debug!(
+            "jpkg: upgrade-clean: {} {} -> {}",
+            pkg_name,
+            old_pkg.metadata.package.version.as_deref().unwrap_or("?"),
+            pkg_version,
+        );
+        clean_old_files_for_upgrade(
+            rootfs,
+            &old_pkg,
+            &files,
+            &pkg_name,
+            &pkg_version,
+        )?;
+    }
+
+    // ── 7. Install files into rootfs ──────────────────────────────────────
+    install_files(&stage_dir, rootfs)?;
+
+    // ── 8. Register in DB ─────────────────────────────────────────────────
     let pkg = InstalledPkg {
         metadata: metadata.clone(),
         files: files.clone(),
     };
     db.insert(&pkg)?;
 
-    // ── 8. Transfer ownership for replaces = [...] ───────────────────────
+    // ── 9. Transfer ownership for replaces = [...] ───────────────────────
     // Collect paths we now own.
     let our_paths: Vec<&str> = files.iter().map(|e| e.path.as_str()).collect();
 
@@ -487,7 +828,7 @@ pub fn extract_and_register(
         }
     }
 
-    // ── 9. Cleanup ────────────────────────────────────────────────────────
+    // ── 10. Cleanup ───────────────────────────────────────────────────────
     drop(stage_guard); // removes stage_dir
 
     Ok(pkg)
@@ -669,6 +1010,115 @@ pub(crate) mod tests {
         out
     }
 
+    /// Build a .jpkg that ships `lib/terminfo/` as a populated DIRECTORY
+    /// (mirrors ncurses-6.5-r3's layout pre-bug).  Two files live under it:
+    /// `lib/terminfo/a` and `lib/terminfo/b`.  Used as the v1 in the
+    /// dir→symlink upgrade test.
+    pub fn build_jpkg_with_populated_terminfo_dir(
+        tmp: &Path,
+        name: &str,
+        version: &str,
+    ) -> PathBuf {
+        let destdir = tmp.join(format!("destdir-popdir-{name}-{version}"));
+        fs::create_dir_all(destdir.join("lib/terminfo")).unwrap();
+        fs::write(destdir.join("lib/terminfo/a"), b"a entry\n").unwrap();
+        fs::write(destdir.join("lib/terminfo/b"), b"b entry\n").unwrap();
+
+        let meta = Metadata {
+            package: PackageSection {
+                name: Some(name.to_string()),
+                version: Some(version.to_string()),
+                license: Some("MIT".to_string()),
+                description: Some("populated-terminfo test".to_string()),
+                arch: Some("x86_64".to_string()),
+                replaces: vec![],
+                conflicts: vec![],
+            },
+            depends: DependsSection::default(),
+            hooks: HooksSection::default(),
+            files: FilesSection::default(),
+            signature: None,
+        };
+        let meta_toml = meta.to_string().unwrap();
+        let out = tmp.join(format!("{name}-{version}-x86_64.jpkg"));
+        archive::create(&out, &meta_toml, &destdir).unwrap();
+        out
+    }
+
+    /// Build a .jpkg that ships `lib/terminfo` as a SYMLINK to
+    /// `../share/terminfo`, with the real terminfo content under
+    /// `share/terminfo/`.  Mirrors ncurses-6.5-r4's intended layout.
+    /// This is the v2 in the dir→symlink upgrade test.
+    pub fn build_jpkg_with_terminfo_symlink(
+        tmp: &Path,
+        name: &str,
+        version: &str,
+    ) -> PathBuf {
+        let destdir = tmp.join(format!("destdir-sym-{name}-{version}"));
+        fs::create_dir_all(destdir.join("share/terminfo")).unwrap();
+        fs::write(destdir.join("share/terminfo/a"), b"a entry\n").unwrap();
+        fs::write(destdir.join("share/terminfo/b"), b"b entry\n").unwrap();
+        fs::create_dir_all(destdir.join("lib")).unwrap();
+        symlink("../share/terminfo", destdir.join("lib/terminfo")).unwrap();
+
+        let meta = Metadata {
+            package: PackageSection {
+                name: Some(name.to_string()),
+                version: Some(version.to_string()),
+                license: Some("MIT".to_string()),
+                description: Some("terminfo-symlink test".to_string()),
+                arch: Some("x86_64".to_string()),
+                replaces: vec![],
+                conflicts: vec![],
+            },
+            depends: DependsSection::default(),
+            hooks: HooksSection::default(),
+            files: FilesSection::default(),
+            signature: None,
+        };
+        let meta_toml = meta.to_string().unwrap();
+        let out = tmp.join(format!("{name}-{version}-x86_64.jpkg"));
+        archive::create(&out, &meta_toml, &destdir).unwrap();
+        out
+    }
+
+    /// Build a .jpkg with a single file at a custom path.  Used for the
+    /// "old file gone in new manifest" test (v1 has lib/extra, v2 doesn't).
+    pub fn build_jpkg_with_extra_file(
+        tmp: &Path,
+        name: &str,
+        version: &str,
+        extra_rel: &str,
+    ) -> PathBuf {
+        let destdir = tmp.join(format!("destdir-extra-{name}-{version}"));
+        fs::create_dir_all(destdir.join("bin")).unwrap();
+        fs::write(destdir.join("bin/foo"), b"foo content\n").unwrap();
+        if let Some(p) = std::path::Path::new(extra_rel).parent() {
+            fs::create_dir_all(destdir.join(p)).unwrap();
+        }
+        fs::write(destdir.join(extra_rel), b"extra content\n").unwrap();
+
+        let meta = Metadata {
+            package: PackageSection {
+                name: Some(name.to_string()),
+                version: Some(version.to_string()),
+                license: Some("MIT".to_string()),
+                description: Some("extra-file test".to_string()),
+                arch: Some("x86_64".to_string()),
+                replaces: vec![],
+                conflicts: vec![],
+            },
+            depends: DependsSection::default(),
+            hooks: HooksSection::default(),
+            files: FilesSection::default(),
+            signature: None,
+        };
+        let meta_toml = meta.to_string().unwrap();
+        let out = tmp.join(format!("{name}-{version}-x86_64.jpkg"));
+        archive::create(&out, &meta_toml, &destdir).unwrap();
+        out
+    }
+
     // ── 1. build_manifest ─────────────────────────────────────────────────────
 
     #[test]
@@ -828,5 +1278,229 @@ pub(crate) mod tests {
         // status.code() returns the exit code from the shell.
         // In the non-root host path we get it directly.
         assert_eq!(status.code().unwrap_or(-1), 42);
+    }
+
+    // ── 6. Upgrade-clean: the user's exact ncurses bug ────────────────────────
+    //
+    // ncurses-6.5-r3 ships /lib/terminfo as a populated DIRECTORY (with
+    // terminfo entries inside it).  ncurses-6.5-r4 wants to make it a
+    // SYMLINK to ../share/terminfo.  Before 2.2.3, install_files'
+    // `fs::remove_dir` silently failed with ENOTEMPTY and the subsequent
+    // symlink call returned EEXIST.  Now we read the old manifest, verify
+    // every file under /lib/terminfo is owned by ncurses, and remove_dir_all
+    // it before extracting v2.
+
+    #[test]
+    fn upgrade_replacing_populated_dir_with_symlink_succeeds() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(&rootfs).unwrap();
+
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        // v1: lib/terminfo as a populated directory.
+        let v1 = build_jpkg_with_populated_terminfo_dir(tmp.path(), "ncurses", "6.5-r3");
+        let arc_v1 = JpkgArchive::open(&v1).unwrap();
+        extract_and_register(&arc_v1, &rootfs, &db).unwrap();
+
+        // Sanity: dir + entries are there.
+        let lib_terminfo = rootfs.join("lib/terminfo");
+        assert!(lib_terminfo.is_dir(), "v1 should install lib/terminfo as a directory");
+        assert!(lib_terminfo.join("a").exists(), "v1 should install lib/terminfo/a");
+        assert!(lib_terminfo.join("b").exists(), "v1 should install lib/terminfo/b");
+
+        // v2: lib/terminfo as a symlink to ../share/terminfo.
+        let v2 = build_jpkg_with_terminfo_symlink(tmp.path(), "ncurses", "6.5-r4");
+        let arc_v2 = JpkgArchive::open(&v2).unwrap();
+        extract_and_register(&arc_v2, &rootfs, &db).expect("v2 upgrade should succeed");
+
+        // /lib/terminfo must now be a symlink.
+        let md = lib_terminfo.symlink_metadata().unwrap();
+        assert!(
+            md.file_type().is_symlink(),
+            "lib/terminfo should be a symlink after upgrade, got {:?}",
+            md.file_type()
+        );
+        let target = fs::read_link(&lib_terminfo).unwrap();
+        assert_eq!(
+            target.to_string_lossy(),
+            "../share/terminfo",
+            "lib/terminfo should point to ../share/terminfo"
+        );
+
+        // DB should reflect v2.
+        let after = db.get("ncurses").unwrap().unwrap();
+        assert_eq!(after.metadata.package.version.as_deref(), Some("6.5-r4"));
+    }
+
+    // ── 7. Upgrade-clean: old files not in new manifest get removed ───────────
+
+    #[test]
+    fn upgrade_drops_old_files_not_in_new_manifest() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(&rootfs).unwrap();
+
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        // v1: bin/foo + share/dropme.
+        let v1 = build_jpkg_with_extra_file(tmp.path(), "droptest", "1.0.0", "share/dropme");
+        let arc_v1 = JpkgArchive::open(&v1).unwrap();
+        extract_and_register(&arc_v1, &rootfs, &db).unwrap();
+
+        assert!(rootfs.join("share/dropme").exists(), "v1 should install share/dropme");
+        assert!(rootfs.join("bin/foo").exists(), "v1 should install bin/foo");
+
+        // v2: bin/foo + lib/bar (build_test_jpkg's layout, no share/dropme).
+        let v2 = build_test_jpkg(tmp.path(), "droptest", "2.0.0");
+        let arc_v2 = JpkgArchive::open(&v2).unwrap();
+        extract_and_register(&arc_v2, &rootfs, &db).unwrap();
+
+        // share/dropme should be gone.
+        assert!(
+            !rootfs.join("share/dropme").exists(),
+            "share/dropme should be removed during upgrade (not in v2's manifest)"
+        );
+        // bin/foo should still be there (in both manifests).
+        assert!(rootfs.join("bin/foo").exists(), "bin/foo should survive upgrade");
+        // lib/bar (new in v2) should appear.
+        assert!(rootfs.join("lib/bar").exists(), "lib/bar should be installed by v2");
+
+        // DB reflects v2.
+        let after = db.get("droptest").unwrap().unwrap();
+        assert_eq!(after.metadata.package.version.as_deref(), Some("2.0.0"));
+        assert!(
+            !after.files.iter().any(|e| e.path == "share/dropme"),
+            "share/dropme should not be in v2's manifest"
+        );
+    }
+
+    // ── 8. Upgrade-clean: foreign file in dir to be replaced by symlink ───────
+
+    #[test]
+    fn upgrade_refuses_to_blast_foreign_files_in_dir_being_replaced_by_symlink() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(&rootfs).unwrap();
+
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        // v1: populated lib/terminfo directory owned by ncurses.
+        let v1 = build_jpkg_with_populated_terminfo_dir(tmp.path(), "ncurses", "6.5-r3");
+        let arc_v1 = JpkgArchive::open(&v1).unwrap();
+        extract_and_register(&arc_v1, &rootfs, &db).unwrap();
+
+        // User drops a foreign file into lib/terminfo by hand.
+        let foreign = rootfs.join("lib/terminfo/user-dropped-file");
+        fs::write(&foreign, b"user data\n").unwrap();
+
+        // v2 wants lib/terminfo as a symlink — should error out cleanly.
+        let v2 = build_jpkg_with_terminfo_symlink(tmp.path(), "ncurses", "6.5-r4");
+        let arc_v2 = JpkgArchive::open(&v2).unwrap();
+        let err = extract_and_register(&arc_v2, &rootfs, &db).expect_err(
+            "upgrade should fail when foreign files are present in dir being replaced",
+        );
+
+        // Error must name the foreign file.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("user-dropped-file"),
+            "error should mention the foreign file path, got: {msg}"
+        );
+        assert!(
+            msg.contains("ncurses-6.5-r4"),
+            "error should mention the new package version, got: {msg}"
+        );
+        assert!(
+            matches!(err, InstallError::UpgradeForeignFiles { .. }),
+            "error variant should be UpgradeForeignFiles, got: {err:?}"
+        );
+
+        // DB unchanged: still pinned at v1.
+        let still = db.get("ncurses").unwrap().unwrap();
+        assert_eq!(still.metadata.package.version.as_deref(), Some("6.5-r3"));
+
+        // The foreign file must still be on disk — we refused to blast it.
+        assert!(foreign.exists(), "foreign file should not have been touched");
+    }
+
+    // ── 9. Path-aware error wrapping: io::Error now carries the path ──────────
+
+    #[test]
+    fn install_error_message_includes_path() {
+        // Construct an install_files scenario that fails: pre-place an empty
+        // directory at a path the staged tree wants to make a symlink to,
+        // but ALSO drop a foreign file inside.  install_files only does a
+        // plain remove_dir (not remove_dir_all), so the rmdir silently fails
+        // on ENOTEMPTY and the subsequent symlink call returns EEXIST — the
+        // ncurses bug reproduction at the install_files layer.  The wrapper
+        // must convert that into an InstallError::FileOp carrying the path.
+        let tmp = TempDir::new().unwrap();
+        let stage = tmp.path().join("stage");
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(stage.join("lib")).unwrap();
+        fs::create_dir_all(&rootfs).unwrap();
+        // Staged: lib/symlink -> ../share/target  (the new package's intent).
+        symlink("../share/target", stage.join("lib/symlink")).unwrap();
+
+        // Pre-place a populated directory at the dest path so install_files'
+        // bare remove_dir fails ENOTEMPTY and the symlink call hits EEXIST.
+        let collision = rootfs.join("lib/symlink");
+        fs::create_dir_all(&collision).unwrap();
+        fs::write(collision.join("squatter"), b"x").unwrap();
+
+        let err = install_files(&stage, &rootfs).expect_err(
+            "install_files should fail when target dir is populated",
+        );
+
+        match &err {
+            InstallError::FileOp { path, op, source } => {
+                assert_eq!(
+                    path, &collision,
+                    "FileOp.path should be the colliding dest path"
+                );
+                assert!(
+                    op == &"create symlink" || op == &"create directory",
+                    "op should describe the failing operation, got {op:?}"
+                );
+                // The underlying error should be EEXIST-like.
+                let _ = source; // any io::Error is fine
+            }
+            other => panic!("expected FileOp, got {other:?}"),
+        }
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&*collision.to_string_lossy()),
+            "error message should include the conflicting path, got: {msg}"
+        );
+    }
+
+    // ── 10. Reinstall with identical manifest is a no-op for upgrade-clean ────
+
+    #[test]
+    fn upgrade_clean_reinstall_same_version_is_safe() {
+        // Regression guard: `jpkg install --force ncurses` of the SAME
+        // version should still work; upgrade-clean must not delete files
+        // that are in both manifests.
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(&rootfs).unwrap();
+
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        let v1 = build_test_jpkg(tmp.path(), "samepkg", "1.0.0");
+        let arc1 = JpkgArchive::open(&v1).unwrap();
+        extract_and_register(&arc1, &rootfs, &db).unwrap();
+
+        // Reinstall the EXACT same jpkg (simulates --force --reinstall).
+        let arc2 = JpkgArchive::open(&v1).unwrap();
+        extract_and_register(&arc2, &rootfs, &db).expect("reinstall should succeed");
+
+        assert!(rootfs.join("bin/foo").exists(), "bin/foo should still exist");
+        assert!(rootfs.join("lib/bar").exists(), "lib/bar should still exist");
     }
 }
