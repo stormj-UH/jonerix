@@ -5,43 +5,75 @@
 # installed ABI names are the conventional libreadline/libhistory names
 # so configure scripts and existing consumers can find them.
 name = "readlineoxide"
-version = "0.1.10-r0"
+version = "0.1.11-r0"
 license = "MIT"
 description = "Clean-room Rust libreadline/libhistory compatibility layer for jonerix"
 
 [source]
-# 0.1.10: rl_callback_read_char dispatch under select()-driven outer
-# loops. 0.1.9 routed the callback-driven byte path through stdio's
-# fgetc on rl_instream — libc absorbed every available byte in one
-# read(2) and stranded the remainder beyond the kernel-level readiness
-# layer. select() then reported the fd idle and the registered line
-# handler never fired, so CPython 3.15's `input()` (and any other
-# select-driven readline consumer matching the readline(3) man-page
-# pattern) hung indefinitely under a pty. Repro: 5 of 15 tests in
-# CPython's test_readline (test_auto_history_disabled,
-# test_auto_history_enabled, test_history_size, test_nonascii,
-# test_set_complete_delims) all blocked at the 20 s pty timeout.
-# Fix: introduce callback_read_byte, a one-byte unbuffered read(2)
-# against fileno(rl_instream) that honors the same rl_pending_input /
-# macro / pending_input / rl_getc_function short-circuits as
-# rl_read_key. Rewire rl_callback_read_char to it so every byte stays
-# visible to the readiness layer while still feeding the shared
-# key-binding / line-completion machinery one character at a time.
-# Adds 3 Rust unit tests + 2 C simulations (callback_unbuffered_fd
-# exercises the pipe path; callback_pty_select reproduces the
-# man-page select() loop end to end via forkpty). After 0.1.10 the
-# three previously-hung tests pass cleanly on tormenta; the two
-# completion-related failures that remain are unrelated semantic
-# bugs surfaced by the dispatch fix.
+# 0.1.11: "perfect for Python" hardening on top of 0.1.10's
+# rl_callback_read_char dispatch fix.  After 0.1.10 unmasked the
+# select-driven hang, three gaps surfaced in interactive readline
+# behaviour that no Python unit test happens to cover but every real
+# REPL (pdb, asyncio repl, IPython, brash, ...) hits:
+#
+# (1) Default emacs keymap was nearly empty.  Only printable ASCII
+# plus \r/\n were bound; arrow keys, Home/End, Delete, Meta-word
+# commands, the Ctrl-X chord, and Ctrl-{A,E,B,F,D,L,K,N,P,R,S,T,U,V,
+# W,Y,_} were absent.  Some Ctrl keys still worked through a fallback
+# table inside process_edit_key, but multi-byte escape sequences
+# (ESC [ A, ESC O B, ESC [ 3 ~, ESC f, ...) fell through as raw bytes
+# and got displayed literally — so Up-arrow in a REPL inserted
+# "^[[A" instead of recalling history.  install_default_emacs_bindings
+# now wires up the full GNU-readline default set: single-byte Ctrl
+# keys, DEL, both CSI and SS3 arrow / Home / End encodings, Meta
+# word-motion / case commands, ESC [ 1~/4~/7~/8~ Home/End variants,
+# ESC [ 3~ Delete, ESC [ 2/5/6 ~ Insert/PgUp/PgDn, and Ctrl-X
+# {Ctrl-E,(,),Ctrl-R,Ctrl-U,Ctrl-V}.
+#
+# (2) rl_prep_terminal / rl_deprep_terminal were termios no-ops.  GNU
+# readline switches the input fd into raw cbreak mode (clear ICANON|
+# ECHO|ECHOE|ECHOK|ECHONL|IEXTEN on lflag; clear IXON|ICRNL|INLCR|
+# ISTRIP|INPCK|BRKINT on iflag; VMIN=1, VTIME=0) so character-at-a-
+# time editing actually works.  Without it the kernel canonical mode
+# echoed every keystroke twice and ESC sequences only arrived after
+# Enter flushed the line.  rl_prep_terminal now stashes the original
+# termios via tcgetattr, applies the raw-cbreak profile via
+# tcsetattr TCSADRAIN, and rl_deprep_terminal restores it.  Field
+# offsets validated against a small C probe; they are stable on every
+# arm/musl jonerix target.
+#
+# (3) using_history() was a no-op.  GNU's using_history() parks the
+# temporary cursor one past the most-recent entry so the next
+# previous_history() returns the latest line.  CPython's readline.c
+# calls it on every input(); every well-behaved REPL is expected to
+# follow the same convention.  Without it the cursor stayed at 0
+# forever and Up-arrow did nothing inside a session that had recorded
+# history.  The fix is a one-liner inside using_history() — the
+# history_basic C simulation pins the opposite invariant for
+# add_history (must not move the cursor), so the reset must live in
+# using_history() and not in add_history().
+#
+# Verified on CPython 3.15.0a1 on tormenta:
+#   Lib/test/test_readline.py — 14 pass, 1 skip (free-threading), 0
+#   fail.  Same scoreboard as 0.1.10, no regressions.
+#   Interactive pty libreadline smoke: prompt, basic input, Ctrl-A,
+#   Ctrl-E, Ctrl-U, Tab completion, arrow-up history recall — all
+#   six checks pass.
+#
+# Three new Rust unit tests pin the invariants:
+#   default_emacs_keymap_binds_arrows_and_emacs_chords
+#   using_history_resets_cursor_for_recall
+#   callback_install_fires_startup_and_pre_input_hooks (carried from
+#     0.1.11's first commit, now with tightened test infra)
 #
 # Canonical source: Forgejo jonerik/readlineoxide on
-# castle.great-morpho.ts.net:3000. That host sits behind Tailscale so
-# GitHub Actions can't reach it; the tarball is mirrored to the
-# stormj-UH/jonerix GH release source-readlineoxide-v0.1.10 for CI.
+# castle.great-morpho.ts.net:3000.  That host sits behind Tailscale
+# so GitHub Actions can't reach it; the tarball is mirrored to the
+# stormj-UH/jonerix GH release source-readlineoxide-v0.1.11 for CI.
 # Forgejo URL (reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/readlineoxide/archive/v0.1.10.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-readlineoxide-v0.1.10/readlineoxide-v0.1.10.tar.gz"
-sha256 = "4a37859dbf76a5ab4d8aa60a8b66e2a548b11495a55f6ef3ce96479a3edead4f"
+#   https://castle.great-morpho.ts.net:3000/jonerik/readlineoxide/archive/v0.1.11.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-readlineoxide-v0.1.11/readlineoxide-v0.1.11.tar.gz"
+sha256 = "247f58f7a2e91cf92d860e7ea67ff865928b1522b4ef96550129a347dee7e901"
 
 [build]
 system = "custom"
@@ -79,7 +111,7 @@ includedir=${prefix}/include
 
 Name: readlineoxide
 Description: Clean-room libreadline compatibility layer
-Version: 0.1.10
+Version: 0.1.11
 Libs: -L${libdir} -lreadline
 Cflags: -I${includedir}
 PC
@@ -91,7 +123,7 @@ includedir=${prefix}/include
 
 Name: readlineoxide-history
 Description: Clean-room libhistory compatibility layer
-Version: 0.1.10
+Version: 0.1.11
 Libs: -L${libdir} -lhistory
 Cflags: -I${includedir}
 PC
