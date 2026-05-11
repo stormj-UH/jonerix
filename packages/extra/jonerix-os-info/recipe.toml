@@ -1,0 +1,141 @@
+[package]
+name = "jonerix-os-info"
+version = "1.0.0"
+license = "0BSD"
+description = "Legacy distro-marker files (/etc/lsb-release, /etc/jonerix-release, /etc/system-release{,-cpe}, /etc/issue, /etc/issue.net) regenerated from /etc/os-release"
+
+# WHAT THIS PACKAGE DOES
+# ----------------------
+# /etc/os-release is the canonical "what distro is this" file (systemd
+# standardised it), but plenty of older tooling still probes the legacy
+# locations.  This package installs:
+#
+#   /etc/lsb-release          — Debian/Ubuntu-style (DISTRIB_*)
+#   /etc/jonerix-release      — rpm-family per-distro file
+#   /etc/system-release       — rpm-family generic, symlink → jonerix-release
+#   /etc/system-release-cpe   — Common Platform Enumeration string
+#   /etc/issue                — local-tty pre-login banner (agetty-rendered)
+#   /etc/issue.net            — network-tty banner (telnet/ssh deny-by-default)
+#
+# All five regular files derive their version string from VERSION_ID in
+# /etc/os-release rather than hardcoding it.  When jonerix bumps to
+# 1.2.2 and a `jpkg -uu` upgrades this package (or the operator runs
+# `jpkg install --force jonerix-os-info`), the post_install hook
+# regenerates everything against the live /etc/os-release.
+#
+# REGEN BEHAVIOUR
+# ---------------
+# The post_install hook just invokes /share/jonerix-os-info/regen.sh.
+# That script reads VERSION_ID from /etc/os-release, renders the
+# templates in /share/jonerix-os-info/*.tmpl, and writes the results to
+# /etc/ — preserving any hand-edits the operator has made.  It records
+# the sha256 of every file it wrote into
+# /var/lib/jonerix-os-info/shipped.sha256, and on subsequent regens
+# leaves alone any target whose live hash no longer matches that
+# record (i.e. has been hand-edited).
+#
+# The same regen.sh is exposed as a standalone command so the operator
+# can run it manually after editing /etc/os-release.
+#
+# /etc/system-release is the rpm-family fallback.  Fedora ships it as a
+# symlink to /etc/fedora-release; we mirror that pattern with a
+# symlink to /etc/jonerix-release.  The same leave-alone-on-hand-edit
+# rule applies (the script tracks the symlink target as a "hash").
+
+# No [source] — local-only build using $RECIPE_DIR contents.
+
+[build]
+system = "custom"
+build = """
+set -e
+cd "$RECIPE_DIR"
+
+# Syntax-check regen.sh against both /bin/sh (build host: dash/bash)
+# and mksh (jonerix host).  mksh isn't guaranteed on every builder, so
+# run it conditionally — sh -n is the hard gate.
+sh -n regen.sh
+if command -v mksh >/dev/null 2>&1; then
+    mksh -n regen.sh
+fi
+
+# Templates ship under /share/jonerix-os-info/ so they're discoverable
+# alongside the regen script.  Mode 644 — they're read-only data, not
+# executables, and the script awk-renders them.
+install -Dm644 lsb-release.tmpl         "$DESTDIR/share/jonerix-os-info/lsb-release.tmpl"
+install -Dm644 jonerix-release.tmpl     "$DESTDIR/share/jonerix-os-info/jonerix-release.tmpl"
+install -Dm644 system-release-cpe.tmpl  "$DESTDIR/share/jonerix-os-info/system-release-cpe.tmpl"
+install -Dm644 issue.tmpl               "$DESTDIR/share/jonerix-os-info/issue.tmpl"
+install -Dm644 issue.net.tmpl           "$DESTDIR/share/jonerix-os-info/issue.net.tmpl"
+
+# regen.sh: 755 so the operator can call it directly.
+install -Dm755 regen.sh                 "$DESTDIR/share/jonerix-os-info/regen.sh"
+"""
+install = ""
+
+[hooks]
+# Regenerate the distro-marker files against the live /etc/os-release.
+# Runs at install time (after extract, before jpkg returns), and on
+# every upgrade — including same-version reinstall via --force, which
+# is how the operator can refresh after editing /etc/os-release
+# without bumping this package.
+#
+# regen.sh is idempotent and leaves hand-edits alone, so a noisy
+# re-run during a `jpkg -uu` that pulled in many packages is safe.
+post_install = """if [ -x /share/jonerix-os-info/regen.sh ]; then
+    /share/jonerix-os-info/regen.sh
+fi
+exit 0"""
+
+# On removal, jpkg drops the manifest-tracked /share/jonerix-os-info/*
+# files.  The generated /etc/* files aren't tracked (they're written
+# by the hook), so we sweep them here — but only if they still match
+# what we last shipped (don't clobber hand-edits).
+post_remove = """STATE=/var/lib/jonerix-os-info/shipped.sha256
+[ -f "$STATE" ] || exit 0
+
+sha256_of() {
+    if [ ! -f "$1" ]; then printf ''; return 0; fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        openssl dgst -sha256 "$1" | awk '{print $NF}'
+    fi
+}
+
+while IFS= read -r line; do
+    # Each line is `HASH  PATH` or `symlink:TARGET  PATH`.
+    hash=$(printf '%s\\n' "$line" | awk '{print $1}')
+    path=$(printf '%s\\n' "$line" | awk '{print $2}')
+    [ -n "$path" ] || continue
+    case "$hash" in
+        symlink:*)
+            target=${hash#symlink:}
+            if [ -L "$path" ]; then
+                cur=$(readlink "$path" 2>/dev/null || true)
+                if [ "$cur" = "$target" ]; then
+                    rm -f "$path"
+                fi
+            fi
+            ;;
+        *)
+            if [ -f "$path" ]; then
+                cur=$(sha256_of "$path")
+                if [ "$cur" = "$hash" ]; then
+                    rm -f "$path"
+                fi
+            fi
+            ;;
+    esac
+done < "$STATE"
+
+rm -f "$STATE"
+rmdir /var/lib/jonerix-os-info 2>/dev/null || true
+exit 0"""
+
+[depends]
+# regen.sh uses /bin/sh (mksh on jonerix), awk (toybox or onetrueawk),
+# sha256sum (toybox; openssl is the documented fallback inside the
+# script).  All three are part of the base set; listing toybox here
+# pins the dependency for hosts that strip down further.
+runtime = ["toybox"]
+build = []
