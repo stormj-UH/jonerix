@@ -1,6 +1,6 @@
 [package]
 name = "ncurses"
-version = "6.5-r3"
+version = "6.5-r4"
 license = "MIT"
 description = "Terminal handling library"
 # ncurses ships full-featured /bin/reset, /bin/clear, /bin/tput, /bin/tic,
@@ -8,13 +8,20 @@ description = "Terminal handling library"
 # so jpkg verify stays clean. Requires jpkg >= 1.0.4.
 replaces = ["toybox"]
 
+# 6.5-r4: Add `--enable-pc-files=/lib/pkgconfig` so `pkg-config --cflags ncursesw`
+# returns `-I/include/ncursesw`. Without it, anyone probing for ncurses headers via
+# pkg-config sees nothing; consumers that fall back to header probing find
+# `ncursesw/curses.h` but not bare `term.h`, leaving `HAVE_TERM_H` undefined and
+# breaking compiles that need `setupterm`. Specifically reproduces with CPython
+# 3.14/3.15 `_curses` module on jonerix.
+
 [source]
 url = "https://invisible-island.net/archives/ncurses/ncurses-6.5.tar.gz"
 sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6"
 
 [build]
 system = "autoconf"
-configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --with-shared --without-debug --enable-widec --without-cxx --without-manpages --disable-stripping --without-tests CC=clang"
+configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --with-shared --without-debug --enable-widec --enable-pc-files=/lib/pkgconfig --without-cxx --without-manpages --disable-stripping --without-tests CC=clang"
 build = "make -C include && make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
