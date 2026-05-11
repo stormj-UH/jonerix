@@ -169,6 +169,25 @@ if ! have_working_expr; then
     exit 1
 fi
 
+# jonerix-autotools-vendor — provides /etc/jonerix-config.site so every
+# autotools ./configure call identifies the build as
+# aarch64-jonerix-linux-musl via ac_cv_build/ac_cv_host (without it,
+# config.guess from the upstream tarball spits out *-unknown-linux-musl).
+# Tier-2 OS-identity sweep: one CI-side knob makes every autoconf recipe
+# self-identify, without bumping rN on every recipe separately.
+echo "=== Installing jonerix-autotools-vendor for ./configure triple detection ==="
+if install_cached_pkg_if_available jonerix-autotools-vendor; then
+    :
+elif jpkg install --force jonerix-autotools-vendor 2>&1 | tail -5; then
+    :
+else
+    echo "ci-build: WARN jonerix-autotools-vendor install failed; configure will see *-unknown-* triples"
+fi
+if [ -f /etc/jonerix-config.site ]; then
+    export CONFIG_SITE=/etc/jonerix-config.site
+    echo "ci-build: CONFIG_SITE=$CONFIG_SITE"
+fi
+
 # Meson is bootstrapped from its upstream source tarball to avoid depending
 # on pip/SSL support in older builder images.
 /workspace/scripts/bootstrap-meson.sh
