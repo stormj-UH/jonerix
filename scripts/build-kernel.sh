@@ -74,7 +74,7 @@ docker run --rm \
             elfutils-dev openssl-dev linux-headers \
             diffutils findutils coreutils \
             zstd-dev zlib-dev \
-            git \
+            git rsync \
             cargo rust python3
 
         echo "==> Building jpkg 2.0 (Rust) from source"
