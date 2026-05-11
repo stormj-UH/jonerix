@@ -1,8 +1,35 @@
 [package]
 name = "jmake"
-version = "1.2.2"
+version = "1.2.3"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.2.3: multi-word SHELL re-tokenization bug — when SHELL contained
+# whitespace (e.g. `SHELL = /bin/sh -e`, which Python's ./configure
+# writes by default), jmake 1.2.2 composed the invocation as a single
+# shell string and ran it through `/bin/sh -c`. The outer shell then
+# re-tokenized the string, destroying the recipe-string boundary:
+#   exec'd:    /bin/sh -c "/bin/sh -e -c cc -c -o out.o in.c"
+#   inner saw: argv = ["sh","-e","-c","cc","-c","-o","out.o","in.c"]
+#                                       ^^command_string = "cc"
+#                                       ^^^^^^^^^^^^^^^^^^^ $0..$N
+#   final exec: cc with argv=["cc"]  ->  "no input files"
+# Same root cause produced "/bin/sh: syntax error near unexpected
+# token 'then'" for `@if test ... ; then ... fi` recipes.
+#
+# Repro: cpython 3.15 main on jonerix tormenta 2026-05-10 — Python's
+# ./configure wrote `SHELL=/bin/sh -e` to Makefile and every recipe
+# after the program name lost its arguments. Workaround used
+# `SHELL=/bin/sh` on the command line; this release removes that need.
+#
+# Fix: tokenize SHELL ourselves at unquoted whitespace into
+# (program, args) and exec [program, ...extra, ...shellflags, recipe]
+# directly. The recipe is always the single final argv element,
+# mirroring GNU Make. Applied to both the sequential exec path
+# (src/exec/mod.rs) and the parallel worker path (src/exec/parallel.rs).
+# Seven new regression tests cover positional-args, if/then/fi,
+# multi-flag SHELL, plain (no-flag) baseline, parallel scheduler,
+# and ONESHELL. 130 tests pass.
+#
 # 1.2.2: multi-rule prereq-merge bug — the recipe-bearing rule's
 # prereqs must come FIRST in the merged list (then prereq-only rules
 # in textual order). 1.2.0 originally added this, then a "bug-fix"
@@ -164,8 +191,8 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 # Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
 # mirror that CI can reach without VPN. The mirror tarball is generated
 # from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.2/jmake-v1.2.2.tar.gz"
-sha256 = "ea5d191ed45efaf3c1afce55e6342f3bd91fbfe8a6ddb5f9cf7b6c92843fc6a5"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.3/jmake-v1.2.3.tar.gz"
+sha256 = "e6a22124a194fd0951fdc2eb908a6461c18fc1b4263045daecc9f1f3d3fb3045"
 
 [build]
 system = "custom"
