@@ -250,10 +250,12 @@ the rootfs is assembled in CI.
 | tmux | ISC | Terminal multiplexer |
 | jonerix-raspi5-fixups | 0BSD | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control, DNS takeover opt-out, wake-on-power, cold-reboot) |
 
-## Rust drop-in replacements (the "GNO" packages -- GNO is not GNU)
+## GNO Rust drop-in replacements (the "GNO" packages -- GNO is not GNU)
 
 jonerix's permissive-license-only rule removes most of the traditional
 Linux userland: bash (GPL-3), GNU coreutils (GPL-3), GNU make (GPL-3),
+
+
 e2fsprogs (LGPL-2 / GPL-2), util-linux (mixed GPL / LGPL), nftables
 (GPL-2), libnl (LGPL-2.1), m4 (GPL-3), readline (GPL-3), and so on.
 Where a permissive equivalent already exists (toybox for the BSD
@@ -292,6 +294,7 @@ These are written and maintained inside the jonerix project.
 | lsusb | `lsusb-rs` | MIT | Pure-sysfs lsusb (no libusb dependency). Reads `/sys/bus/usb/devices/*` and the bundled USB IDs database. |
 | jpkg (the jonerix package manager itself, 2.0+) | `jpkg` | MIT | Translation of the C jpkg 1.1.5 (~9.5K LOC) to Rust (~11.7K LOC). Byte-equivalent on every wire format the C tool defined: `JPKG\x00\x01\x00\x00` magic + LE32 header + TOML metadata + zstd(tar) payload, the `/var/db/jpkg/installed/<name>/{metadata.toml,files}` layout, the INDEX TOML grammar, the Ed25519 detached `.sig` flow, the merged-/usr layout audit, and the `replaces = […]` ownership-transfer semantics. 158 in-crate unit tests, plus an end-to-end smoke pass (build → install into a tempdir rootfs → info → verify clean → tamper-detect → remove). `#![forbid(unsafe_code)]` at the crate root keeps the safety budget at zero. The 2.0 release supersedes the C 1.1.5 series; `/bin/jpkg`, `/bin/jpkg-local`, and `/bin/jpkg-conform` continue to ship from the same `packages/jpkg/` recipe. |
 | git (full porcelain + protocol helpers) | `gitredoxide` | MIT/Apache-2.0 | Drop-in `/bin/git` with **77 subcommands** implemented (~95% of git's documented main porcelain + ancillary). Hard-forked from gitoxide's `gix-*` crate ecosystem — we ship our own write paths upstream gitoxide didn't have: **`gix-commitgraph::write`** (verified single-file commit-graph writer, 6 round-trip tests against the existing reader) and **`gix-protocol::fetch::oids`** (explicit-OID fetch path emitting `want <oid>` lines for partial-clone backfill). **Helper-mode dispatch on argv[0]** — the same binary serves `/bin/git`, `/bin/git-upload-pack`, and `/bin/git-receive-pack` so jpkg can transfer all three symlinks atomically and gitredoxide can talk to itself for local fetch/push without ever shelling out to a real git. Coverage: clone/fetch/pull/push/ls-remote (HTTPS, SSH, file://, local-bare), branch/tag/remote/worktree/submodule, rebase + bisect (full state machines with `--continue` / `--abort` / `--skip`), stash/cherry-pick/revert/merge/merge-tree (modern + legacy 3-arg forms), rerere (caches conflict resolutions and replays them, integrated into merge.rs), sparse-checkout (cone + non-cone modes with skip-worktree bit handling), archive (tar, tar.gz, zip), bundle (create / verify / list-heads / unbundle, round-trip tested), format-patch / am (mailbox format with state-machine restart), fast-export / fast-import (round-trip verified byte-identical), maintenance (gc, prune, repack, count-objects, fsck, pack-refs, commit-graph, loose-objects, incremental-repack), bugreport + diagnose (zip with password redaction), grep, notes, show-branch, range-diff, replace, verify-commit, verify-tag, and per-command `--help` across all of them. **491 unit + integration tests, 100% on a 104-test practical parity harness against system git, zero warnings** on `cargo build --release`. Self-hosted: gitredoxide pushes its own source to Forgejo. Out of scope: `citool`/`gitk`/`gui` (Tcl/Tk UIs), `gitweb`/`instaweb` (Perl CGI), `scalar` (Microsoft enterprise), `whatchanged` (deprecated), `filter-branch` (use `git-filter-repo`). |
+Also: GNO rico, GNO readlineoxide, GNO jcarp, and GNO jfsck
 
 ### Third-party
 
