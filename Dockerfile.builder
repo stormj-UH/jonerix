@@ -28,7 +28,7 @@ ARG CACHEBUST=0
 # in the install layer. Net effect: image GROWS by ~2 GB. Folding
 # install + slim into one RUN collapses both into a single layer so
 # strip-in-place actually reduces layer size.
-RUN jpkg update && \
+RUN echo "cachebust=$CACHEBUST" && jpkg update && \
     failures=0 && \
     failed='' && \
     for pkg in \
