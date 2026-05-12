@@ -88,7 +88,19 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       iproute-go zsh; \
     do \
       echo "Installing: $pkg" && \
-      if ! jpkg install --force "$pkg"; then \
+      attempts=0 && \
+      installed=0 && \
+      while [ "$attempts" -lt 3 ]; do \
+        if jpkg install --force "$pkg"; then \
+          installed=1; \
+          break; \
+        fi; \
+        attempts=$((attempts + 1)); \
+        if [ "$attempts" -lt 3 ]; then \
+          sleep $((attempts * 10)); \
+        fi; \
+      done && \
+      if [ "$installed" -ne 1 ]; then \
         failures=$((failures + 1)); \
         failed="$failed $pkg"; \
       fi; \
