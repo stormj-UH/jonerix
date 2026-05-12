@@ -56,13 +56,23 @@ chmod +x /tmp/clang-jonerix"""
 # BUILD_TLS=yes pulls in tls.c and links -lssl -lcrypto from
 # jonerix libressl.  USE_JEMALLOC=yes is the Linux default but we
 # spell it out so the recipe is platform-explicit.
-build = "make -j$(nproc) CC=/tmp/clang-jonerix BUILD_TLS=yes USE_JEMALLOC=yes"
+# MALLOC=libc skips the bundled jemalloc subbuild entirely.  Two
+# motivations: (1) the stale CI builder image has jmake 1.2.3 which
+# hits the static-pattern-rule bug in jemalloc's deps Makefile (fixed
+# in jmake 1.2.5+ but not yet in the builder due to a Docker layer-cache
+# bug also being addressed separately), (2) jemalloc adds ~1 MB to the
+# binary and a meaningful build-time cost for what is, on a Pi 5
+# in-memory store, a marginal perf benefit over musl's allocator.
+# Once the builder image carries jmake 1.2.6+, this can flip back to
+# USE_JEMALLOC=yes (or BUILD_WITH_SYSTEM_MALLOC switched off) for a
+# few-percent allocator-throughput win.
+build = "make -j$(nproc) CC=/tmp/clang-jonerix BUILD_TLS=yes MALLOC=libc"
 # Install with PREFIX=/ so binaries land at $DESTDIR/bin/* and skip
 # the default /usr/local intermediate.  Valkey's `install` target
 # creates `valkey-check-rdb`, `valkey-check-aof`, and
 # `valkey-sentinel` as ln -sf symlinks to valkey-server, which
 # transparently dispatches based on argv[0].
-install = """make PREFIX=/ install DESTDIR="$DESTDIR" CC=/tmp/clang-jonerix BUILD_TLS=yes USE_JEMALLOC=yes
+install = """make PREFIX=/ install DESTDIR="$DESTDIR" CC=/tmp/clang-jonerix BUILD_TLS=yes MALLOC=libc
 # Some Valkey versions write to /usr/local/bin even under PREFIX=/;
 # normalise into /bin.
 if [ -d "$DESTDIR/usr/local/bin" ]; then
