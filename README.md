@@ -250,7 +250,7 @@ the rootfs is assembled in CI.
 | tmux | ISC | Terminal multiplexer |
 | jonerix-raspi5-fixups | 0BSD | Pi 5 hardware fixups (EEE disable, pwm-fan thermal control, DNS takeover opt-out, wake-on-power, cold-reboot) |
 
-## Rust drop-in replacements
+## Rust drop-in replacements (the "GNO" packages -- GNO is not GNU)
 
 jonerix's permissive-license-only rule removes most of the traditional
 Linux userland: bash (GPL-3), GNU coreutils (GPL-3), GNU make (GPL-3),
