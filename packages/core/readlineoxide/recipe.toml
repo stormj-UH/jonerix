@@ -5,16 +5,20 @@
 # installed ABI names are the conventional libreadline/libhistory names
 # so configure scripts and existing consumers can find them.
 name = "readlineoxide"
-version = "0.1.11-r0"
+version = "0.1.12-r0"
 license = "MIT"
 description = "Clean-room Rust libreadline/libhistory compatibility layer for jonerix"
 
 [source]
-# 0.1.11: "perfect for Python" hardening on top of 0.1.10's
-# rl_callback_read_char dispatch fix.  After 0.1.10 unmasked the
-# select-driven hang, three gaps surfaced in interactive readline
-# behaviour that no Python unit test happens to cover but every real
-# REPL (pdb, asyncio repl, IPython, brash, ...) hits:
+# 0.1.12: clean-room readline compatibility closure on top of 0.1.11's
+# Python/REPL hardening.  This release keeps the callback and terminal
+# fixes below, then adds the broad ABI, inputrc, edit-command, vi-command,
+# completion, history, panic-audit, invariant-ledger, and unsafe-audit work
+# needed for readlineoxide to behave as a practical drop-in libreadline and
+# libhistory replacement for jonerix consumers.
+#
+# 0.1.11 fixed three gaps surfaced by real REPL use after 0.1.10 unmasked
+# the select-driven hang:
 #
 # (1) Default emacs keymap was nearly empty.  Only printable ASCII
 # plus \r/\n were bound; arrow keys, Home/End, Delete, Meta-word
@@ -69,11 +73,11 @@ description = "Clean-room Rust libreadline/libhistory compatibility layer for jo
 # Canonical source: Forgejo jonerik/readlineoxide on
 # castle.great-morpho.ts.net:3000.  That host sits behind Tailscale
 # so GitHub Actions can't reach it; the tarball is mirrored to the
-# stormj-UH/jonerix GH release source-readlineoxide-v0.1.11 for CI.
+# stormj-UH/jonerix GH release source-readlineoxide-v0.1.12 for CI.
 # Forgejo URL (reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/readlineoxide/archive/v0.1.11.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-readlineoxide-v0.1.11/readlineoxide-v0.1.11.tar.gz"
-sha256 = "247f58f7a2e91cf92d860e7ea67ff865928b1522b4ef96550129a347dee7e901"
+#   https://castle.great-morpho.ts.net:3000/jonerik/readlineoxide/archive/v0.1.12.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-readlineoxide-v0.1.12/readlineoxide-v0.1.12.tar.gz"
+sha256 = "70aff665d17ce2d9523ee591bef1ffffb530e64d42ffbb9917df43a36b96f722"
 
 [build]
 system = "custom"
