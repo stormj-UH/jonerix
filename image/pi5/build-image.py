@@ -81,7 +81,7 @@ DEFAULT_PACKAGES = [
     # feel like a usable workstation rather than an embedded appliance.
     # Strip them via `--packages "..."` if you want a leaner image.
     "zsh",        # interactive shell w/ prompt
-    "gitoxide",   # git in pure Rust (no GPL git userland)
+    "gitredoxide",   # git in pure Rust (no GPL git userland)
     "ripgrep",    # fast recursive grep
     "pico",       # text editor (apache-2.0, alpine-2.26)
     "fastfetch",  # system-info banner; pleasant on first login

@@ -77,7 +77,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     failed='' && \
     for pkg in \
       musl \
-      zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
+      zlib zstd lz4 xz bzip2 pigz ncurses libressl ca-certificates curl \
       openrc snooze tzdata \
       dropbear dhcpcd ifupdown-ng unbound openntpd \
       shadow \

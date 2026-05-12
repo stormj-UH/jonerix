@@ -40,12 +40,11 @@ jobs:
         with:
           # WSL rootfs builds jpkg from in-tree code and then `jpkg install`s
           # prebuilt packages from the release INDEX — none of the LFS-tracked
-          # source tarballs (linux/llvm/rust/node/gitoxide) are read here.
+          # source tarballs (linux/llvm/rust/node/gitredoxide) are read here.
           # `lfs: true` would burn LFS bandwidth on every push and fail when
           # the repo's LFS quota is exhausted; only full-bootstrap.yml needs
           # them and it's a manual-only workflow.
           lfs: false
-          restore-keys: apk-wsl-x86_64-
 
       - name: Install build dependencies
         run: |
@@ -134,11 +133,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload packages \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber \
+          sh scripts/gh-release-upload-retry.sh \
+            packages \
+            "$GITHUB_REPOSITORY" \
             /tmp/rootfs-out/jonerix-rootfs-x86_64.tar.gz
-          echo "Uploaded jonerix-rootfs-x86_64.tar.gz"
+          echo "Publish step completed for jonerix-rootfs-x86_64.tar.gz"
 
   # ── aarch64 rootfs ───────────────────────────────────────────────────────
   # JS GitHub checkout actions don't work in Alpine on ARM64.
@@ -247,8 +246,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload packages \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber \
+          sh scripts/gh-release-upload-retry.sh \
+            packages \
+            "$GITHUB_REPOSITORY" \
             /tmp/rootfs-out-aarch64/jonerix-rootfs-aarch64.tar.gz
-          echo "Uploaded jonerix-rootfs-aarch64.tar.gz"
+          echo "Publish step completed for jonerix-rootfs-aarch64.tar.gz"

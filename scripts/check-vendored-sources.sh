@@ -149,8 +149,8 @@ check_cached_file ca-certificates cacert.pem b6e66569cc3d438dd5abe514d0df50005d5
 check_cached_file tzdata tzdata2026a.tar.gz 77b541725937bb53bd92bd484c0b43bec8545e2d3431ee01f04ef8f2203ba2b7
 check_cached_file go go1.26.1.linux-arm64.tar.gz a290581cfe4fe28ddd737dde3095f3dbeb7f2e4065cab4eae44dfc53b760c2f7
 check_cached_file go go1.26.1.linux-amd64.tar.gz 031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a
-check_cached_file rust rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz 89a641eeec33309c57350850c7b40635f7d67c735ab7049f6acc3884388fabd6
-check_cached_file rust rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz 8fc23aa8dd93a5c23cb32f74f4ab3f7de0e4b4eb76d857a428b67c3457727021
+check_cached_file rust rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz 622c8491278486889db2a52a58a19d1a477f1bd101c0a630e416f1cc3922ae8a
+check_cached_file rust rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz 3eec54cf7cf145fd6a7a40aee605144da82dd48192380c4f86f7947abf8c06dc
 
 if [ "$failures" -ne 0 ]; then
     printf 'vendored source check failed: %s issue(s)\n' "$failures" >&2
