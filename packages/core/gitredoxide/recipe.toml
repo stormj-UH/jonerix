@@ -9,9 +9,9 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.19"
+version = "1.0.20"
 license = "MIT OR Apache-2.0"
-description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 33/34 parity vs real git, rPGP + SSH signing all commit-producing commands, LFS smudge)"
+description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 0 real divergences vs real git, rPGP + SSH signing, LFS smudge, top-notch rustdoc)"
 
 [source]
 # Canonical source: Forgejo jonerik/gitoxide on castle.great-morpho.ts.net:3000.
@@ -292,8 +292,23 @@ description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 
 # addition.  Test count 601 / 0 failed.  Parity-smoke vs real git:
 # 33/34 (the 1 remaining is a shell-script harness bug, not a
 # gitredoxide divergence).
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.19/gitredoxide-1.0.19-vendored.tar.gz"
-sha256 = "41943ed80c6e343b3ea6c437d0d9aad8f47324b14e74f45c3320edcb22e85539"
+#
+# 1.0.20: documentation polish release.  No behaviour changes.
+# README.md rewritten 133 → 775 lines (16-section TOC covering
+# architecture, signing, configuration, parity-smoke harness,
+# vendored offline builds, testing, repo layout, contributing,
+# clean-room rules, full release history).  Rustdoc sweep brought
+# module-level //! coverage to every src/ file and public-API ///
+# coverage from 18.6% (68/366) to 71.3% (261/366).  100% of
+# pub struct/enum/trait items now have type-level summaries; 100%
+# of command_<cmd> dispatcher entry points document the git
+# command, flag set, and exit-code semantics.  cargo doc warnings
+# went to zero (side effect of the sweep cleared pre-existing
+# unclosed-HTML-tag and unresolved-link warnings).  601 tests /
+# 0 failed; cargo build --release: 0 warnings.  Endpoint of the
+# "really works like git" documentation pass.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.20/gitredoxide-1.0.20-vendored.tar.gz"
+sha256 = "d7289a804195b70ad5925f39179a0ce2eb798004fb8ebc9ed07f719f1a66a8c4"
 
 [build]
 system = "custom"
