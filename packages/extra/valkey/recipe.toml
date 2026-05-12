@@ -82,7 +82,7 @@ if [ -d "$DESTDIR/usr/local/bin" ]; then
 fi
 # Strip release binaries.  Symlinks are skipped automatically
 # (llvm-strip refuses non-regular files).
-find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 """
 
 [depends]
