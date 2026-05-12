@@ -9,9 +9,9 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.18"
+version = "1.0.19"
 license = "MIT OR Apache-2.0"
-description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 33/34 parity vs real git, rPGP + SSH signing, LFS smudge)"
+description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 33/34 parity vs real git, rPGP + SSH signing all commit-producing commands, LFS smudge)"
 
 [source]
 # Canonical source: Forgejo jonerik/gitoxide on castle.great-morpho.ts.net:3000.
@@ -276,8 +276,24 @@ description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 
 # impl Default for cleaner test-construction with ..Default::default().
 # cargo build --release: zero warnings.  ~50,000 cumulative new
 # source lines across waves 1+2.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.18/gitredoxide-1.0.18-vendored.tar.gz"
-sha256 = "a0e5ac70e05fca530df513a2324e18d8ce4f830febf897f9eef346779a80a0fd"
+#
+# 1.0.19: stash full flag set + signing phase 3.  Stash gained
+# 15 flags including --staged/-S (staged-only stash), --pathspec-
+# from-file, -u/--include-untracked, -a/--all, -k/--keep-index,
+# show --name-status / --include-untracked / --stat, apply --index,
+# branch, create, store.  Signing phase 3 extends rPGP + ssh-keygen
+# from tag-s/verify-* into every commit-producing command —
+# commit/merge/cherry-pick/revert/rebase/pull all sign when -S or
+# commit.gpgsign=true; log --show-signature and show --show-signature
+# emit the verification block.  Cross-validated with real git both
+# ways (we sign, real git verifies; real git signs, we verify) on
+# both OpenPGP and SSH backends.  parses_rebase_abort_command test
+# updated to match the wave-2 --quit/--edit-todo/--show-current-patch
+# addition.  Test count 601 / 0 failed.  Parity-smoke vs real git:
+# 33/34 (the 1 remaining is a shell-script harness bug, not a
+# gitredoxide divergence).
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.19/gitredoxide-1.0.19-vendored.tar.gz"
+sha256 = "41943ed80c6e343b3ea6c437d0d9aad8f47324b14e74f45c3320edcb22e85539"
 
 [build]
 system = "custom"
