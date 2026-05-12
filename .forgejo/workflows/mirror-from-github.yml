@@ -95,4 +95,9 @@ jobs:
 
           git fetch forgejo '+refs/heads/main:refs/remotes/forgejo/main'
           git push --force-with-lease=refs/heads/main forgejo refs/remotes/github/main:refs/heads/main
-          git push forgejo --tags
+          git ls-remote --tags forgejo >"${RUNNER_TEMP}/forgejo-tags.txt"
+          git for-each-ref --format='%(refname)' refs/tags | while IFS= read -r tag_ref; do
+            if ! awk -v ref="${tag_ref}" '$2 == ref { found = 1 } END { exit !found }' "${RUNNER_TEMP}/forgejo-tags.txt"; then
+              git push forgejo "${tag_ref}:${tag_ref}"
+            fi
+          done
