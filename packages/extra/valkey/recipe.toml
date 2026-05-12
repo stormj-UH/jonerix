@@ -1,0 +1,80 @@
+[package]
+name = "valkey"
+version = "9.0.4"
+license = "BSD-3-Clause"
+description = "High-performance in-memory data store (Redis-compatible fork)"
+# 9.0.4 is the first jonerix release of valkey. We built and ran this
+# binary end-to-end on tormenta (Pi 5) on 2026-05-11 against jmake
+# 1.2.6 — the build is what surfaced (and motivated the fixes for) the
+# two cosmetic stderr bugs that 1.2.5 → 1.2.6 closed. Smoke-tested:
+# valkey-server starts, PING → PONG, SET/GET round-trip, with the
+# bundled jemalloc 5.3.0 as the allocator.
+#
+# Vendored deps that travel inside the source tarball (no extra jonerix
+# packages needed): jemalloc 5.3.0, hiredis (libvalkey fork), lua 5.1
+# fork, linenoise, fpconv, hdr_histogram, lzf, sha1/sha256.
+#
+# TLS support (`BUILD_TLS=yes`) is enabled and links against jonerix's
+# libressl shared library (provides libssl/libcrypto symbols). RDMA
+# (`BUILD_RDMA=module`) is intentionally NOT enabled — it requires
+# librdmacm + libibverbs which jonerix doesn't ship and the Pi 5 has
+# no RDMA fabric anyway.
+#
+# Background services (valkey-server / valkey-sentinel as openrc
+# daemons) are NOT installed by this recipe — only the binaries land
+# in /bin. A separate `valkey-server-openrc` package can wrap with
+# /etc/init.d/* and /etc/valkey/*.conf when someone wants persistent
+# server hosting.
+
+[source]
+url = "https://github.com/valkey-io/valkey/archive/refs/tags/9.0.4.tar.gz"
+sha256 = "8d65e12cc9edb14d117b56fd33300e7b8cde2c087356de3f055d44689667670b"
+
+[build]
+system = "custom"
+# Valkey's Makefile expects a CC that knows how to find the standard
+# headers and link the standard library.  jonerix uses compiler-rt
+# instead of libgcc and lld instead of GNU ld, so we wrap clang the
+# same way nginx and friends do.  -Wno-unused-command-line-argument
+# silences the "argument unused during compilation" diagnostics that
+# Valkey's nested makefiles produce by passing -L/lib in places where
+# the wrapper has already injected it.
+configure = """cat > /tmp/clang-jonerix << 'WRAPPER'
+#!/bin/sh
+exec clang --rtlib=compiler-rt -fuse-ld=lld -Wno-unused-command-line-argument "$@"
+WRAPPER
+chmod +x /tmp/clang-jonerix"""
+# Top-level `make` recurses into src/ which builds the bundled
+# jemalloc, hiredis (vendored as deps/libvalkey), lua, linenoise,
+# fpconv, and hdr_histogram before linking the three binaries
+# (valkey-server, valkey-cli, valkey-benchmark) and installing four
+# symlinks that share the server binary
+# (valkey-sentinel/valkey-check-rdb/valkey-check-aof).
+#
+# CC=/tmp/clang-jonerix routes both Valkey's own compiles and the
+# nested jemalloc/hiredis configure+compile through the wrapper.
+# BUILD_TLS=yes pulls in tls.c and links -lssl -lcrypto from
+# jonerix libressl.  USE_JEMALLOC=yes is the Linux default but we
+# spell it out so the recipe is platform-explicit.
+build = "make -j$(nproc) CC=/tmp/clang-jonerix BUILD_TLS=yes USE_JEMALLOC=yes"
+# Install with PREFIX=/ so binaries land at $DESTDIR/bin/* and skip
+# the default /usr/local intermediate.  Valkey's `install` target
+# creates `valkey-check-rdb`, `valkey-check-aof`, and
+# `valkey-sentinel` as ln -sf symlinks to valkey-server, which
+# transparently dispatches based on argv[0].
+install = """make PREFIX=/ install DESTDIR="$DESTDIR" CC=/tmp/clang-jonerix BUILD_TLS=yes USE_JEMALLOC=yes
+# Some Valkey versions write to /usr/local/bin even under PREFIX=/;
+# normalise into /bin.
+if [ -d "$DESTDIR/usr/local/bin" ]; then
+    mkdir -p "$DESTDIR/bin"
+    cp -a "$DESTDIR/usr/local/bin/." "$DESTDIR/bin/"
+    rm -rf "$DESTDIR/usr"
+fi
+# Strip release binaries.  Symlinks are skipped automatically
+# (llvm-strip refuses non-regular files).
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "libressl"]
+build = ["clang", "make", "jonerix-headers"]
