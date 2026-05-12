@@ -650,19 +650,24 @@ but leave the `*.pre-pi5-fixups` backups untouched.
 ## fastfetch
 
 ```
-                                    root@jonerix-tormenta
-   _                       _        ---------------------
-  (_) ___  _ __   ___ _ __(_)_  __  OS -> jonerix 1.2.1 aarch64
-  | |/ _ \| '_ \ / _ \ '__| \ \/ /  Kernel -> Linux 6.18.22-v8-16k+
-  | | (_) | | | |  __/ |  | |>  <   Uptime -> 16 hours, 28 mins
- _/ |\___/|_| |_|\___|_|  |_/_/\_\  Packages -> 44 (jpkg)
-|__/                                 Shell -> mksh
-======= permissive + linux =======   Terminal -> dropbear
-                                     Editor -> pico
-                                     CPU -> BCM2712 (4) @ 2.40 GHz
-                                     Memory -> 150.14 MiB / 3.95 GiB (4%)
-                                     Disk (/) -> 8.87 GiB / 29.03 GiB (31%) - ext4
-                                     Local IP (eth0) -> 10.0.0.8/16
+    _                       _            jonerik@tormenta
+   (_) ___  _ __   ___ _ __(_)_  __      ----------------
+   | |/ _ \| '_ \ / _ \ '__| \ \/ /      Host -> Raspberry Pi 5 Model B Rev 1.1
+   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.2.1 aarch64
+  _/ |\___/|_| |_|\___|_|  |_/_/\_\      Kernel -> Linux 6.18.22-v8-16k+
+ |__/                                    Init System -> openrc-init
+ ========= permissive + linux =========  Uptime -> 1 day, 13 hours, 24 mins
+                                         Packages -> 87 (jpkg)
+                                         Shell -> brash
+                                         Terminal -> dropbear
+                                         Editor -> pico
+                                         CPU -> BCM2712 (4) @ 2.40 GHz
+                                         Memory -> 231.05 MiB / 3.95 GiB (6%)
+                                         Loadavg -> 0.00, 0.00, 0.00
+                                         Disk (/) -> 23.25 GiB / 29.03 GiB (80%) - ext4
+                                         eth0 -> 10.0.0.8/16
+                                         DNS -> 10.0.0.1 2606:4700::1111
+                                         Wifi -> up
 ```
 
 ## License
