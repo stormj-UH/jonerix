@@ -1,8 +1,8 @@
 [package]
 name = "llvm-extra"
-version = "21.1.2"
+version = "21.1.2-r1"
 license = "Apache-2.0"
-description = "LLVM extras — lldb debugger + compiler-rt sanitizers (asan/msan/tsan/ubsan/lsan/hwasan/scudo). Built standalone against installed libllvm + clang."
+description = "LLVM extras — lldb debugger + compiler-rt sanitizers/profile runtime. Built standalone against installed libllvm + clang."
 
 # llvm-extra ships the long tail of clang/llvm tooling that isn't part
 # of the core toolchain. It builds out-of-tree against the installed
@@ -17,6 +17,7 @@ description = "LLVM extras — lldb debugger + compiler-rt sanitizers (asan/msan
 #   /bin/lldb, /bin/lldb-server, /bin/lldb-argdumper, /bin/lldb-instr
 #   /lib/clang/21/lib/linux/libclang_rt.{asan,msan,tsan,ubsan,lsan,
 #     hwasan,scudo,profile,xray}*.{a,so}
+#   /lib/clang/21/lib/<triple>/libclang_rt.profile.a -> ../linux/profile
 #   /lib/clang/21/share/{asan,msan,tsan,ubsan}_*.txt   (suppression lists)
 #
 # What does NOT ship (lives in libllvm / clang / lld):
@@ -228,6 +229,22 @@ if [ -d "$RT_BUILD_SHARE" ]; then
     mkdir -p "$RT_DEST_SHARE"
     cp -a "$RT_BUILD_SHARE/." "$RT_DEST_SHARE/"
 fi
+
+# Clang's PGO link path looks for the profile runtime in the target
+# triple directory as libclang_rt.profile.a. compiler-rt installs the
+# archive in clang's default linux/ layout with an arch suffix, so ship
+# a per-triple symlink for profile consumers such as optimized CPython.
+RT_LINUX_LIB="$RT_DEST_LIB/linux"
+RT_TRIPLE_LIB="$RT_DEST_LIB/$LLVM_TRIPLE"
+RT_ARCH=$(uname -m)
+PROFILE_SRC="$RT_LINUX_LIB/libclang_rt.profile-$RT_ARCH.a"
+if [ ! -f "$PROFILE_SRC" ]; then
+    echo "ERROR: compiler-rt did not build $PROFILE_SRC" >&2
+    find "$RT_DEST_LIB" -name 'libclang_rt.profile*.a' -print >&2 2>/dev/null || true
+    exit 1
+fi
+mkdir -p "$RT_TRIPLE_LIB"
+ln -sf "../linux/$(basename "$PROFILE_SRC")" "$RT_TRIPLE_LIB/libclang_rt.profile.a"
 
 # ──────────────────────────────────────────────────────────────────────
 # Cleanup: flatten /usr and /lib64, strip overlap with libllvm/clang/lld

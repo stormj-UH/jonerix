@@ -1,8 +1,8 @@
 [package]
 name = "python3"
-version = "3.14.5"
+version = "3.14.5-r1"
 license = "PSF-2.0"
-description = "Python programming language interpreter (computed-gotos, with _bz2)"
+description = "Python programming language interpreter (PGO/LTO, computed-gotos, with _bz2)"
 
 [source]
 url = "https://www.python.org/ftp/python/3.14.5/Python-3.14.5.tar.xz"
@@ -19,29 +19,69 @@ system = "custom"
 #                             load extension .so files (e.g. SQLean).
 #                             No runtime cost when not used.
 #
-# --enable-optimizations (PGO) + --with-lto=full are NOT enabled yet
-# because:
-#   1. PGO instrumented build needs jmake ≥ 1.2.2 (the multi-rule prereq
-#      merge bug in 1.2.1 made Python's Makefile pass header files as
-#      compile inputs).  builder image still ships 1.2.1; rebuild image
-#      + bump jmake build-dep here before turning PGO back on.
-#   2. PGO link step needs `libclang_rt.profile.a` at
-#      /lib/clang/21/lib/aarch64-jonerix-linux-musl/, but llvm-extra
-#      installs it under /lib/clang/21/lib/linux/ (clang's default
-#      "unknown" triple path).  Either the llvm-extra recipe needs to
-#      ship profile.a in the per-triple dir, or we symlink at install
-#      time, or python configure needs --with-clang-rt-profile-path.
-# Re-enable both once those two blockers land — gives ~15-30% Python
-# perf for free.
+# 3.14.5-r1 (2026-05-12): enable CPython's PGO/LTO build now that:
+#   - jmake 1.2.6 is published for both arches, so the Python Makefile
+#     multi-rule prerequisite merge no longer feeds headers to clang.
+#   - llvm-extra 21.1.2-r1 ships libclang_rt.profile.a in clang's
+#     per-triple runtime directory for the PGO link.
 configure = """mkdir -p .jpkg-tools
 printf '#!/bin/sh\nexec cmp -s "$@"\n' > .jpkg-tools/diff
 chmod 755 .jpkg-tools/diff
 sed -i 's/X509_VERIFY_PARAM_get_hostflags(ssl_verification_params)/0 \/* LibreSSL lacks get_hostflags *\//' Modules/_ssl.c
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("Tools/build/check_extension_modules.py")
+text = path.read_text()
+old = '''        self.builddir = self.get_builddir()
+        self.modules = self.get_modules()
+
+        self.builtin_ok: list[ModuleInfo] = []
+'''
+new = '''        self.builddir = self.get_builddir()
+        self._ensure_sharedmod_links()
+        self.modules = self.get_modules()
+
+        self.builtin_ok: list[ModuleInfo] = []
+'''
+if old not in text:
+    raise SystemExit("check_extension_modules init stanza not found")
+path.write_text(text.replace(old, new))
+
+path = Path("Tools/build/check_extension_modules.py")
+text = path.read_text()
+old = '''    def get_builddir(self) -> pathlib.Path:
+        try:
+            with open(self.pybuilddir_txt, encoding="utf-8") as f:
+                builddir = f.read()
+'''
+new = '''    def _ensure_sharedmod_links(self) -> None:
+        modules_dir = pathlib.Path("Modules")
+        if not modules_dir.is_dir():
+            return
+        self.builddir.mkdir(parents=True, exist_ok=True)
+        for module in modules_dir.glob(f"*{self.ext_suffix}"):
+            link = self.builddir / module.name
+            if link.exists() or link.is_symlink():
+                continue
+            link.symlink_to(os.path.relpath(module, self.builddir))
+
+    def get_builddir(self) -> pathlib.Path:
+        try:
+            with open(self.pybuilddir_txt, encoding="utf-8") as f:
+                builddir = f.read()
+'''
+if old not in text:
+    raise SystemExit("check_extension_modules get_builddir stanza not found")
+path.write_text(text.replace(old, new))
+PY
 PATH="$PWD/.jpkg-tools:$PATH" \
   CFLAGS="$CFLAGS -I/include/ncursesw" \
   CC=clang CXX=clang++ ./configure \
   --prefix=/usr \
   --enable-shared \
+  --enable-optimizations \
+  --with-lto=full \
   --with-computed-gotos \
   --enable-loadable-sqlite-extensions \
   --with-ensurepip=no \
@@ -70,13 +110,15 @@ PATH="$PWD/.jpkg-tools:$PATH" \
 # (the jonerix builder's default /bin/sh) can't parse — "syntax
 # error: unexpected 'then'". mksh handles it cleanly.
 #
-# Full parallelism restored after jmake 1.0.4 fixed a pattern-rule
-# lookup blowup (find_pattern_rule was called 1038× on the same header
-# with no memoization, making `make install` hang on Python 3.14's
-# thousands of header prereqs). ci-build-*.sh force-installs jmake
-# from the INDEX to guarantee the builder has 1.0.4+.
-build = "make -j$(nproc) SHELL=/bin/mksh"
-install = """make install DESTDIR=$DESTDIR SHELL=/bin/mksh
+# jmake correctness is still required here: Python 3.14's Makefile has
+# thousands of header prereqs, and older jmake releases also merged
+# multi-rule prereqs incorrectly during the PGO build. Keep jmake, but
+# do not run this optimized build at full host parallelism by default:
+# full LTO links are memory-heavy enough to OOM the small local builder
+# VM. CI or larger builders can override with PYTHON_BUILD_JOBS.
+build = """PYTHON_BUILD_JOBS=${PYTHON_BUILD_JOBS:-1}
+jmake -j"$PYTHON_BUILD_JOBS" SHELL=/bin/mksh"""
+install = """jmake install DESTDIR=$DESTDIR SHELL=/bin/mksh
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 # NOTE: ensurepip is deliberately disabled at configure (--with-
@@ -157,4 +199,4 @@ runtime = ["musl", "zlib", "zstd", "ncurses", "libressl", "xz", "libffi", "sqlit
 # the build list, so a clean aarch64 CI runner hit `'lzma.h' file
 # not found` mid-build. Matches the sqlite / bzip2 / libffi pattern
 # (headers needed both at build and runtime).
-build = ["clang", "libffi", "sqlite", "bzip2", "xz", "pkgconf"]
+build = ["clang", "llvm-extra", "jmake", "libffi", "sqlite", "bzip2", "xz", "pkgconf"]

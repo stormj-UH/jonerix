@@ -118,7 +118,13 @@ fi
 
 install_cached_pkg_if_available() {
     pkg="$1"
-    cached_pkg=$(ls /var/cache/jpkg/${pkg}-*-x86_64.jpkg 2>/dev/null | sort -V | tail -1)
+    cached_pkg=$(
+        for f in /var/cache/jpkg/${pkg}-*-x86_64.jpkg \
+                 /var/cache/jpkg-published/${pkg}-*-x86_64.jpkg; do
+            [ -f "$f" ] || continue
+            printf '%s\t%s\n' "$(basename "$f")" "$f"
+        done | sort -V | tail -n 1 | sed 's/.*	//'
+    )
     if [ -z "$cached_pkg" ] || [ ! -f "$cached_pkg" ]; then
         return 1
     fi
@@ -166,6 +172,19 @@ else
 fi
 if ! have_working_expr; then
     echo "FATAL: exproxide failed the minimal autoconf expr probe set"
+    exit 1
+fi
+
+# onetrueawk — the builder image is intentionally sparse, but this
+# script uses awk to read recipe metadata and build-order entries.
+echo "=== Installing onetrueawk for build-script metadata parsing ==="
+if install_cached_pkg_if_available onetrueawk; then
+    :
+else
+    jpkg install --force onetrueawk 2>&1 | tail -n 5 || echo "onetrueawk install failed"
+fi
+if ! command -v awk >/dev/null 2>&1; then
+    echo "FATAL: awk is required by ci-build-x86_64.sh"
     exit 1
 fi
 
@@ -265,6 +284,9 @@ package_timeout() {
         # it 2h to keep margin for the longest torque-generated v8
         # files which can sit on a single core for many minutes each.
         nodejs) echo 7200 ;;
+        # python3: optimized PGO/LTO builds run multiple compile/link
+        # passes, and local low-memory builders cap jmake parallelism.
+        python3) echo 10800 ;;
         *) echo 3600 ;;
     esac
 }
