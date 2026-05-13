@@ -437,7 +437,7 @@ fn apply_patches(recipe_dir: &Path, src_dir: &Path) -> Result<(), String> {
 /// matching the approach in `run_build_step` from cmd_build.c (lines 209-305).
 ///
 /// Key behaviours preserved from C:
-/// - Writes a `/tmp/jpkg-build-<pid>.sh` script to avoid quoting issues.
+/// - Writes a private temporary shell script to avoid quoting issues.
 /// - Pre-expands `$(nproc)` and `\`nproc\`` to avoid toybox sh deadlocks.
 /// - Exports CC/LD/AR/NM/RANLIB, CFLAGS, LDFLAGS, DESTDIR, C_INCLUDE_PATH,
 ///   LIBRARY_PATH, RECIPE_DIR, NPROC.
@@ -487,7 +487,12 @@ fn run_build_step(
         body = expanded,
     );
 
-    let script_path = std::env::temp_dir().join(format!("jpkg-build-{}.sh", std::process::id()));
+    let script_file = tempfile::Builder::new()
+        .prefix("jpkg-build-")
+        .suffix(".sh")
+        .tempfile()
+        .map_err(|e| format!("create build script: {e}"))?;
+    let script_path = script_file.path().to_path_buf();
     fs::write(&script_path, script.as_bytes())
         .map_err(|e| format!("write build script: {e}"))?;
 
@@ -506,8 +511,6 @@ fn run_build_step(
         .arg(&script_path)
         .status()
         .map_err(|e| format!("{step_name} exec: {e}"))?;
-
-    let _ = fs::remove_file(&script_path);
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
@@ -866,6 +869,39 @@ install = "mkdir -p \"$DESTDIR/bin\" && touch \"$DESTDIR/bin/x\""
             })
             .collect();
         assert_eq!(artifacts.len(), 1, "expected exactly one .jpkg artifact");
+    }
+
+    #[test]
+    fn test_build_step_uses_unique_temp_scripts() {
+        let tmp = TempDir::new().unwrap();
+        let mut script_paths = std::collections::HashSet::new();
+
+        for i in 0..4 {
+            let work_dir = tmp.path().join(format!("work-{i}"));
+            let dest_dir = tmp.path().join(format!("dest-{i}"));
+            let recipe_dir = tmp.path().join(format!("recipe-{i}"));
+            fs::create_dir_all(&work_dir).unwrap();
+            fs::create_dir_all(&dest_dir).unwrap();
+            fs::create_dir_all(&recipe_dir).unwrap();
+
+            run_build_step(
+                "install",
+                "printf '%s\\n' \"$0\" > \"$DESTDIR/script-path\"",
+                &work_dir,
+                &dest_dir,
+                &recipe_dir,
+            )
+            .unwrap();
+
+            let script_path = fs::read_to_string(dest_dir.join("script-path")).unwrap();
+            script_paths.insert(script_path);
+        }
+
+        assert_eq!(
+            script_paths.len(),
+            4,
+            "each build step must get a unique script path"
+        );
     }
 
     // ── 4. Source fetch sha256 mismatch → exit 1 ─────────────────────────────

@@ -49,10 +49,10 @@ install_component() {
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
     FILE="rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz"
-    SHA="622c8491278486889db2a52a58a19d1a477f1bd101c0a630e416f1cc3922ae8a"
+    SHA="800cb1c2a0fb59a3843f1e6e284cd93f31dbbc8ac21b1a0c98296cdb2c166e08"
 else
     FILE="rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz"
-    SHA="3eec54cf7cf145fd6a7a40aee605144da82dd48192380c4f86f7947abf8c06dc"
+    SHA="111b75d1a0bb41a30abcc45a44e38dfa577c27f12c91361f16a40246a437f2fe"
 fi
 
 RUST_SRC=$(find_vendored_file "$FILE") || {

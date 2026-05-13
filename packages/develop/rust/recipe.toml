@@ -43,20 +43,20 @@ find_vendored_file() {
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
   FILE="rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz"
-  # 622c8491... = the patched 1.95.0 build that registers
+  # 800cb1c2... = the patched 1.95.0 build that registers
   # aarch64-jonerix-linux-musl as a builtin target (so stable rustc
   # doesn't bail on "could not find specification for target") and
   # ships the "(jonerix)" version tag instead of the upstream default
   # "(built from a source tarball)".  See rust-dist.yml commits
   # 4c94edb5 (target patch + description) + 00413512 (deny-warnings).
-  SHA="622c8491278486889db2a52a58a19d1a477f1bd101c0a630e416f1cc3922ae8a"
+  SHA="800cb1c2a0fb59a3843f1e6e284cd93f31dbbc8ac21b1a0c98296cdb2c166e08"
   TRIPLE="aarch64-jonerix-linux-musl"
 else
   FILE="rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz"
-  # 3eec54cf... = the patched 1.95.0 build, matching aarch64's
-  # 622c8491... above.  See recipe.toml history + rust-dist commits
+  # 111b75d1... = the patched 1.95.0 build, matching aarch64's
+  # 800cb1c2... above.  See recipe.toml history + rust-dist commits
   # 4c94edb5 + 00413512.
-  SHA="3eec54cf7cf145fd6a7a40aee605144da82dd48192380c4f86f7947abf8c06dc"
+  SHA="111b75d1a0bb41a30abcc45a44e38dfa577c27f12c91361f16a40246a437f2fe"
   TRIPLE="x86_64-jonerix-linux-musl"
 fi
 

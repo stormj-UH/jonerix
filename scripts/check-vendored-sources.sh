@@ -149,8 +149,8 @@ check_cached_file ca-certificates cacert.pem b6e66569cc3d438dd5abe514d0df50005d5
 check_cached_file tzdata tzdata2026a.tar.gz 77b541725937bb53bd92bd484c0b43bec8545e2d3431ee01f04ef8f2203ba2b7
 check_cached_file go go1.26.1.linux-arm64.tar.gz a290581cfe4fe28ddd737dde3095f3dbeb7f2e4065cab4eae44dfc53b760c2f7
 check_cached_file go go1.26.1.linux-amd64.tar.gz 031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a
-check_cached_file rust rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz 622c8491278486889db2a52a58a19d1a477f1bd101c0a630e416f1cc3922ae8a
-check_cached_file rust rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz 3eec54cf7cf145fd6a7a40aee605144da82dd48192380c4f86f7947abf8c06dc
+check_cached_file rust rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz 800cb1c2a0fb59a3843f1e6e284cd93f31dbbc8ac21b1a0c98296cdb2c166e08
+check_cached_file rust rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz 111b75d1a0bb41a30abcc45a44e38dfa577c27f12c91361f16a40246a437f2fe
 check_cached_file rustup rustup-init-1.29.0-aarch64-unknown-linux-musl 88761caacddb92cd79b0b1f939f3990ba1997d701a38b3e8dd6746a562f2a759
 check_cached_file rustup rustup-init-1.29.0-x86_64-unknown-linux-musl 9cd3fda5fd293890e36ab271af6a786ee22084b5f6c2b83fd8323cec6f0992c1
 
