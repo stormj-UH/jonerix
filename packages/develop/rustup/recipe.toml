@@ -1,6 +1,6 @@
 [package]
 name = "rustup"
-version = "1.29.0"
+version = "1.29.0-r1"
 license = "MIT OR Apache-2.0"
 description = "Rust toolchain manager (standalone rustup/rustup-init, no jpkg-owned proxy replacement)"
 
@@ -50,9 +50,58 @@ RUSTUP_SRC=$(find_vendored_file "$FILE") || {
 cp "$RUSTUP_SRC" rustup-init
 printf '%s  rustup-init\n' "$SHA" | sha256sum -c
 
-install -d "$DESTDIR/bin" "$DESTDIR/share/doc/rustup"
+install -d "$DESTDIR/bin" "$DESTDIR/etc/profile.d" "$DESTDIR/share/doc/rustup" "$DESTDIR/share/rustup"
 install -m 0755 rustup-init "$DESTDIR/bin/rustup-init"
 install -m 0755 rustup-init "$DESTDIR/bin/rustup"
+
+cat > "$DESTDIR/etc/profile.d/rustup.sh" <<'PROF'
+# /etc/profile.d/rustup.sh - rustup user environment.
+#
+# rustup installs per-user toolchains under $RUSTUP_HOME and proxy commands
+# under $CARGO_HOME/bin. The jpkg package deliberately does not install those
+# proxies into /bin, because /bin/rustc, /bin/cargo, /bin/rustdoc, and
+# /bin/rustfmt are owned by jpkg-managed packages.
+if [ -n "${HOME:-}" ]; then
+    : "${RUSTUP_HOME:=$HOME/.rustup}"
+    : "${CARGO_HOME:=$HOME/.cargo}"
+    export RUSTUP_HOME CARGO_HOME
+
+    case ":${PATH:-}:" in
+        *":$CARGO_HOME/bin:"*) ;;
+        *) [ -d "$CARGO_HOME/bin" ] && PATH="$CARGO_HOME/bin${PATH:+:$PATH}" ;;
+    esac
+    export PATH
+fi
+PROF
+chmod 0644 "$DESTDIR/etc/profile.d/rustup.sh"
+
+cat > "$DESTDIR/share/rustup/default-settings.toml" <<'CFG'
+# /share/rustup/default-settings.toml - suggested rustup-init answers.
+#
+# This file is documentation/a template. It is not consumed automatically by
+# jpkg and is not copied into user homes.
+#
+# Conservative jonerix defaults:
+#   default_toolchain = "stable"
+#   profile = "minimal"
+#   modify_path = false
+#
+# `profile = "minimal"` avoids surprise downloads of optional tools and docs.
+# Install extra upstream components explicitly, for example:
+#   rustup component add rustfmt clippy rust-src
+#
+# `modify_path = false` keeps rustup-init from editing shell startup files.
+# jpkg already ships /etc/profile.d/rustup.sh, which exports RUSTUP_HOME and
+# CARGO_HOME and prepends $CARGO_HOME/bin only after rustup creates it.
+#
+# Do not set dist_server/update_root unless jonerix publishes a rustup channel
+# mirror. The jpkg-managed system compiler remains the jonerix toolchain;
+# rustup-managed toolchains are per-user upstream Rust toolchains.
+default_toolchain = "stable"
+profile = "minimal"
+modify_path = false
+CFG
+chmod 0644 "$DESTDIR/share/rustup/default-settings.toml"
 
 cat > "$DESTDIR/share/doc/rustup/JONERIX.md" <<'DOC'
 # rustup on jonerix
@@ -64,6 +113,16 @@ tools), because those paths are owned by jpkg packages such as `rust`,
 
 Use this package when a user wants rustup-managed toolchains in their home
 directory. The system compiler remains the jpkg-managed jonerix toolchain.
+
+The package also ships:
+
+* `/etc/profile.d/rustup.sh` - sets `RUSTUP_HOME` and `CARGO_HOME`, then adds
+  `$CARGO_HOME/bin` to `PATH` only after that directory exists.
+* `/share/rustup/default-settings.toml` - a conservative rustup-init template:
+  upstream `stable`, `profile = "minimal"`, and `modify_path = false`.
+
+`rustup default stable` installs upstream Rust toolchains, not the jpkg-managed
+`*-jonerix-linux-musl` system toolchain.
 DOC
 chmod 0644 "$DESTDIR/share/doc/rustup/JONERIX.md"
 
@@ -77,6 +136,27 @@ chmod 0644 "$DESTDIR/share/doc/rustup/JONERIX.md"
 }
 """
 install = ""
+
+[hooks]
+post_install = """# ensure /etc/profile sources /etc/profile.d
+profile_root=${JPKG_ROOT:-}
+case "$profile_root" in
+    ""|"/") profile=/etc/profile ;;
+    *) profile=$profile_root/etc/profile ;;
+esac
+
+if [ -f "$profile" ] && ! grep -q "/etc/profile.d" "$profile" 2>/dev/null; then
+    cat >> "$profile" <<'PROF'
+
+# --- /etc/profile.d (added by rustup jpkg) ---
+if [ -d /etc/profile.d ]; then
+    for f in /etc/profile.d/*.sh; do
+        [ -r "$f" ] && . "$f"
+    done
+fi
+PROF
+fi
+"""
 
 [depends]
 runtime = ["musl"]
