@@ -1,0 +1,158 @@
+[package]
+name = "libllvm22"
+version = "22.1.5"
+license = "Apache-2.0"
+description = "LLVM 22 core libraries, headers, cmake configs, and base tools under /lib/llvm22"
+
+# r1: add jonerix-autotools-vendor as a runtime dep so every host with
+# the compiler toolchain installed automatically gets the autotools
+# build/host triple fix (autoconf-generated ./configure scripts pick
+# up /etc/jonerix-config.site and identify as aarch64-jonerix-linux-musl
+# or x86_64-jonerix-linux-musl instead of *-unknown-linux-musl).
+# libllvm is the foundational toolchain package - clang, lld, llvm,
+# llvm-extra, rust all depend on it at runtime - so the fixup drags
+# in via dep-graph for everyone who has the compiler toolchain.
+
+# libllvm22 builds JUST the LLVM core - no clang, no lld, no lldb.
+# Ships libLLVM-22.so so clang22, lld22, and future toolchains can link against
+# the same LLVM build instead of rebuilding LLVM from source each time.
+#
+# Consumers:
+#   clang22      - in-tree LLVM_ENABLE_PROJECTS=clang
+#   lld22        - in-tree LLVM_ENABLE_PROJECTS=lld
+#   llvm22-extra - in-tree LLVM_ENABLE_PROJECTS/LLVM_ENABLE_RUNTIMES
+#   future rust  - x.py with llvm-config = "/bin/llvm-config-22"
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/llvm-project-22.1.5.src.tar.xz"
+sha256 = "7972b87b705a003ce70ab55f9f0fb495d156887cba0eb296d284731139118e2c"
+
+[build]
+system = "custom"
+build = """
+set -e
+LLVM_PREFIX=/lib/llvm22
+
+# LLVM needs -fPIC, not -fPIE, for shared library code.
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+
+case $(uname -m) in
+    # GitHub's ubuntu-latest runner has 16 GB RAM; -j2 OOMs and stalls
+    # the build for 20+ minutes at a time during the heaviest compile
+    # ranges (clang/Sema, LLVM Support). -j1 is slower but predictable.
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+esac
+
+LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
+LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
+LLVM22_CXXFLAGS="-Os -fPIC -stdlib=libc++ -nostdinc++ -isystem $LLVM_PREFIX/include/c++/v1 --rtlib=compiler-rt --unwindlib=libunwind"
+LLVM22_LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt -L$LLVM_PREFIX/lib -Wl,-rpath,$LLVM_PREFIX/lib"
+
+# libssp_nonshared.a stub - musl provides __stack_chk_fail natively.
+printf '!<arch>\n' > /lib/libssp_nonshared.a
+
+mkdir -p build
+cmake -S llvm -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_ENABLE_PROJECTS="" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
+    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="$LLVM22_CXXFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_INSTALL_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_BUILD_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DLLVM_ENABLE_PIC=ON \
+    -DLLVM_ENABLE_LIBCXX=ON \
+    -DLLVM_BUILD_LLVM_DYLIB=ON \
+    -DLLVM_LINK_LLVM_DYLIB=ON \
+    -DCMAKE_INSTALL_PREFIX="$LLVM_PREFIX" \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLVM_INSTALL_UTILS=ON \
+    -DLLVM_ENABLE_ASSERTIONS=OFF \
+    -DLLVM_ENABLE_SPHINX=OFF \
+    -DLLVM_ENABLE_DOXYGEN=OFF \
+    -DLLVM_BUILD_TESTS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_ENABLE_FFI=OFF \
+    -DLLVM_ENABLE_ZLIB=ON \
+    -DLLVM_ENABLE_ZSTD=ON \
+    -DLLVM_ENABLE_PLUGINS=OFF \
+    -DLLVM_PARALLEL_LINK_JOBS=2
+
+samu -C build -j"$LLVM_BUILD_JOBS"
+DESTDIR=$DESTDIR cmake --install build
+
+# Flatten usr/ inside the versioned prefix only.
+if [ -d "$DESTDIR$LLVM_PREFIX/usr" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/usr/." "$DESTDIR$LLVM_PREFIX/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/usr"
+fi
+
+# Flatten lib64/ inside the versioned prefix only.
+if [ -d "$DESTDIR$LLVM_PREFIX/lib64" ] && [ ! -L "$DESTDIR$LLVM_PREFIX/lib64" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/lib64/." "$DESTDIR$LLVM_PREFIX/lib/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/lib64"
+fi
+
+# Keep: libLLVM-22.so, all libLLVM*.a static archives, headers,
+#       cmake configs, llvm-config, llvm-* tools.
+#
+# We INTENTIONALLY ship the static archives even though clang/lld/rust
+# all link against libLLVM-21.so via LLVM_LINK_LLVM_DYLIB. The reason
+# is /lib/cmake/llvm/LLVMExports.cmake - generated during LLVM's
+# install - declares each LLVM* component as an IMPORTED target whose
+# IMPORTED_LOCATION points at the .a file (e.g. libLLVMDemangle.a).
+# Downstream cmake calls (compiler-rt's find_package(LLVM) inside the
+# clang recipe, lld's, llvm-extra's) abort with "imported target
+# references nonexistent file" if the .a is missing - even when the
+# consumer would actually link the dylib at the final link step.
+# Filtering the exports file is more fragile than keeping the .a's.
+
+# Strip binaries
+find "$DESTDIR$LLVM_PREFIX/bin" -type f -executable \
+    -exec llvm-strip {} \; 2>/dev/null || true
+llvm-strip --strip-debug "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.so* 2>/dev/null || true
+
+# Remove docs
+rm -rf "$DESTDIR$LLVM_PREFIX/share/man" "$DESTDIR$LLVM_PREFIX/share/doc"
+
+# libssp stub in DESTDIR
+printf '!<arch>\n' > "$DESTDIR$LLVM_PREFIX/lib/libssp_nonshared.a"
+
+# Expose non-default, suffixed command names. Do not install /bin/llvm-ar,
+# /bin/ar, /bin/strip, etc.; the v21 toolchain remains the system default.
+mkdir -p "$DESTDIR/bin"
+for tool in "$DESTDIR$LLVM_PREFIX/bin"/*; do
+    [ -f "$tool" ] && [ -x "$tool" ] || continue
+    base=${tool##*/}
+    ln -sf "../lib/llvm22/bin/$base" "$DESTDIR/bin/$base-22"
+done
+
+# Normalize /lib64 references
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+    "$DESTDIR/bin" "$DESTDIR$LLVM_PREFIX" 2>/dev/null || true
+
+echo "=== libllvm DESTDIR ==="
+ls -lh "$DESTDIR$LLVM_PREFIX/lib/libLLVM"* 2>/dev/null || true
+"$DESTDIR$LLVM_PREFIX/bin/llvm-config" --version 2>/dev/null || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "libcxx22", "zstd", "zlib", "jonerix-autotools-vendor"]
+build = ["clang", "cmake", "samurai", "python3", "libcxx22", "jonerix-headers"]

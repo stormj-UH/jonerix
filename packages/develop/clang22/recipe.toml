@@ -1,0 +1,225 @@
+[package]
+name = "clang22"
+version = "22.1.5"
+license = "Apache-2.0"
+description = "Clang 22 C/C++ compiler with compiler-rt builtins under /lib/llvm22"
+
+# clang is built using the canonical LLVM_ENABLE_PROJECTS=clang
+# pattern from the llvm-project root. The standalone-clang build
+# pattern (`cmake -S clang -DLLVM_DIR=...`) hits a standalone cmake trap
+# where build.ninja gets duplicate rules for /lib/cmake/llvm/LLVM-Config.cmake
+# (LLVM_LIBRARY_DIR resolves to /lib in standalone mode, and several
+# cmake helpers write build rules that target absolute paths there).
+#
+# With sccache populated by the libllvm build, the LLVM-side compiles
+# are near-100% cache hits, so the wall time is essentially "clang
+# code only" plus a few minutes of cmake configure / link. The install
+# step filters out anything that overlaps with libllvm so the final
+# clang.jpkg payload only contains clang-specific files.
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/llvm-project-22.1.5.src.tar.xz"
+sha256 = "7972b87b705a003ce70ab55f9f0fb495d156887cba0eb296d284731139118e2c"
+
+[build]
+system = "custom"
+build = """
+set -e
+LLVM_PREFIX=/lib/llvm22
+LLVM_MAJOR=22
+
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+
+case $(uname -m) in
+    # ubuntu-latest is 16 GB; -j2 OOMs during clang's diagnostic
+    # tablegen and Sema compile. -j1 is slower but stable.
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+esac
+
+SRC=$(pwd)
+LLVM_AR=$LLVM_PREFIX/bin/llvm-ar
+LLVM_RANLIB=$LLVM_PREFIX/bin/llvm-ranlib
+LLVM22_CXXFLAGS="-Os -fPIC -stdlib=libc++ -nostdinc++ -isystem $LLVM_PREFIX/include/c++/v1 --rtlib=compiler-rt --unwindlib=libunwind"
+LLVM22_LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt -L$LLVM_PREFIX/lib -Wl,-rpath,$LLVM_PREFIX/lib"
+
+# libssp_nonshared.a stub (musl provides __stack_chk_fail natively)
+[ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
+
+# --- Step 1: Bootstrap compiler-rt builtins for the host triple ---
+# Needed so --rtlib=compiler-rt test links pass during cmake configure.
+BOOTSTRAP_TRIPLE=$(clang -dumpmachine)
+BOOTSTRAP_RESOURCE_DIR=$(clang -print-resource-dir)
+rm -rf /tmp/clang-builtins-bootstrap
+mkdir -p /tmp/clang-builtins-bootstrap
+cmake -S compiler-rt/lib/builtins -B /tmp/clang-builtins-bootstrap -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_C_COMPILER_TARGET="$BOOTSTRAP_TRIPLE" \
+    -DCMAKE_C_FLAGS="-fPIC -I$SRC/libunwind/include" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCMAKE_INSTALL_PREFIX="$BOOTSTRAP_RESOURCE_DIR"
+samu -C /tmp/clang-builtins-bootstrap
+DESTDIR="" cmake --install /tmp/clang-builtins-bootstrap
+
+# --- Step 2: Monolithic LLVM+clang build (sccache makes this fast) ---
+mkdir -p build
+cmake -S llvm -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_ENABLE_PROJECTS="clang" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
+    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="$LLVM22_CXXFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_INSTALL_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_BUILD_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DLLVM_ENABLE_PIC=ON \
+    -DLLVM_ENABLE_LIBCXX=ON \
+    -DLLVM_BUILD_LLVM_DYLIB=ON \
+    -DLLVM_LINK_LLVM_DYLIB=ON \
+    -DCLANG_BUILD_CLANG_DYLIB=OFF \
+    -DCLANG_LINK_CLANG_DYLIB=OFF \
+    -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
+    -DCLANG_TOOL_C_INDEX_TEST_BUILD=OFF \
+    -DCMAKE_INSTALL_PREFIX="$LLVM_PREFIX" \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCLANG_DEFAULT_RTLIB=compiler-rt \
+    -DCLANG_DEFAULT_UNWINDLIB=libunwind \
+    -DCLANG_DEFAULT_LINKER=lld \
+    -DCLANG_DEFAULT_CXX_STDLIB=libc++ \
+    -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang22 \
+    -DLLVM_ENABLE_PLUGINS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DCLANG_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_BUILD_UTILS=OFF \
+    -DLLVM_INSTALL_UTILS=OFF \
+    -DLLVM_PARALLEL_LINK_JOBS=2
+
+samu -C build -j"$BUILD_JOBS"
+DESTDIR=$DESTDIR cmake --install build
+
+# Flatten usr/ and lib64/ inside the versioned prefix.
+if [ -d "$DESTDIR$LLVM_PREFIX/usr" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/usr/." "$DESTDIR$LLVM_PREFIX/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/usr"
+fi
+if [ -d "$DESTDIR$LLVM_PREFIX/lib64" ] && [ ! -L "$DESTDIR$LLVM_PREFIX/lib64" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/lib64/." "$DESTDIR$LLVM_PREFIX/lib/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/lib64"
+fi
+
+# --- Step 2.5: Strip files that already ship in libllvm ---
+# Anything LLVM-side is provided by the libllvm package - keep only
+# clang's own files in this jpkg.
+rm -f  "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.so* "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.a 2>/dev/null || true
+rm -rf "$DESTDIR$LLVM_PREFIX/lib/cmake/llvm"
+rm -rf "$DESTDIR$LLVM_PREFIX/include/llvm" "$DESTDIR$LLVM_PREFIX/include/llvm-c"
+# LLVM core tools (already in libllvm)
+for f in llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip llvm-objdump \
+         llvm-readobj llvm-readelf llvm-symbolizer llvm-addr2line \
+         llvm-cxxfilt llvm-cov llvm-config opt llc llvm-dlltool llvm-lib \
+         llvm-bitcode-strip llvm-install-name-tool llvm-otool \
+         ar nm objcopy strip objdump readelf; do
+    rm -f "$DESTDIR$LLVM_PREFIX/bin/$f"
+done
+
+# Keep all libclang*.a static archives. /lib/cmake/clang/ClangTargets.cmake
+# is generated by clang's install with IMPORTED_LOCATION pointing at every
+# libclang<Component>.a (libclangBasic.a, libclangAST.a, ...). When llvm-extra
+# does find_package(Clang) inside its lldb sub-build, cmake validates those
+# imported paths and aborts if any .a is missing - even though the consumer
+# only links the clang binary at runtime. Same fix pattern as libllvm's
+# LLVM-Config.cmake .a issue (commit 76a3dac7).
+
+# --- Step 3: jonerix compiler-rt builtins ---
+rm -rf /tmp/clang-builtins-jonerix
+mkdir -p /tmp/clang-builtins-jonerix
+cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/clang-builtins-jonerix -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER="$DESTDIR$LLVM_PREFIX/bin/clang" \
+    -DCMAKE_C_COMPILER_TARGET="$LLVM_TRIPLE" \
+    -DCMAKE_C_FLAGS="-fPIC -I$SRC/libunwind/include" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCMAKE_INSTALL_PREFIX="$DESTDIR$LLVM_PREFIX/lib/clang/$LLVM_MAJOR"
+samu -C /tmp/clang-builtins-jonerix
+DESTDIR="" cmake --install /tmp/clang-builtins-jonerix
+
+# Copy from legacy linux/ layout to per-target dir
+ARCH=$(uname -m)
+RT_LINUX="$DESTDIR$LLVM_PREFIX/lib/clang/$LLVM_MAJOR/lib/linux"
+RT_TARGET="$DESTDIR$LLVM_PREFIX/lib/clang/$LLVM_MAJOR/lib/$LLVM_TRIPLE"
+if [ -d "$RT_LINUX" ]; then
+    mkdir -p "$RT_TARGET"
+    cp "$RT_LINUX/libclang_rt.builtins-${ARCH}.a"  "$RT_TARGET/libclang_rt.builtins.a"  2>/dev/null || true
+    cp "$RT_LINUX/clang_rt.crtbegin-${ARCH}.o"     "$RT_TARGET/clang_rt.crtbegin.o"     2>/dev/null || true
+    cp "$RT_LINUX/clang_rt.crtend-${ARCH}.o"       "$RT_TARGET/clang_rt.crtend.o"       2>/dev/null || true
+fi
+
+# libssp stub
+printf '!<arch>\n' > "$DESTDIR$LLVM_PREFIX/lib/libssp_nonshared.a"
+
+# --- Step 4: /etc/clang22 config files ---
+mkdir -p "$DESTDIR/etc/clang22"
+
+cat > "$DESTDIR/etc/clang22/$LLVM_TRIPLE.cfg" << CLANGCFG
+# /etc/clang22/$LLVM_TRIPLE.cfg - jonerix LLVM 22 toolchain selection.
+--rtlib=compiler-rt
+--unwindlib=libunwind
+-fuse-ld=lld
+-B$LLVM_PREFIX/bin
+CLANGCFG
+
+cat > "$DESTDIR/etc/clang22/clang++.cfg" << CLANGXXCFG
+# /etc/clang22/clang++.cfg - jonerix LLVM 22 C++ stdlib selection.
+-stdlib=libc++
+-nostdinc++
+-isystem$LLVM_PREFIX/include/c++/v1
+-L$LLVM_PREFIX/lib
+CLANGXXCFG
+
+# Suffixed symlinks only. Do not replace /bin/clang, /bin/cc, or /bin/c++.
+# The llvm22 metapackage owns cc-22/c++-22 aliases.
+mkdir -p "$DESTDIR/bin"
+ln -sf "../lib/llvm22/bin/clang"   "$DESTDIR/bin/clang-22"   2>/dev/null || true
+ln -sf "../lib/llvm22/bin/clang++" "$DESTDIR/bin/clang++-22" 2>/dev/null || true
+
+# Strip
+find "$DESTDIR$LLVM_PREFIX/bin" -type f -executable \
+    -exec llvm-strip {} \; 2>/dev/null || true
+
+# Remove docs (clang dev headers stay - needed by clang at runtime)
+rm -rf "$DESTDIR$LLVM_PREFIX/share/man" "$DESTDIR$LLVM_PREFIX/share/doc"
+
+# Normalize /lib64
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+    "$DESTDIR/bin" "$DESTDIR$LLVM_PREFIX" "$DESTDIR/etc" 2>/dev/null || true
+
+echo "=== clang DESTDIR ==="
+"$DESTDIR$LLVM_PREFIX/bin/clang" -dumpmachine 2>/dev/null || true
+"$DESTDIR$LLVM_PREFIX/bin/clang" --version 2>/dev/null | head -1 || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "libllvm22", "libcxx22"]
+build = ["libllvm22", "cmake", "samurai", "python3", "libcxx22", "jonerix-headers"]

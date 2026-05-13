@@ -9,6 +9,7 @@
 # Usage:
 #   ./scripts/local-build-x86_64.sh build PKG [PKG...]
 #   ./scripts/local-build-x86_64.sh chain   # libllvm → clang → lld → llvm → llvm-extra
+#   ./scripts/local-build-x86_64.sh chain22 # libcxx22 -> libllvm22 -> clang22 -> lld22 -> llvm22 -> llvm22-extra
 #   ./scripts/local-build-x86_64.sh upload  # push winning .jpkgs to GitHub release
 #   ./scripts/local-build-x86_64.sh status  # what's in the local hedge cache
 #
@@ -28,7 +29,7 @@ JPKG_BIN="${BUILD_DIR}/jpkg-bin-x86_64"
 SCCACHE="${BUILD_DIR}/sccache-cache"
 SCCACHE_BIN="${BUILD_DIR}/sccache-bin/sccache-x86_64"
 
-BUILDER_IMAGE="${BUILDER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder-amd64}"
+BUILDER_IMAGE="${BUILDER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder}"
 GITHUB_REPO="${GITHUB_REPO:-stormj-UH/jonerix}"
 RELEASE_TAG="${RELEASE_TAG:-packages}"
 
@@ -61,6 +62,7 @@ local-build-x86_64.sh — local hedge builder
 
   build PKG [PKG...]   Build one or more packages in a docker container.
   chain                Build the LLVM split: libllvm → clang → lld → llvm → llvm-extra.
+  chain22              Build the parallel LLVM 22 split under /lib/llvm22.
   upload               Upload winning .jpkg(s) from $JPKG_OUTPUT to the
                        $RELEASE_TAG release on $GITHUB_REPO, then trigger
                        regen-tag-index to bake them into a signed INDEX.
@@ -129,14 +131,34 @@ cmd_build() {
             -e BUILD_JOBS="$JOBS" \
             "$BUILDER_IMAGE" \
             /workspace/scripts/ci-build-x86_64.sh
+        cache_local_pkg "$pkg"
     done
 
     echo "==> Local artifacts:"
     ls -lh "$JPKG_OUTPUT"/*.jpkg 2>/dev/null || echo "    (none)"
 }
 
+cache_local_pkg() {
+    pkg=$1
+    found=0
+
+    for artifact in "$JPKG_OUTPUT"/"$pkg"-*-x86_64.jpkg; do
+        [ -f "$artifact" ] || continue
+        cp -f "$artifact" "$JPKG_PUBLISHED/"
+        found=1
+    done
+
+    if [ "$found" -eq 1 ]; then
+        echo "==> Mirrored local $pkg package(s) into $JPKG_PUBLISHED"
+    fi
+}
+
 cmd_chain() {
     cmd_build libllvm clang lld llvm llvm-extra
+}
+
+cmd_chain22() {
+    cmd_build libcxx22 libllvm22 clang22 lld22 llvm22 llvm22-extra
 }
 
 cmd_upload() {
@@ -189,6 +211,7 @@ cmd_clean() {
 case "${1:-}" in
     build)   shift; cmd_build "$@" ;;
     chain)   cmd_chain ;;
+    chain22) cmd_chain22 ;;
     upload)  cmd_upload ;;
     status)  cmd_status ;;
     clean)   cmd_clean ;;

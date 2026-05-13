@@ -278,7 +278,7 @@ package_timeout() {
         # standalone clang-tools-extra + lldb + sanitizers stack adds up
         # to similar wall-time. Keep the legacy llvm at the same cap so
         # rebuilds of the metapackage scenario stay safe.
-        llvm|libllvm|clang|lld|llvm-extra) echo 20000 ;;
+        llvm|libllvm|clang|lld|llvm-extra|llvm22|libllvm22|clang22|lld22|llvm22-extra|libcxx22) echo 20000 ;;
         # nodejs: v8 compile at -j2 (memory-safe under GitHub runners)
         # is ~100 min, plus configure + install + jpkg packaging. Give
         # it 2h to keep margin for the longest torque-generated v8
@@ -544,6 +544,10 @@ else
 
     rm -f "$ORDER_FILE" "$RECIPE_MAP"
 fi
+
+# Keep generated artifacts readable by the host user when /var/cache/jpkg is
+# a Linux bind mount owned by container root.
+chmod a+r /var/cache/jpkg/*.jpkg /var/cache/jpkg/*.sig 2>/dev/null || true
 
 echo "Built/cached packages (x86_64):"
 ls -lh /var/cache/jpkg/*.jpkg 2>/dev/null || echo "(none)"

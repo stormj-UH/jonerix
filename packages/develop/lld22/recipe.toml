@@ -1,0 +1,133 @@
+[package]
+name = "lld22"
+version = "22.1.5"
+license = "Apache-2.0"
+description = "LLD 22 linker under /lib/llvm22"
+
+# lld is built using LLVM_ENABLE_PROJECTS=lld from the llvm-project
+# root. The standalone-lld build pattern (`cmake -S lld -DLLVM_DIR=...`)
+# hits the same duplicate-rule cmake bug clang does. With sccache
+# warm from the libllvm build, the LLVM-side compiles are cache hits,
+# so wall time is only "lld code + link".
+# Install step filters out anything that overlaps with libllvm.
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/llvm-project-22.1.5.src.tar.xz"
+sha256 = "7972b87b705a003ce70ab55f9f0fb495d156887cba0eb296d284731139118e2c"
+
+[build]
+system = "custom"
+build = """
+set -e
+LLVM_PREFIX=/lib/llvm22
+
+export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
+export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
+export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
+
+case $(uname -m) in
+    # ubuntu-latest 16 GB - -j2 OOMs in libllvm/clang. lld is smaller
+    # but the same trigger applies in the LLVM-rebuild section. -j1.
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+esac
+
+LLVM_AR=$LLVM_PREFIX/bin/llvm-ar
+LLVM_RANLIB=$LLVM_PREFIX/bin/llvm-ranlib
+LLVM22_CXXFLAGS="-Os -fPIC -stdlib=libc++ -nostdinc++ -isystem $LLVM_PREFIX/include/c++/v1 --rtlib=compiler-rt --unwindlib=libunwind"
+LLVM22_LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt -L$LLVM_PREFIX/lib -Wl,-rpath,$LLVM_PREFIX/lib"
+
+# libssp_nonshared.a stub
+[ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
+
+mkdir -p build
+cmake -S llvm -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_ENABLE_PROJECTS="lld" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
+    -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_AR="$LLVM_AR" \
+    -DCMAKE_RANLIB="$LLVM_RANLIB" \
+    -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="$LLVM22_CXXFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_INSTALL_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_BUILD_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DLLVM_ENABLE_PIC=ON \
+    -DLLVM_ENABLE_LIBCXX=ON \
+    -DLLVM_BUILD_LLVM_DYLIB=ON \
+    -DLLVM_LINK_LLVM_DYLIB=ON \
+    -DCMAKE_INSTALL_PREFIX="$LLVM_PREFIX" \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLD_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_BUILD_UTILS=OFF \
+    -DLLVM_INSTALL_UTILS=OFF \
+    -DLLVM_ENABLE_PLUGINS=OFF \
+    -DLLD_BUILD_TOOLS=ON \
+    -DLLVM_PARALLEL_LINK_JOBS=2
+
+samu -C build -j"$BUILD_JOBS"
+DESTDIR=$DESTDIR cmake --install build
+
+# Flatten usr/ and lib64/ inside the versioned prefix.
+if [ -d "$DESTDIR$LLVM_PREFIX/usr" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/usr/." "$DESTDIR$LLVM_PREFIX/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/usr"
+fi
+if [ -d "$DESTDIR$LLVM_PREFIX/lib64" ] && [ ! -L "$DESTDIR$LLVM_PREFIX/lib64" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/lib64/." "$DESTDIR$LLVM_PREFIX/lib/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/lib64"
+fi
+
+# Strip files that already ship in libllvm
+rm -f  "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.so* "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.a 2>/dev/null || true
+rm -rf "$DESTDIR$LLVM_PREFIX/lib/cmake/llvm"
+rm -rf "$DESTDIR$LLVM_PREFIX/include/llvm" "$DESTDIR$LLVM_PREFIX/include/llvm-c"
+for f in llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip llvm-objdump \
+         llvm-readobj llvm-readelf llvm-symbolizer llvm-addr2line \
+         llvm-cxxfilt llvm-cov llvm-config opt llc llvm-dlltool llvm-lib \
+         llvm-bitcode-strip llvm-install-name-tool llvm-otool \
+         ar nm objcopy strip objdump readelf; do
+    rm -f "$DESTDIR$LLVM_PREFIX/bin/$f"
+done
+
+# Static lld libs not needed at runtime
+find "$DESTDIR$LLVM_PREFIX/lib" -maxdepth 1 -name 'liblld*.a' -delete 2>/dev/null || true
+
+# Suffixed symlinks only. Do not replace /bin/ld or /bin/ld.lld.
+# The llvm22 metapackage owns the ld-22 alias.
+mkdir -p "$DESTDIR/bin"
+for tool in lld ld.lld lld-link wasm-ld; do
+    [ -x "$DESTDIR$LLVM_PREFIX/bin/$tool" ] || continue
+    ln -sf "../lib/llvm22/bin/$tool" "$DESTDIR/bin/$tool-22" 2>/dev/null || true
+done
+
+# Strip binaries
+find "$DESTDIR$LLVM_PREFIX/bin" -type f -executable \
+    -exec llvm-strip {} \; 2>/dev/null || true
+
+# Remove docs (lld cmake configs stay for downstream packages)
+rm -rf "$DESTDIR$LLVM_PREFIX/share/man" "$DESTDIR$LLVM_PREFIX/share/doc"
+
+# Normalize /lib64
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
+    "$DESTDIR/bin" "$DESTDIR$LLVM_PREFIX" 2>/dev/null || true
+
+echo "=== lld DESTDIR ==="
+"$DESTDIR$LLVM_PREFIX/bin/ld.lld" --version 2>/dev/null || true
+"""
+install = ""
+
+[depends]
+runtime = ["musl", "libllvm22", "libcxx22"]
+build = ["libllvm22", "cmake", "samurai", "libcxx22", "jonerix-headers"]
