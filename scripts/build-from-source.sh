@@ -4,8 +4,8 @@
 # Runs inside a jonerix:builder container. Uses jpkg build to compile
 # every recipe in packages/{core,develop,extra}/ and output .jpkg files.
 #
-# The builder image has everything needed: clang, go, rust, python3,
-# cmake, jmake, samu — so it can rebuild itself and all other images.
+# The builder image has everything needed: clang, go, rust, rustdoc, rustfmt,
+# rustup, python3, cmake, jmake, samu — so it can rebuild itself and all other images.
 #
 # Usage (inside builder container):
 #   sh /workspace/scripts/build-from-source.sh
@@ -22,7 +22,7 @@
 # After building, the .jpkg files can be used to assemble any image:
 #   minimal:  musl zlib toybox dropbear openrc libressl curl zstd
 #   core:     minimal + mksh ncurses pico ripgrep gitredoxide ...
-#   builder:  core + llvm rust go cmake jmake samurai perl python3 nodejs ...
+#   builder:  core + llvm rust rustdoc rustfmt rustup go cmake jmake samurai perl python3 nodejs ...
 #   router:   core + hostapd wpa_supplicant btop
 #
 # SPDX-License-Identifier: MIT

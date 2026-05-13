@@ -100,7 +100,7 @@ fi
 #
 # `cmake` is heavy because of its compile time, even though its source is
 # not on LFS.
-HEAVIES="rust llvm llvm-all libllvm clang lld llvm-extra libcxx nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux gitredoxide"
+HEAVIES="rust rustdoc rustfmt rustup llvm llvm-all libllvm clang lld llvm-extra libcxx nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux gitredoxide"
 # hostapd / wpa_supplicant used to live in HEAVIES because their hostap.git
 # Makefiles tripped the jmake MAKEFLAGS escape bug fixed in jmake 1.1.14.
 # They're regular recipes now: build under jmake against nloxide (the in-house

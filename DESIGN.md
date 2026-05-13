@@ -54,7 +54,7 @@ minimal -> core -> builder   (compilers + dev tools)
 |-------|------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh, uutils, pico, fastfetch, ripgrep, gitredoxide, ncurses, networking |
-| `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
+| `builder` | core | clang/llvm, rust, rustdoc, rustfmt, rustup, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | jcarp, hostapd, wpa_supplicant, btop, unbound DNS config, sysctl hardening |
 
 ### Build Pipeline
@@ -358,7 +358,7 @@ New code where feasible is written in Rust. All uses of "unsafe" are audited.
 # Pull from GHCR
 docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, openrc
 docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh, pico, ripgrep, networking
-docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang, rust, go, python3
+docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang, rust, rustdoc, rustfmt, rustup, go, python3
 docker pull ghcr.io/stormj-uh/jonerix:router     # networking: core + hostapd, unbound config
 
 # Per-arch tags: -amd64 and -arm64 are also available

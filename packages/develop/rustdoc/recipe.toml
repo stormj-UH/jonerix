@@ -1,0 +1,94 @@
+[package]
+name = "rustdoc"
+version = "1.95.0"
+license = "MIT OR Apache-2.0"
+description = "Rust documentation generator and doctest runner for the jonerix Rust toolchain"
+
+# This package is intentionally split from `rust`. The base compiler package
+# owns rustc, cargo, std, and system-wide cargo defaults; rustdoc owns the
+# documentation/test front-end so builder images can include doctests without
+# forcing rustdoc into every runtime that only needs cargo/rustc.
+#
+# The recipe consumes the arch-appropriate jonerix Rust dist tarball produced
+# by .github/workflows/rust-dist.yml. That workflow must build with
+# build.tools including "rustdoc"; older dist tarballs do not contain this
+# payload and fail here with a clear missing-component error.
+
+[build]
+system = "custom"
+build = """
+set -e
+
+find_vendored_file() {
+    want=$1
+    oldifs=$IFS
+    IFS=:
+    for dir in ${JPKG_SOURCE_CACHE:-}; do
+        [ -n "$dir" ] || continue
+        if [ -f "$dir/$want" ]; then
+            IFS=$oldifs
+            printf '%s\n' "$dir/$want"
+            return 0
+        fi
+    done
+    IFS=$oldifs
+    dir="$RECIPE_DIR/../../../sources"
+    if [ -f "$dir/$want" ]; then
+        printf '%s\n' "$dir/$want"
+        return 0
+    fi
+    return 1
+}
+
+install_component() {
+    comp=$1
+    [ -d "$comp" ] || return 1
+    for d in bin lib etc share; do
+        if [ -d "$comp/$d" ]; then
+            mkdir -p "$DESTDIR/$d"
+            cp -a "$comp/$d/." "$DESTDIR/$d/"
+        fi
+    done
+    return 0
+}
+
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+    FILE="rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz"
+    SHA="622c8491278486889db2a52a58a19d1a477f1bd101c0a630e416f1cc3922ae8a"
+else
+    FILE="rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz"
+    SHA="3eec54cf7cf145fd6a7a40aee605144da82dd48192380c4f86f7947abf8c06dc"
+fi
+
+RUST_SRC=$(find_vendored_file "$FILE") || {
+    printf '%s\n' "rustdoc: missing vendored $FILE" >&2
+    exit 1
+}
+cp "$RUST_SRC" rust.tar.gz
+printf '%s  rust.tar.gz\n' "$SHA" | sha256sum -c
+tar xf rust.tar.gz --strip-components=1
+
+if install_component rustdoc; then
+    :
+elif [ -f rustc/bin/rustdoc ]; then
+    install -d "$DESTDIR/bin"
+    install -m 0755 rustc/bin/rustdoc "$DESTDIR/bin/rustdoc"
+else
+    printf '%s\n' "rustdoc: missing rustdoc component in $FILE; rerun rust-dist with build.tools including rustdoc" >&2
+    exit 1
+fi
+
+[ -x "$DESTDIR/bin/rustdoc" ] || {
+    printf '%s\n' "rustdoc: component install did not produce /bin/rustdoc" >&2
+    exit 1
+}
+
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+"""
+install = ""
+
+[depends]
+runtime = ["rust"]
+build = []

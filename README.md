@@ -42,7 +42,7 @@ The `jonerix:builder` image installs these tools from jpkg packages. It compiles
 # Pull from GHCR (fastest)
 docker pull ghcr.io/stormj-uh/jonerix:minimal   # base: toybox, dropbear, curl, libressl, openrc
 docker pull ghcr.io/stormj-uh/jonerix:core       # runtime: mksh (/bin/sh), zsh, uutils, pico, ripgrep, networking
-docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, go, nodejs, python3
+docker pull ghcr.io/stormj-uh/jonerix:builder    # dev: core + clang/llvm, rust, rustdoc, rustfmt, rustup, go, nodejs, python3
 docker pull ghcr.io/stormj-uh/jonerix:router     # appliance: core + jcarp, hostapd, wpa_supplicant, nloxide, stormwall (nft/pf)
 
 # Per-arch tags: -amd64 and -arm64 are also available
@@ -161,7 +161,7 @@ the rootfs is assembled in CI.
 |-------|----------|----------|
 | `minimal` | scratch | musl, toybox, dropbear, curl, libressl, openrc, jpkg |
 | `core` | minimal | mksh (/bin/sh), zsh, uutils, pico, fastfetch, ripgrep, brash (/bin/bash), gitredoxide (/bin/git, /bin/git-upload-pack, /bin/git-receive-pack — 77 subcommands; full HTTPS push/pull/clone/fetch), networking tools |
-| `builder` | core | clang/llvm, rust, go, nodejs, python3, cmake, jmake, samurai, perl |
+| `builder` | core | clang/llvm, rust, rustdoc, rustfmt, rustup, go, nodejs, python3, cmake, jmake, samurai, perl |
 | `router` | core | jcarp, hostapd, wpa_supplicant, nloxide (libnl replacement), **stormwall** (single firewall front-end speaking both `nft` and BSD `pf.conf` syntax); home-router / AP / gateway appliance |
 
 ### Core System

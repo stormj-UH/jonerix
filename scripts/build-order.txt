@@ -116,8 +116,11 @@ runc
 containerd
 nerdctl
 cni-plugins
-# Tier 9: Rust from source (requires prebuilt rust + llvm)
+# Tier 9: Rust from source (requires prebuilt rust + llvm) and split Rust tools
 rust
+rustdoc
+rustfmt
+rustup
 # Tier 10: Rust-based packages (requires from-source rust)
 exproxide
 # brash — Rust bash-compatible shell. Once present in the host (either

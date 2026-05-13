@@ -1,0 +1,83 @@
+[package]
+name = "rustup"
+version = "1.29.0"
+license = "MIT OR Apache-2.0"
+description = "Rust toolchain manager (standalone rustup/rustup-init, no jpkg-owned proxy replacement)"
+
+# rustup is packaged separately from the jpkg-managed `rust` toolchain. This
+# package installs rustup and rustup-init only; it deliberately does not install
+# rustc/cargo/rustdoc proxy names over the system compiler owned by `rust`.
+
+[build]
+system = "custom"
+build = """
+set -e
+
+find_vendored_file() {
+    want=$1
+    oldifs=$IFS
+    IFS=:
+    for dir in ${JPKG_SOURCE_CACHE:-}; do
+        [ -n "$dir" ] || continue
+        if [ -f "$dir/$want" ]; then
+            IFS=$oldifs
+            printf '%s\n' "$dir/$want"
+            return 0
+        fi
+    done
+    IFS=$oldifs
+    dir="$RECIPE_DIR/../../../sources"
+    if [ -f "$dir/$want" ]; then
+        printf '%s\n' "$dir/$want"
+        return 0
+    fi
+    return 1
+}
+
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+    FILE="rustup-init-1.29.0-aarch64-unknown-linux-musl"
+    SHA="88761caacddb92cd79b0b1f939f3990ba1997d701a38b3e8dd6746a562f2a759"
+else
+    FILE="rustup-init-1.29.0-x86_64-unknown-linux-musl"
+    SHA="9cd3fda5fd293890e36ab271af6a786ee22084b5f6c2b83fd8323cec6f0992c1"
+fi
+
+RUSTUP_SRC=$(find_vendored_file "$FILE") || {
+    printf '%s\n' "rustup: missing vendored $FILE" >&2
+    exit 1
+}
+cp "$RUSTUP_SRC" rustup-init
+printf '%s  rustup-init\n' "$SHA" | sha256sum -c
+
+install -d "$DESTDIR/bin" "$DESTDIR/share/doc/rustup"
+install -m 0755 rustup-init "$DESTDIR/bin/rustup-init"
+install -m 0755 rustup-init "$DESTDIR/bin/rustup"
+
+cat > "$DESTDIR/share/doc/rustup/JONERIX.md" <<'DOC'
+# rustup on jonerix
+
+This package installs only `rustup` and `rustup-init`. It does not install
+rustup's proxy names (`rustc`, `cargo`, `rustdoc`, `rustfmt`, and related
+tools), because those paths are owned by jpkg packages such as `rust`,
+`rustdoc`, and `rustfmt`.
+
+Use this package when a user wants rustup-managed toolchains in their home
+directory. The system compiler remains the jpkg-managed jonerix toolchain.
+DOC
+chmod 0644 "$DESTDIR/share/doc/rustup/JONERIX.md"
+
+[ -x "$DESTDIR/bin/rustup" ] || {
+    printf '%s\n' "rustup: install did not produce /bin/rustup" >&2
+    exit 1
+}
+[ -x "$DESTDIR/bin/rustup-init" ] || {
+    printf '%s\n' "rustup: install did not produce /bin/rustup-init" >&2
+    exit 1
+}
+"""
+install = ""
+
+[depends]
+runtime = ["musl"]
+build = []

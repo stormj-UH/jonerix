@@ -230,7 +230,7 @@ jobs:
           host = ["${TRIPLE}"]
           cargo-native-static = false
           extended = true
-          tools = ["cargo"]
+          tools = ["cargo", "rustdoc", "rustfmt"]
           docs = false
           compiler-docs = false
 
@@ -526,7 +526,7 @@ jobs:
           host = ["${TRIPLE}"]
           cargo-native-static = false
           extended = true
-          tools = ["cargo"]
+          tools = ["cargo", "rustdoc", "rustfmt"]
           docs = false
           compiler-docs = false
 

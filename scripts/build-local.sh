@@ -10,7 +10,7 @@
 # Targets (built in dependency order):
 #   minimal   Base rootfs (toybox, dropbear, openrc, musl)
 #   core      Core packages (pico, ripgrep, gitredoxide, mksh, ...)
-#   builder   Compilers + build tools (clang, go, rust, cmake, ...)
+#   builder   Compilers + build tools (clang, go, rust, rustdoc, rustfmt, rustup, cmake, ...)
 #   router    Networking appliance (hostapd, unbound, dhcpcd, ...)
 #   all       Build minimal + core + builder (default)
 #   packages  Build all jpkg packages from source inside builder

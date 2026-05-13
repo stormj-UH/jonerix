@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **103 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **106 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -82,7 +82,10 @@ Generated from tracked `packages/**/recipe.toml` -- **103 recipes**. All jonerix
 | **`nodejs`** | `develop` | 24.15.0-r3 | MIT | any | `musl`, `zlib`, `libcxx` | `clang`, `python3`, `samurai`, `zlib`, `libcxx`, `jonerix-headers` | JavaScript runtime built on V8 (libc++ / compiler-rt / small-icu / zero GNU) |
 | **`perl`** | `develop` | 5.40.0 | Artistic-2.0 | any | `musl` | `clang`, `jmake` | Practical Extraction and Report Language |
 | **`python3`** | `develop` | 3.14.3-r10 | PSF-2.0 | any | `musl`, `zlib`, `zstd`, `ncurses`, `libressl`, `xz`, `libffi`, `sqlite`, `bzip2` | `clang`, `libffi`, `sqlite`, `bzip2`, `xz`, `pkgconf` | Python programming language interpreter (with _bz2) |
-| **`rust`** | `develop` | 1.94.1-r4 | MIT | any | `musl`, `libcxx`, `libllvm` | - | Systems programming language (jonerix-linux-musl triple, no GNU runtime) |
+| **`rust`** | `develop` | 1.95.0 | MIT | any | `musl`, `libcxx`, `libllvm` | - | Systems programming language (jonerix-linux-musl triple, no GNU runtime; compiler, cargo, std, and system cargo defaults) |
+| **`rustdoc`** | `develop` | 1.95.0 | MIT OR Apache-2.0 | any | `rust` | - | Rust documentation generator and doctest runner split from the base compiler package |
+| **`rustfmt`** | `develop` | 1.95.0 | MIT OR Apache-2.0 | any | `rust` | - | Rust source formatter plus `cargo fmt` integration |
+| **`rustup`** | `develop` | 1.29.0 | MIT OR Apache-2.0 | any | `musl` | - | Rust toolchain manager installed without replacing jpkg-owned rustc/cargo/rustdoc/rustfmt proxies |
 | **`samurai`** | `develop` | 1.2 | Apache-2.0 | any | `musl` | `clang`, `make` | ninja-compatible build tool written in C |
 | **`strace`** | `develop` | 4.25-r2 | BSD-3-Clause | any | `musl` | `clang`, `make`, `exproxide`, `jonerix-headers` | ptrace-based syscall tracer (last BSD-3-Clause release) |
 | **`btop`** | `extra` | 1.4.5-r5 | Apache-2.0 | any | `musl`, `libcxx` | `clang`, `cmake`, `samurai` | Terminal resource monitor with CPU, memory, disk, network, and process views |

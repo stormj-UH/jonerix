@@ -12,7 +12,9 @@ description = "Systems programming language (jonerix-linux-musl triple, no GNU r
 # sources/ for offline-CI consumption. Build config: link-shared LLVM
 # (libllvm jpkg), llvm-libunwind = system, -fuse-ld=lld,
 # --rtlib=compiler-rt, --unwindlib=libunwind, -stdlib=libc++. Zero
-# GCC runtime dependency in the produced rustc/cargo.
+# GCC runtime dependency in the produced rustc/cargo. Developer tools that are
+# useful but not required for compiler-only installs are split into sibling
+# packages: rustdoc, rustfmt, and rustup.
 
 [build]
 system = "custom"
@@ -191,6 +193,10 @@ install -m 0644 "$DESTDIR/root/.cargo/config.toml" "$DESTDIR/usr/share/rust/skel
 # Flat-layout cleanup: merge any stray /usr or /lib64 into /.
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+# Keep optional developer tools in their own jpkgs even if a future Rust dist
+# puts them inside the rustc/cargo component directories.
+rm -f "$DESTDIR/bin/rustdoc" "$DESTDIR/bin/rustfmt" "$DESTDIR/bin/cargo-fmt" 2>/dev/null || true
 """
 install = ""
 

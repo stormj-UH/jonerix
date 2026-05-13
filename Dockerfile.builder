@@ -32,7 +32,7 @@ RUN echo "cachebust=$CACHEBUST" && jpkg update && \
     failures=0 && \
     failed='' && \
     for pkg in \
-      llvm rust go \
+      llvm rust rustdoc rustfmt rustup go \
       cmake jmake samurai flex bc byacc \
       pkgconf \
       perl python3 nodejs \

@@ -763,15 +763,13 @@ pub fn extract_and_register(
         .to_string();
 
     // ── 2. Staging dir ────────────────────────────────────────────────────
-    let stage_dir = std::env::temp_dir().join(format!(
-        "jpkg-stage-{}-{}",
-        pkg_name,
-        std::process::id()
-    ));
-    fs::create_dir_all(&stage_dir)?;
-
-    // Ensure cleanup on error.
-    let stage_guard = StageDirGuard(&stage_dir);
+    // Use a randomly named, newly-created directory.  The old
+    // jpkg-stage-<pkg>-<pid> path was predictable and collided when parallel
+    // installs extracted the same package name inside one process.
+    let stage_guard = tempfile::Builder::new()
+        .prefix("jpkg-stage-")
+        .tempdir()?;
+    let stage_dir = stage_guard.path().to_path_buf();
 
     // ── 3. Extract ────────────────────────────────────────────────────────
     archive.extract(&stage_dir)?;
@@ -828,21 +826,7 @@ pub fn extract_and_register(
         }
     }
 
-    // ── 10. Cleanup ───────────────────────────────────────────────────────
-    drop(stage_guard); // removes stage_dir
-
     Ok(pkg)
-}
-
-// ─── StageDirGuard ───────────────────────────────────────────────────────────
-
-/// RAII guard: removes the staging directory on drop (even on error paths).
-struct StageDirGuard<'a>(&'a Path);
-
-impl Drop for StageDirGuard<'_> {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(self.0);
-    }
 }
 
 // ─── resolve_rootfs ──────────────────────────────────────────────────────────
