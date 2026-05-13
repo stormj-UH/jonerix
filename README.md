@@ -10,7 +10,7 @@
 ======= permissive + linux =======
 ```
 
-**jonerix is a self-hosting Linux userland built around permissive licensing.**
+**jonerix is a self-hosting alt-Linux built around permissive licensing.**
 
 The current tagged distro release is
 **[v1.2.1](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.1)**.
