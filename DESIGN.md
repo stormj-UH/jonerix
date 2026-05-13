@@ -555,6 +555,7 @@ build = ["clang"]
   so either host arch can produce jpkgs for either target arch. Eliminates
   the castle x86_64 / cloud-arm64 round-trip. Two arches only — no plans
   for a third. Full plan in [docs/cross-compile-design.md](docs/cross-compile-design.md).
+- [ ] **SUSv4 Compatibility** — package in development
 - [ ] **`gitredoxide` upload-pack `filter` capability** — server-side support
   for partial-clone filter advertising (`git clone --filter=blob:none` against
   a gitredoxide-served upstream). Client-side `git backfill` already lands
