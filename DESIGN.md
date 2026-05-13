@@ -128,7 +128,7 @@ Packages are uploaded to GitHub Releases and installed via jpkg into clean rootf
 
 **GNU make**: Replaced by `jmake` (MIT, clean-room Rust implementation) and `samurai` (Apache-2.0, ninja-compatible) for cmake projects. jmake is a drop-in replacement that handles all GNU make features.
 
-**bash**: zsh is used as the default shell in all non-minimal builds. A bash clone is forthcoming.
+**bash**: zsh is used as the default shell in all non-minimal builds. Brash is a drop-in replacement and is available.
 
 **gzip**: The gzip *format* is open. `pigz` (zlib license) handles `.gz` files. `zstd` is the preferred compression.
 
