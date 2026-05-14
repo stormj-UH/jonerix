@@ -1,6 +1,6 @@
 [package]
 name = "jonerix-autotools-vendor"
-version = "1.0.0"
+version = "1.0.1"
 license = "0BSD"
 description = "Autotools build/host triple identifies as jonerix (CONFIG_SITE for ./configure scripts + opt-in patched config.guess/config.sub)"
 

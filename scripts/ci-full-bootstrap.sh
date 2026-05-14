@@ -151,19 +151,19 @@ build_deps() {
     _collect=0
     _buf=
     while IFS= read -r _line; do
+        if [ "$_line" = "[depends]" ]; then
+            _in_dep=1
+            continue
+        fi
         case "$_line" in
-            "[depends]")
-                _in_dep=1
-                continue
-                ;;
-            "["*)
+            \[*)
                 [ "$_in_dep" -eq 1 ] && break
                 ;;
         esac
         [ "$_in_dep" -eq 1 ] || continue
         if [ "$_collect" -eq 0 ]; then
             case "$_line" in
-                *"build"*"="*"[")
+                *"build"*"="*\[*)
                     _collect=1
                     _buf=$_line
                     ;;
@@ -172,7 +172,7 @@ build_deps() {
             _buf="${_buf} ${_line}"
         fi
         case "$_collect:$_line" in
-            1:*"]"*)
+            1:*\]*)
                 printf '%s\n' "$_buf" \
                     | sed -E 's/.*\[(.*)\].*/\1/' \
                     | sed 's/"//g' \
@@ -207,6 +207,43 @@ install_local_jpkg() {
     hdr_len=$(od -An -v -tu4 -N4 -j8 "$f" | tr -d ' ')
     skip=$((12 + hdr_len))
     tail -c +$((skip + 1)) "$f" | zstd -dc | tar xf - -C /
+}
+
+# --- helper: ensure awk exists for autoconf -------------------------------
+ensure_bootstrap_awk() {
+    if command -v awk >/dev/null 2>&1 &&
+            awk 'BEGIN { exit 0 }' </dev/null >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo ">>> installing onetrueawk bootstrap tool"
+    if ! jpkg install --force onetrueawk >/dev/null 2>&1; then
+        echo "FATAL: could not install onetrueawk, required by autoconf recipes" >&2
+        return 1
+    fi
+    if ! command -v awk >/dev/null 2>&1 ||
+            ! awk 'BEGIN { exit 0 }' </dev/null >/dev/null 2>&1; then
+        echo "FATAL: onetrueawk installed but awk is not runnable" >&2
+        return 1
+    fi
+}
+
+# --- helper: patch old builder CONFIG_SITE for this run -------------------
+ensure_config_site_target() {
+    [ -n "${CONFIG_SITE:-}" ] || return 0
+    [ -f "$CONFIG_SITE" ] || return 0
+    grep 'ac_cv_target' "$CONFIG_SITE" >/dev/null 2>&1 && return 0
+
+    _site="$OUT/jonerix-config.site"
+    cp "$CONFIG_SITE" "$_site"
+    cat >> "$_site" <<'EOF'
+
+# Older builder images set only ac_cv_build/ac_cv_host. Some configure
+# scripts also run AC_CANONICAL_TARGET; keep target aligned with host.
+[ -n "${ac_cv_host-}" ] && ac_cv_target=$ac_cv_host
+EOF
+    export CONFIG_SITE="$_site"
+    echo ">>> using patched CONFIG_SITE=$CONFIG_SITE"
 }
 
 # --- helper: install a recipe's [depends].build into the live / ----------
@@ -349,6 +386,8 @@ done < "$RECIPE_MAP"
 # "no cached INDEX found. Run 'jpkg update' first." (reproduced 2026-04-26).
 echo ">>> running jpkg update so install_target_build_deps can fall back to network"
 jpkg update >/dev/null 2>&1 || echo "WARN: jpkg update failed; network-fallback installs will not work" >&2
+ensure_bootstrap_awk
+ensure_config_site_target
 
 build_count=0
 fail_count=0
