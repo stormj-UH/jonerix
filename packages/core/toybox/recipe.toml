@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r10"
+version = "0.8.11-r11"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -34,6 +34,20 @@ description = "BSD-licensed coreutils replacement"
 # 0.8.11-r9: make post_install/post_remove honor JPKG_ROOT when hooks run
 # outside a chroot, as happens for alternate-root installs before /bin/sh is
 # present in the target root.
+#
+# 0.8.11-r11: expand the install-time skip list to cover all of shadow's
+# user-management surface (login, passwd, su, useradd, userdel, usermod,
+# groupadd, groupdel, groupmod, adduser, addgroup, deluser, delgroup,
+# chpasswd, chage, chfn, chsh, chgpasswd, gpasswd, newgrp, newusers,
+# pwck, grpck, pwconv, pwunconv, grpconv, grpunconv, vipw, nologin,
+# sulogin, expiry, logoutd, newgidmap, newuidmap, faillog, lastlog).
+# Defense-in-depth on top of shadow r9's `replaces = ["toybox"]` claim:
+# the yield-loop still handles re-link if anything slips through, but
+# the dangerous toybox variants (which truncate /etc/passwd,
+# /etc/shadow, /etc/group on error paths) never get installed in the
+# first place.  Toybox's user-mgmt applets ate /etc/group on tormenta
+# during a 2026-05-09 docker post_install — that loss-of-data path is
+# now physically unreachable.
 #
 # 0.8.11-r10: stop shipping reboot/poweroff/halt/shutdown applet symlinks.
 # Toybox's bare-syscall reboot/poweroff calls reboot(2) directly, which on
@@ -108,24 +122,33 @@ clang -I . scripts/install.c -o /tmp/_instlist
 /tmp/_instlist > /tmp/_applets.txt
 while read applet; do
   [ "$applet" = "bash" ] && continue
-  # Shutdown applets: don't ship them.  Toybox's reboot/poweroff/halt
-  # are bare-syscall implementations that call reboot(2) directly,
-  # which on Pi 5 leaves the SoC half-powered (won't restart from a
-  # cold start) AND skips OpenRC's service-stop + remount-ro
-  # choreography (dirty rootfs risk on every machine).  The
-  # jonerix-raspi5-fixups package provides /bin/{reboot,poweroff} ->
-  # /usr/local/bin/{reboot,poweroff}-openrc wrappers that drive
-  # openrc-shutdown.  We used to rely on the post_install yield loop
-  # to restore those after every toybox upgrade, but the loop has
-  # silently failed at least once (2026-05-14 on tormenta), leaving
-  # /bin/reboot pointing at toybox for hours.  Skipping these
-  # applets at install time makes the wrappers permanently sticky
-  # regardless of yield-loop reliability.  `shutdown` is included for
-  # symmetry; nothing on jonerix uses it but if a future package
-  # ships /bin/shutdown we don't want a stale toybox symlink ahead
-  # of it in $PATH.
   case "$applet" in
+    # Shutdown applets (r10).  Toybox's reboot/poweroff/halt are bare-
+    # syscall implementations that call reboot(2) directly — on Pi 5
+    # this leaves the SoC half-powered; on every machine it skips
+    # OpenRC's service-stop + remount-ro choreography (dirty rootfs).
+    # jonerix-raspi5-fixups provides safe OpenRC-driven wrappers.
     reboot|poweroff|halt|shutdown) continue ;;
+    # User-management applets (r11).  Toybox's passwd/useradd/groupadd
+    # variants TRUNCATE /etc/{passwd,shadow,group} on error paths —
+    # reproduced 2026-04-15 (adduser), 2026-05-09 (addgroup, broke
+    # wpa_supplicant when /etc/group got wiped during a docker
+    # post_install).  Shadow's variants use atomic-rename and refuse
+    # to write empty files; they ship at /bin/<X> -> shadow-<X> with
+    # the takeover registered via shadow's `replaces = ["toybox"]`.
+    # Skipping at install time means the yield-loop has no work to
+    # do for these names — survivability is no longer gated on
+    # post_install hook reliability.  If shadow isn't installed (only
+    # the bootstrap rootfs is that minimal), there's no /bin/<X> at
+    # all rather than a dangerous toybox one; the user adds shadow
+    # before they need to create accounts.  raspi5-fixups owns
+    # /bin/adduser and /bin/addgroup directly so those stay out too.
+    login|passwd|su|useradd|userdel|usermod) continue ;;
+    groupadd|groupdel|groupmod|adduser|addgroup|deluser|delgroup) continue ;;
+    chpasswd|chage|chfn|chsh|chgpasswd|gpasswd|newgrp|newusers) continue ;;
+    pwck|grpck|pwconv|pwunconv|grpconv|grpunconv|vipw) continue ;;
+    nologin|sulogin|expiry|logoutd|newgidmap|newuidmap) continue ;;
+    faillog|lastlog) continue ;;
   esac
   ln -sf toybox "$DESTDIR/bin/$applet"
 done < /tmp/_applets.txt

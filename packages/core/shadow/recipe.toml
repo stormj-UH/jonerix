@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r8"
+version = "4.19.4-r9"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Installing this package redirects these /bin entries away from
@@ -40,6 +40,19 @@ license = "BSD-3-Clause"
 # shell without auth. shadow-maint gives us real login(1) +
 # passwd(1) + useradd(8), BSD-3-Clause, static-musl.
 description = "shadow-utils (login, passwd, user/group management) — REPLACES toybox's passwd / login / useradd / userdel / usermod / groupadd / groupdel / groupmod. /bin/chsh is owned by jonerix-util; shadow's chsh is at /bin/shadow-chsh and jonerix-util's chsh execs it for the privileged passwd write."
+
+# r9: add the missing `replaces = ["toybox"]` declaration.  The bare-name
+# /bin/<X> -> shadow-<X> symlinks (login, passwd, useradd, …) shipped in
+# r7's install step were silently rejected by jpkg at extraction time
+# because toybox owns the same paths and jpkg's clobber-protection
+# kicked in.  Result on tormenta: only `bin/shadow-<X>` entries ended up
+# in the manifest, the post_install safety-net (line ~234) re-created
+# the symlinks but they weren't manifest-tracked, so toybox's yield-loop
+# had nothing to restore on the next `jpkg upgrade toybox` and `/bin/
+# login -> toybox` etc. recurred every cycle.  With `replaces` in
+# place the symlinks land in shadow's manifest, the yield-loop sees
+# them, and the takeover survives indefinitely.
+replaces = ["toybox"]
 
 [source]
 url = "https://github.com/shadow-maint/shadow/releases/download/4.19.4/shadow-4.19.4.tar.xz"
