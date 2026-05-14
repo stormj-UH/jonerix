@@ -435,6 +435,7 @@ jobs:
 
           # jpkg
           jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
+          /usr/local/bin/check-builder-toolchain && pass "builder toolchain package set" || fail "builder toolchain package set"
 
           # bsdtar (must link against LibreSSL, not OpenSSL 3)
           bsdtar --version >/dev/null 2>&1 && pass "bsdtar" || fail "bsdtar"
@@ -519,6 +520,7 @@ jobs:
 
           # jpkg
           jpkg --version >/dev/null 2>&1 && pass "jpkg" || fail "jpkg"
+          /usr/local/bin/check-builder-toolchain && pass "builder toolchain package set" || fail "builder toolchain package set"
 
           # bsdtar (must link against LibreSSL, not OpenSSL 3)
           bsdtar --version >/dev/null 2>&1 && pass "bsdtar" || fail "bsdtar"

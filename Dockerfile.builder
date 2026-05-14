@@ -14,6 +14,7 @@ ARG CORE_IMAGE=jonerix:core
 FROM ${CORE_IMAGE}
 
 COPY scripts/bootstrap-meson.sh /usr/local/bin/bootstrap-meson
+COPY scripts/check-builder-toolchain.sh /usr/local/bin/check-builder-toolchain
 COPY scripts/image-slim.sh /usr/local/sbin/image-slim
 
 # Cache-bust: pass CACHEBUST=${{ github.run_id }} in CI to force re-download
@@ -28,11 +29,14 @@ ARG CACHEBUST=0
 # in the install layer. Net effect: image GROWS by ~2 GB. Folding
 # install + slim into one RUN collapses both into a single layer so
 # strip-in-place actually reduces layer size.
-RUN echo "cachebust=$CACHEBUST" && jpkg update && \
+RUN echo "cachebust=$CACHEBUST" && \
+    rm -f /var/cache/jpkg/*.jpkg /var/cache/jpkg/INDEX* && \
+    chmod 755 /usr/local/bin/check-builder-toolchain && \
+    jpkg update && \
     failures=0 && \
     failed='' && \
     for pkg in \
-      llvm rust rustdoc rustfmt rustup go \
+      jpkg llvm llvm-extra rust rustdoc rustfmt rustup go \
       cmake jmake samurai flex bc byacc \
       pkgconf \
       perl python3 nodejs \
@@ -56,11 +60,15 @@ RUN echo "cachebust=$CACHEBUST" && jpkg update && \
         failures=$((failures + 1)); \
         failed="$failed $pkg"; \
       fi; \
+      if [ "$pkg" = jpkg ] && [ "$installed" -eq 1 ]; then \
+        jpkg update; \
+      fi; \
     done && \
     if [ "$failures" -ne 0 ]; then \
       echo "builder package install failures:$failed"; \
       exit 1; \
     fi && \
+    /usr/local/bin/check-builder-toolchain && \
     /usr/local/bin/bootstrap-meson && \
     sh /usr/local/sbin/image-slim && \
     rm /usr/local/sbin/image-slim
