@@ -9,6 +9,7 @@ use crate::cmd::common::{resolve_arch, resolve_rootfs};
 use crate::cmd::install::install_packages;
 use crate::db::InstalledDb;
 use crate::deps::resolve_install;
+use crate::recipe::Index;
 use crate::repo::Repo;
 use crate::types::InstallMode;
 use crate::util::version_compare;
@@ -115,19 +116,11 @@ pub fn run(args: &[String]) -> i32 {
             }
         };
 
-        let installed_ver = installed
-            .metadata
-            .package
-            .version
-            .as_deref()
-            .unwrap_or("");
+        let installed_ver = installed.metadata.package.version.as_deref().unwrap_or("");
 
         let cmp = version_compare(entry.version.as_str(), installed_ver);
         if cmp == Ordering::Greater {
-            eprintln!(
-                "jpkg:   {}: {} -> {}",
-                name, installed_ver, entry.version
-            );
+            eprintln!("jpkg:   {}: {} -> {}", name, installed_ver, entry.version);
             to_upgrade.push(name.clone());
         } else if !explicit_targets.is_empty() {
             // Explicitly requested but already at the latest — log it.
@@ -140,13 +133,15 @@ pub fn run(args: &[String]) -> i32 {
         return 1;
     }
 
-    let dep_repairs = match resolve_install(&candidates, &arch, &db, &index, InstallMode::Normal) {
-        Ok(plan) => plan.to_install,
-        Err(e) => {
-            eprintln!("jpkg: dependency resolution failed: {e}");
-            return 1;
-        }
-    };
+    let dep_candidates = filter_indexed_candidates(&candidates, &index, &arch);
+    let dep_repairs =
+        match resolve_install(&dep_candidates, &arch, &db, &index, InstallMode::Normal) {
+            Ok(plan) => plan.to_install,
+            Err(e) => {
+                eprintln!("jpkg: dependency resolution failed: {e}");
+                return 1;
+            }
+        };
 
     let install_plan = merge_upgrade_plan(dep_repairs, to_upgrade);
 
@@ -162,7 +157,14 @@ pub fn run(args: &[String]) -> i32 {
     // at the same version.  Missing dependencies are installed, and selected
     // upgrade targets install because their INDEX version is newer than the
     // DB version.
-    match install_packages(&db, &repo, &index, &arch, &install_plan, InstallMode::Normal) {
+    match install_packages(
+        &db,
+        &repo,
+        &index,
+        &arch,
+        &install_plan,
+        InstallMode::Normal,
+    ) {
         Ok(n) => {
             eprintln!("jpkg: {n} package(s) installed/upgraded");
             0
@@ -182,6 +184,14 @@ fn merge_upgrade_plan(mut dep_repairs: Vec<String>, to_upgrade: Vec<String>) -> 
         }
     }
     dep_repairs
+}
+
+fn filter_indexed_candidates(candidates: &[String], index: &Index, arch: &str) -> Vec<String> {
+    candidates
+        .iter()
+        .filter(|name| index.get(name, arch).is_some())
+        .cloned()
+        .collect()
 }
 
 // ─── load_index_for_upgrade ───────────────────────────────────────────────────
@@ -243,6 +253,33 @@ mod tests {
             vec![String::from("llvm-extra")],
         );
         assert_eq!(plan, vec!["clang", "llvm-extra"]);
+    }
+
+    #[test]
+    fn test_filter_indexed_candidates_skips_unpublished_installed_packages() {
+        let mut entries = std::collections::BTreeMap::new();
+        entries.insert(
+            String::from("toybox-aarch64"),
+            crate::recipe::IndexEntry {
+                version: String::from("0.8.11-r9"),
+                license: String::from("0BSD"),
+                description: String::from("test entry"),
+                arch: String::from("aarch64"),
+                sha256: String::from(
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                ),
+                size: 1,
+                depends: Vec::new(),
+                build_depends: Vec::new(),
+            },
+        );
+        let index = Index { entries };
+        let candidates = vec![String::from("buildkit"), String::from("toybox")];
+
+        assert_eq!(
+            filter_indexed_candidates(&candidates, &index, "aarch64"),
+            vec![String::from("toybox")]
+        );
     }
 
     // ── 2. Upgrade: install v1, then install v2 with force → db shows v2 ──────

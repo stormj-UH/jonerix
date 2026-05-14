@@ -1,8 +1,13 @@
 [package]
 name = "jpkg"
-version = "2.2.6"
+version = "2.2.7"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.7 — keep `jpkg upgrade` dependency repair from aborting when an
+# installed package is absent from the current architecture's INDEX. This lets
+# hosts carry retired/local packages while still repairing missing deps for
+# packages the current repository actually publishes.
+#
 # 2.2.6 — make `jpkg upgrade` resolve missing dependencies before installing
 # selected upgrades.  This repairs hosts where a package is already at the
 # current version but one of its runtime deps is absent, and it prevents new
