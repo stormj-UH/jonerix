@@ -125,9 +125,74 @@ is_heavy() {
     return 1
 }
 
+# --- helper: toml_string_field <field> <recipe.toml> ----------------------
+toml_string_field() {
+    _field="$1"
+    _file="$2"
+    sed -n \
+        "s/^[[:space:]]*${_field}[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
+        "$_file" | sed -n '1p'
+}
+
 # --- helper: package_name_from_recipe <recipe.toml> -----------------------
 package_name() {
-    awk -F'"' '/^name *= *"/ {print $2; exit}' "$1"
+    toml_string_field name "$1"
+}
+
+# --- helper: package_version_from_recipe <recipe.toml> --------------------
+package_version() {
+    toml_string_field version "$1"
+}
+
+# --- helper: build_deps_from_recipe <recipe.toml> -------------------------
+build_deps() {
+    _file="$1"
+    _in_dep=0
+    _collect=0
+    _buf=
+    while IFS= read -r _line; do
+        case "$_line" in
+            "[depends]")
+                _in_dep=1
+                continue
+                ;;
+            "["*)
+                [ "$_in_dep" -eq 1 ] && break
+                ;;
+        esac
+        [ "$_in_dep" -eq 1 ] || continue
+        if [ "$_collect" -eq 0 ]; then
+            case "$_line" in
+                *"build"*"="*"[")
+                    _collect=1
+                    _buf=$_line
+                    ;;
+            esac
+        else
+            _buf="${_buf} ${_line}"
+        fi
+        case "$_collect:$_line" in
+            1:*"]"*)
+                printf '%s\n' "$_buf" \
+                    | sed -E 's/.*\[(.*)\].*/\1/' \
+                    | sed 's/"//g' \
+                    | sed 's/,/ /g'
+                return 0
+                ;;
+        esac
+    done < "$_file"
+}
+
+# --- helper: recipe_dir_for_name <name> -----------------------------------
+recipe_dir_for_name() {
+    _want="$1"
+    while IFS=$(printf '\t') read -r _name _dir; do
+        if [ "$_name" = "$_want" ]; then
+            printf '%s\n' "$_dir"
+            return 0
+        fi
+    done < "$RECIPE_MAP"
+    return 1
 }
 
 # --- helper: extract a .jpkg directly into / -----------------------------
@@ -153,16 +218,8 @@ install_local_jpkg() {
 # skip the install if a binary is already on PATH.
 install_target_build_deps() {
     _rdir="$1"
-    _deps_line=$(awk '
-        $0 == "[depends]" { in_dep = 1; next }
-        /^\[/ { if (in_dep) exit }
-        in_dep && $1 == "build" { print; exit }
-    ' "$_rdir/recipe.toml")
-    [ -z "$_deps_line" ] && return 0
-    _deps=$(printf '%s\n' "$_deps_line" \
-        | sed -E 's/.*\[(.*)\].*/\1/' \
-        | sed 's/"//g' \
-        | sed 's/,/ /g')
+    _deps=$(build_deps "$_rdir/recipe.toml")
+    [ -z "$_deps" ] && return 0
     for _dep in $_deps; do
         [ -n "$_dep" ] || continue
         # Heavy toolchains: trust whatever the builder image already
@@ -246,10 +303,12 @@ install_target_build_deps() {
 # scripts/build-order.txt has the canonical dependency-respecting order.
 # Filter blanks/comments and (optionally) heavies.
 ORDER_FILE="$OUT/order.txt"
-awk '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    { print }
+sed -n '
+    /^[[:space:]]*#/d
+    /^[[:space:]]*$/d
+    s/^[[:space:]]*//
+    s/[[:space:]]*$//
+    p
 ' /workspace/scripts/build-order.txt > "$ORDER_FILE"
 
 # Pre-build a name -> recipe.toml dir map once. Avoids running a find with
@@ -257,8 +316,8 @@ awk '
 RECIPE_MAP="$OUT/recipe-map.tsv"
 : > "$RECIPE_MAP"
 # REVIEW: packages/jpkg/recipe.toml and packages/core/jpkg/recipe.toml both
-# declare name = "jpkg".  The glob below adds both to the map; the awk lookup
-# in the build loop returns whichever line appears first (i.e. glob order).
+# declare name = "jpkg".  The glob below adds both to the map; the lookup in
+# the build loop returns whichever line appears first (i.e. glob order).
 # One of the two entries will be silently ignored.  Long-term fix: ensure only
 # one canonical location for each package, or deduplicate the map by name.
 for r in /workspace/packages/*/*/recipe.toml /workspace/packages/*/recipe.toml; do
@@ -297,8 +356,7 @@ skip_count=0
 
 for name in $(cat "$ORDER_FILE"); do
     # Look up the recipe in the pre-built map (one tab-separated line each).
-    recipe_dir=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' \
-        "$RECIPE_MAP")
+    recipe_dir=$(recipe_dir_for_name "$name" || true)
     if [ -z "$recipe_dir" ]; then
         echo "WARN: no recipe found for $name" >&2
         continue
@@ -344,8 +402,7 @@ for name in $(cat "$ORDER_FILE"); do
     # producing zero .jpkg files.
     if timeout -k 30 1200 jpkg build "$recipe_dir" \
             --build-jpkg --output "$OUT/jpkgs" >>"$log" 2>&1; then
-        version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
-            "$recipe_dir/recipe.toml")
+        version=$(package_version "$recipe_dir/recipe.toml")
         printf '%s\t%s\n' "$name" "$version" >> "$OUT/built-packages.txt"
         build_count=$((build_count + 1))
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
