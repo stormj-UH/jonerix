@@ -1,8 +1,13 @@
 [package]
 name = "jpkg"
-version = "2.2.8"
+version = "2.2.9"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.9 — retry transient INDEX.zst/INDEX.zst.sig signature mismatches during
+# `jpkg update`. GitHub release assets are uploaded as separate files, so a
+# client can briefly observe a fresh INDEX with the previous signature (or the
+# reverse) while publish-packages is refreshing the repository.
+#
 # 2.2.8 — print cached and freshly fetched INDEX timestamps during
 # `jpkg update`; `jpkg -uu` gets the same visibility through its update step.
 # This makes it clear whether a refresh pulled a newer repository index.
