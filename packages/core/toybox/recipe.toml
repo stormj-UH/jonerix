@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r8"
+version = "0.8.11-r9"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -30,6 +30,10 @@ description = "BSD-licensed coreutils replacement"
 # pattern that ci-build-*.sh uses for cached pkgs. No recursive jpkg
 # call, no lock contention. If the cache is empty (rare), we print a
 # pointer to the manual recovery command rather than silently failing.
+#
+# 0.8.11-r9: make post_install/post_remove honor JPKG_ROOT when hooks run
+# outside a chroot, as happens for alternate-root installs before /bin/sh is
+# present in the target root.
 
 [source]
 url = "http://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
@@ -101,8 +105,14 @@ install -Dm644 "$RECIPE_DIR/conf.d/syslogd" "$DESTDIR/etc/conf.d/syslogd"
 """
 
 [hooks]
-post_install = """mkdir -p /etc/runlevels/default
-[ -f /etc/init.d/syslogd ] && ln -sf /etc/init.d/syslogd /etc/runlevels/default/syslogd 2>/dev/null || true
+post_install = """_root=${JPKG_ROOT:-}
+case "$_root" in
+    /) _root= ;;
+esac
+_tar_root=${_root:-/}
+
+mkdir -p "$_root/etc/runlevels/default"
+[ -f "$_root/etc/init.d/syslogd" ] && ln -sf /etc/init.d/syslogd "$_root/etc/runlevels/default/syslogd" 2>/dev/null || true
 
 # Yield /bin/<cmd> symlinks to packages that own a conflicting path.
 # Tarball extraction has just laid down /bin/<cmd> -> toybox for every
@@ -137,8 +147,8 @@ post_install = """mkdir -p /etc/runlevels/default
 # matched `^\/bin\//` which never matched anything in any real
 # manifest, so the "yield" loop was a no-op for years. We strip-or-add
 # the leading slash deliberately when constructing $_path for
-# readlink/ln (which need absolute paths).
-for _mfst in /var/db/jpkg/installed/*/files; do
+# readlink/ln, and prefix the target root when hooks run outside chroot.
+for _mfst in "$_root"/var/db/jpkg/installed/*/files; do
     [ -f "$_mfst" ] || continue
     _owner=$(basename "$(dirname "$_mfst")")
     [ "$_owner" = "toybox" ] && continue
@@ -148,7 +158,7 @@ for _mfst in /var/db/jpkg/installed/*/files; do
     _claims=$(awk '$3 ~ /^bin\// { print $3 }' "$_mfst" 2>/dev/null)
     [ -z "$_claims" ] && continue
     for _rel in $_claims; do
-        _path="/$_rel"
+        _path="$_root/$_rel"
         _curr=$(readlink "$_path" 2>/dev/null || echo "")
         [ "$_curr" = "toybox" ] || continue
         # Look at this manifest line — is the entry a symlink (->X)
@@ -169,8 +179,8 @@ for _mfst in /var/db/jpkg/installed/*/files; do
                     continue
                 fi
                 case "$_target" in
-                    /*)  _target_abs=$_target ;;     # already absolute
-                    *)   _target_abs="/bin/$_target" ;;  # resolve under /bin
+                    /*)  _target_abs="$_root$_target" ;;     # already absolute
+                    *)   _target_abs="$_root/bin/$_target" ;;  # resolve under /bin
                 esac
                 if [ -e "$_target_abs" ]; then
                     ln -sf "$_target" "$_path" 2>/dev/null
@@ -191,14 +201,25 @@ for _mfst in /var/db/jpkg/installed/*/files; do
         # -f $_owner` here — jpkg's install lock is non-blocking exclusive
         # (db.rs:380, LockExclusiveNonblock), so the recursive call would
         # return EWOULDBLOCK and the previous `|| true` swallowed it.
-        _arch=$(uname -m)
-        _cached=$(ls /var/cache/jpkg/${_owner}-*-${_arch}.jpkg 2>/dev/null | sort -V | tail -1)
+        _arch=${JPKG_ARCH:-$(uname -m)}
+        _meta="$_root/var/db/jpkg/installed/$_owner/metadata.toml"
+        _ver=
+        [ -f "$_meta" ] && _ver=$(sed -n 's/^version = "\(.*\)".*/\1/p' "$_meta" | sed -n '1p')
+        _cached=
+        if [ -n "$_ver" ] && [ -f "$_root/var/cache/jpkg/${_owner}-${_ver}-${_arch}.jpkg" ]; then
+            _cached="$_root/var/cache/jpkg/${_owner}-${_ver}-${_arch}.jpkg"
+        else
+            for _cand in "$_root"/var/cache/jpkg/${_owner}-*-"$_arch".jpkg; do
+                [ -f "$_cand" ] || continue
+                _cached=$_cand
+            done
+        fi
         if [ -n "$_cached" ] && [ -f "$_cached" ]; then
             _hdr=$(od -An -v -tu4 -N4 -j8 "$_cached" 2>/dev/null | tr -d ' ')
             if [ -n "$_hdr" ]; then
                 _skip=$((12 + _hdr))
                 if tail -c +$((_skip + 1)) "$_cached" | zstd -dc 2>/dev/null \
-                    | tar xpf - -C / 2>/dev/null
+                    | tar xpf - -C "$_tar_root" 2>/dev/null
                 then
                     echo "toybox-yield: restored $_owner from $(basename "$_cached") (real-binary)"
                     continue
@@ -210,7 +231,11 @@ for _mfst in /var/db/jpkg/installed/*/files; do
 done
 exit 0
 """
-post_remove = """rm -f /etc/runlevels/default/syslogd
+post_remove = """_root=${JPKG_ROOT:-}
+case "$_root" in
+    /) _root= ;;
+esac
+rm -f "$_root/etc/runlevels/default/syslogd"
 """
 
 [depends]
