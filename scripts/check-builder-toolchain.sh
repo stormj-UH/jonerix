@@ -32,7 +32,7 @@ require_target() {
 require_package_version jpkg 2.2.8
 require_package_version libllvm 21.1.2-r2
 require_package_version clang 21.1.2-r1
-require_package_version lld 21.1.2-r1
+require_package_version lld 21.1.2-r2
 require_package_version llvm 21.1.2-r7
 require_package_version llvm-extra 21.1.2-r3
 
