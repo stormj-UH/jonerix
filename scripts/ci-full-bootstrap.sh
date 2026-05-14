@@ -88,8 +88,8 @@ fi
 # Heavy packages whose build dominates wall time. is_heavy() does an exact
 # word match against this space-separated list — `*" $1 "*` — so each
 # package has to appear literally (no substring magic). New entries that
-# pulled the heavy-package filter in were the LLVM split (libllvm, clang,
-# lld, llvm-extra, libcxx all live on the llvm-project tarball) and
+# pulled the heavy-package filter in were the LLVM splits (LLVM 21 plus
+# LLVM 22; all live on llvm-project tarballs) and
 # gitredoxide (its vendored archive is on LFS too). Without those entries
 # SKIP_HEAVIES=true left them building, which (a) burned hours of CI time
 # and (b) burned LFS bandwidth on every full-bootstrap run.
@@ -100,7 +100,7 @@ fi
 #
 # `cmake` is heavy because of its compile time, even though its source is
 # not on LFS.
-HEAVIES="rust rustdoc rustfmt rustup llvm llvm-all libllvm clang lld llvm-extra libcxx nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux gitredoxide"
+HEAVIES="rust rustdoc rustfmt rustup llvm llvm-all libllvm clang lld llvm-extra libcxx libcxx22 libllvm22 clang22 lld22 llvm22 llvm22-extra nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux gitredoxide"
 # hostapd / wpa_supplicant used to live in HEAVIES because their hostap.git
 # Makefiles tripped the jmake MAKEFLAGS escape bug fixed in jmake 1.1.14.
 # They're regular recipes now: build under jmake against nloxide (the in-house

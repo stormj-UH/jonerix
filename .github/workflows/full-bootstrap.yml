@@ -3,7 +3,7 @@ name: Full from-source bootstrap test
 # Manually-triggered, end-to-end validation that:
 #   1. Pulls the latest jonerix:builder image
 #   2. Inside that builder, builds every package recipe in the repo from source
-#      (with an optional skip-heavies switch — rust/llvm/nodejs/go/cmake)
+#      (with an optional skip-heavies switch — rust/llvm/llvm22/nodejs/go/cmake)
 #   3. Assembles a fresh jonerix:minimal rootfs from the just-built jpkgs
 #   4. Installs every just-built jpkg into that rootfs
 #   5. "Boots" the rootfs (docker run) and runs `--version` (or equivalent) on
@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_heavies:
-        description: 'Skip rust, libllvm/clang/lld/llvm-extra/libcxx, nodejs, go, cmake, python3, ruby, perl, linux, lldb, tmux, gitredoxide. Equivalent to skipping every LFS-tracked source recipe + the slow interpreter / cmake builds. Saves several hours.'
+        description: 'Skip rust/rustdoc/rustfmt/rustup, LLVM 21, LLVM 22, nodejs, go, cmake, python3, ruby, perl, linux, lldb, tmux, gitredoxide. Equivalent to skipping every LFS-tracked source recipe + the slow interpreter / cmake builds. Saves several hours.'
         type: boolean
         default: true
       stop_on_first_failure:
