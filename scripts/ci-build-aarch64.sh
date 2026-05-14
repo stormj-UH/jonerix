@@ -536,6 +536,17 @@ if [ -n "$PKG_INPUT" ]; then
       [ -f "/workspace/packages/$d/${PKG_INPUT}/recipe.toml" ] && recipe_dir="/workspace/packages/$d/${PKG_INPUT}" && break
     done
     [ -z "$recipe_dir" ] && { echo "ERROR: no recipe for ${PKG_INPUT} in packages/{core,develop,extra}"; exit 1; }
+
+    # Arch gate — single-package path mirrors build_one()'s check.
+    # See the x86_64 sibling for the full rationale (raspi5-fixups
+    # 1.6.28 incident).
+    pkg_arch=$(grep "^arch" "${recipe_dir}/recipe.toml" | head -1 \
+        | sed 's/.*= *"\(.*\)"/\1/')
+    if [ -n "$pkg_arch" ] && [ "$pkg_arch" != "aarch64" ]; then
+        echo "=== Skipping ${PKG_INPUT} (arch=${pkg_arch}, runner=aarch64) ==="
+        exit 0
+    fi
+
     install_target_build_deps "$recipe_dir"
     pkg_ver=$(grep "^version" "${recipe_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
     expected="/var/cache/jpkg-published/${PKG_INPUT}-${pkg_ver}-aarch64.jpkg"

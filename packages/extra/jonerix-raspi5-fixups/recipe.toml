@@ -1,9 +1,25 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.28"
+version = "1.6.29"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.29: bump to recover from a broken 1.6.28 ship.  CI's single-
+# package `PKG_INPUT` dispatch path didn't honor the recipe's
+# `arch = "aarch64"` field, so the x86_64 builder also tried to
+# package this aarch64-only recipe — and the resulting near-empty
+# stub (the install step's `install -Dm755 /tmp/eee-tool` etc. fail
+# silently because /tmp/eee-tool was built for x86_64 not aarch64)
+# overwrote the proper 315 KB aarch64 build on the GitHub release
+# because both files share the same filename.  Tormenta installed
+# the 21 KB stub from the INDEX and came up with no /bin/reboot at
+# all (toybox r10 doesn't ship reboot/poweroff applets, and the
+# broken package didn't ship them either).  Fixed in scripts/
+# ci-build-{x86_64,aarch64}.sh by adding the arch gate to the
+# single-package dispatch path.  This 1.6.29 bump is purely a
+# version bump to force CI to ship the proper aarch64 build over
+# the 1.6.28 stub.
+#
 # 1.6.28: drop /usr/local/bin/* entirely.  All ten scripts that used to
 # live there (reboot-openrc, poweroff-openrc, modprobe-shim,
 # pi5-wifi-connect, pi5-wifi-set-country, pi5-fw, pi5-wake-on-power,

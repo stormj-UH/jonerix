@@ -500,6 +500,24 @@ if [ -n "$PKG_INPUT" ]; then
       [ -f "/workspace/packages/$d/${PKG_INPUT}/recipe.toml" ] && recipe_dir="/workspace/packages/$d/${PKG_INPUT}" && break
     done
     [ -z "$recipe_dir" ] && { echo "ERROR: no recipe for ${PKG_INPUT} in packages/{core,develop,extra}"; exit 1; }
+
+    # Arch gate — single-package path mirrors build_one()'s check.
+    # Without this, dispatching an aarch64-only recipe (e.g.
+    # jonerix-raspi5-fixups) to the x86_64 builder produced a near-
+    # empty stub jpkg, which then OVERWROTE the proper aarch64 build
+    # on the GitHub release because both files share the same name
+    # (the recipe's `arch = "aarch64"` is stamped into the filename
+    # regardless of which builder ran it).  Reproduced 2026-05-14
+    # 20:35 — raspi5-fixups 1.6.28 shipped as 21KB instead of 315KB,
+    # tormenta's manifest came up with only an empty /lib entry,
+    # and `/bin/reboot` was missing entirely on next boot.
+    pkg_arch=$(grep "^arch" "${recipe_dir}/recipe.toml" | head -1 \
+        | sed 's/.*= *"\(.*\)"/\1/')
+    if [ -n "$pkg_arch" ] && [ "$pkg_arch" != "x86_64" ]; then
+        echo "=== Skipping ${PKG_INPUT} (arch=${pkg_arch}, runner=x86_64) ==="
+        exit 0
+    fi
+
     install_target_build_deps "$recipe_dir"
     pkg_ver=$(grep "^version" "${recipe_dir}/recipe.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
     expected="/var/cache/jpkg-published/${PKG_INPUT}-${pkg_ver}-x86_64.jpkg"
