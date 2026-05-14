@@ -805,7 +805,9 @@ def enforce_pi5_boot_defaults(root: Path) -> None:
 
     if (root / "bin" / "adduser-safe").exists():
         force_symlink(root, "/bin/adduser", "adduser-safe")
-    if (root / "local" / "bin" / "reboot-openrc").exists():
+    if (root / "bin" / "reboot-openrc").exists():
+        force_symlink(root, "/bin/reboot", "reboot-openrc")
+    elif (root / "local" / "bin" / "reboot-openrc").exists():
         force_symlink(root, "/bin/reboot", "/usr/local/bin/reboot-openrc")
 
     normalize_login_timeout(root)
@@ -827,15 +829,29 @@ def validate_pi5_boot_defaults(root: Path) -> None:
     expect_link("/bin/login", {"shadow-login"})
     expect_link("/bin/passwd", {"shadow-passwd"})
     expect_link("/bin/adduser", {"adduser-safe"})
-    expect_link("/bin/reboot", {"/usr/local/bin/reboot-openrc", "/local/bin/reboot-openrc"})
+    expect_link(
+        "/bin/reboot",
+        {
+            "reboot-openrc",
+            "/bin/reboot-openrc",
+            "/usr/local/bin/reboot-openrc",
+            "/local/bin/reboot-openrc",
+        },
+    )
 
     shadow_login = root / "etc" / "init.d" / "shadow-login"
     if not shadow_login.is_file() or shadow_login.stat().st_size == 0:
         problems.append("/etc/init.d/shadow-login is missing or empty")
     else:
         text = shadow_login.read_text(errors="replace")
-        if "while :; do /bin/shadow-getty /dev/tty1; sleep 1; done" not in text:
-            problems.append("/etc/init.d/shadow-login is not the fixed shadow-getty loop")
+        expected = (
+            'supervisor="supervise-daemon"',
+            'command="/bin/shadow-getty"',
+            'command_args="/dev/tty1"',
+            "respawn_max=0",
+        )
+        if not all(token in text for token in expected):
+            problems.append("/etc/init.d/shadow-login is not the supervised shadow-getty service")
 
     disable_eee = root / "etc" / "init.d" / "disable-eee"
     if not disable_eee.is_file():
