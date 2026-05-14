@@ -1,9 +1,13 @@
 [package]
 name = "llvm-extra"
-version = "21.1.2-r2"
+version = "21.1.2-r3"
 license = "Apache-2.0"
 description = "LLVM extras — lldb debugger + compiler-rt sanitizers/profile runtime. Built standalone against installed libllvm + clang."
 
+# r3: keep liblldb.so in the payload. The overlap cleanup used
+# liblld*.so*, which also matched liblldb.so.21.1 and left /bin/lldb
+# without its runtime library.
+#
 # r2: rebuild against the full-default-target LLVM 21 package set.
 #
 # llvm-extra ships the long tail of clang/llvm tooling that isn't part
@@ -26,7 +30,7 @@ description = "LLVM extras — lldb debugger + compiler-rt sanitizers/profile ru
 #   /bin/clang, /bin/clang++, /bin/clang-21
 #   /bin/lld, /bin/ld.lld, /bin/lld-link
 #   /bin/llvm-{ar,nm,ranlib,strip,objcopy,objdump,...}
-#   /lib/libLLVM*.so*, /lib/libclang*.so*, /lib/liblld*.so*
+#   /lib/libLLVM*.so*, /lib/libclang*.so*, /lib/liblld{Common,ELF,...}.so*
 #
 # The previous llvm-all package (also at extra/llvm-all) is retired —
 # this package replaces it with a leaner, focused payload.
@@ -287,7 +291,7 @@ done
 # libllvm, clang, or lld.
 rm -f "$DESTDIR/lib/libLLVM"*.so*    "$DESTDIR/lib/libLLVM"*.a 2>/dev/null || true
 rm -f "$DESTDIR/lib/libclang"*.so*   "$DESTDIR/lib/libclang"*.a 2>/dev/null || true
-rm -f "$DESTDIR/lib/liblld"*.so*     "$DESTDIR/lib/liblld"*.a 2>/dev/null || true
+rm -f "$DESTDIR/lib/liblld"[A-Z]*.so* "$DESTDIR/lib/liblld"[A-Z]*.a 2>/dev/null || true
 rm -rf "$DESTDIR/lib/cmake/llvm"     "$DESTDIR/lib/cmake/clang" "$DESTDIR/lib/cmake/lld"
 rm -rf "$DESTDIR/include/llvm"       "$DESTDIR/include/llvm-c"
 rm -rf "$DESTDIR/include/clang"      "$DESTDIR/include/clang-c"
@@ -325,5 +329,5 @@ ls "$DESTDIR/lib/clang/21/lib/linux" 2>/dev/null | head -20 || true
 install = ""
 
 [depends]
-runtime = ["musl", "libllvm", "libcxx", "xz", "zstd", "zlib"]
+runtime = ["musl", "libllvm", "clang", "libcxx", "xz", "zstd", "zlib"]
 build = ["libllvm", "clang", "lld", "cmake", "samurai", "libcxx", "jonerix-headers", "python3"]

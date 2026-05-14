@@ -31,6 +31,11 @@
 #
 # Tier 0: no dependencies
 musl
+# Build the in-tree make implementation before any autoconf/automake
+# recipe asks for make. The builder image can lag behind the source
+# branch; jmake 1.2.7 is needed for generated Makefiles with shell
+# `!=` tests inside tab-indented recipes.
+jmake
 ncurses
 # Tier 1: depends on musl only (tiny)
 # byacc must precede jq (which uses yacc)

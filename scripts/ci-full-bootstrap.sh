@@ -313,6 +313,15 @@ install_target_build_deps() {
             | sort -V | tail -1)
         if [ -n "$_local" ] && [ -f "$_local" ]; then
             echo "  dep: ${_dep_pkg} (local $(basename "$_local"))"
+            case "$_dep_pkg" in
+                byacc)
+                    # Older builder images shipped /bin/byacc -> yacc and
+                    # /bin/yacc -> byacc. tar follows the destination path
+                    # poorly through that loop, so clear it before overlaying
+                    # the freshly-built package.
+                    rm -f /bin/byacc /bin/yacc 2>/dev/null || true
+                    ;;
+            esac
             install_local_jpkg "$_local" 2>/dev/null || \
                 echo "    WARN: extract failed for ${_dep_pkg}" >&2
             continue
@@ -584,8 +593,9 @@ binaries=$(wc -l < "$OUT/binaries.txt")
     if [ "$fail_count" -gt 0 ]; then
         echo '## Failed packages'
         echo
-        while read -r f; do
-            echo "- \`$f\` — see \`build-log/${f}.log\`"
+        while IFS=$(printf '\t') read -r failed_name failed_status; do
+            [ -n "$failed_name" ] || continue
+            echo "- \`$failed_name\` — ${failed_status:-failed}; see \`build-log/${failed_name}.log\`"
         done < "$OUT/failed-packages.txt"
         echo
     fi
@@ -602,4 +612,7 @@ binaries=$(wc -l < "$OUT/binaries.txt")
 } > "$OUT/report.md"
 
 echo "=== bootstrap done: built=$build_count failed=$fail_count skipped=$skip_count ==="
+if [ "$fail_count" -gt 0 ]; then
+    exit 1
+fi
 exit 0

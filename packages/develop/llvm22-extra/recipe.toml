@@ -1,9 +1,13 @@
 [package]
 name = "llvm22-extra"
-version = "22.1.5"
+version = "22.1.5-r1"
 license = "Apache-2.0"
 description = "LLVM 22 extras under /lib/llvm22: lldb and compiler-rt sanitizers/profile runtime"
 
+# r1: keep liblldb.so in the payload. The overlap cleanup used
+# liblld*.so*, which also matched liblldb.so and left the lldb binaries
+# without their runtime library.
+#
 # llvm-extra ships the long tail of clang/llvm tooling that isn't part
 # of the core toolchain. It builds out-of-tree against the installed
 # libllvm + clang via LLVM's standalone build paths, so the LLVM core
@@ -22,7 +26,7 @@ description = "LLVM 22 extras under /lib/llvm22: lldb and compiler-rt sanitizers
 #   /bin/clang, /bin/clang++, /bin/clang-22
 #   /bin/lld, /bin/ld.lld, /bin/lld-link, /bin/lld-22
 #   /bin/llvm-{ar,nm,ranlib,strip,objcopy,objdump,...}
-#   /lib/libLLVM*.so*, /lib/libclang*.so*, /lib/liblld*.so*
+#   /lib/libLLVM*.so*, /lib/libclang*.so*, /lib/liblld{Common,ELF,...}.so*
 #
 # The previous llvm-all package (also at extra/llvm-all) is retired -
 # this package replaces it with a leaner, focused payload.
@@ -292,7 +296,7 @@ done
 # libllvm, clang, or lld.
 rm -f "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.so*    "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.a 2>/dev/null || true
 rm -f "$DESTDIR$LLVM_PREFIX/lib/libclang"*.so*   "$DESTDIR$LLVM_PREFIX/lib/libclang"*.a 2>/dev/null || true
-rm -f "$DESTDIR$LLVM_PREFIX/lib/liblld"*.so*     "$DESTDIR$LLVM_PREFIX/lib/liblld"*.a 2>/dev/null || true
+rm -f "$DESTDIR$LLVM_PREFIX/lib/liblld"[A-Z]*.so* "$DESTDIR$LLVM_PREFIX/lib/liblld"[A-Z]*.a 2>/dev/null || true
 rm -rf "$DESTDIR$LLVM_PREFIX/lib/cmake/llvm"     "$DESTDIR$LLVM_PREFIX/lib/cmake/clang" "$DESTDIR$LLVM_PREFIX/lib/cmake/lld"
 rm -rf "$DESTDIR$LLVM_PREFIX/include/llvm"       "$DESTDIR$LLVM_PREFIX/include/llvm-c"
 rm -rf "$DESTDIR$LLVM_PREFIX/include/clang"      "$DESTDIR$LLVM_PREFIX/include/clang-c"
@@ -337,5 +341,5 @@ ls "$DESTDIR$LLVM_PREFIX/lib/clang/$LLVM_MAJOR/lib/linux" 2>/dev/null | head -20
 install = ""
 
 [depends]
-runtime = ["musl", "libllvm22", "libcxx22", "xz", "zstd", "zlib"]
+runtime = ["musl", "libllvm22", "clang22", "libcxx22", "xz", "zstd", "zlib"]
 build = ["libllvm22", "clang22", "lld22", "cmake", "samurai", "libcxx22", "jonerix-headers", "python3"]

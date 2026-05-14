@@ -1,8 +1,19 @@
 [package]
 name = "jmake"
-version = "1.2.6"
+version = "1.2.7"
 license = "MIT"
 description = "Clean-room drop-in replacement for GNU Make, written in Rust"
+# 1.2.7: keep tab-indented Autotools shell recipes in recipe mode when they
+# contain shell `!=` tests. 1.2.6's tabbed-assignment rescue treated any
+# top-level Make-specific operator (`+=`, `:=`, `!=`, ...) after a tab as a
+# make assignment so Valkey's `FINAL_LIBS += ...` pattern could work inside
+# conditionals following a rule. That was too broad: libyaml's generated
+# Makefile contains ordinary shell text like `test $$d != $(srcdir)` in a
+# continued recipe, and jmake left recipe mode before a later `-test` line,
+# failing with "missing separator". The parser now verifies the operator's
+# left side looks make-like, preserving the Valkey fix while accepting the
+# Autotools recipe. Verified with a reduced fixture and a full libyaml build.
+#
 # 1.2.6: turn 1.2.5's two queued cosmetic stderr issues into real fixes.
 #
 # Bug A (Valkey @printf leak in -include rebuild): jmake had two
@@ -291,9 +302,9 @@ description = "Clean-room drop-in replacement for GNU Make, written in Rust"
 #
 # Forgejo URL is Tailscale-only, so we point at a GitHub-hosted source
 # mirror that CI can reach without VPN. The mirror tarball is generated
-# from the same v1.1.6 tag at castle.great-morpho.ts.net:3000.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.6/jmake-v1.2.6.tar.gz"
-sha256 = "684157f222eeee3a3e7fed13d43d1b297b295a577be2ff81b3be7c1feea3bfce"
+# from the same v1.2.7 commit at castle.great-morpho.ts.net:3000.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jmake-v1.2.7/jmake-v1.2.7.tar.gz"
+sha256 = "d83bfbecfe7c858adb7b0d800518250d008042904e0033d6c2e743069e0f242e"
 
 [build]
 system = "custom"
