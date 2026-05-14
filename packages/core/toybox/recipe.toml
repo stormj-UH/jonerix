@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r9"
+version = "0.8.11-r10"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -34,6 +34,17 @@ description = "BSD-licensed coreutils replacement"
 # 0.8.11-r9: make post_install/post_remove honor JPKG_ROOT when hooks run
 # outside a chroot, as happens for alternate-root installs before /bin/sh is
 # present in the target root.
+#
+# 0.8.11-r10: stop shipping reboot/poweroff/halt/shutdown applet symlinks.
+# Toybox's bare-syscall reboot/poweroff calls reboot(2) directly, which on
+# Pi 5 leaves the SoC half-powered (won't restart from a cold start) and
+# skips OpenRC's service-stop + remount-ro choreography.  Until now we
+# relied on the post_install yield loop (r5..r8) to restore the OpenRC
+# wrappers shipped by jonerix-raspi5-fixups after every toybox upgrade,
+# but the loop silently failed on tormenta 2026-05-14 10:03 — /bin/reboot
+# pointed at toybox for ~3 hours before someone noticed.  Skipping these
+# applets at the install step makes the wrappers permanently sticky
+# regardless of yield-loop reliability.
 
 [source]
 url = "http://landley.net/toybox/downloads/toybox-0.8.11.tar.gz"
@@ -97,6 +108,25 @@ clang -I . scripts/install.c -o /tmp/_instlist
 /tmp/_instlist > /tmp/_applets.txt
 while read applet; do
   [ "$applet" = "bash" ] && continue
+  # Shutdown applets: don't ship them.  Toybox's reboot/poweroff/halt
+  # are bare-syscall implementations that call reboot(2) directly,
+  # which on Pi 5 leaves the SoC half-powered (won't restart from a
+  # cold start) AND skips OpenRC's service-stop + remount-ro
+  # choreography (dirty rootfs risk on every machine).  The
+  # jonerix-raspi5-fixups package provides /bin/{reboot,poweroff} ->
+  # /usr/local/bin/{reboot,poweroff}-openrc wrappers that drive
+  # openrc-shutdown.  We used to rely on the post_install yield loop
+  # to restore those after every toybox upgrade, but the loop has
+  # silently failed at least once (2026-05-14 on tormenta), leaving
+  # /bin/reboot pointing at toybox for hours.  Skipping these
+  # applets at install time makes the wrappers permanently sticky
+  # regardless of yield-loop reliability.  `shutdown` is included for
+  # symmetry; nothing on jonerix uses it but if a future package
+  # ships /bin/shutdown we don't want a stale toybox symlink ahead
+  # of it in $PATH.
+  case "$applet" in
+    reboot|poweroff|halt|shutdown) continue ;;
+  esac
   ln -sf toybox "$DESTDIR/bin/$applet"
 done < /tmp/_applets.txt
 rm -f /tmp/_instlist /tmp/_applets.txt
