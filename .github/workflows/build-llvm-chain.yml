@@ -48,6 +48,7 @@ env:
   BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder
   SCCACHE_VERSION: v0.15.0
   SCCACHE_CACHE_VERSION: v1
+  LLVM_BUILD_JOBS_X86_64: 2
 
 jobs:
   chain-x86_64:
@@ -163,6 +164,8 @@ jobs:
                   -e SCCACHE_IDLE_TIMEOUT=0 \
                   -e CMAKE_C_COMPILER_LAUNCHER=sccache \
                   -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                  -e LLVM_BUILD_JOBS="$LLVM_BUILD_JOBS_X86_64" \
+                  -e BUILD_JOBS="$LLVM_BUILD_JOBS_X86_64" \
                   ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
                   "$BUILDER_IMAGE_X86_64" /bin/sh /workspace/scripts/ci-build-x86_64.sh
 

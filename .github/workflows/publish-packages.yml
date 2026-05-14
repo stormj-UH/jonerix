@@ -43,12 +43,13 @@ env:
   BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder
   # sccache (Mozilla) — persistent compiler cache for the heavy LLVM
   # builds (libllvm / clang / lld / llvm-extra). Static-musl binary so
-  # it runs unmodified inside the Alpine builder container. cmake auto-
-  # honours CMAKE_{C,CXX}_COMPILER_LAUNCHER from env at first configure;
-  # recipes don't need code changes. Bump SCCACHE_CACHE_VERSION to
+  # it runs unmodified inside the Alpine builder container. Recipes pass
+  # CMAKE_{C,CXX}_COMPILER_LAUNCHER through to CMake explicitly; these
+  # env vars are only the CI transport. Bump SCCACHE_CACHE_VERSION to
   # invalidate the actions/cache pool (e.g. after a compiler upgrade).
   SCCACHE_VERSION: v0.15.0
   SCCACHE_CACHE_VERSION: v1
+  LLVM_BUILD_JOBS_X86_64: 2
 
 jobs:
   # ------ Create the packages release once ------------------------------------------------------------------------------------------------------------------
@@ -80,12 +81,13 @@ jobs:
     if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'x86_64') }}
     needs: create-release
     runs-on: ubuntu-latest
-    # 4-hour timeout — needed for libllvm/clang/lld/llvm-extra builds.
+    # 6-hour timeout — needed for cold full-target libllvm/clang/lld/
+    # llvm-extra builds on GitHub's 16 GB x86_64 runner.
     # The x86_64 runner caps LLVM_PARALLEL_LINK_JOBS=2 to avoid GitHub
     # runner stalls, which makes the LLVM rebuild ~80-90 min cold and
     # the clang code on top another ~20-30 min. Original 90-minute
     # timeout cut the clang x86_64 build off at exactly 1h30m21s.
-    timeout-minutes: 240
+    timeout-minutes: 360
     permissions:
       contents: write
 
@@ -204,6 +206,8 @@ jobs:
             -e SCCACHE_IDLE_TIMEOUT=0 \
             -e CMAKE_C_COMPILER_LAUNCHER=sccache \
             -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -e LLVM_BUILD_JOBS="$LLVM_BUILD_JOBS_X86_64" \
+            -e BUILD_JOBS="$LLVM_BUILD_JOBS_X86_64" \
             ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
             "$BUILDER_IMAGE_X86_64" /bin/sh /workspace/scripts/ci-build-x86_64.sh
 

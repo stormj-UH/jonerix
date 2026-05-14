@@ -138,6 +138,8 @@ cmd_build() {
             -e PKG_INPUT="$pkg" \
             -e REBUILD_INPUT="${REBUILD:-false}" \
             -e SCCACHE_DIR=/var/cache/sccache \
+            -e CMAKE_C_COMPILER_LAUNCHER=sccache \
+            -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -e RUSTC_WRAPPER=sccache \
             -e CC="sccache clang" \
             -e CXX="sccache clang++" \
