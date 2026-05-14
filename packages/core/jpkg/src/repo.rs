@@ -57,6 +57,11 @@ use crate::sign::PublicKeySet;
 // Real fetch layer (Worker F):
 use crate::fetch::{download_via_mirrors, download_via_mirrors_to, FetchError};
 
+#[cfg(not(test))]
+const INDEX_SIGNATURE_RETRY_DELAYS_MS: &[u64] = &[1_000, 2_000, 4_000, 8_000];
+#[cfg(test)]
+const INDEX_SIGNATURE_RETRY_DELAYS_MS: &[u64] = &[0, 0, 0, 0];
+
 // ---------------------------------------------------------------------------
 // SignaturePolicy
 // ---------------------------------------------------------------------------
@@ -303,11 +308,36 @@ impl Repo {
 
     // ── Index operations ───────────────────────────────────────────────────
 
+    pub fn fetch_index(&self) -> Result<Index, RepoError> {
+        for attempt in 0..=INDEX_SIGNATURE_RETRY_DELAYS_MS.len() {
+            match self.fetch_index_once() {
+                Ok(index) => return Ok(index),
+                Err(RepoError::SignatureRejected)
+                    if attempt < INDEX_SIGNATURE_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = INDEX_SIGNATURE_RETRY_DELAYS_MS[attempt];
+                    log::warn!(
+                        "INDEX signature verification failed; retrying in {delay_ms}ms \
+                         (attempt {}/{})",
+                        attempt + 2,
+                        INDEX_SIGNATURE_RETRY_DELAYS_MS.len() + 1
+                    );
+                    if delay_ms != 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err(RepoError::SignatureRejected)
+    }
+
     /// Fetch INDEX.zst + INDEX.zst.sig from mirrors, verify sig (warn-and-proceed
     /// when `keys.is_empty()` per audit § 3), decompress with `zstd::decode_all`,
     /// parse TOML.  Caches the decompressed plaintext to `cache_dir/INDEX`
     /// atomically (write to a tempfile, then rename).
-    pub fn fetch_index(&self) -> Result<Index, RepoError> {
+    fn fetch_index_once(&self) -> Result<Index, RepoError> {
         if self.mirrors.is_empty() {
             return Err(RepoError::NoMirrors);
         }
@@ -537,7 +567,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::thread;
     use tempfile::TempDir;
 
@@ -557,9 +587,8 @@ mod tests {
         let addr = listener.local_addr().expect("local_addr");
 
         let handle = thread::spawn(move || {
-            // Accept connections until all routes have been served once each.
-            // For simplicity: accept up to routes.len()*2 + 4 connections.
-            let max_conns = routes.len() * 2 + 4;
+            // Accept enough connections for retrying index/signature pairs.
+            let max_conns = routes.len() * 8 + 16;
             let mut count = 0;
             for stream in listener.incoming() {
                 count += 1;
@@ -577,7 +606,10 @@ mod tests {
             }
         });
 
-        FakeServer { addr, _handle: handle }
+        FakeServer {
+            addr,
+            _handle: handle,
+        }
     }
 
     fn serve_one(
@@ -617,6 +649,78 @@ mod tests {
             .get(&path)
             .cloned()
             .unwrap_or_else(|| (404, b"not found".to_vec()));
+
+        let status_text = if status == 200 { "OK" } else { "Not Found" };
+        let header = format!(
+            "HTTP/1.1 {status} {status_text}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = stream.write_all(header.as_bytes());
+        let _ = stream.write_all(&body);
+    }
+
+    /// Serve path -> response queues. The final response for each path is
+    /// repeated so callers can model a transient mismatch followed by a stable
+    /// state.
+    fn fake_http_server_sequences(
+        routes: Arc<Mutex<std::collections::HashMap<String, Vec<(u16, Vec<u8>)>>>>,
+    ) -> FakeServer {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+
+        let handle = thread::spawn(move || {
+            for stream in listener.incoming().take(32) {
+                let stream = match stream {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                let routes = Arc::clone(&routes);
+                thread::spawn(move || {
+                    serve_one_sequence(stream, &routes);
+                });
+            }
+        });
+
+        FakeServer { addr, _handle: handle }
+    }
+
+    fn serve_one_sequence(
+        mut stream: std::net::TcpStream,
+        routes: &Arc<Mutex<std::collections::HashMap<String, Vec<(u16, Vec<u8>)>>>>,
+    ) {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
+
+        let mut request_line = String::new();
+        if reader.read_line(&mut request_line).is_err() {
+            return;
+        }
+        let path = request_line
+            .trim()
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("/")
+            .to_owned();
+
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if line.trim().is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let (status, body) = {
+            let mut routes = routes.lock().expect("routes lock");
+            match routes.get_mut(&path) {
+                Some(seq) if seq.len() > 1 => seq.remove(0),
+                Some(seq) if seq.len() == 1 => seq[0].clone(),
+                _ => (404, b"not found".to_vec()),
+            }
+        };
 
         let status_text = if status == 200 { "OK" } else { "Not Found" };
         let header = format!(
@@ -844,6 +948,46 @@ url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
             cache_dir.path().join("INDEX").exists(),
             "INDEX must be cached on disk"
         );
+    }
+
+    #[test]
+    fn test_fetch_index_retries_transient_signature_mismatch() {
+        let index = minimal_index("toybox", "x86_64", "0.8.11");
+        let index_toml = index.to_string().expect("serialise index");
+        let compressed = zstd::encode_all(index_toml.as_bytes(), 3).expect("zstd encode");
+
+        let good_sk = keygen();
+        let bad_sk = keygen();
+        let good_sig = sign_detached(&good_sk, &compressed);
+        let bad_sig = sign_detached(&bad_sk, &compressed);
+
+        let keys_dir = TempDir::new().expect("tempdir");
+        write_public_key(
+            &keys_dir.path().join("jonerix.pub"),
+            &good_sk.verifying_key(),
+        )
+        .expect("write pub");
+        let keys = PublicKeySet::load_dir(keys_dir.path()).expect("load_dir");
+
+        let mut routes: std::collections::HashMap<String, Vec<(u16, Vec<u8>)>> =
+            std::collections::HashMap::new();
+        routes.insert("/INDEX.zst".to_owned(), vec![(200, compressed)]);
+        routes.insert(
+            "/INDEX.zst.sig".to_owned(),
+            vec![(200, bad_sig.to_vec()), (200, good_sig.to_vec())],
+        );
+
+        let srv = fake_http_server_sequences(Arc::new(Mutex::new(routes)));
+        let cache_dir = TempDir::new().expect("tempdir");
+        let repo = Repo::new(
+            vec![format!("http://127.0.0.1:{}", srv.addr.port())],
+            keys,
+            cache_dir.path().to_path_buf(),
+            "x86_64".to_owned(),
+        );
+
+        let fetched = repo.fetch_index().expect("fetch_index should retry");
+        assert!(fetched.get("toybox", "x86_64").is_some());
     }
 
     // ── Test 4: load_cached_index ───────────────────────────────────────────
