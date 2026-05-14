@@ -112,6 +112,7 @@ llvm
 # Tier 6d: LLVM extras (clang-tools-extra, lldb, sanitizers — out-of-tree
 #          against installed libllvm + clang, replaces the old llvm-all)
 llvm-extra
+zig
 # Tier 6e: parallel LLVM 22 preview packages. These install under /lib/llvm22
 #          and expose only suffixed tools; they do not replace the default
 #          builder/system LLVM toolchain.
