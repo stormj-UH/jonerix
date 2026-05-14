@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.20"
+version = "1.0.21"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 0 real divergences vs real git, rPGP + SSH signing, LFS smudge, top-notch rustdoc)"
 
@@ -307,8 +307,16 @@ description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 
 # unclosed-HTML-tag and unresolved-link warnings).  601 tests /
 # 0 failed; cargo build --release: 0 warnings.  Endpoint of the
 # "really works like git" documentation pass.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.20/gitredoxide-1.0.20-vendored.tar.gz"
-sha256 = "d7289a804195b70ad5925f39179a0ce2eb798004fb8ebc9ed07f719f1a66a8c4"
+#
+# 1.0.21: stash identity hotfix.  `git stash` no longer fails in a
+# repository with no configured user identity; normal mode falls back
+# to `git stash <gitredoxide@stash>`, while GITREDOXIDE_TEST_MODE uses
+# Git-compatible `git stash <git@stash>`.  Keeps configured identity
+# when present.  Full package suite passed single-threaded under
+# RUSTFLAGS=-D warnings; gitredoxide Forgejo push CI and GitHub mirror
+# both passed before this package recipe was bumped.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.21/gitredoxide-1.0.21-vendored.tar.gz"
+sha256 = "e827c8f67a81c3127b2644bdc04aaac1392094bef57dd47e2acc660204f3604f"
 
 [build]
 system = "custom"

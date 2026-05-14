@@ -241,7 +241,7 @@ that traditional Linux systems usually take for granted.
 | Bash | `brash` | 1.0.16 | Clean-room Bash 5.3-compatible shell. Provides `/bin/bash`; `/bin/sh` stays mksh. |
 | GNU make | `jmake` | 1.2.6 | Clean-room make with GNU make compatibility work and POSIX-friendly bootstrap behavior. |
 | GNU libreadline/libhistory | `readlineoxide` | 0.1.12-r0 | Shared-library compatibility layer for readline users without GPL-3. |
-| Git | `gitredoxide` | 1.0.20 | Drop-in `/bin/git` plus helper-mode dispatch for upload-pack and receive-pack. |
+| Git | `gitredoxide` | 1.0.21 | Drop-in `/bin/git` plus helper-mode dispatch for upload-pack and receive-pack. |
 | nftables, pf, iptables front ends | `stormwall` | 1.1.11 | One firewall front end for nft, OpenBSD pf syntax, and iptables-style CLIs. |
 | e2fsprogs/dosfstools surface | `anvil`, `jfsck` | see PACKAGES.md | Clean-room filesystem tools for ext2/3/4 and rescue workflows. |
 | libnl | `nloxide` | 1.2.3 | Netlink and Generic Netlink for hostapd/wpa_supplicant. |
