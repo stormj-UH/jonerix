@@ -64,13 +64,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if ! gh release view packages --repo "$GH_REPO" > /dev/null 2>&1; then
+          _view_err="$(mktemp)"
+          trap 'rm -f "$_view_err"' EXIT
+          if gh release view packages --repo "$GH_REPO" > /dev/null 2>"$_view_err"; then
+            echo "packages release already exists."
+            exit 0
+          fi
+
+          if grep -Eiq '(^|[^0-9])(404|not found)([^0-9]|$)' "$_view_err"; then
             gh release create packages \
               --repo "$GH_REPO" \
               --title "Package repository" \
               --notes "Pre-built jpkg packages. Updated automatically on push to master." \
               --prerelease
+            exit 0
           fi
+
+          cat "$_view_err"
+          echo "::error::could not verify packages release; refusing to continue because index generation may delete stale assets"
+          exit 1
 
   # ── x86_64: checkout on Ubuntu host, build inside jonerix:builder ─────────
   # Uses the builder image which has the full LLVM toolchain with
@@ -455,7 +467,7 @@ jobs:
     # build failure still rebuilds INDEX over whatever DID upload.
     # Without this, one flaky recipe pins the whole fleet to the last
     # green INDEX and blocks downstream image builds indefinitely.
-    if: ${{ always() && needs.build-x86_64.result != 'cancelled' && needs.build-aarch64.result != 'cancelled' }}
+    if: ${{ always() && needs.create-release.result == 'success' && needs.build-x86_64.result != 'cancelled' && needs.build-aarch64.result != 'cancelled' && (inputs.index_only || needs.build-x86_64.result != 'skipped' || needs.build-aarch64.result != 'skipped') }}
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -481,7 +493,7 @@ jobs:
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.jpkg" \
-            --dir /tmp/jpkg-index 2>/dev/null || true
+            --dir /tmp/jpkg-index
           echo "Downloaded packages:"
           ls -lh /tmp/jpkg-index/*.jpkg 2>/dev/null || echo "(none)"
 
@@ -581,7 +593,6 @@ jobs:
         # on the release — remove the loser from the release. Otherwise the
         # next `gh release download` will redownload it and we'll rediscover
         # the duplicate every single run.
-        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STALE_LIST: /tmp/jpkg-index/.stale-assets
