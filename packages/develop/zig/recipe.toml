@@ -1,0 +1,65 @@
+[package]
+name = "zig"
+version = "0.16.0"
+license = "MIT"
+description = "Zig compiler toolchain built against the system LLVM 21 stack"
+
+[source]
+url = "https://ziglang.org/download/0.16.0/zig-0.16.0.tar.xz"
+sha256 = "43186959edc87d5c7a1be7b7d2a25efffd22ce5807c7af99067f86f99641bfdf"
+
+[build]
+system = "custom"
+configure = """
+set -e
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/ \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_AR=/bin/llvm-ar \
+  -DCMAKE_RANLIB=/bin/llvm-ranlib \
+  -DCMAKE_STRIP=/bin/llvm-strip \
+  -DZIG_SHARED_LLVM=ON \
+  -DZIG_STATIC_LLVM=OFF \
+  -DZIG_STATIC=OFF \
+  -DZIG_STATIC_ZLIB=OFF \
+  -DZIG_STATIC_ZSTD=OFF \
+  -DZIG_STATIC_CURSES=OFF \
+  -DZIG_STATIC_LIBXML2=OFF \
+  -DZIG_TARGET_TRIPLE=native \
+  -DZIG_TARGET_MCPU=baseline \
+  -DZIG_SYSTEM_LIBCXX=c++ \
+  "-DCMAKE_C_FLAGS_INIT=--rtlib=compiler-rt -fuse-ld=lld" \
+  "-DCMAKE_CXX_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -stdlib=libc++ -fuse-ld=lld" \
+  "-DCMAKE_EXE_LINKER_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -stdlib=libc++ -lc++ -lc++abi -fuse-ld=lld" \
+  "-DCMAKE_SHARED_LINKER_FLAGS_INIT=--rtlib=compiler-rt --unwindlib=libunwind -stdlib=libc++ -lc++ -lc++abi -fuse-ld=lld"
+"""
+build = """
+set -e
+samu -C build -j${BUILD_JOBS:-1}
+"""
+install = """
+set -e
+DESTDIR="$DESTDIR" samu -C build install
+if [ -d "$DESTDIR/usr" ]; then
+    cp -pR "$DESTDIR/usr/." "$DESTDIR/"
+    rm -rf "$DESTDIR/usr"
+fi
+if [ -d "$DESTDIR/lib64" ]; then
+    mkdir -p "$DESTDIR/lib"
+    cp -pR "$DESTDIR/lib64/." "$DESTDIR/lib/"
+    rm -rf "$DESTDIR/lib64"
+fi
+python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" "$DESTDIR"
+if find "$DESTDIR/bin" "$DESTDIR/lib" -type f -exec grep -l '/lib64' {} + 2>/dev/null; then
+    printf '%s\n' "FATAL: zig install still contains /lib64 references" >&2
+    exit 1
+fi
+llvm-strip --strip-all "$DESTDIR/bin/zig" 2>/dev/null || true
+"$DESTDIR/bin/zig" version | grep -qx '0.16.0'
+"""
+
+[depends]
+runtime = ["musl", "llvm", "libcxx"]
+build = ["cmake", "samurai", "llvm", "python3", "zlib", "zstd", "libcxx"]

@@ -1,9 +1,13 @@
 [package]
 name = "lld"
-version = "21.1.2-r1"
+version = "21.1.2-r2"
 license = "Apache-2.0"
 description = "LLD linker (linked against shared libllvm)"
 
+# r2: keep the static liblld*.a archives. lld's CMake package files
+# advertise those imported targets, and downstream packages such as Zig
+# link against the LLD library API instead of only invoking /bin/ld.lld.
+#
 # r1: rebuild against the full-default-target LLVM 21 package set.
 #
 # lld is built using LLVM_ENABLE_PROJECTS=lld from the llvm-project
@@ -101,8 +105,15 @@ for f in llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip llvm-objdump \
     rm -f "$DESTDIR/bin/$f"
 done
 
-# Static lld libs not needed at runtime
-find "$DESTDIR/lib" -maxdepth 1 -name 'liblld*.a' -delete 2>/dev/null || true
+# The static lld libraries are part of the supported downstream build
+# surface. lld ships no shared liblld, and packages such as Zig link the
+# linker drivers through these archives.
+for lib in liblldCommon.a liblldELF.a liblldCOFF.a liblldWasm.a; do
+    [ -f "$DESTDIR/lib/$lib" ] || {
+        printf '%s\n' "lld: missing $lib" >&2
+        exit 1
+    }
+done
 
 # Symlink: ld → ld.lld for system-wide use
 ln -sf ld.lld "$DESTDIR/bin/ld" 2>/dev/null || true
