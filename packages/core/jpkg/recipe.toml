@@ -1,8 +1,12 @@
 [package]
 name = "jpkg"
-version = "2.2.4"
+version = "2.2.5"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.5 — stage package extraction under the target root's var/tmp by default.
+# Large packages such as libllvm exceed small /tmp tmpfs mounts on aarch64
+# systems; operators can still override with JPKG_STAGE_DIR or TMPDIR.
+#
 # 2.2.4 — make `jpkg build` target-arch aware for cross-package builds.
 # Build now accepts `--arch <arch>`, honors `$JPKG_ARCH` for recipes that do
 # not set `[package].arch`, stamps the resolved arch into both filename and
