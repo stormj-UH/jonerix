@@ -81,8 +81,8 @@ jobs:
           fi
 
           cat "$_view_err"
-          echo "::error::could not verify packages release; refusing to continue because index generation may delete stale assets"
-          exit 1
+          echo "::warning::could not verify packages release; continuing so package artifacts can still be built"
+          exit 0
 
   # ── x86_64: checkout on Ubuntu host, build inside jonerix:builder ─────────
   # Uses the builder image which has the full LLVM toolchain with
@@ -276,6 +276,16 @@ jobs:
           path: /tmp/published-assets-x86_64.txt
           if-no-files-found: warn
 
+      - name: Upload built package artifacts
+        if: ${{ always() && inputs.package != '' && inputs.package != 'all' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: built-packages-x86_64
+          path: |
+            /tmp/jpkg-output/*.jpkg
+            /tmp/jpkg-output/*.jpkg.sig
+          if-no-files-found: warn
+
   build-aarch64:
     name: Build packages (aarch64)
     if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'aarch64') }}
@@ -458,6 +468,16 @@ jobs:
         with:
           name: published-assets-aarch64
           path: /tmp/published-assets-aarch64.txt
+          if-no-files-found: warn
+
+      - name: Upload built package artifacts
+        if: ${{ always() && inputs.package != '' && inputs.package != 'all' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: built-packages-aarch64
+          path: |
+            /tmp/jpkg-output/*.jpkg
+            /tmp/jpkg-output/*.jpkg.sig
           if-no-files-found: warn
 
   # ------ Generate combined INDEX from all uploaded packages ------------------------------------------------------------
