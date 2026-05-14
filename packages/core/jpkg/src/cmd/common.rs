@@ -709,7 +709,8 @@ fn clean_old_files_for_upgrade(
 ///
 /// Shape:
 /// 1. Parse the embedded TOML metadata.
-/// 2. Create a temp staging directory under `/tmp`.
+/// 2. Create a temp staging directory under the target root's `var/tmp`, unless
+///    `JPKG_STAGE_DIR` or the standard temp environment explicitly overrides it.
 /// 3. `archive.extract(stage)` — decompresses the zstd(tar) payload.
 /// 4. `flatten_merged_usr(stage)` — jonerix merged-usr layout.
 /// 5. Build the NEW file manifest from the staged tree (needed before step 6).
@@ -766,9 +767,7 @@ pub fn extract_and_register(
     // Use a randomly named, newly-created directory.  The old
     // jpkg-stage-<pkg>-<pid> path was predictable and collided when parallel
     // installs extracted the same package name inside one process.
-    let stage_guard = tempfile::Builder::new()
-        .prefix("jpkg-stage-")
-        .tempdir()?;
+    let stage_guard = make_install_stage_dir(rootfs)?;
     let stage_dir = stage_guard.path().to_path_buf();
 
     // ── 3. Extract ────────────────────────────────────────────────────────
@@ -827,6 +826,52 @@ pub fn extract_and_register(
     }
 
     Ok(pkg)
+}
+
+fn temp_env_is_set() -> bool {
+    ["TMPDIR", "TEMP", "TMP"]
+        .iter()
+        .any(|key| std::env::var_os(key).is_some_and(|v| !v.is_empty()))
+}
+
+fn choose_install_stage_parent(
+    rootfs: &Path,
+    explicit_stage_dir: Option<PathBuf>,
+    temp_env_set: bool,
+) -> Option<PathBuf> {
+    if explicit_stage_dir.as_ref().is_some_and(|p| !p.as_os_str().is_empty()) {
+        return explicit_stage_dir;
+    }
+    if temp_env_set {
+        return None;
+    }
+    if rootfs == Path::new("/") {
+        Some(PathBuf::from("/var/tmp"))
+    } else {
+        Some(rootfs.join("var/tmp"))
+    }
+}
+
+fn make_install_stage_dir(rootfs: &Path) -> Result<tempfile::TempDir, InstallError> {
+    let explicit_stage_dir = std::env::var_os("JPKG_STAGE_DIR").map(PathBuf::from);
+    let stage_parent = choose_install_stage_parent(rootfs, explicit_stage_dir, temp_env_is_set());
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("jpkg-stage-");
+
+    if let Some(parent) = stage_parent {
+        fs::create_dir_all(&parent).map_err(|source| InstallError::FileOp {
+            path: parent.clone(),
+            op: "create staging directory parent",
+            source,
+        })?;
+        builder.tempdir_in(&parent).map_err(|source| InstallError::FileOp {
+            path: parent,
+            op: "create staging directory",
+            source,
+        })
+    } else {
+        builder.tempdir().map_err(InstallError::Io)
+    }
 }
 
 // ─── resolve_rootfs ──────────────────────────────────────────────────────────
@@ -1460,6 +1505,34 @@ pub(crate) mod tests {
             msg.contains(&*collision.to_string_lossy()),
             "error message should include the conflicting path, got: {msg}"
         );
+    }
+
+    #[test]
+    fn install_stage_parent_defaults_to_root_var_tmp() {
+        let parent = choose_install_stage_parent(Path::new("/"), None, false);
+        assert_eq!(parent.as_deref(), Some(Path::new("/var/tmp")));
+    }
+
+    #[test]
+    fn install_stage_parent_tracks_alternate_root() {
+        let parent = choose_install_stage_parent(Path::new("/alt-root"), None, false);
+        assert_eq!(parent.as_deref(), Some(Path::new("/alt-root/var/tmp")));
+    }
+
+    #[test]
+    fn install_stage_parent_respects_explicit_override() {
+        let parent = choose_install_stage_parent(
+            Path::new("/"),
+            Some(PathBuf::from("/scratch/jpkg")),
+            false,
+        );
+        assert_eq!(parent.as_deref(), Some(Path::new("/scratch/jpkg")));
+    }
+
+    #[test]
+    fn install_stage_parent_defers_to_standard_temp_env() {
+        let parent = choose_install_stage_parent(Path::new("/"), None, true);
+        assert!(parent.is_none());
     }
 
     // ── 10. Reinstall with identical manifest is a no-op for upgrade-clean ────

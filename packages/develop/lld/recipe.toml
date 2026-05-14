@@ -1,9 +1,11 @@
 [package]
 name = "lld"
-version = "21.1.2"
+version = "21.1.2-r1"
 license = "Apache-2.0"
 description = "LLD linker (linked against shared libllvm)"
 
+# r1: rebuild against the full-default-target LLVM 21 package set.
+#
 # lld is built using LLVM_ENABLE_PROJECTS=lld from the llvm-project
 # root. The standalone-lld build pattern (`cmake -S lld -DLLVM_DIR=...`)
 # hits the same duplicate-rule cmake bug clang does. With sccache
@@ -24,12 +26,14 @@ export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
 export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
 export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
+LLVM_DEFAULT_TARGETS='AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;SPIRV;Sparc;SystemZ;VE;WebAssembly;X86;XCore'
+LLVM_TARGETS_TO_BUILD=${LLVM_TARGETS_TO_BUILD:-$LLVM_DEFAULT_TARGETS}
+
 case $(uname -m) in
-    # ubuntu-latest 16 GB — -j2 OOMs in libllvm/clang. lld is smaller
-    # but the same trigger applies in the LLVM-rebuild section. -j1.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+    # ubuntu-latest 16 GB; local builders can override BUILD_JOBS.
+    x86_64)  LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=${BUILD_JOBS:-$(nproc)} ;;
+    *)       LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=${BUILD_JOBS:-$(nproc)} ;;
 esac
 
 LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
@@ -42,11 +46,13 @@ mkdir -p build
 cmake -S llvm -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="lld" \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_COMPILER_LAUNCHER="${CMAKE_C_COMPILER_LAUNCHER:-}" \
+    -DCMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER:-}" \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
     -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt" \

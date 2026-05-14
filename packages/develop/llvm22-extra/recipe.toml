@@ -1,70 +1,69 @@
 [package]
-name = "llvm-extra"
-version = "21.1.2-r3"
+name = "llvm22-extra"
+version = "22.1.5-r1"
 license = "Apache-2.0"
-description = "LLVM extras — lldb debugger + compiler-rt sanitizers/profile runtime. Built standalone against installed libllvm + clang."
+description = "LLVM 22 extras under /lib/llvm22: lldb and compiler-rt sanitizers/profile runtime"
 
-# r3: keep liblldb.so in the payload. The overlap cleanup used
-# liblld*.so*, which also matched liblldb.so.21.1 and left /bin/lldb
-# without its runtime library.
-#
-# r2: rebuild against the full-default-target LLVM 21 package set.
+# r1: keep liblldb.so in the payload. The overlap cleanup used
+# liblld*.so*, which also matched liblldb.so and left the lldb binaries
+# without their runtime library.
 #
 # llvm-extra ships the long tail of clang/llvm tooling that isn't part
 # of the core toolchain. It builds out-of-tree against the installed
 # libllvm + clang via LLVM's standalone build paths, so the LLVM core
-# is NOT rebuilt — saving ~2h vs the old monolithic llvm-all path.
+# is NOT rebuilt - saving ~2h vs the old monolithic llvm-all path.
 #
 # What ships:
-#   /bin/clang-tidy, /bin/clang-format, /bin/clangd, /bin/clang-rename,
-#   /bin/clang-apply-replacements, /bin/clang-check, /bin/clang-doc,
-#   /bin/clang-include-cleaner, /bin/clang-move, /bin/clang-query,
-#   /bin/clang-reorder-fields, /bin/clang-tblgen, ...
-#   /bin/lldb, /bin/lldb-server, /bin/lldb-argdumper, /bin/lldb-instr
-#   /lib/clang/21/lib/{linux,<triple>}/libclang_rt.{asan,msan,tsan,
-#     ubsan,lsan,hwasan,scudo,profile,xray}*.{a,so}
-#   /lib/clang/21/lib/<triple>/libclang_rt.profile.a
-#   /lib/clang/21/share/{asan,msan,tsan,ubsan}_*.txt   (suppression lists)
+#   /bin/lldb-22, /bin/lldb-server-22, /bin/lldb-argdumper-22,
+#   /bin/lldb-instr-22
+#   /lib/llvm22/bin/lldb*
+#   /lib/llvm22/lib/clang/22/lib/linux/libclang_rt.{asan,msan,tsan,ubsan,lsan,
+#     hwasan,scudo,profile,xray}*.{a,so}
+#   /lib/llvm22/lib/clang/22/lib/<triple>/libclang_rt.profile.a -> ../linux/profile
+#   /lib/llvm22/lib/clang/22/share/{asan,msan,tsan,ubsan}_*.txt
 #
 # What does NOT ship (lives in libllvm / clang / lld):
-#   /bin/clang, /bin/clang++, /bin/clang-21
-#   /bin/lld, /bin/ld.lld, /bin/lld-link
+#   /bin/clang, /bin/clang++, /bin/clang-22
+#   /bin/lld, /bin/ld.lld, /bin/lld-link, /bin/lld-22
 #   /bin/llvm-{ar,nm,ranlib,strip,objcopy,objdump,...}
 #   /lib/libLLVM*.so*, /lib/libclang*.so*, /lib/liblld{Common,ELF,...}.so*
 #
-# The previous llvm-all package (also at extra/llvm-all) is retired —
+# The previous llvm-all package (also at extra/llvm-all) is retired -
 # this package replaces it with a leaner, focused payload.
-# The previous standalone lldb package is retired — lldb now ships
+# The previous standalone lldb package is retired - lldb now ships
 # as part of llvm-extra.
 
 [source]
-url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
-sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/llvm-project-22.1.5.src.tar.xz"
+sha256 = "7972b87b705a003ce70ab55f9f0fb495d156887cba0eb296d284731139118e2c"
 
 [build]
 system = "custom"
 build = """
 set -e
+LLVM_PREFIX=/lib/llvm22
+LLVM_MAJOR=22
+CLANG22=$LLVM_PREFIX/bin/clang
+CLANGXX22=$LLVM_PREFIX/bin/clang++
 
 # LLVM needs -fPIC, not -fPIE, for shared library code.
 export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
 export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
 export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
-LLVM_DEFAULT_TARGETS='AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;SPIRV;Sparc;SystemZ;VE;WebAssembly;X86;XCore'
-LLVM_TARGETS_TO_BUILD=${LLVM_TARGETS_TO_BUILD:-$LLVM_DEFAULT_TARGETS}
-
 case $(uname -m) in
-    # ubuntu-latest 16 GB; local builders can override LLVM_BUILD_JOBS.
-    x86_64)  LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
-    aarch64) LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-$(nproc)} ;;
-    *)       LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-$(nproc)} ;;
+    # ubuntu-latest 16 GB - -j2 OOMs. -j1 is slower but stable.
+    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
 esac
 
-LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
-LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
+LLVM_AR=$LLVM_PREFIX/bin/llvm-ar
+LLVM_RANLIB=$LLVM_PREFIX/bin/llvm-ranlib
+LLVM22_CXXFLAGS="-Os -fPIC -stdlib=libc++ -nostdinc++ -isystem $LLVM_PREFIX/include/c++/v1 --rtlib=compiler-rt --unwindlib=libunwind"
+LLVM22_LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt -L$LLVM_PREFIX/lib -Wl,-rpath,$LLVM_PREFIX/lib"
 
-# libssp_nonshared.a stub — musl provides __stack_chk_fail natively.
+# libssp_nonshared.a stub - musl provides __stack_chk_fail natively.
 [ -f /lib/libssp_nonshared.a ] || printf '!<arch>\n' > /lib/libssp_nonshared.a
 
 # Probe -m flags before passing them to cmake. The published clang.jpkg
@@ -75,16 +74,16 @@ LLVM_RANLIB=$(which llvm-ranlib 2>/dev/null || echo /lib/llvm21/bin/llvm-ranlib)
 # blow up at configure time.
 probe_mflag() {
     _flag="$1"
-    if echo 'int main(void){return 0;}' | clang -x c "$_flag" - -o /dev/null 2>/dev/null; then
+    if echo 'int main(void){return 0;}' | "$CLANG22" -x c "$_flag" - -o /dev/null 2>/dev/null; then
         printf '%s' "$_flag"
     else
-        echo "note: clang rejects $_flag for $(clang -dumpmachine 2>/dev/null); dropping" >&2
+        echo "note: clang22 rejects $_flag for $("$CLANG22" -dumpmachine 2>/dev/null); dropping" >&2
     fi
 }
 
 # -mno-outline-atomics: aarch64-only, prevents compiler-rt's atomic ops
 # from emitting calls to outlined LSE atomic helpers (which compiler-rt
-# itself provides — circular reference at link time). x86_64 doesn't
+# itself provides - circular reference at link time). x86_64 doesn't
 # have the option at all so the probe falls through to empty.
 case $(uname -m) in
     aarch64) NO_OUTLINE_ATOMICS=$(probe_mflag -mno-outline-atomics) ;;
@@ -98,7 +97,7 @@ SRC=$(pwd)
 
 # clang-tools-extra is intentionally NOT built here.
 #
-# clang-tools-extra/CMakeLists.txt in LLVM 21 has no standalone-build
+# clang-tools-extra/CMakeLists.txt has no standalone-build
 # boilerplate (no find_package(Clang) / include(AddClang) at the top).
 # Running `cmake -S clang-tools-extra` therefore fails immediately at
 # clang-apply-replacements/CMakeLists.txt:5 with:
@@ -112,43 +111,46 @@ SRC=$(pwd)
 # / clangd become a hard need, ship them as their own jpkg with a
 # clang-rebuild dependency, not via llvm-extra.
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # 1. lldb (in-tree LLVM_ENABLE_PROJECTS build, like clang/lld recipes)
 #
 # Standalone (`cmake -S lldb -DLLDB_BUILT_STANDALONE=ON`) hits the
-# LLVM 21.x duplicate-rule bug for /lib/cmake/llvm/LLVM-Config.cmake
+# standalone cmake duplicate-rule trap for /lib/cmake/llvm/LLVM-Config.cmake
 # (LLVM_LIBRARY_DIR resolves to /lib in standalone mode and several
 # cmake helpers register build rules that target absolute paths there
-# — same trap clang/lld document and avoid). Using the in-tree
+# - same trap clang/lld document and avoid). Using the in-tree
 # LLVM_ENABLE_PROJECTS pattern with sccache populated by the libllvm
 # build keeps wall time short: the LLVM-side compiles are near-100%
 # cache hits. The post-install file filter strips libllvm/clang/lld
 # overlap so only lldb-specific files end up in the jpkg.
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 echo "=== Building lldb ==="
 mkdir -p build-lldb
 cmake -S llvm -B build-lldb -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang;lldb" \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_COMPILER="$CLANG22" \
+    -DCMAKE_CXX_COMPILER="$CLANGXX22" \
     -DCMAKE_C_COMPILER_LAUNCHER="${CMAKE_C_COMPILER_LAUNCHER:-}" \
     -DCMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER:-}" \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
     -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt -D__ASM_SIGCONTEXT_H" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -D__ASM_SIGCONTEXT_H" \
-    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
-    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    -DCMAKE_CXX_FLAGS="$LLVM22_CXXFLAGS -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_INSTALL_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_BUILD_RPATH="$LLVM_PREFIX/lib" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DLLVM_ENABLE_PIC=ON \
     -DLLVM_ENABLE_LIBCXX=ON \
     -DLLVM_BUILD_LLVM_DYLIB=ON \
     -DLLVM_LINK_LLVM_DYLIB=ON \
-    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_PREFIX="$LLVM_PREFIX" \
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DLLDB_ENABLE_CURSES=OFF \
     -DLLDB_ENABLE_PYTHON=OFF \
@@ -172,38 +174,41 @@ for comp in lldb lldb-server lldb-argdumper lldb-instr liblldb \
     DESTDIR=$DESTDIR cmake --install build-lldb --component "$comp" 2>/dev/null || true
 done
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # 2. compiler-rt sanitizers (in-tree LLVM_ENABLE_RUNTIMES build)
 #
 # Standalone (`cmake -S compiler-rt -DCOMPILER_RT_STANDALONE_BUILD=ON`)
-# hits the same LLVM 21.x duplicate-rule bug as standalone-lldb above.
+# hits the same standalone duplicate-rule trap as standalone-lldb above.
 # Driving it via the LLVM root with LLVM_ENABLE_RUNTIMES=compiler-rt
 # keeps the rule-namespace single-owned. Sccache from the lldb step
 # already has the LLVM compiles cached, so wall time is short.
-#    BUILD_BUILTINS=OFF — clang already shipped builtins.
-#    Sanitizer libs land in /lib/clang/21/lib/linux/.
-# ──────────────────────────────────────────────────────────────────────
+#    BUILD_BUILTINS=OFF - clang already shipped builtins.
+#    Sanitizer libs land in /lib/llvm22/lib/clang/22/lib/linux/.
+# ----------------------------------------------------------------------
 echo "=== Building compiler-rt sanitizers ==="
 mkdir -p build-rt
 cmake -S llvm -B build-rt -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_COMPILER="$CLANG22" \
+    -DCMAKE_CXX_COMPILER="$CLANGXX22" \
     -DCMAKE_C_COMPILER_LAUNCHER="${CMAKE_C_COMPILER_LAUNCHER:-}" \
     -DCMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER:-}" \
     -DCMAKE_AR="$LLVM_AR" \
     -DCMAKE_RANLIB="$LLVM_RANLIB" \
     -DCMAKE_C_FLAGS="-Os -fPIC --rtlib=compiler-rt $NO_OUTLINE_ATOMICS -D__ASM_SIGCONTEXT_H" \
-    -DCMAKE_CXX_FLAGS="-Os -fPIC -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind $NO_OUTLINE_ATOMICS -D__ASM_SIGCONTEXT_H" \
-    -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
-    -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --rtlib=compiler-rt -L/lib/clang/21/lib/$(clang -dumpmachine) -l:libclang_rt.builtins.a" \
+    -DCMAKE_CXX_FLAGS="$LLVM22_CXXFLAGS $NO_OUTLINE_ATOMICS -D__ASM_SIGCONTEXT_H" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$LLVM22_LDFLAGS -L$LLVM_PREFIX/lib/clang/$LLVM_MAJOR/lib/$LLVM_TRIPLE -l:libclang_rt.builtins.a" \
+    -DCMAKE_MODULE_LINKER_FLAGS="$LLVM22_LDFLAGS" \
+    -DCMAKE_INSTALL_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_BUILD_RPATH="$LLVM_PREFIX/lib" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DLLVM_ENABLE_PIC=ON \
-    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_PREFIX="$LLVM_PREFIX" \
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DCOMPILER_RT_INCLUDE_TESTS=OFF \
     -DLLVM_INCLUDE_TESTS=OFF \
@@ -221,66 +226,66 @@ cmake -S llvm -B build-rt -G Ninja \
     -DCOMPILER_RT_BUILD_ORC=OFF \
     -DCOMPILER_RT_BUILD_GWP_ASAN=OFF \
     -DCOMPILER_RT_USE_LIBCXX=ON \
-    -DCOMPILER_RT_DEFAULT_TARGET_TRIPLE="$(clang -dumpmachine)"
+    -DCOMPILER_RT_DEFAULT_TARGET_TRIPLE="$("$CLANG22" -dumpmachine)"
 samu -C build-rt -j"$LLVM_BUILD_JOBS" compiler-rt
 # compiler-rt's per-target install components are named per-runtime
 # (e.g. clang_rt.asan-aarch64), not by the friendly sanitizer name.
 # Headers install via the umbrella component; for the actual .so/.a
-# we copy out of the build tree directly — every libclang_rt.* the
+# we copy out of the build tree directly - every libclang_rt.* the
 # compiler-rt build produced lands in the per-target lib dir.
 DESTDIR=$DESTDIR cmake --install build-rt --component compiler-rt-headers 2>/dev/null || true
 DESTDIR=$DESTDIR cmake --install build-rt --component compiler-rt-cmake-exports 2>/dev/null || true
-RT_BUILD_LIB="build-rt/lib/clang/21/lib"
-RT_DEST_LIB="$DESTDIR/lib/clang/21/lib"
+RT_BUILD_LIB="build-rt/lib/clang/$LLVM_MAJOR/lib"
+RT_DEST_LIB="$DESTDIR$LLVM_PREFIX/lib/clang/$LLVM_MAJOR/lib"
 if [ -d "$RT_BUILD_LIB" ]; then
     mkdir -p "$RT_DEST_LIB"
     cp -a "$RT_BUILD_LIB/." "$RT_DEST_LIB/"
 fi
-RT_BUILD_SHARE="build-rt/lib/clang/21/share"
-RT_DEST_SHARE="$DESTDIR/lib/clang/21/share"
+RT_BUILD_SHARE="build-rt/lib/clang/$LLVM_MAJOR/share"
+RT_DEST_SHARE="$DESTDIR$LLVM_PREFIX/lib/clang/$LLVM_MAJOR/share"
 if [ -d "$RT_BUILD_SHARE" ]; then
     mkdir -p "$RT_DEST_SHARE"
     cp -a "$RT_BUILD_SHARE/." "$RT_DEST_SHARE/"
 fi
 
-# Clang's PGO link path looks for the profile runtime in the target triple
-# directory as libclang_rt.profile.a. Current compiler-rt installs it there
-# directly; older layouts used linux/libclang_rt.profile-$arch.a, so keep the
-# fallback symlink for builders with that layout.
+# Clang's PGO link path looks for the profile runtime in the target
+# triple directory as libclang_rt.profile.a. LLVM 22 may install that
+# exact archive in the triple dir already; older layouts used linux/
+# with an arch suffix, so provide the triple name from either layout.
 RT_LINUX_LIB="$RT_DEST_LIB/linux"
 RT_TRIPLE_LIB="$RT_DEST_LIB/$LLVM_TRIPLE"
 RT_ARCH=$(uname -m)
-PROFILE_DEST="$RT_TRIPLE_LIB/libclang_rt.profile.a"
-PROFILE_LINUX_SRC="$RT_LINUX_LIB/libclang_rt.profile-$RT_ARCH.a"
-if [ -f "$PROFILE_DEST" ]; then
+PROFILE_SRC="$RT_LINUX_LIB/libclang_rt.profile-$RT_ARCH.a"
+PROFILE_TRIPLE="$RT_TRIPLE_LIB/libclang_rt.profile.a"
+mkdir -p "$RT_TRIPLE_LIB"
+if [ -f "$PROFILE_TRIPLE" ]; then
     :
-elif [ -f "$PROFILE_LINUX_SRC" ]; then
-    mkdir -p "$RT_TRIPLE_LIB"
-    ln -sf "../linux/$(basename "$PROFILE_LINUX_SRC")" "$PROFILE_DEST"
+elif [ -f "$PROFILE_SRC" ]; then
+    ln -sf "../linux/$(basename "$PROFILE_SRC")" "$PROFILE_TRIPLE"
 else
-    echo "ERROR: compiler-rt did not build $PROFILE_DEST or $PROFILE_LINUX_SRC" >&2
+    echo "ERROR: compiler-rt did not build libclang_rt.profile.a for $LLVM_TRIPLE" >&2
     find "$RT_DEST_LIB" -name 'libclang_rt.profile*.a' -print >&2 2>/dev/null || true
     exit 1
 fi
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Cleanup: flatten /usr and /lib64, strip overlap with libllvm/clang/lld
-# ──────────────────────────────────────────────────────────────────────
-if [ -d "$DESTDIR/usr" ]; then
-    cp -a "$DESTDIR/usr/." "$DESTDIR/"
-    rm -rf "$DESTDIR/usr"
+# ----------------------------------------------------------------------
+if [ -d "$DESTDIR$LLVM_PREFIX/usr" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/usr/." "$DESTDIR$LLVM_PREFIX/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/usr"
 fi
-if [ -d "$DESTDIR/lib64" ] && [ ! -L "$DESTDIR/lib64" ]; then
-    cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/"
-    rm -rf "$DESTDIR/lib64"
+if [ -d "$DESTDIR$LLVM_PREFIX/lib64" ] && [ ! -L "$DESTDIR$LLVM_PREFIX/lib64" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/lib64/." "$DESTDIR$LLVM_PREFIX/lib/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/lib64"
 fi
 
-# Defensive overlap removal — these belong to libllvm/clang/lld and
+# Defensive overlap removal - these belong to libllvm/clang/lld and
 # must NOT be in llvm-extra's payload (would cause file conflicts on
 # install). Standalone builds shouldn't produce most of these, but
 # clang-tools-extra's install can sometimes drop a stray clang or
 # libclang-cpp.so.
-for f in clang clang++ clang-21 clang-cl clang-cpp cc c++ \
+for f in clang clang++ clang-22 clang++-22 clang-cl clang-cpp cc c++ \
          lld ld.lld ld64.lld lld-link wasm-ld ld \
          llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip \
          llvm-objdump llvm-readobj llvm-readelf llvm-symbolizer \
@@ -288,25 +293,25 @@ for f in clang clang++ clang-21 clang-cl clang-cpp cc c++ \
          opt llc llvm-dlltool llvm-lib llvm-bitcode-strip \
          llvm-install-name-tool llvm-otool ar nm objcopy strip \
          objdump; do
-    rm -f "$DESTDIR/bin/$f"
+    rm -f "$DESTDIR$LLVM_PREFIX/bin/$f"
 done
 
 # Drop libraries / cmake configs / headers that already ship in
 # libllvm, clang, or lld.
-rm -f "$DESTDIR/lib/libLLVM"*.so*    "$DESTDIR/lib/libLLVM"*.a 2>/dev/null || true
-rm -f "$DESTDIR/lib/libclang"*.so*   "$DESTDIR/lib/libclang"*.a 2>/dev/null || true
-rm -f "$DESTDIR/lib/liblld"[A-Z]*.so* "$DESTDIR/lib/liblld"[A-Z]*.a 2>/dev/null || true
-rm -rf "$DESTDIR/lib/cmake/llvm"     "$DESTDIR/lib/cmake/clang" "$DESTDIR/lib/cmake/lld"
-rm -rf "$DESTDIR/include/llvm"       "$DESTDIR/include/llvm-c"
-rm -rf "$DESTDIR/include/clang"      "$DESTDIR/include/clang-c"
-rm -rf "$DESTDIR/include/lld"
+rm -f "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.so*    "$DESTDIR$LLVM_PREFIX/lib/libLLVM"*.a 2>/dev/null || true
+rm -f "$DESTDIR$LLVM_PREFIX/lib/libclang"*.so*   "$DESTDIR$LLVM_PREFIX/lib/libclang"*.a 2>/dev/null || true
+rm -f "$DESTDIR$LLVM_PREFIX/lib/liblld"[A-Z]*.so* "$DESTDIR$LLVM_PREFIX/lib/liblld"[A-Z]*.a 2>/dev/null || true
+rm -rf "$DESTDIR$LLVM_PREFIX/lib/cmake/llvm"     "$DESTDIR$LLVM_PREFIX/lib/cmake/clang" "$DESTDIR$LLVM_PREFIX/lib/cmake/lld"
+rm -rf "$DESTDIR$LLVM_PREFIX/include/llvm"       "$DESTDIR$LLVM_PREFIX/include/llvm-c"
+rm -rf "$DESTDIR$LLVM_PREFIX/include/clang"      "$DESTDIR$LLVM_PREFIX/include/clang-c"
+rm -rf "$DESTDIR$LLVM_PREFIX/include/lld"
 
 # compiler-rt builtins (libclang_rt.builtins*.a, crtbegin/crtend) ship
 # in clang.jpkg already. We rebuild them here only because the sanitizer
 # link step needs `__extend{s,d}ftf2` and friends that the shipped
 # builtins.a doesn't expose. Remove them from llvm-extra's payload to
 # avoid the file conflict on install.
-find "$DESTDIR/lib/clang"/*/lib -type f \
+find "$DESTDIR$LLVM_PREFIX/lib/clang"/*/lib -type f \
     \( -name 'libclang_rt.builtins*.a' \
     -o -name 'libclang_rt.builtins*.so*' \
     -o -name 'clang_rt.crtbegin*.o' \
@@ -314,24 +319,31 @@ find "$DESTDIR/lib/clang"/*/lib -type f \
     -delete 2>/dev/null || true
 
 # Strip binaries
-find "$DESTDIR/bin" -type f -executable \
+find "$DESTDIR$LLVM_PREFIX/bin" -type f -executable \
     -exec llvm-strip {} \; 2>/dev/null || true
-find "$DESTDIR/lib" -type f -name '*.so*' \
+find "$DESTDIR$LLVM_PREFIX/lib" -type f -name '*.so*' \
     -exec llvm-strip --strip-debug {} \; 2>/dev/null || true
 
 # Drop man/docs to keep the package small
-rm -rf "$DESTDIR/share/man" "$DESTDIR/share/doc"
+rm -rf "$DESTDIR$LLVM_PREFIX/share/man" "$DESTDIR$LLVM_PREFIX/share/doc"
+
+# Suffixed symlinks only; keep the default LLVM toolchain untouched.
+mkdir -p "$DESTDIR/bin"
+for tool in lldb lldb-server lldb-argdumper lldb-instr; do
+    [ -x "$DESTDIR$LLVM_PREFIX/bin/$tool" ] || continue
+    ln -sf "../lib/llvm22/bin/$tool" "$DESTDIR/bin/$tool-22"
+done
 
 # Normalize /lib64 references
 python3 "$RECIPE_DIR/../../../scripts/normalize-lib64.py" \
-    "$DESTDIR/bin" "$DESTDIR/lib" 2>/dev/null || true
+    "$DESTDIR/bin" "$DESTDIR$LLVM_PREFIX" 2>/dev/null || true
 
 echo "=== llvm-extra payload ==="
-ls "$DESTDIR/bin" | head -30
-ls "$DESTDIR/lib/clang/21/lib/linux" 2>/dev/null | head -20 || true
+ls "$DESTDIR$LLVM_PREFIX/bin" | head -30
+ls "$DESTDIR$LLVM_PREFIX/lib/clang/$LLVM_MAJOR/lib/linux" 2>/dev/null | head -20 || true
 """
 install = ""
 
 [depends]
-runtime = ["musl", "libllvm", "clang", "libcxx", "xz", "zstd", "zlib"]
-build = ["libllvm", "clang", "lld", "cmake", "samurai", "libcxx", "jonerix-headers", "python3"]
+runtime = ["musl", "libllvm22", "clang22", "libcxx22", "xz", "zstd", "zlib"]
+build = ["libllvm22", "clang22", "lld22", "cmake", "samurai", "libcxx22", "jonerix-headers", "python3"]

@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **106 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **112 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -78,6 +78,12 @@ Generated from tracked `packages/**/recipe.toml` -- **106 recipes**. All jonerix
 | **`lld`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx` | `libllvm`, `cmake`, `samurai`, `libcxx` | LLD linker (out-of-tree build against libllvm) |
 | **`llvm`** | `develop` | 21.1.2-r6 | Apache-2.0 | any | `libllvm`, `clang`, `lld` | - | LLVM toolchain metapackage (pulls in libllvm + clang + lld, installs POSIX tool symlinks) |
 | **`llvm-extra`** | `develop` | 21.1.2 | Apache-2.0 | any | `musl`, `libllvm`, `libcxx`, `xz`, `zstd`, `zlib` | `libllvm`, `clang`, `lld`, `cmake`, `samurai`, `libcxx` | LLVM extras — clang-tools-extra (clang-tidy, clang-format, clangd), lldb, compiler-rt sanitizers (asan/msan/tsan/ubsan/lsan/hwasan). Out-of-tree against libllvm; replaces the old llvm-all. |
+| **`libcxx22`** | `develop` | 22.1.5 | Apache-2.0 | any | `musl` | `clang`, `cmake`, `samurai`, `python3` | Parallel LLVM 22 libc++, libc++abi, and libunwind runtime under `/lib/llvm22`; does not replace system libc++ |
+| **`libllvm22`** | `develop` | 22.1.5 | Apache-2.0 | any | `musl`, `libcxx22`, `zstd`, `zlib`, `jonerix-autotools-vendor` | `clang`, `cmake`, `samurai`, `python3`, `libcxx22` | Parallel LLVM 22 core under `/lib/llvm22`; exposes suffixed `/bin/llvm-*-22` commands only |
+| **`clang22`** | `develop` | 22.1.5 | Apache-2.0 | any | `musl`, `libllvm22`, `libcxx22` | `libllvm22`, `cmake`, `samurai`, `python3`, `libcxx22` | Parallel Clang 22 under `/lib/llvm22`; exposes `/bin/clang-22` and `/bin/clang++-22` without replacing `/bin/clang` |
+| **`lld22`** | `develop` | 22.1.5 | Apache-2.0 | any | `musl`, `libllvm22`, `libcxx22` | `libllvm22`, `cmake`, `samurai`, `libcxx22` | Parallel LLD 22 under `/lib/llvm22`; exposes suffixed linker commands only |
+| **`llvm22`** | `develop` | 22.1.5 | Apache-2.0 | any | `libllvm22`, `clang22`, `lld22` | - | Parallel LLVM 22 metapackage; installs suffixed POSIX aliases like `cc-22`, `ld-22`, and `ar-22` |
+| **`llvm22-extra`** | `develop` | 22.1.5 | Apache-2.0 | any | `musl`, `libllvm22`, `libcxx22`, `xz`, `zstd`, `zlib` | `libllvm22`, `clang22`, `lld22`, `cmake`, `samurai`, `libcxx22` | Parallel LLVM 22 extras under `/lib/llvm22`, including lldb and compiler-rt sanitizer/profile runtimes |
 | **`m4oxide`** | `develop` | 0.1.2-r0 | MIT | any | `musl` | `rust` | Clean-room Rust implementation of m4 for jonerix |
 | **`nodejs`** | `develop` | 24.15.0-r3 | MIT | any | `musl`, `zlib`, `libcxx` | `clang`, `python3`, `samurai`, `zlib`, `libcxx`, `jonerix-headers` | JavaScript runtime built on V8 (libc++ / compiler-rt / small-icu / zero GNU) |
 | **`perl`** | `develop` | 5.40.0 | Artistic-2.0 | any | `musl` | `clang`, `jmake` | Practical Extraction and Report Language |

@@ -1,17 +1,20 @@
 [package]
-name = "libcxx"
-version = "21.1.2-r1"
+name = "libcxx22"
+version = "22.1.5"
 license = "Apache-2.0"
-description = "LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME"
+description = "LLVM 22 libc++, libc++abi, and libunwind runtime under /lib/llvm22"
 
 [source]
-url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.2/llvm-project-21.1.2.src.tar.xz"
-sha256 = "1a417d1c8faf8d93e73fec1cbb76d393ed3218974c2283c7bac9672d3d47c54b"
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/llvm-project-22.1.5.src.tar.xz"
+sha256 = "7972b87b705a003ce70ab55f9f0fb495d156887cba0eb296d284731139118e2c"
 
 [build]
 system = "custom"
 build = """
 set -e
+
+LLVM_PREFIX=/lib/llvm22
+LIBCXX22_BUILD_JOBS=${LIBCXX22_BUILD_JOBS:-$(nproc)}
 
 # Build libc++, libc++abi, and libunwind from LLVM source.
 # Key fix: force libunwind SONAME to libunwind.so.1 (default LLVM build
@@ -24,8 +27,10 @@ cmake -S runtimes -B build -G Ninja \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_C_COMPILER_LAUNCHER="${CMAKE_C_COMPILER_LAUNCHER:-}" \
     -DCMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER:-}" \
-    -DCMAKE_INSTALL_PREFIX=/ \
+    -DCMAKE_INSTALL_PREFIX="$LLVM_PREFIX" \
     -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_INSTALL_RPATH="$LLVM_PREFIX/lib" \
+    -DCMAKE_BUILD_RPATH="$LLVM_PREFIX/lib" \
     -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
     -DLIBCXX_USE_COMPILER_RT=ON \
     -DLIBCXXABI_USE_COMPILER_RT=ON \
@@ -39,27 +44,26 @@ cmake -S runtimes -B build -G Ninja \
     -DLIBUNWIND_INCLUDE_TESTS=OFF \
     -DLIBUNWIND_HAS_COMMENT_LIB_PRAGMA=OFF
 
-cmake --build build -j1
+cmake --build build -j"$LIBCXX22_BUILD_JOBS"
 
 # Install to staging
 DESTDIR=$DESTDIR cmake --install build
 
-# cmake --install with CMAKE_INSTALL_PREFIX=/ still places headers under
-# $DESTDIR/usr/include via GNUInstallDirs defaults. Flatten into merged-usr
-# layout before the symlink work below touches $DESTDIR/lib.
-if [ -d "$DESTDIR/usr" ]; then
-    cp -a "$DESTDIR/usr/." "$DESTDIR/"
-    rm -rf "$DESTDIR/usr"
+# cmake --install may still place headers under a usr/ subdir below the
+# versioned prefix. Flatten that inside /lib/llvm22 only.
+if [ -d "$DESTDIR$LLVM_PREFIX/usr" ]; then
+    cp -a "$DESTDIR$LLVM_PREFIX/usr/." "$DESTDIR$LLVM_PREFIX/"
+    rm -rf "$DESTDIR$LLVM_PREFIX/usr"
 fi
 
 # Fix libunwind SONAME: the default LLVM build produces libunwind.so.1
 # with SONAME=libgcc_s.so.1. Rebuild just the shared lib with correct SONAME
 # if needed (check with readelf).
-if readelf -d $DESTDIR/lib/libunwind.so.1.0 2>/dev/null | grep -q 'libgcc_s'; then
+if readelf -d "$DESTDIR$LLVM_PREFIX/lib/libunwind.so.1.0" 2>/dev/null | grep -q 'libgcc_s'; then
     echo "Fixing libunwind SONAME..."
     cd build
     # Re-link libunwind.so with correct SONAME
-    clang -shared -o $DESTDIR/lib/libunwind.so.1.0 \
+    clang -shared -o "$DESTDIR$LLVM_PREFIX/lib/libunwind.so.1.0" \
         -Wl,-soname,libunwind.so.1 \
         -Wl,--whole-archive lib/libunwind.a -Wl,--no-whole-archive \
         -lc -nostdlib
@@ -67,19 +71,19 @@ if readelf -d $DESTDIR/lib/libunwind.so.1.0 2>/dev/null | grep -q 'libgcc_s'; th
 fi
 
 # Ensure correct symlinks
-cd $DESTDIR/lib
+cd "$DESTDIR$LLVM_PREFIX/lib"
 ln -sf libunwind.so.1.0 libunwind.so.1
 ln -sf libunwind.so.1 libunwind.so
 ln -sf libc++.so.1.0 libc++.so.1
 ln -sf libc++abi.so.1.0 libc++abi.so.1
 ln -sf libc++abi.so.1 libc++abi.so
 
-# NO compat symlinks — libstdc++.so.6/libgcc_s.so.1 are ABI-incompatible
+# NO compat symlinks - libstdc++.so.6/libgcc_s.so.1 are ABI-incompatible
 # with libc++. All C++ packages must be rebuilt with -stdlib=libc++.
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+find "$DESTDIR$LLVM_PREFIX/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
 """
 install = ""
 
 [depends]
 runtime = ["musl"]
-build = ["clang", "cmake", "samurai", "python3"]
+build = ["clang", "cmake", "samurai", "python3", "jonerix-headers"]

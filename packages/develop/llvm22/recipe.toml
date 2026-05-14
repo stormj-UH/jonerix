@@ -1,0 +1,54 @@
+[package]
+name = "llvm22"
+version = "22.1.5"
+license = "Apache-2.0"
+description = "LLVM 22 parallel toolchain metapackage (suffixed commands, no default replacement)"
+
+# r6: converted from monolithic source build to metapackage.
+# The actual build is now split across three packages:
+#   libllvm  - LLVM core (libLLVM-21.so, headers, cmake configs, llvm-* tools)
+#   clang    - clang compiler + compiler-rt builtins + /etc/clang configs
+#   lld      - LLD linker
+#
+# This metapackage depends on all three and installs the traditional
+# POSIX-name symlinks (cc, c++, ld, ar, nm, ranlib, strip, etc.) that
+# point to the LLVM tools. Packages that list "llvm" as a dependency
+# continue to work without changes.
+#
+# Previous versions (r1-r5) built LLVM + clang + lld + lldb monolithically
+# from source. That 300-line build took 2-3 hours per architecture because
+# LLVM was rebuilt every time clang or lld needed a patch. With the split,
+# only the changed component rebuilds - and rust can use llvm-config to
+# skip its own LLVM build entirely.
+
+# No [source] - nothing to fetch; this is a metapackage.
+
+[build]
+system = "custom"
+build = """
+set -e
+LLVM_PREFIX=/lib/llvm22
+
+# Verify that the split packages are installed.
+[ -x "$LLVM_PREFIX/bin/clang" ] || { echo "llvm22: $LLVM_PREFIX/bin/clang not found (install clang22 first)"; exit 1; }
+[ -x "$LLVM_PREFIX/bin/ld.lld" ] || { echo "llvm22: $LLVM_PREFIX/bin/ld.lld not found (install lld22 first)"; exit 1; }
+[ -x "$LLVM_PREFIX/bin/llvm-ar" ] || { echo "llvm22: $LLVM_PREFIX/bin/llvm-ar not found (install libllvm22 first)"; exit 1; }
+
+# POSIX-name symlinks with a -22 suffix only. Do not replace plain
+# `cc`, `ar`, `ld`, `strip`, etc.; LLVM 21 remains the system default.
+mkdir -p "$DESTDIR/bin"
+ln -sf clang-22        "$DESTDIR/bin/cc-22"
+ln -sf clang++-22      "$DESTDIR/bin/c++-22"
+ln -sf ld.lld-22       "$DESTDIR/bin/ld-22"
+ln -sf llvm-ar-22      "$DESTDIR/bin/ar-22"
+ln -sf llvm-nm-22      "$DESTDIR/bin/nm-22"
+ln -sf llvm-ranlib-22  "$DESTDIR/bin/ranlib-22"
+ln -sf llvm-strip-22   "$DESTDIR/bin/strip-22"
+ln -sf llvm-objcopy-22 "$DESTDIR/bin/objcopy-22"
+ln -sf llvm-objdump-22 "$DESTDIR/bin/objdump-22"
+"""
+install = ""
+
+[depends]
+runtime = ["libllvm22", "clang22", "lld22"]
+build = ["libllvm22", "clang22", "lld22"]

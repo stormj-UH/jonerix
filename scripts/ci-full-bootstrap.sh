@@ -88,8 +88,8 @@ fi
 # Heavy packages whose build dominates wall time. is_heavy() does an exact
 # word match against this space-separated list — `*" $1 "*` — so each
 # package has to appear literally (no substring magic). New entries that
-# pulled the heavy-package filter in were the LLVM split (libllvm, clang,
-# lld, llvm-extra, libcxx all live on the llvm-project tarball) and
+# pulled the heavy-package filter in were the LLVM splits (LLVM 21 plus
+# LLVM 22; all live on llvm-project tarballs) and
 # gitredoxide (its vendored archive is on LFS too). Without those entries
 # SKIP_HEAVIES=true left them building, which (a) burned hours of CI time
 # and (b) burned LFS bandwidth on every full-bootstrap run.
@@ -100,7 +100,7 @@ fi
 #
 # `cmake` is heavy because of its compile time, even though its source is
 # not on LFS.
-HEAVIES="rust rustdoc rustfmt rustup llvm llvm-all libllvm clang lld llvm-extra libcxx nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux gitredoxide"
+HEAVIES="rust rustdoc rustfmt rustup llvm llvm-all libllvm clang lld llvm-extra libcxx libcxx22 libllvm22 clang22 lld22 llvm22 llvm22-extra nodejs go go-bootstrap go-current cmake python3 ruby perl linux lldb tmux gitredoxide"
 # hostapd / wpa_supplicant used to live in HEAVIES because their hostap.git
 # Makefiles tripped the jmake MAKEFLAGS escape bug fixed in jmake 1.1.14.
 # They're regular recipes now: build under jmake against nloxide (the in-house
@@ -125,9 +125,74 @@ is_heavy() {
     return 1
 }
 
+# --- helper: toml_string_field <field> <recipe.toml> ----------------------
+toml_string_field() {
+    _field="$1"
+    _file="$2"
+    sed -n \
+        "s/^[[:space:]]*${_field}[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
+        "$_file" | sed -n '1p'
+}
+
 # --- helper: package_name_from_recipe <recipe.toml> -----------------------
 package_name() {
-    awk -F'"' '/^name *= *"/ {print $2; exit}' "$1"
+    toml_string_field name "$1"
+}
+
+# --- helper: package_version_from_recipe <recipe.toml> --------------------
+package_version() {
+    toml_string_field version "$1"
+}
+
+# --- helper: build_deps_from_recipe <recipe.toml> -------------------------
+build_deps() {
+    _file="$1"
+    _in_dep=0
+    _collect=0
+    _buf=
+    while IFS= read -r _line; do
+        if [ "$_line" = "[depends]" ]; then
+            _in_dep=1
+            continue
+        fi
+        case "$_line" in
+            \[*)
+                [ "$_in_dep" -eq 1 ] && break
+                ;;
+        esac
+        [ "$_in_dep" -eq 1 ] || continue
+        if [ "$_collect" -eq 0 ]; then
+            case "$_line" in
+                *"build"*"="*\[*)
+                    _collect=1
+                    _buf=$_line
+                    ;;
+            esac
+        else
+            _buf="${_buf} ${_line}"
+        fi
+        case "$_collect:$_line" in
+            1:*\]*)
+                printf '%s\n' "$_buf" \
+                    | sed -E 's/.*\[(.*)\].*/\1/' \
+                    | sed 's/"//g' \
+                    | sed 's/,/ /g'
+                return 0
+                ;;
+        esac
+    done < "$_file"
+}
+
+# --- helper: recipe_dir_for_name <name> -----------------------------------
+recipe_dir_for_name() {
+    _want="$1"
+    while IFS=$(printf '\t') read -r _name _dir; do
+        if [ "$_name" = "$_want" ]; then
+            printf '%s\n' "$_dir"
+            return 0
+        fi
+    done < "$RECIPE_MAP"
+    return 1
 }
 
 # --- helper: extract a .jpkg directly into / -----------------------------
@@ -144,6 +209,43 @@ install_local_jpkg() {
     tail -c +$((skip + 1)) "$f" | zstd -dc | tar xf - -C /
 }
 
+# --- helper: ensure awk exists for autoconf -------------------------------
+ensure_bootstrap_awk() {
+    if command -v awk >/dev/null 2>&1 &&
+            awk 'BEGIN { exit 0 }' </dev/null >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo ">>> installing onetrueawk bootstrap tool"
+    if ! jpkg install --force onetrueawk >/dev/null 2>&1; then
+        echo "FATAL: could not install onetrueawk, required by autoconf recipes" >&2
+        return 1
+    fi
+    if ! command -v awk >/dev/null 2>&1 ||
+            ! awk 'BEGIN { exit 0 }' </dev/null >/dev/null 2>&1; then
+        echo "FATAL: onetrueawk installed but awk is not runnable" >&2
+        return 1
+    fi
+}
+
+# --- helper: patch old builder CONFIG_SITE for this run -------------------
+ensure_config_site_target() {
+    [ -n "${CONFIG_SITE:-}" ] || return 0
+    [ -f "$CONFIG_SITE" ] || return 0
+    grep 'ac_cv_target' "$CONFIG_SITE" >/dev/null 2>&1 && return 0
+
+    _site="$OUT/jonerix-config.site"
+    cp "$CONFIG_SITE" "$_site"
+    cat >> "$_site" <<'EOF'
+
+# Older builder images set only ac_cv_build/ac_cv_host. Some configure
+# scripts also run AC_CANONICAL_TARGET; keep target aligned with host.
+[ -n "${ac_cv_host-}" ] && ac_cv_target=$ac_cv_host
+EOF
+    export CONFIG_SITE="$_site"
+    echo ">>> using patched CONFIG_SITE=$CONFIG_SITE"
+}
+
 # --- helper: install a recipe's [depends].build into the live / ----------
 # Mirrors scripts/ci-build-x86_64.sh's install_target_build_deps. For each
 # dep, prefer a freshly-built jpkg in $OUT/jpkgs/ (raw extract, no hooks)
@@ -153,16 +255,8 @@ install_local_jpkg() {
 # skip the install if a binary is already on PATH.
 install_target_build_deps() {
     _rdir="$1"
-    _deps_line=$(awk '
-        $0 == "[depends]" { in_dep = 1; next }
-        /^\[/ { if (in_dep) exit }
-        in_dep && $1 == "build" { print; exit }
-    ' "$_rdir/recipe.toml")
-    [ -z "$_deps_line" ] && return 0
-    _deps=$(printf '%s\n' "$_deps_line" \
-        | sed -E 's/.*\[(.*)\].*/\1/' \
-        | sed 's/"//g' \
-        | sed 's/,/ /g')
+    _deps=$(build_deps "$_rdir/recipe.toml")
+    [ -z "$_deps" ] && return 0
     for _dep in $_deps; do
         [ -n "$_dep" ] || continue
         # Heavy toolchains: trust whatever the builder image already
@@ -219,6 +313,15 @@ install_target_build_deps() {
             | sort -V | tail -1)
         if [ -n "$_local" ] && [ -f "$_local" ]; then
             echo "  dep: ${_dep_pkg} (local $(basename "$_local"))"
+            case "$_dep_pkg" in
+                byacc)
+                    # Older builder images shipped /bin/byacc -> yacc and
+                    # /bin/yacc -> byacc. tar follows the destination path
+                    # poorly through that loop, so clear it before overlaying
+                    # the freshly-built package.
+                    rm -f /bin/byacc /bin/yacc 2>/dev/null || true
+                    ;;
+            esac
             install_local_jpkg "$_local" 2>/dev/null || \
                 echo "    WARN: extract failed for ${_dep_pkg}" >&2
             continue
@@ -246,10 +349,12 @@ install_target_build_deps() {
 # scripts/build-order.txt has the canonical dependency-respecting order.
 # Filter blanks/comments and (optionally) heavies.
 ORDER_FILE="$OUT/order.txt"
-awk '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    { print }
+sed -n '
+    /^[[:space:]]*#/d
+    /^[[:space:]]*$/d
+    s/^[[:space:]]*//
+    s/[[:space:]]*$//
+    p
 ' /workspace/scripts/build-order.txt > "$ORDER_FILE"
 
 # Pre-build a name -> recipe.toml dir map once. Avoids running a find with
@@ -257,8 +362,8 @@ awk '
 RECIPE_MAP="$OUT/recipe-map.tsv"
 : > "$RECIPE_MAP"
 # REVIEW: packages/jpkg/recipe.toml and packages/core/jpkg/recipe.toml both
-# declare name = "jpkg".  The glob below adds both to the map; the awk lookup
-# in the build loop returns whichever line appears first (i.e. glob order).
+# declare name = "jpkg".  The glob below adds both to the map; the lookup in
+# the build loop returns whichever line appears first (i.e. glob order).
 # One of the two entries will be silently ignored.  Long-term fix: ensure only
 # one canonical location for each package, or deduplicate the map by name.
 for r in /workspace/packages/*/*/recipe.toml /workspace/packages/*/recipe.toml; do
@@ -290,6 +395,8 @@ done < "$RECIPE_MAP"
 # "no cached INDEX found. Run 'jpkg update' first." (reproduced 2026-04-26).
 echo ">>> running jpkg update so install_target_build_deps can fall back to network"
 jpkg update >/dev/null 2>&1 || echo "WARN: jpkg update failed; network-fallback installs will not work" >&2
+ensure_bootstrap_awk
+ensure_config_site_target
 
 build_count=0
 fail_count=0
@@ -297,8 +404,7 @@ skip_count=0
 
 for name in $(cat "$ORDER_FILE"); do
     # Look up the recipe in the pre-built map (one tab-separated line each).
-    recipe_dir=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' \
-        "$RECIPE_MAP")
+    recipe_dir=$(recipe_dir_for_name "$name" || true)
     if [ -z "$recipe_dir" ]; then
         echo "WARN: no recipe found for $name" >&2
         continue
@@ -344,8 +450,7 @@ for name in $(cat "$ORDER_FILE"); do
     # producing zero .jpkg files.
     if timeout -k 30 1200 jpkg build "$recipe_dir" \
             --build-jpkg --output "$OUT/jpkgs" >>"$log" 2>&1; then
-        version=$(awk -F'"' '/^version *= *"/ {print $2; exit}' \
-            "$recipe_dir/recipe.toml")
+        version=$(package_version "$recipe_dir/recipe.toml")
         printf '%s\t%s\n' "$name" "$version" >> "$OUT/built-packages.txt"
         build_count=$((build_count + 1))
         pkg_elapsed=$(( $(date +%s) - pkg_start ))
@@ -488,8 +593,9 @@ binaries=$(wc -l < "$OUT/binaries.txt")
     if [ "$fail_count" -gt 0 ]; then
         echo '## Failed packages'
         echo
-        while read -r f; do
-            echo "- \`$f\` — see \`build-log/${f}.log\`"
+        while IFS=$(printf '\t') read -r failed_name failed_status; do
+            [ -n "$failed_name" ] || continue
+            echo "- \`$failed_name\` — ${failed_status:-failed}; see \`build-log/${failed_name}.log\`"
         done < "$OUT/failed-packages.txt"
         echo
     fi
@@ -506,4 +612,7 @@ binaries=$(wc -l < "$OUT/binaries.txt")
 } > "$OUT/report.md"
 
 echo "=== bootstrap done: built=$build_count failed=$fail_count skipped=$skip_count ==="
+if [ "$fail_count" -gt 0 ]; then
+    exit 1
+fi
 exit 0

@@ -43,7 +43,7 @@ BUILT-IN COMMANDS:
     keygen  [<dir>]       Generate an Ed25519 keypair (default: /etc/jpkg/keys)
     sign    <key> <file>  Sign <file> with Ed25519 secret key <key>
     resign  <pkg>...      Bulk re-sign existing .jpkg archives
-    build   <recipe>      Build a recipe.toml into a .jpkg
+    build   <recipe>      Build a recipe.toml into a .jpkg (--arch overrides target arch)
     build-world           Rebuild every package in scripts/build-order.txt
 
 EXTERNAL COMMANDS:

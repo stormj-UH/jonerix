@@ -35,6 +35,10 @@
 //! * **JPKG_SOURCE_CACHE** is supported for offline package builds.  The cache
 //!   lookup accepts exact URL basenames plus package-version basenames with or
 //!   without a packaging release suffix (`-rN`).
+//!
+//! * **JPKG_ARCH** / **--arch** selects the package target architecture for
+//!   cross-builds.  Recipe `package.arch` still wins over the environment, but
+//!   `--arch` is an explicit per-invocation override.
 
 use std::env;
 use std::fs;
@@ -110,6 +114,8 @@ struct BuildOpts {
     recipe_arg: String,
     /// Directory into which to write the .jpkg artifact.
     output_dir: PathBuf,
+    /// Explicit package architecture override.
+    arch: Option<String>,
     /// Path to the Ed25519 secret key for signing the built package.
     ///
     /// Phase 0 stub: stored but not used for signing.  Worker B will implement
@@ -121,13 +127,14 @@ struct BuildOpts {
 fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
     if args.is_empty() {
         return Err(
-            "usage: jpkg build <recipe-dir|recipe.toml|-> [--output <dir>] [--build-jpkg] [--sign-key <path>]"
+            "usage: jpkg build <recipe-dir|recipe.toml|-> [--output <dir>] [--arch <arch>] [--build-jpkg] [--sign-key <path>]"
                 .to_owned(),
         );
     }
 
     let mut recipe_arg: Option<String> = None;
     let mut output_dir = PathBuf::from(".");
+    let mut arch: Option<String> = None;
     let mut sign_key: Option<PathBuf> = None;
     let mut i = 0usize;
 
@@ -142,6 +149,13 @@ fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
             }
             "--build-jpkg" => {
                 // accepted, no-op (see divergence note above)
+            }
+            "--arch" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--arch requires an argument".to_owned());
+                }
+                arch = Some(args[i].clone());
             }
             "--sign-key" => {
                 // Phase 0 stub: accept the flag and store the path.
@@ -166,6 +180,7 @@ fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
     Ok(BuildOpts {
         recipe_arg: recipe_arg.ok_or_else(|| "missing <recipe> argument".to_owned())?,
         output_dir,
+        arch,
         sign_key,
     })
 }
@@ -440,7 +455,7 @@ fn apply_patches(recipe_dir: &Path, src_dir: &Path) -> Result<(), String> {
 /// - Writes a private temporary shell script to avoid quoting issues.
 /// - Pre-expands `$(nproc)` and `\`nproc\`` to avoid toybox sh deadlocks.
 /// - Exports CC/LD/AR/NM/RANLIB, CFLAGS, LDFLAGS, DESTDIR, C_INCLUDE_PATH,
-///   LIBRARY_PATH, RECIPE_DIR, NPROC.
+///   LIBRARY_PATH, RECIPE_DIR, NPROC, and the resolved jpkg target arch.
 /// - POSIX `/bin/sh` (no bashisms), no `set -e` (each step checked separately).
 fn run_build_step(
     step_name: &str,
@@ -448,6 +463,8 @@ fn run_build_step(
     work_dir: &Path,
     dest_dir: &Path,
     recipe_dir: &Path,
+    host_arch: &str,
+    target_arch: &str,
 ) -> Result<(), String> {
     if cmd.trim().is_empty() {
         return Ok(());
@@ -457,6 +474,8 @@ fn run_build_step(
 
     let ncpu = num_cpus();
     let ncpu_str = ncpu.to_string();
+    let target_triple = jonerix_triple_for_arch(target_arch);
+    let go_arch = go_arch_for_jpkg_arch(target_arch).unwrap_or("");
 
     // Pre-expand $(nproc) / `nproc` to avoid toybox sh command-substitution deadlock.
     let expanded = cmd
@@ -473,6 +492,13 @@ fn run_build_step(
          export AR=llvm-ar\n\
          export NM=llvm-nm\n\
          export RANLIB=llvm-ranlib\n\
+         export JPKG_HOST_ARCH='{host_arch}'\n\
+         export JPKG_TARGET_ARCH='{target_arch}'\n\
+         export JPKG_ARCH='{target_arch}'\n\
+         export JPKG_TARGET_TRIPLE='{target_triple}'\n\
+         export JPKG_GOARCH='{go_arch}'\n\
+         export GOOS=linux\n\
+         [ -z \"$JPKG_GOARCH\" ] || export GOARCH=\"$JPKG_GOARCH\"\n\
          export CFLAGS='-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 --rtlib=compiler-rt --unwindlib=libunwind'\n\
          export LDFLAGS='-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld'\n\
          export DESTDIR='{dest}'\n\
@@ -484,6 +510,10 @@ fn run_build_step(
         work = work_dir.display(),
         dest = dest_dir.display(),
         recipe = recipe_dir.display(),
+        host_arch = host_arch,
+        target_arch = target_arch,
+        target_triple = target_triple,
+        go_arch = go_arch,
         body = expanded,
     );
 
@@ -529,12 +559,67 @@ fn num_cpus() -> u64 {
         .unwrap_or(1)
 }
 
+fn detect_host_arch() -> String {
+    nix::sys::utsname::uname()
+        .map(|u| u.machine().to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "x86_64".to_owned())
+}
+
+fn validate_arch(arch: &str) -> Result<(), String> {
+    if arch.is_empty() {
+        return Err("architecture must not be empty".to_owned());
+    }
+
+    if arch
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+    {
+        Ok(())
+    } else {
+        Err(format!("invalid architecture string: {arch}"))
+    }
+}
+
+fn resolve_build_arch(recipe: &Recipe, cli_arch: Option<&str>) -> Result<String, String> {
+    if let Some(arch) = cli_arch {
+        validate_arch(arch)?;
+        return Ok(arch.to_owned());
+    }
+
+    if let Some(arch) = recipe.package.arch.as_deref().filter(|s| !s.is_empty()) {
+        validate_arch(arch)?;
+        return Ok(arch.to_owned());
+    }
+
+    if let Ok(arch) = env::var("JPKG_ARCH") {
+        if !arch.is_empty() {
+            validate_arch(&arch)?;
+            return Ok(arch);
+        }
+    }
+
+    Ok(detect_host_arch())
+}
+
+fn jonerix_triple_for_arch(arch: &str) -> String {
+    format!("{arch}-jonerix-linux-musl")
+}
+
+fn go_arch_for_jpkg_arch(arch: &str) -> Option<&'static str> {
+    match arch {
+        "x86_64" => Some("amd64"),
+        "aarch64" => Some("arm64"),
+        _ => None,
+    }
+}
+
 // ── archive creation ──────────────────────────────────────────────────────────
 
 fn create_archive(
     recipe: &Recipe,
     dest_dir: &Path,
     output_dir: &Path,
+    target_arch: &str,
 ) -> Result<PathBuf, String> {
     let name = recipe
         .package
@@ -546,18 +631,10 @@ fn create_archive(
         .version
         .as_deref()
         .unwrap_or("0.0.0");
-    // Resolve arch: use recipe field, fall back to uname().machine.
-    let arch_owned: String = recipe.package.arch.clone().unwrap_or_else(|| {
-        nix::sys::utsname::uname()
-            .map(|u| u.machine().to_string_lossy().into_owned())
-            .unwrap_or_else(|_| "x86_64".to_owned())
-    });
-    let arch = arch_owned.as_str();
-
     fs::create_dir_all(output_dir)
         .map_err(|e| format!("create output dir: {e}"))?;
 
-    let out_path = output_dir.join(format!("{name}-{version}-{arch}.jpkg"));
+    let out_path = output_dir.join(format!("{name}-{version}-{target_arch}.jpkg"));
 
     // archive::create_with_metadata_factory handles the chicken-and-egg
     // (metadata.files.sha256/size depend on the compressed payload, which
@@ -576,9 +653,7 @@ fn create_archive(
     // 24977249193: gen-index.sh ran `discarding: jpkg-2.0.0-aarch64.jpkg`
     // because that file's metadata had no arch field.
     let mut recipe_for_factory = recipe.clone();
-    if recipe_for_factory.package.arch.is_none() {
-        recipe_for_factory.package.arch = Some(arch_owned.clone());
-    }
+    recipe_for_factory.package.arch = Some(target_arch.to_owned());
     archive::create_with_metadata_factory(&out_path, dest_dir, move |sha, size| {
         let meta = Metadata::from_recipe(&recipe_for_factory, sha.to_owned(), size);
         meta.to_string().map_err(|e| {
@@ -638,7 +713,9 @@ fn build_inner(opts: &BuildOpts) -> Result<(), String> {
 
     let name = recipe.package.name.as_deref().unwrap_or("unknown");
     let version = recipe.package.version.as_deref().unwrap_or("0.0.0");
-    eprintln!("building {name}-{version}...");
+    let target_arch = resolve_build_arch(&recipe, opts.arch.as_deref())?;
+    let host_arch = detect_host_arch();
+    eprintln!("building {name}-{version} ({target_arch})...");
 
     // ── 3. Set up temp build dirs ────────────────────────────────────────────
     let tmp = TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
@@ -663,13 +740,37 @@ fn build_inner(opts: &BuildOpts) -> Result<(), String> {
 
     // ── 6. Run shell snippets ────────────────────────────────────────────────
     if let Some(ref configure) = recipe.build.configure {
-        run_build_step("configure", configure, &build_dir, &dest_dir, &recipe_dir)?;
+        run_build_step(
+            "configure",
+            configure,
+            &build_dir,
+            &dest_dir,
+            &recipe_dir,
+            &host_arch,
+            &target_arch,
+        )?;
     }
     if let Some(ref build_cmd) = recipe.build.build {
-        run_build_step("build", build_cmd, &build_dir, &dest_dir, &recipe_dir)?;
+        run_build_step(
+            "build",
+            build_cmd,
+            &build_dir,
+            &dest_dir,
+            &recipe_dir,
+            &host_arch,
+            &target_arch,
+        )?;
     }
     if let Some(ref install_cmd) = recipe.build.install {
-        run_build_step("install", install_cmd, &build_dir, &dest_dir, &recipe_dir)?;
+        run_build_step(
+            "install",
+            install_cmd,
+            &build_dir,
+            &dest_dir,
+            &recipe_dir,
+            &host_arch,
+            &target_arch,
+        )?;
     }
 
     // ── 7. Audit the DESTDIR; flatten if needed ──────────────────────────────
@@ -694,7 +795,7 @@ fn build_inner(opts: &BuildOpts) -> Result<(), String> {
     }
 
     // ── 8. Build the archive ─────────────────────────────────────────────────
-    let out_path = create_archive(&recipe, &dest_dir, &opts.output_dir)?;
+    let out_path = create_archive(&recipe, &dest_dir, &opts.output_dir, &target_arch)?;
 
     // ── 9. Sign the archive (optional) ──────────────────────────────────────
     if let Some(ref key_path) = opts.sign_key {
@@ -872,6 +973,48 @@ install = "mkdir -p \"$DESTDIR/bin\" && touch \"$DESTDIR/bin/x\""
     }
 
     #[test]
+    fn test_build_arch_override_sets_filename_and_metadata() {
+        use crate::archive::JpkgArchive;
+        use crate::recipe::Metadata;
+
+        let tmp = TempDir::new().unwrap();
+        let out_dir = tmp.path().join("out");
+
+        let toml = r#"[package]
+name = "archpkg"
+version = "0.1.0"
+license = "MIT"
+
+[build]
+system = "custom"
+install = "mkdir -p \"$DESTDIR/bin\" && touch \"$DESTDIR/bin/archpkg\""
+"#;
+        let recipe_dir = tmp.path().join("recipe");
+        fs::create_dir_all(&recipe_dir).unwrap();
+        fs::write(recipe_dir.join("recipe.toml"), toml).unwrap();
+
+        let args = vec![
+            recipe_dir.to_string_lossy().into_owned(),
+            "--output".to_owned(),
+            out_dir.to_string_lossy().into_owned(),
+            "--arch".to_owned(),
+            "aarch64".to_owned(),
+        ];
+        assert_eq!(run(&args), 0, "build should succeed");
+
+        let artifact = out_dir.join("archpkg-0.1.0-aarch64.jpkg");
+        assert!(
+            artifact.exists(),
+            "artifact should use target arch in filename"
+        );
+
+        let archive = JpkgArchive::open(&artifact).expect("open artifact");
+        let meta = Metadata::from_str(archive.metadata_str().expect("metadata UTF-8"))
+            .expect("parse metadata");
+        assert_eq!(meta.package.arch.as_deref(), Some("aarch64"));
+    }
+
+    #[test]
     fn test_build_step_uses_unique_temp_scripts() {
         let tmp = TempDir::new().unwrap();
         let mut script_paths = std::collections::HashSet::new();
@@ -890,6 +1033,8 @@ install = "mkdir -p \"$DESTDIR/bin\" && touch \"$DESTDIR/bin/x\""
                 &work_dir,
                 &dest_dir,
                 &recipe_dir,
+                "x86_64",
+                "x86_64",
             )
             .unwrap();
 
@@ -901,6 +1046,34 @@ install = "mkdir -p \"$DESTDIR/bin\" && touch \"$DESTDIR/bin/x\""
             script_paths.len(),
             4,
             "each build step must get a unique script path"
+        );
+    }
+
+    #[test]
+    fn test_build_step_exports_target_arch_env() {
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path().join("work");
+        let dest_dir = tmp.path().join("dest");
+        let recipe_dir = tmp.path().join("recipe");
+        fs::create_dir_all(&work_dir).unwrap();
+        fs::create_dir_all(&dest_dir).unwrap();
+        fs::create_dir_all(&recipe_dir).unwrap();
+
+        run_build_step(
+            "install",
+            "printf '%s:%s:%s:%s:%s:%s\\n' \"$JPKG_HOST_ARCH\" \"$JPKG_TARGET_ARCH\" \"$JPKG_ARCH\" \"$JPKG_TARGET_TRIPLE\" \"$JPKG_GOARCH\" \"$GOARCH\" > \"$DESTDIR/arch-env\"",
+            &work_dir,
+            &dest_dir,
+            &recipe_dir,
+            "x86_64",
+            "aarch64",
+        )
+        .unwrap();
+
+        let got = fs::read_to_string(dest_dir.join("arch-env")).unwrap();
+        assert_eq!(
+            got.trim(),
+            "x86_64:aarch64:aarch64:aarch64-jonerix-linux-musl:arm64:arm64"
         );
     }
 

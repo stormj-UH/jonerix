@@ -74,15 +74,21 @@ for pkg in "$pkg_dir"/*.jpkg; do
         esac
     fi
     cp "$pkg" "$upload_dir/$base"
+    if [ -f "$pkg.sig" ]; then
+        cp "$pkg.sig" "$upload_dir/$base.sig"
+    fi
     count=$((count + 1))
 done
 
 if [ "$count" -gt 0 ]; then
-    gh release upload "$active_tag" \
-        --repo "$repo" \
-        --clobber \
-        "$upload_dir"/*.jpkg
-    echo "Mirrored $count package asset(s) into $active_tag."
+    for asset in "$upload_dir"/*.jpkg "$upload_dir"/*.jpkg.sig; do
+        [ -f "$asset" ] || continue
+        gh release upload "$active_tag" \
+            --repo "$repo" \
+            --clobber \
+            "$asset"
+    done
+    echo "Mirrored $count package asset(s) and matching signatures when present into $active_tag."
 else
     echo "No package assets matched for $active_tag; rebuilding its INDEX only."
 fi
@@ -103,8 +109,10 @@ RECIPES_ROOT="$recipes_root" \
 if [ -s "$active_dir/.stale-assets" ]; then
     while read -r asset; do
         [ -n "$asset" ] || continue
-        echo "Deleting stale asset from $active_tag: $asset"
-        gh release delete-asset "$active_tag" "$asset" --yes --repo "$repo" || true
+        for stale_asset in "$asset" "$asset.sig"; do
+            echo "Deleting stale asset from $active_tag: $stale_asset"
+            gh release delete-asset "$active_tag" "$stale_asset" --yes --repo "$repo" || true
+        done
     done < "$active_dir/.stale-assets"
 fi
 

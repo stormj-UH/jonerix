@@ -3,12 +3,15 @@
 // SPDX-License-Identifier: MIT
 
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 use crate::cmd::common::{resolve_arch, resolve_rootfs};
 use crate::cmd::install::install_packages;
-use crate::types::InstallMode;
 use crate::db::InstalledDb;
+use crate::deps::resolve_install;
+use crate::recipe::Index;
 use crate::repo::Repo;
+use crate::types::InstallMode;
 use crate::util::version_compare;
 
 // ─── public entry point ───────────────────────────────────────────────────────
@@ -113,19 +116,11 @@ pub fn run(args: &[String]) -> i32 {
             }
         };
 
-        let installed_ver = installed
-            .metadata
-            .package
-            .version
-            .as_deref()
-            .unwrap_or("");
+        let installed_ver = installed.metadata.package.version.as_deref().unwrap_or("");
 
         let cmp = version_compare(entry.version.as_str(), installed_ver);
         if cmp == Ordering::Greater {
-            eprintln!(
-                "jpkg:   {}: {} -> {}",
-                name, installed_ver, entry.version
-            );
+            eprintln!("jpkg:   {}: {} -> {}", name, installed_ver, entry.version);
             to_upgrade.push(name.clone());
         } else if !explicit_targets.is_empty() {
             // Explicitly requested but already at the latest — log it.
@@ -138,20 +133,40 @@ pub fn run(args: &[String]) -> i32 {
         return 1;
     }
 
-    if to_upgrade.is_empty() {
+    let dep_candidates = filter_indexed_candidates(&candidates, &index, &arch);
+    let dep_repairs =
+        match resolve_install(&dep_candidates, &arch, &db, &index, InstallMode::Normal) {
+            Ok(plan) => plan.to_install,
+            Err(e) => {
+                eprintln!("jpkg: dependency resolution failed: {e}");
+                return 1;
+            }
+        };
+
+    let install_plan = merge_upgrade_plan(dep_repairs, to_upgrade);
+
+    if install_plan.is_empty() {
         eprintln!("jpkg: all packages are up to date");
         return 0;
     }
 
-    eprintln!("jpkg: {} package(s) to upgrade", to_upgrade.len());
+    eprintln!("jpkg: {} package(s) to install/upgrade", install_plan.len());
 
-    // ── Install with force=true ───────────────────────────────────────────
-    // force=true bypasses the "same version, already installed" check in
-    // install_packages, which is correct here: we've already verified these
-    // have newer versions available.
-    match install_packages(&db, &repo, &index, &arch, &to_upgrade, InstallMode::Force) {
+    // ── Install resolved dependency repairs followed by selected upgrades ──
+    // `install_packages` in normal mode skips only packages already installed
+    // at the same version.  Missing dependencies are installed, and selected
+    // upgrade targets install because their INDEX version is newer than the
+    // DB version.
+    match install_packages(
+        &db,
+        &repo,
+        &index,
+        &arch,
+        &install_plan,
+        InstallMode::Normal,
+    ) {
         Ok(n) => {
-            eprintln!("jpkg: {n} package(s) upgraded");
+            eprintln!("jpkg: {n} package(s) installed/upgraded");
             0
         }
         Err(e) => {
@@ -159,6 +174,24 @@ pub fn run(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+fn merge_upgrade_plan(mut dep_repairs: Vec<String>, to_upgrade: Vec<String>) -> Vec<String> {
+    let mut seen: BTreeSet<String> = dep_repairs.iter().cloned().collect();
+    for name in to_upgrade {
+        if seen.insert(name.clone()) {
+            dep_repairs.push(name);
+        }
+    }
+    dep_repairs
+}
+
+fn filter_indexed_candidates(candidates: &[String], index: &Index, arch: &str) -> Vec<String> {
+    candidates
+        .iter()
+        .filter(|name| index.get(name, arch).is_some())
+        .cloned()
+        .collect()
 }
 
 // ─── load_index_for_upgrade ───────────────────────────────────────────────────
@@ -202,6 +235,51 @@ mod tests {
         assert_eq!(version_compare("1.1.0", "1.0.0"), Ordering::Greater);
         assert_eq!(version_compare("1.0.0", "1.0.0"), Ordering::Equal);
         assert_eq!(version_compare("0.9.0", "1.0.0"), Ordering::Less);
+    }
+
+    #[test]
+    fn test_merge_upgrade_plan_keeps_dep_repairs_first() {
+        let plan = merge_upgrade_plan(
+            vec![String::from("clang"), String::from("libcxx")],
+            vec![String::from("llvm-extra")],
+        );
+        assert_eq!(plan, vec!["clang", "libcxx", "llvm-extra"]);
+    }
+
+    #[test]
+    fn test_merge_upgrade_plan_deduplicates() {
+        let plan = merge_upgrade_plan(
+            vec![String::from("clang"), String::from("llvm-extra")],
+            vec![String::from("llvm-extra")],
+        );
+        assert_eq!(plan, vec!["clang", "llvm-extra"]);
+    }
+
+    #[test]
+    fn test_filter_indexed_candidates_skips_unpublished_installed_packages() {
+        let mut entries = std::collections::BTreeMap::new();
+        entries.insert(
+            String::from("toybox-aarch64"),
+            crate::recipe::IndexEntry {
+                version: String::from("0.8.11-r9"),
+                license: String::from("0BSD"),
+                description: String::from("test entry"),
+                arch: String::from("aarch64"),
+                sha256: String::from(
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                ),
+                size: 1,
+                depends: Vec::new(),
+                build_depends: Vec::new(),
+            },
+        );
+        let index = Index { entries };
+        let candidates = vec![String::from("buildkit"), String::from("toybox")];
+
+        assert_eq!(
+            filter_indexed_candidates(&candidates, &index, "aarch64"),
+            vec![String::from("toybox")]
+        );
     }
 
     // ── 2. Upgrade: install v1, then install v2 with force → db shows v2 ──────

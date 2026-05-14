@@ -52,9 +52,14 @@ pub fn run(args: &[String]) -> i32 {
 
 pub(crate) fn run_with_repo(repo: Repo) -> i32 {
     let mirror_hint = repo.mirrors.first().cloned().unwrap_or_default();
+    let old_timestamp = cached_index_timestamp(&repo);
 
     match repo.fetch_index() {
         Ok(index) => {
+            print_index_timestamps(
+                old_timestamp.as_deref(),
+                cached_index_timestamp(&repo).as_deref(),
+            );
             if mirror_hint.is_empty() {
                 println!("Updated package index");
             } else {
@@ -78,6 +83,43 @@ pub(crate) fn run_with_repo(repo: Repo) -> i32 {
         Err(e) => {
             eprintln!("{e}");
             1
+        }
+    }
+}
+
+fn cached_index_timestamp(repo: &Repo) -> Option<String> {
+    let index_path = repo.cache_dir.join("INDEX");
+    let text = std::fs::read_to_string(index_path).ok()?;
+    index_timestamp_from_text(&text)
+}
+
+fn index_timestamp_from_text(text: &str) -> Option<String> {
+    let value: toml::Value = toml::from_str(text).ok()?;
+    value
+        .get("meta")?
+        .get("timestamp")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn print_index_timestamps(old: Option<&str>, new: Option<&str>) {
+    match old {
+        Some(ts) => println!("Existing INDEX timestamp: {ts}"),
+        None => println!("Existing INDEX timestamp: none"),
+    }
+
+    match (old, new) {
+        (_, Some(ts)) if old == Some(ts) => {
+            println!("Fetched INDEX timestamp: {ts} (unchanged)");
+        }
+        (Some(old_ts), Some(new_ts)) => {
+            println!("Fetched INDEX timestamp: {new_ts} (was {old_ts})");
+        }
+        (None, Some(new_ts)) => {
+            println!("Fetched INDEX timestamp: {new_ts}");
+        }
+        (_, None) => {
+            println!("Fetched INDEX timestamp: unknown");
         }
     }
 }
@@ -128,7 +170,10 @@ mod tests {
             }
         });
 
-        FakeServer { addr, _handle: handle }
+        FakeServer {
+            addr,
+            _handle: handle,
+        }
     }
 
     fn serve_one(
@@ -197,6 +242,41 @@ mod tests {
         zstd::encode_all(toml.as_bytes(), 3).expect("zstd encode")
     }
 
+    fn compressed_index_with_timestamp(
+        name: &str,
+        arch: &str,
+        version: &str,
+        timestamp: &str,
+    ) -> Vec<u8> {
+        let index = make_index(name, arch, version);
+        let mut toml = String::new();
+        toml.push_str("[meta]\n");
+        toml.push_str(&format!("timestamp = \"{timestamp}\"\n\n"));
+        toml.push_str(&index.to_string().expect("serialise index"));
+        zstd::encode_all(toml.as_bytes(), 3).expect("zstd encode")
+    }
+
+    #[test]
+    fn test_index_timestamp_from_text_reads_meta_timestamp() {
+        let text = r#"
+[meta]
+timestamp = "2026-05-14T16:30:00Z"
+
+[musl-x86_64]
+version = "1.2.6-r2"
+license = "MIT"
+description = "test"
+arch = "x86_64"
+sha256 = "abc123"
+size = 42
+"#;
+
+        assert_eq!(
+            index_timestamp_from_text(text).as_deref(),
+            Some("2026-05-14T16:30:00Z")
+        );
+    }
+
     // ── Test 1: no mirrors.conf → NoMirrors → exit 1 ──────────────────────
     //
     // from_rootfs falls back to the GitHub default mirror when mirrors.conf is
@@ -212,9 +292,7 @@ mod tests {
         let repo = Repo::new(
             vec![],
             PublicKeySet::load_dir(&cache_dir.path().join("nokeys"))
-                .unwrap_or_else(|_| {
-                    PublicKeySet::load_dir(cache_dir.path()).expect("fallback")
-                }),
+                .unwrap_or_else(|_| PublicKeySet::load_dir(cache_dir.path()).expect("fallback")),
             cache_dir.path().to_path_buf(),
             "x86_64".to_owned(),
         );
@@ -227,7 +305,8 @@ mod tests {
 
     #[test]
     fn test_update_fetch_success_exit0() {
-        let compressed = compressed_index("musl", "x86_64", "1.2.5");
+        let compressed =
+            compressed_index_with_timestamp("musl", "x86_64", "1.2.5", "2026-05-14T16:30:00Z");
 
         // Sign the index with a freshly generated key.
         let sk = keygen();
@@ -242,11 +321,8 @@ mod tests {
 
         // Write the public key into a tempdir.
         let keys_dir = TempDir::new().expect("tempdir");
-        write_public_key(
-            &keys_dir.path().join("test.pub"),
-            &sk.verifying_key(),
-        )
-        .expect("write pub key");
+        write_public_key(&keys_dir.path().join("test.pub"), &sk.verifying_key())
+            .expect("write pub key");
         let keys = PublicKeySet::load_dir(keys_dir.path()).expect("load_dir");
 
         let cache_dir = TempDir::new().expect("tempdir");

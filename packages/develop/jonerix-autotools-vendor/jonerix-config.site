@@ -11,4 +11,5 @@ if [ -r /etc/os-release ] && grep -q '^ID=jonerix' /etc/os-release; then
         *) ;;
     esac
     [ -n "${ac_cv_build-}" ] && ac_cv_host=$ac_cv_build
+    [ -n "${ac_cv_host-}" ] && ac_cv_target=$ac_cv_host
 fi

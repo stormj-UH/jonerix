@@ -39,16 +39,17 @@ concurrency:
 env:
   # Fresh builder images were published 2026-04-13 with working LLVM,
   # LibreSSL, Python 3.14, Perl, and all smoke tests passing.
-  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder-amd64
-  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder-arm64
+  BUILDER_IMAGE_X86_64: ghcr.io/stormj-uh/jonerix:builder
+  BUILDER_IMAGE_AARCH64: ghcr.io/stormj-uh/jonerix:builder
   # sccache (Mozilla) — persistent compiler cache for the heavy LLVM
   # builds (libllvm / clang / lld / llvm-extra). Static-musl binary so
-  # it runs unmodified inside the Alpine builder container. cmake auto-
-  # honours CMAKE_{C,CXX}_COMPILER_LAUNCHER from env at first configure;
-  # recipes don't need code changes. Bump SCCACHE_CACHE_VERSION to
+  # it runs unmodified inside the Alpine builder container. Recipes pass
+  # CMAKE_{C,CXX}_COMPILER_LAUNCHER through to CMake explicitly; these
+  # env vars are only the CI transport. Bump SCCACHE_CACHE_VERSION to
   # invalidate the actions/cache pool (e.g. after a compiler upgrade).
   SCCACHE_VERSION: v0.15.0
   SCCACHE_CACHE_VERSION: v1
+  LLVM_BUILD_JOBS_X86_64: 2
 
 jobs:
   # ------ Create the packages release once ------------------------------------------------------------------------------------------------------------------
@@ -63,13 +64,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if ! gh release view packages --repo "$GH_REPO" > /dev/null 2>&1; then
+          _view_err="$(mktemp)"
+          trap 'rm -f "$_view_err"' EXIT
+          if gh release view packages --repo "$GH_REPO" > /dev/null 2>"$_view_err"; then
+            echo "packages release already exists."
+            exit 0
+          fi
+
+          if grep -Eiq '(^|[^0-9])(404|not found)([^0-9]|$)' "$_view_err"; then
             gh release create packages \
               --repo "$GH_REPO" \
               --title "Package repository" \
               --notes "Pre-built jpkg packages. Updated automatically on push to master." \
               --prerelease
+            exit 0
           fi
+
+          cat "$_view_err"
+          echo "::warning::could not verify packages release; continuing so package artifacts can still be built"
+          exit 0
 
   # ── x86_64: checkout on Ubuntu host, build inside jonerix:builder ─────────
   # Uses the builder image which has the full LLVM toolchain with
@@ -80,12 +93,13 @@ jobs:
     if: ${{ !inputs.index_only && (inputs.arch == '' || inputs.arch == 'all' || inputs.arch == 'x86_64') }}
     needs: create-release
     runs-on: ubuntu-latest
-    # 4-hour timeout — needed for libllvm/clang/lld/llvm-extra builds.
+    # 6-hour timeout — needed for cold full-target libllvm/clang/lld/
+    # llvm-extra builds on GitHub's 16 GB x86_64 runner.
     # The x86_64 runner caps LLVM_PARALLEL_LINK_JOBS=2 to avoid GitHub
     # runner stalls, which makes the LLVM rebuild ~80-90 min cold and
     # the clang code on top another ~20-30 min. Original 90-minute
     # timeout cut the clang x86_64 build off at exactly 1h30m21s.
-    timeout-minutes: 240
+    timeout-minutes: 360
     permissions:
       contents: write
 
@@ -204,6 +218,8 @@ jobs:
             -e SCCACHE_IDLE_TIMEOUT=0 \
             -e CMAKE_C_COMPILER_LAUNCHER=sccache \
             -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -e LLVM_BUILD_JOBS="$LLVM_BUILD_JOBS_X86_64" \
+            -e BUILD_JOBS="$LLVM_BUILD_JOBS_X86_64" \
             ${JPKG_SIGN_KEY:+-e "JPKG_SIGN_KEY=$JPKG_SIGN_KEY"} \
             "$BUILDER_IMAGE_X86_64" /bin/sh /workspace/scripts/ci-build-x86_64.sh
 
@@ -232,16 +248,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           manifest=/tmp/published-assets-x86_64.txt
+          upload_list=/tmp/upload-assets-x86_64.txt
           : > "$manifest"
+          : > "$upload_list"
           count=0
           for pkg in /tmp/jpkg-output/*.jpkg; do
             [ -f "$pkg" ] || continue
             basename "$pkg" >> "$manifest"
+            printf '%s\n' "$pkg" >> "$upload_list"
+            if [ -f "$pkg.sig" ]; then
+              basename "$pkg.sig" >> "$manifest"
+              printf '%s\n' "$pkg.sig" >> "$upload_list"
+            fi
             count=$((count+1))
           done
           [ "$count" -eq 0 ] && { echo "No new packages to upload."; exit 0; }
-          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
-          echo "Uploaded $count package(s) (x86_64)."
+          while IFS= read -r asset; do
+            gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber "$asset"
+          done < "$upload_list"
+          echo "Uploaded $count package(s) and matching signatures when present (x86_64)."
 
       - name: Upload published asset manifest
         if: always()
@@ -249,6 +274,16 @@ jobs:
         with:
           name: published-assets-x86_64
           path: /tmp/published-assets-x86_64.txt
+          if-no-files-found: warn
+
+      - name: Upload built package artifacts
+        if: ${{ always() && inputs.package != '' && inputs.package != 'all' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: built-packages-x86_64
+          path: |
+            /tmp/jpkg-output/*.jpkg
+            /tmp/jpkg-output/*.jpkg.sig
           if-no-files-found: warn
 
   build-aarch64:
@@ -407,16 +442,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           manifest=/tmp/published-assets-aarch64.txt
+          upload_list=/tmp/upload-assets-aarch64.txt
           : > "$manifest"
+          : > "$upload_list"
           count=0
           for pkg in /tmp/jpkg-output/*.jpkg; do
             [ -f "$pkg" ] || continue
             basename "$pkg" >> "$manifest"
+            printf '%s\n' "$pkg" >> "$upload_list"
+            if [ -f "$pkg.sig" ]; then
+              basename "$pkg.sig" >> "$manifest"
+              printf '%s\n' "$pkg.sig" >> "$upload_list"
+            fi
             count=$((count+1))
           done
           [ "$count" -eq 0 ] && { echo "No new packages to upload."; exit 0; }
-          gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber /tmp/jpkg-output/*.jpkg
-          echo "Uploaded $count package(s) (aarch64)."
+          while IFS= read -r asset; do
+            gh release upload packages --repo "$GITHUB_REPOSITORY" --clobber "$asset"
+          done < "$upload_list"
+          echo "Uploaded $count package(s) and matching signatures when present (aarch64)."
 
       - name: Upload published asset manifest
         if: always()
@@ -426,6 +470,16 @@ jobs:
           path: /tmp/published-assets-aarch64.txt
           if-no-files-found: warn
 
+      - name: Upload built package artifacts
+        if: ${{ always() && inputs.package != '' && inputs.package != 'all' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: built-packages-aarch64
+          path: |
+            /tmp/jpkg-output/*.jpkg
+            /tmp/jpkg-output/*.jpkg.sig
+          if-no-files-found: warn
+
   # ------ Generate combined INDEX from all uploaded packages ------------------------------------------------------------
   index:
     name: Generate combined INDEX
@@ -433,7 +487,7 @@ jobs:
     # build failure still rebuilds INDEX over whatever DID upload.
     # Without this, one flaky recipe pins the whole fleet to the last
     # green INDEX and blocks downstream image builds indefinitely.
-    if: ${{ always() && needs.build-x86_64.result != 'cancelled' && needs.build-aarch64.result != 'cancelled' }}
+    if: ${{ always() && needs.create-release.result == 'success' && needs.build-x86_64.result != 'cancelled' && needs.build-aarch64.result != 'cancelled' && (inputs.index_only || needs.build-x86_64.result != 'skipped' || needs.build-aarch64.result != 'skipped') }}
     needs: [create-release, build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -459,7 +513,7 @@ jobs:
           gh release download packages \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.jpkg" \
-            --dir /tmp/jpkg-index 2>/dev/null || true
+            --dir /tmp/jpkg-index
           echo "Downloaded packages:"
           ls -lh /tmp/jpkg-index/*.jpkg 2>/dev/null || echo "(none)"
 
@@ -559,7 +613,6 @@ jobs:
         # on the release — remove the loser from the release. Otherwise the
         # next `gh release download` will redownload it and we'll rediscover
         # the duplicate every single run.
-        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STALE_LIST: /tmp/jpkg-index/.stale-assets
@@ -571,12 +624,14 @@ jobs:
           count=0
           while read -r asset; do
             [ -n "$asset" ] || continue
-            echo "Deleting stale asset: $asset"
-            if gh release delete-asset packages "$asset" --yes --repo "$GITHUB_REPOSITORY" 2>&1; then
-              count=$((count + 1))
-            else
-              echo "  (delete failed — may already be gone)"
-            fi
+            for stale_asset in "$asset" "$asset.sig"; do
+              echo "Deleting stale asset: $stale_asset"
+              if gh release delete-asset packages "$stale_asset" --yes --repo "$GITHUB_REPOSITORY" 2>&1; then
+                count=$((count + 1))
+              else
+                echo "  (delete failed — may already be gone)"
+              fi
+            done
           done < "$STALE_LIST"
           echo "Removed $count stale asset(s)."
 

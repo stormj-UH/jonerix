@@ -9,6 +9,7 @@
 # Usage:
 #   ./scripts/local-build-x86_64.sh build PKG [PKG...]
 #   ./scripts/local-build-x86_64.sh chain   # libllvm → clang → lld → llvm → llvm-extra
+#   ./scripts/local-build-x86_64.sh chain22 # libcxx22 -> libllvm22 -> clang22 -> lld22 -> llvm22 -> llvm22-extra
 #   ./scripts/local-build-x86_64.sh upload  # push winning .jpkgs to GitHub release
 #   ./scripts/local-build-x86_64.sh status  # what's in the local hedge cache
 #
@@ -28,7 +29,7 @@ JPKG_BIN="${BUILD_DIR}/jpkg-bin-x86_64"
 SCCACHE="${BUILD_DIR}/sccache-cache"
 SCCACHE_BIN="${BUILD_DIR}/sccache-bin/sccache-x86_64"
 
-BUILDER_IMAGE="${BUILDER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder-amd64}"
+BUILDER_IMAGE="${BUILDER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder}"
 GITHUB_REPO="${GITHUB_REPO:-stormj-UH/jonerix}"
 RELEASE_TAG="${RELEASE_TAG:-packages}"
 
@@ -61,6 +62,7 @@ local-build-x86_64.sh — local hedge builder
 
   build PKG [PKG...]   Build one or more packages in a docker container.
   chain                Build the LLVM split: libllvm → clang → lld → llvm → llvm-extra.
+  chain22              Build the parallel LLVM 22 split under /lib/llvm22.
   upload               Upload winning .jpkg(s) from $JPKG_OUTPUT to the
                        $RELEASE_TAG release on $GITHUB_REPO, then trigger
                        regen-tag-index to bake them into a signed INDEX.
@@ -73,6 +75,8 @@ Env knobs:
   RELEASE_TAG     default $RELEASE_TAG
   JOBS            default 3   (LLVM_BUILD_JOBS / BUILD_JOBS passed to recipe)
   REBUILD         set to 1 to rebuild even if $RELEASE_TAG already has the asset
+  JPKG_SIGN_KEY   optional path to a jpkg .sec key mounted read-only into the
+                  builder so local artifacts are signed at build time
 
 Volumes mounted into the container:
   /workspace             $REPO_ROOT
@@ -108,6 +112,17 @@ cmd_build() {
             _jmake_override_args="-v ${JMAKE_OVERRIDE}:/bin/jmake:ro -v ${JMAKE_OVERRIDE}:/bin/make:ro"
             echo "    using jmake override: $JMAKE_OVERRIDE"
         fi
+        _sign_mount_args=""
+        _sign_env_args=""
+        if [ -n "${JPKG_SIGN_KEY:-}" ]; then
+            if [ ! -r "$JPKG_SIGN_KEY" ]; then
+                echo "ERROR: JPKG_SIGN_KEY is set but not readable: $JPKG_SIGN_KEY" >&2
+                exit 1
+            fi
+            _sign_mount_args="-v ${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"
+            _sign_env_args="-e JPKG_SIGN_KEY=${JPKG_SIGN_KEY}"
+            echo "    signing enabled with JPKG_SIGN_KEY"
+        fi
         docker run --rm \
             --platform linux/amd64 \
             --entrypoint /bin/sh \
@@ -118,25 +133,49 @@ cmd_build() {
             -v "$SCCACHE:/var/cache/sccache" \
             -v "$SCCACHE_BIN:/bin/sccache:ro" \
             $_jmake_override_args \
+            $_sign_mount_args \
             -w /workspace \
             -e PKG_INPUT="$pkg" \
             -e REBUILD_INPUT="${REBUILD:-false}" \
             -e SCCACHE_DIR=/var/cache/sccache \
+            -e CMAKE_C_COMPILER_LAUNCHER=sccache \
+            -e CMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -e RUSTC_WRAPPER=sccache \
             -e CC="sccache clang" \
             -e CXX="sccache clang++" \
             -e LLVM_BUILD_JOBS="$JOBS" \
             -e BUILD_JOBS="$JOBS" \
+            $_sign_env_args \
             "$BUILDER_IMAGE" \
             /workspace/scripts/ci-build-x86_64.sh
+        cache_local_pkg "$pkg"
     done
 
     echo "==> Local artifacts:"
     ls -lh "$JPKG_OUTPUT"/*.jpkg 2>/dev/null || echo "    (none)"
 }
 
+cache_local_pkg() {
+    pkg=$1
+    found=0
+
+    for artifact in "$JPKG_OUTPUT"/"$pkg"-*-x86_64.jpkg; do
+        [ -f "$artifact" ] || continue
+        cp -f "$artifact" "$JPKG_PUBLISHED/"
+        found=1
+    done
+
+    if [ "$found" -eq 1 ]; then
+        echo "==> Mirrored local $pkg package(s) into $JPKG_PUBLISHED"
+    fi
+}
+
 cmd_chain() {
     cmd_build libllvm clang lld llvm llvm-extra
+}
+
+cmd_chain22() {
+    cmd_build libcxx22 libllvm22 clang22 lld22 llvm22 llvm22-extra
 }
 
 cmd_upload() {
@@ -149,10 +188,13 @@ cmd_upload() {
     for pkg in "$JPKG_OUTPUT"/*-x86_64.jpkg; do
         [ -f "$pkg" ] || continue
         name=$(basename "$pkg")
-        echo "==> Uploading $name to $GITHUB_REPO ($RELEASE_TAG)"
-        gh release upload "$RELEASE_TAG" "$pkg" \
-            --repo "$GITHUB_REPO" \
-            --clobber
+        for asset in "$pkg" "$pkg.sig"; do
+            [ -f "$asset" ] || continue
+            echo "==> Uploading $(basename "$asset") to $GITHUB_REPO ($RELEASE_TAG)"
+            gh release upload "$RELEASE_TAG" "$asset" \
+                --repo "$GITHUB_REPO" \
+                --clobber
+        done
         count=$((count + 1))
     done
 
@@ -189,6 +231,7 @@ cmd_clean() {
 case "${1:-}" in
     build)   shift; cmd_build "$@" ;;
     chain)   cmd_chain ;;
+    chain22) cmd_chain22 ;;
     upload)  cmd_upload ;;
     status)  cmd_status ;;
     clean)   cmd_clean ;;

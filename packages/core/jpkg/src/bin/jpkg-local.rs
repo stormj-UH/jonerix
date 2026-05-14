@@ -6,7 +6,7 @@
 //!
 //! Verbs:
 //!   install <file.jpkg|url|->  [--root <dir>]
-//!   build   <recipe-dir|recipe.toml|url|->  [--output <dir>] [--build-jpkg]
+//!   build   <recipe-dir|recipe.toml|url|->  [--output <dir>] [--arch <arch>] [--build-jpkg]
 
 use std::process::ExitCode;
 
@@ -26,8 +26,9 @@ COMMANDS:
         Install a .jpkg from a local file path, HTTPS URL, or `-` (stdin).
         Default --root is `/`.
 
-    build <recipe> [--output <dir>] [--build-jpkg]
+    build <recipe> [--output <dir>] [--arch <arch>] [--build-jpkg]
         Build a recipe.toml.  --output writes the .jpkg artifact to <dir>;
+        --arch overrides the package target architecture for cross-builds;
         without --build-jpkg, the recipe is built and installed to the
         live rootfs (or --root) instead of being archived.
 ";
