@@ -3,8 +3,9 @@
 #
 # Reads .jpkg files from PKG_DIR, emits a deduplicated INDEX file and an
 # optional list of stale (superseded) asset filenames to DELETE from the
-# release. Exactly one entry per (name, arch) survives: the highest version
-# wins, per `sort -V`.
+# release. Exactly one entry per (name, arch) survives: the highest package
+# version wins. Bare package versions are normalized as r0 for ordering, so
+# 1.2.3-r1 correctly supersedes 1.2.3.
 #
 # Background: GitHub releases accumulate .jpkg assets across version bumps
 # (filenames include the version, so `--clobber` doesn't help across a
@@ -52,6 +53,13 @@ meta_field() {
     printf '%s' "$1" | grep "^$2 " | head -1 | sed 's/.*= *"\(.*\)"/\1/'
 }
 
+version_sort_key() {
+    case "$1" in
+        *-r[0-9]*) printf '%s\n' "$1" ;;
+        *)         printf '%s-r0\n' "$1" ;;
+    esac
+}
+
 # --- Pass 1: collect (version, path) grouped by (name, arch) ---------------
 for pkg in "$PKG_DIR"/*.jpkg; do
     [ -f "$pkg" ] || continue
@@ -69,27 +77,27 @@ for pkg in "$PKG_DIR"/*.jpkg; do
 
     # Sanitize for use as a filename; name/arch shouldn't contain these but be safe.
     safe="$(printf '%s' "${name}__${arch}" | tr '/' '_')"
-    printf '%s\t%s\n' "$version" "$pkg" >> "$DEDUP_DIR/$safe"
+    printf '%s\t%s\t%s\n' "$(version_sort_key "$version")" "$version" "$pkg" >> "$DEDUP_DIR/$safe"
 done
 
 # --- Pass 2: pick highest version per (name, arch); list losers ------------
 dup_groups=0
 for group in "$DEDUP_DIR"/*; do
     [ -f "$group" ] || continue
-    sorted="$(sort -V -k1,1 "$group")"
+    sorted="$(sort -t '	' -k1,1V "$group")"
     n="$(printf '%s\n' "$sorted" | wc -l | tr -d ' ')"
 
-    # Winner is the last line (highest sort -V key).
+    # Winner is the last line (highest normalized version key).
     winner_line="$(printf '%s\n' "$sorted" | tail -n 1)"
-    winner_version="$(printf '%s' "$winner_line" | cut -f1)"
-    winner_path="$(printf '%s' "$winner_line" | cut -f2)"
+    winner_version="$(printf '%s' "$winner_line" | cut -f2)"
+    winner_path="$(printf '%s' "$winner_line" | cut -f3)"
     printf '%s\n' "$winner_path" >> "$WINNERS"
 
     if [ "$n" -gt 1 ]; then
         dup_groups=$((dup_groups + 1))
         gname="$(basename "$group" | sed 's/__/ (/' | sed 's/$/)/')"
         echo "::warning::duplicate versions for $gname — keeping $winner_version, dropping $((n - 1))"
-        printf '%s\n' "$sorted" | head -n "$((n - 1))" | while IFS='	' read -r v p; do
+        printf '%s\n' "$sorted" | head -n "$((n - 1))" | while IFS='	' read -r _key v p; do
             echo "  discarding: $(basename "$p") (version $v)"
             basename "$p" >> "$STALE_LIST"
         done

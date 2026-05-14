@@ -1,9 +1,12 @@
 [package]
 name = "clang"
-version = "21.1.2"
+version = "21.1.2-r1"
 license = "Apache-2.0"
 description = "Clang C/C++ compiler with compiler-rt builtins (linked against shared libllvm)"
 
+# r1: build against a full-default-target LLVM 21 so the default toolchain can
+# support source-built Zig 0.16.x and other cross-target LLVM consumers.
+#
 # clang is built using the canonical LLVM_ENABLE_PROJECTS=clang
 # pattern from the llvm-project root. The standalone-clang build
 # pattern (`cmake -S clang -DLLVM_DIR=...`) hits a known LLVM 21.x bug
@@ -30,12 +33,14 @@ export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
 export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
 export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
+LLVM_DEFAULT_TARGETS='AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;SPIRV;Sparc;SystemZ;VE;WebAssembly;X86;XCore'
+LLVM_TARGETS_TO_BUILD=${LLVM_TARGETS_TO_BUILD:-$LLVM_DEFAULT_TARGETS}
+
 case $(uname -m) in
-    # ubuntu-latest is 16 GB; -j2 OOMs during clang's diagnostic
-    # tablegen and Sema compile. -j1 is slower but stable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=$(nproc) ;;
+    # ubuntu-latest is 16 GB; local builders can override BUILD_JOBS.
+    x86_64)  LLVM_TRIPLE="x86_64-jonerix-linux-musl";  BUILD_JOBS=${BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TRIPLE="aarch64-jonerix-linux-musl"; BUILD_JOBS=${BUILD_JOBS:-$(nproc)} ;;
+    *)       LLVM_TRIPLE="unknown-jonerix-linux-musl"; BUILD_JOBS=${BUILD_JOBS:-$(nproc)} ;;
 esac
 
 SRC=$(pwd)
@@ -53,6 +58,7 @@ mkdir -p /tmp/clang-builtins-bootstrap
 cmake -S compiler-rt/lib/builtins -B /tmp/clang-builtins-bootstrap -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_C_COMPILER_TARGET="$BOOTSTRAP_TRIPLE" \
     -DCMAKE_C_FLAGS="-fPIC -I$SRC/libunwind/include" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
@@ -68,7 +74,7 @@ mkdir -p build
 cmake -S llvm -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang" \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \
@@ -146,6 +152,7 @@ mkdir -p /tmp/clang-builtins-jonerix
 cmake -S "$SRC/compiler-rt/lib/builtins" -B /tmp/clang-builtins-jonerix -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="$DESTDIR/bin/clang" \
+    -DCMAKE_CXX_COMPILER="$DESTDIR/bin/clang++" \
     -DCMAKE_C_COMPILER_TARGET="$LLVM_TRIPLE" \
     -DCMAKE_C_FLAGS="-fPIC -I$SRC/libunwind/include" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \

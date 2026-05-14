@@ -1,9 +1,11 @@
 [package]
 name = "llvm-extra"
-version = "21.1.2-r1"
+version = "21.1.2-r2"
 license = "Apache-2.0"
 description = "LLVM extras — lldb debugger + compiler-rt sanitizers/profile runtime. Built standalone against installed libllvm + clang."
 
+# r2: rebuild against the full-default-target LLVM 21 package set.
+#
 # llvm-extra ships the long tail of clang/llvm tooling that isn't part
 # of the core toolchain. It builds out-of-tree against the installed
 # libllvm + clang via LLVM's standalone build paths, so the LLVM core
@@ -15,9 +17,9 @@ description = "LLVM extras — lldb debugger + compiler-rt sanitizers/profile ru
 #   /bin/clang-include-cleaner, /bin/clang-move, /bin/clang-query,
 #   /bin/clang-reorder-fields, /bin/clang-tblgen, ...
 #   /bin/lldb, /bin/lldb-server, /bin/lldb-argdumper, /bin/lldb-instr
-#   /lib/clang/21/lib/linux/libclang_rt.{asan,msan,tsan,ubsan,lsan,
-#     hwasan,scudo,profile,xray}*.{a,so}
-#   /lib/clang/21/lib/<triple>/libclang_rt.profile.a -> ../linux/profile
+#   /lib/clang/21/lib/{linux,<triple>}/libclang_rt.{asan,msan,tsan,
+#     ubsan,lsan,hwasan,scudo,profile,xray}*.{a,so}
+#   /lib/clang/21/lib/<triple>/libclang_rt.profile.a
 #   /lib/clang/21/share/{asan,msan,tsan,ubsan}_*.txt   (suppression lists)
 #
 # What does NOT ship (lives in libllvm / clang / lld):
@@ -45,11 +47,14 @@ export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
 export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
 export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
+LLVM_DEFAULT_TARGETS='AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;SPIRV;Sparc;SystemZ;VE;WebAssembly;X86;XCore'
+LLVM_TARGETS_TO_BUILD=${LLVM_TARGETS_TO_BUILD:-$LLVM_DEFAULT_TARGETS}
+
 case $(uname -m) in
-    # ubuntu-latest 16 GB — -j2 OOMs. -j1 is slower but stable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    # ubuntu-latest 16 GB; local builders can override LLVM_BUILD_JOBS.
+    x86_64)  LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-$(nproc)} ;;
+    *)       LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-$(nproc)} ;;
 esac
 
 LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
@@ -121,7 +126,7 @@ mkdir -p build-lldb
 cmake -S llvm -B build-lldb -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang;lldb" \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \
@@ -177,7 +182,7 @@ mkdir -p build-rt
 cmake -S llvm -B build-rt -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \
@@ -230,21 +235,25 @@ if [ -d "$RT_BUILD_SHARE" ]; then
     cp -a "$RT_BUILD_SHARE/." "$RT_DEST_SHARE/"
 fi
 
-# Clang's PGO link path looks for the profile runtime in the target
-# triple directory as libclang_rt.profile.a. compiler-rt installs the
-# archive in clang's default linux/ layout with an arch suffix, so ship
-# a per-triple symlink for profile consumers such as optimized CPython.
+# Clang's PGO link path looks for the profile runtime in the target triple
+# directory as libclang_rt.profile.a. Current compiler-rt installs it there
+# directly; older layouts used linux/libclang_rt.profile-$arch.a, so keep the
+# fallback symlink for builders with that layout.
 RT_LINUX_LIB="$RT_DEST_LIB/linux"
 RT_TRIPLE_LIB="$RT_DEST_LIB/$LLVM_TRIPLE"
 RT_ARCH=$(uname -m)
-PROFILE_SRC="$RT_LINUX_LIB/libclang_rt.profile-$RT_ARCH.a"
-if [ ! -f "$PROFILE_SRC" ]; then
-    echo "ERROR: compiler-rt did not build $PROFILE_SRC" >&2
+PROFILE_DEST="$RT_TRIPLE_LIB/libclang_rt.profile.a"
+PROFILE_LINUX_SRC="$RT_LINUX_LIB/libclang_rt.profile-$RT_ARCH.a"
+if [ -f "$PROFILE_DEST" ]; then
+    :
+elif [ -f "$PROFILE_LINUX_SRC" ]; then
+    mkdir -p "$RT_TRIPLE_LIB"
+    ln -sf "../linux/$(basename "$PROFILE_LINUX_SRC")" "$PROFILE_DEST"
+else
+    echo "ERROR: compiler-rt did not build $PROFILE_DEST or $PROFILE_LINUX_SRC" >&2
     find "$RT_DEST_LIB" -name 'libclang_rt.profile*.a' -print >&2 2>/dev/null || true
     exit 1
 fi
-mkdir -p "$RT_TRIPLE_LIB"
-ln -sf "../linux/$(basename "$PROFILE_SRC")" "$RT_TRIPLE_LIB/libclang_rt.profile.a"
 
 # ──────────────────────────────────────────────────────────────────────
 # Cleanup: flatten /usr and /lib64, strip overlap with libllvm/clang/lld

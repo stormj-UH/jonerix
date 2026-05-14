@@ -1,8 +1,15 @@
 [package]
 name = "jpkg"
-version = "2.2.3"
+version = "2.2.4"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.4 — make `jpkg build` target-arch aware for cross-package builds.
+# Build now accepts `--arch <arch>`, honors `$JPKG_ARCH` for recipes that do
+# not set `[package].arch`, stamps the resolved arch into both filename and
+# metadata, exports JPKG_{HOST,TARGET}_ARCH plus JPKG_TARGET_TRIPLE to recipe
+# snippets, and maps x86_64/aarch64 to Go's amd64/arm64 GOARCH names so pure
+# Go recipes do not accidentally emit host binaries into cross-stamped packages.
+#
 # 2.2.3 — proper upgrade-clean + better collision error messages.  Fixes
 # the ncurses-6.5-r3 -> r4 upgrade failure where `sudo jpkg install --force
 # ncurses` died with `I/O error: File exists (os error 17)` and no path:

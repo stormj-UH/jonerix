@@ -112,13 +112,7 @@ fi
 
 install_cached_pkg_if_available() {
     pkg="$1"
-    cached_pkg=$(
-        for f in /var/cache/jpkg/${pkg}-*-aarch64.jpkg \
-                 /var/cache/jpkg-published/${pkg}-*-aarch64.jpkg; do
-            [ -f "$f" ] || continue
-            printf '%s\t%s\n' "$(basename "$f")" "$f"
-        done | sort -V | tail -n 1 | sed 's/.*	//'
-    )
+    cached_pkg=$(latest_cached_jpkg "$pkg" aarch64)
     if [ -z "$cached_pkg" ] || [ ! -f "$cached_pkg" ]; then
         return 1
     fi
@@ -127,6 +121,26 @@ install_cached_pkg_if_available() {
     skip=$((12 + hdr_len))
     tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | tar xf - -C /
     return 0
+}
+
+jpkg_version_key() {
+    case "$1" in
+        *-r[0-9]*) printf '%s\n' "$1" ;;
+        *)         printf '%s-r0\n' "$1" ;;
+    esac
+}
+
+latest_cached_jpkg() {
+    pkg="$1"
+    arch="$2"
+    for f in /var/cache/jpkg/${pkg}-*-"${arch}".jpkg \
+             /var/cache/jpkg-published/${pkg}-*-"${arch}".jpkg; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f")
+        rest=${base#${pkg}-}
+        ver=${rest%-${arch}.jpkg}
+        printf '%s\t%s\n' "$(jpkg_version_key "$ver")" "$f"
+    done | sort -t '	' -k1,1V | tail -n 1 | sed 's/.*	//'
 }
 
 have_working_expr() {
@@ -272,10 +286,10 @@ failures=0
 
 package_timeout() {
     case "$1" in
-        # LLVM-family from-source builds (aarch64 runs at full -j$(nproc)
-        # so these are faster than the x86_64 sibling, but still need
-        # well over 1h). Keep the legacy llvm at the same cap.
-        llvm|libllvm|clang|lld|llvm-extra|llvm22|libllvm22|clang22|lld22|llvm22-extra|libcxx22) echo 14400 ;;
+        # LLVM-family from-source builds. Full default target sets are much
+        # larger than the old host-target-only builds, and local hedge builders
+        # may intentionally run long. Keep the timeout out of the way.
+        llvm|libllvm|clang|lld|llvm-extra|llvm22|libllvm22|clang22|lld22|llvm22-extra|libcxx22) echo 43200 ;;
         # nodejs: v8 compile at -j2 (memory-safe under GitHub runners)
         # is ~100 min, plus configure + install + jpkg packaging. Give
         # it 2h to keep margin for the longest torque-generated v8
@@ -414,9 +428,7 @@ install_target_build_deps() {
         # and aarch64 musl chokes with 'unsupported relocation type 7'
         # (= R_X86_64_JUMP_SLOT). See chain run 25622994033 aarch64.
         # Pick the highest-sorting version; sort -V so r10 > r2.
-        local_pkg=$( ( ls /var/cache/jpkg/${dep_pkg}-*-aarch64.jpkg \
-                          /var/cache/jpkg-published/${dep_pkg}-*-aarch64.jpkg \
-                          2>/dev/null ) | sort -V | tail -1)
+        local_pkg=$(latest_cached_jpkg "$dep_pkg" aarch64)
         if [ -n "$local_pkg" ] && [ -f "$local_pkg" ]; then
             echo "=== Ensuring build dependency: ${dep_pkg} (for ${dep}) — extracting local $(basename "$local_pkg") ==="
             install_local_jpkg "$local_pkg"

@@ -33,6 +33,7 @@ SCCACHE_BIN="${BUILD_DIR}/sccache-bin/sccache"
 BUILDER_IMAGE="${BUILDER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder}"
 GITHUB_REPO="${GITHUB_REPO:-stormj-UH/jonerix}"
 RELEASE_TAG="${RELEASE_TAG:-packages}"
+JOBS="${JOBS:-2}"
 
 mkdir -p "$JPKG_OUTPUT" "$JPKG_PUBLISHED" "$JPKG_BIN" "$SCCACHE" "$(dirname "$SCCACHE_BIN")"
 
@@ -68,7 +69,10 @@ Env knobs:
   BUILDER_IMAGE   default $BUILDER_IMAGE
   GITHUB_REPO     default $GITHUB_REPO
   RELEASE_TAG     default $RELEASE_TAG
+  JOBS            default 2   (LLVM_BUILD_JOBS / BUILD_JOBS passed to recipe)
   REBUILD         set to 1 to rebuild even if $RELEASE_TAG already has the asset
+  JPKG_SIGN_KEY   optional path to a jpkg .sec key mounted read-only into the
+                  builder so local artifacts are signed at build time
 
 Volumes mounted into the container:
   /workspace             $REPO_ROOT
@@ -96,7 +100,7 @@ cmd_build() {
     fi
 
     for pkg in "$@"; do
-        echo "==> Local hedge build: $pkg (aarch64)"
+        echo "==> Local hedge build: $pkg (aarch64, JOBS=$JOBS)"
         # The builder image's ENTRYPOINT is /bin/zsh (the runtime login shell
         # for users who docker-exec into it).  --entrypoint /bin/sh swaps it
         # out for the build invocation so the CMD ("sh ci-build-aarch64.sh")
@@ -112,6 +116,17 @@ cmd_build() {
             _jmake_override_args="-v ${JMAKE_OVERRIDE}:/bin/jmake:ro -v ${JMAKE_OVERRIDE}:/bin/make:ro"
             echo "    using jmake override: $JMAKE_OVERRIDE"
         fi
+        _sign_mount_args=""
+        _sign_env_args=""
+        if [ -n "${JPKG_SIGN_KEY:-}" ]; then
+            if [ ! -r "$JPKG_SIGN_KEY" ]; then
+                echo "ERROR: JPKG_SIGN_KEY is set but not readable: $JPKG_SIGN_KEY" >&2
+                exit 1
+            fi
+            _sign_mount_args="-v ${JPKG_SIGN_KEY}:${JPKG_SIGN_KEY}:ro"
+            _sign_env_args="-e JPKG_SIGN_KEY=${JPKG_SIGN_KEY}"
+            echo "    signing enabled with JPKG_SIGN_KEY"
+        fi
         docker run --rm \
             --platform linux/arm64 \
             --entrypoint /bin/sh \
@@ -122,6 +137,7 @@ cmd_build() {
             -v "$SCCACHE:/var/cache/sccache" \
             -v "$SCCACHE_BIN:/bin/sccache:ro" \
             $_jmake_override_args \
+            $_sign_mount_args \
             -w /workspace \
             -e PKG_INPUT="$pkg" \
             -e REBUILD_INPUT="${REBUILD:-false}" \
@@ -129,6 +145,9 @@ cmd_build() {
             -e RUSTC_WRAPPER=sccache \
             -e CC="sccache clang" \
             -e CXX="sccache clang++" \
+            -e LLVM_BUILD_JOBS="$JOBS" \
+            -e BUILD_JOBS="$JOBS" \
+            $_sign_env_args \
             "$BUILDER_IMAGE" \
             /workspace/scripts/ci-build-aarch64.sh
         cache_local_pkg "$pkg"
@@ -171,10 +190,13 @@ cmd_upload() {
     for pkg in "$JPKG_OUTPUT"/*-aarch64.jpkg; do
         [ -f "$pkg" ] || continue
         name=$(basename "$pkg")
-        echo "==> Uploading $name to $GITHUB_REPO ($RELEASE_TAG)"
-        gh release upload "$RELEASE_TAG" "$pkg" \
-            --repo "$GITHUB_REPO" \
-            --clobber
+        for asset in "$pkg" "$pkg.sig"; do
+            [ -f "$asset" ] || continue
+            echo "==> Uploading $(basename "$asset") to $GITHUB_REPO ($RELEASE_TAG)"
+            gh release upload "$RELEASE_TAG" "$asset" \
+                --repo "$GITHUB_REPO" \
+                --clobber
+        done
         count=$((count + 1))
     done
 

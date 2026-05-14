@@ -1,9 +1,12 @@
 [package]
 name = "libllvm"
-version = "21.1.2-r1"
+version = "21.1.2-r2"
 license = "Apache-2.0"
 description = "LLVM core libraries, headers, cmake configs, and base tools (shared libLLVM-21.so)"
 
+# r2: build LLVM with the full default target set instead of only the host
+# target. Zig 0.16.x requires LLVM 21 built with all default backends enabled.
+#
 # r1: add jonerix-autotools-vendor as a runtime dep so every host with
 # the compiler toolchain installed automatically gets the autotools
 # build/host triple fix (autoconf-generated ./configure scripts pick
@@ -37,13 +40,15 @@ export CFLAGS="$(echo "$CFLAGS" | sed 's/-fPIE/-fPIC/g')"
 export CXXFLAGS="$(echo "${CXXFLAGS:-$CFLAGS}" | sed 's/-fPIE/-fPIC/g')"
 export LDFLAGS="$(echo "$LDFLAGS" | sed 's/ -pie / /g')"
 
+LLVM_DEFAULT_TARGETS='AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;SPIRV;Sparc;SystemZ;VE;WebAssembly;X86;XCore'
+LLVM_TARGETS_TO_BUILD=${LLVM_TARGETS_TO_BUILD:-$LLVM_DEFAULT_TARGETS}
+
 case $(uname -m) in
-    # GitHub's ubuntu-latest runner has 16 GB RAM; -j2 OOMs and stalls
-    # the build for 20+ minutes at a time during the heaviest compile
-    # ranges (clang/Sema, LLVM Support). -j1 is slower but predictable.
-    x86_64)  LLVM_TARGET="X86";     LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
-    aarch64) LLVM_TARGET="AArch64"; LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
-    *)       LLVM_TARGET="host";    LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=$(nproc) ;;
+    # GitHub's ubuntu-latest runner has 16 GB RAM; local builders can override
+    # LLVM_BUILD_JOBS. Keep the CI-safe default conservative.
+    x86_64)  LLVM_TRIPLE="x86_64-jonerix-linux-musl";  LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-1} ;;
+    aarch64) LLVM_TRIPLE="aarch64-jonerix-linux-musl"; LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-$(nproc)} ;;
+    *)       LLVM_TRIPLE="unknown-jonerix-linux-musl"; LLVM_BUILD_JOBS=${LLVM_BUILD_JOBS:-$(nproc)} ;;
 esac
 
 LLVM_AR=$(which llvm-ar 2>/dev/null || echo /lib/llvm21/bin/llvm-ar)
@@ -56,7 +61,7 @@ mkdir -p build
 cmake -S llvm -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="" \
-    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGET" \
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$LLVM_TRIPLE" \
     -DLLVM_HOST_TRIPLE="$LLVM_TRIPLE" \
     -DCMAKE_C_COMPILER=clang \

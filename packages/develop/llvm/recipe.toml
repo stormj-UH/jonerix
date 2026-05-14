@@ -1,9 +1,10 @@
 [package]
 name = "llvm"
-version = "21.1.2-r6"
+version = "21.1.2-r7"
 license = "Apache-2.0"
 description = "LLVM toolchain metapackage (pulls in libllvm + clang + lld, installs POSIX tool symlinks)"
 
+# r7: rev-bump for the full-default-target LLVM 21 split rebuild.
 # r6: converted from monolithic source build to metapackage.
 # The actual build is now split across three packages:
 #   libllvm  — LLVM core (libLLVM-21.so, headers, cmake configs, llvm-* tools)
