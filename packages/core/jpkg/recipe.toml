@@ -1,8 +1,12 @@
 [package]
 name = "jpkg"
-version = "2.2.7"
+version = "2.2.8"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.8 — print cached and freshly fetched INDEX timestamps during
+# `jpkg update`; `jpkg -uu` gets the same visibility through its update step.
+# This makes it clear whether a refresh pulled a newer repository index.
+#
 # 2.2.7 — keep `jpkg upgrade` dependency repair from aborting when an
 # installed package is absent from the current architecture's INDEX. This lets
 # hosts carry retired/local packages while still repairing missing deps for
