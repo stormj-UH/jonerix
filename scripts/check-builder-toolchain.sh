@@ -29,15 +29,15 @@ require_target() {
         fail "llvm-config --targets-built is missing $target"
 }
 
-require_package_version jpkg 2.2.4
+require_package_version jpkg 2.2.8
 require_package_version libllvm 21.1.2-r2
 require_package_version clang 21.1.2-r1
 require_package_version lld 21.1.2-r1
 require_package_version llvm 21.1.2-r7
-require_package_version llvm-extra 21.1.2-r2
+require_package_version llvm-extra 21.1.2-r3
 
-jpkg --version | grep '2\.2\.4' >/dev/null 2>&1 ||
-    fail "jpkg --version does not report 2.2.4"
+jpkg --version | grep '2\.2\.8' >/dev/null 2>&1 ||
+    fail "jpkg --version does not report 2.2.8"
 
 clang --version | grep 'clang version 21\.1\.2' >/dev/null 2>&1 ||
     fail "clang --version does not report 21.1.2"
