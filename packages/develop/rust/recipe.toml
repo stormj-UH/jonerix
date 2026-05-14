@@ -1,6 +1,6 @@
 [package]
 name = "rust"
-version = "1.95.0-r1"
+version = "1.95.0"
 license = "MIT"
 description = "Systems programming language (jonerix-linux-musl triple, no GNU runtime)"
 
