@@ -1,6 +1,6 @@
 [package]
 name = "stormwall"
-version = "1.1.11"
+version = "1.1.12"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
@@ -306,30 +306,28 @@ llvm-strip --strip-all "$DESTDIR/bin/pfctl" 2>/dev/null || true
 """
 
 [hooks]
-# dockerd's libnetwork bridge driver hard-codes /usr/sbin/iptables and
-# /sbin/iptables — it doesn't fall back to PATH lookup. Plant compat
-# symlinks back to /bin/stormwall in those paths at install time, since
-# jpkg payloads can only land in /bin /lib /share /etc and the
-# /usr/sbin and /sbin directories aren't in the package layout.
-post_install = """set -e
-names="iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft"
-for d in /sbin /usr/sbin; do
-    [ -d "$d" ] || mkdir -p "$d"
-    for n in $names; do
-        ln -sf /bin/stormwall "$d/$n"
-    done
-done
-"""
+# 1.1.12: dropped the /sbin and /usr/sbin iptables compat symlinks
+# from stormwall's own hooks.  Those exist solely for dockerd's
+# libnetwork (which hard-codes /usr/sbin/iptables and /sbin/iptables
+# instead of using PATH), so they belong in the *docker* package, not
+# stormwall.  Co-shipped with docker 27.5.1-r3 which plants those
+# symlinks in its own post_install and removes them in post_remove.
+# Non-docker hosts no longer get /sbin/ created at all — keeps the
+# rootfs flat the way jonerix wants it.
 post_remove = """set -e
-# Clean up the libnetwork-compat symlinks we planted in post_install.
-# Only remove if they still point at our binary so we don't trample a
-# manually placed iptables.
+# Defensive cleanup: stormwall 1.1.11 and older planted symlinks in
+# /sbin and /usr/sbin.  Remove them on removal so old installs upgrading
+# to >=1.1.12 don't leave the /sbin tree behind when stormwall is
+# removed without docker first.
 names="iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft"
 for d in /sbin /usr/sbin; do
     for n in $names; do
         target=$(readlink "$d/$n" 2>/dev/null) || continue
         [ "$target" = "/bin/stormwall" ] && rm -f "$d/$n"
     done
+    # If the dir is empty after we cleaned ours up, get rid of it too —
+    # jonerix doesn't want a stub /sbin sitting around.
+    rmdir "$d" 2>/dev/null || true
 done
 """
 

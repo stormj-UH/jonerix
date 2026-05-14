@@ -1,6 +1,6 @@
 [package]
 name = "rust"
-version = "1.95.0"
+version = "1.95.0-r1"
 license = "MIT"
 description = "Systems programming language (jonerix-linux-musl triple, no GNU runtime)"
 
@@ -187,8 +187,10 @@ include = ["/etc/cargo/config.toml"]
 CFG
 
 # --- skeleton copy for new users ---
-install -d "$DESTDIR/usr/share/rust/skel/.cargo"
-install -m 0644 "$DESTDIR/root/.cargo/config.toml" "$DESTDIR/usr/share/rust/skel/.cargo/config.toml"
+# Write directly into /share/ — jonerix is merged-usr-flat, so the
+# /usr/share/ → /share/ flatten round-trip below was just paperwork.
+install -d "$DESTDIR/share/rust/skel/.cargo"
+install -m 0644 "$DESTDIR/root/.cargo/config.toml" "$DESTDIR/share/rust/skel/.cargo/config.toml"
 
 # Flat-layout cleanup: merge any stray /usr or /lib64 into /.
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi

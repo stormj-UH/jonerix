@@ -1,6 +1,6 @@
 [package]
 name = "docker"
-version = "27.5.1-r2"
+version = "27.5.1-r3"
 license = "Apache-2.0"
 description = "Docker daemon (dockerd) — industry-standard container engine using containerd as the runtime backend"
 replaces = []
@@ -185,6 +185,20 @@ if ! grep -q "^docker:" /etc/group 2>/dev/null; then
     fi
 fi
 
+# dockerd's libnetwork bridge driver shells out to /usr/sbin/iptables
+# and /sbin/iptables (hard-coded, not PATH).  jonerix is merged-usr-flat
+# with no /sbin in the base rootfs, so plant compat symlinks pointing at
+# stormwall's multicall binary here.  Moved from stormwall 1.1.11's
+# post_install in 27.5.1-r3 / stormwall 1.1.12 — non-docker hosts no
+# longer get /sbin/ created at all.  post_remove takes them back out.
+names="iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft"
+for d in /sbin /usr/sbin; do
+    [ -d "$d" ] || mkdir -p "$d"
+    for n in $names; do
+        ln -sf /bin/stormwall "$d/$n"
+    done
+done
+
 # Seed daemon.json only when none is present on the live system.
 if [ ! -e /etc/docker/daemon.json ]; then
     mkdir -p /etc/docker
@@ -214,6 +228,20 @@ fi
 if command -v rc-update >/dev/null 2>&1; then
     (cd / && rc-update del docker default) 2>/dev/null || true
 fi
+
+# Tear down the /sbin and /usr/sbin libnetwork-compat symlinks planted
+# in post_install.  Only remove symlinks that actually point at
+# stormwall so we don't trample a manually placed binary.  Try to
+# rmdir the compat dirs afterwards — empty /sbin shouldn't linger on
+# a jonerix host where no other package uses it.
+names="iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft"
+for d in /sbin /usr/sbin; do
+    for n in $names; do
+        target=$(readlink "$d/$n" 2>/dev/null) || continue
+        [ "$target" = "/bin/stormwall" ] && rm -f "$d/$n"
+    done
+    rmdir "$d" 2>/dev/null || true
+done
 """
 
 [depends]

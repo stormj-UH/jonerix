@@ -1,6 +1,6 @@
 [package]
 name = "tini"
-version = "0.19.0-r1"
+version = "0.19.0-r2"
 license = "MIT"
 description = "Tiny init for containers — reaps zombies and forwards signals; used by 'docker run --init'"
 
@@ -37,9 +37,12 @@ if [ -f build/tini-static ]; then
 else
     install -Dm755 build/tini "$DESTDIR/bin/tini"
 fi
-# Also expose as /sbin/tini for containers that use the traditional path.
-mkdir -p "$DESTDIR/sbin"
-ln -sf /bin/tini "$DESTDIR/sbin/tini"
+# r2: dropped the /sbin/tini compat symlink.  jonerix is merged-usr-flat
+# with no /sbin in the rootfs; container images that hard-code /sbin/tini
+# (e.g. `ENTRYPOINT ["/sbin/tini"]`) need to be edited to point at
+# /bin/tini.  This is a deliberate breaking change for those container
+# images — the upside is that /sbin can disappear from the rootfs
+# entirely now that no shipped package re-creates it.
 llvm-strip --strip-all "$DESTDIR/bin/tini" 2>/dev/null || true
 """
 
