@@ -1,9 +1,25 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.29"
+version = "1.6.30"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.30: fix the /usr/local/bin/* references I missed in the 1.6.28
+# refactor.  The recipe's install lines were updated to drop scripts
+# into /bin/ but the SHIPPED INIT SCRIPTS still pointed at the old
+# /usr/local/bin/ paths.  Found on tormenta when pi5-wifi failed to
+# load brcmfmac at boot — its start() hard-codes MODPROBE=
+# /usr/local/bin/modprobe-shim in the fallback branch even though
+# the file is now /bin/modprobe-shim.  Files fixed in 1.6.30:
+#   init.d/pi5-wifi             (MODPROBE fallback)
+#   init.d/netfilter-nft-modules (modprobe registration)
+#   init.d/pi5-cold-reboot      (pi5-wake-on-power call)
+#   cron.d/pi5-rtc-battery      (COMMAND= path)
+#   bin/modprobe-shim           (header comment)
+# Symptom: pi5-wifi fails to start, brcmfmac never loads, wlan0
+# never appears, onboard WiFi is dead.  Effect is silent on Ethernet-
+# only hosts (which is most jonerix Pi 5s).
+#
 # 1.6.29: bump to recover from a broken 1.6.28 ship.  CI's single-
 # package `PKG_INPUT` dispatch path didn't honor the recipe's
 # `arch = "aarch64"` field, so the x86_64 builder also tried to

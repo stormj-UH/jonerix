@@ -1,5 +1,5 @@
 #!/bin/sh
-# /usr/local/bin/modprobe-shim — minimal modprobe(8) replacement for jonerix.
+# /bin/modprobe-shim — minimal modprobe(8) replacement for jonerix.
 #
 # jonerix does not ship kmod (it's LGPL-2.1) so the kernel's default
 # /sbin/modprobe is missing. Without one, any request_module() call made

@@ -27,8 +27,8 @@ _modprobe() {
         command -v modprobe
         return 0
     fi
-    if [ -x /usr/local/bin/modprobe-shim ]; then
-        echo /usr/local/bin/modprobe-shim
+    if [ -x /bin/modprobe-shim ]; then
+        echo /bin/modprobe-shim
         return 0
     fi
     return 1

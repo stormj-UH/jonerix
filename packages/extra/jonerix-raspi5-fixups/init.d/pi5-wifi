@@ -5,7 +5,7 @@
 # would auto-load the brcmfmac driver when the SDIO device appears.
 # This service fills that gap on Pi 5s:
 #
-#   1. Register /usr/local/bin/modprobe-shim as the kernel's
+#   1. Register /bin/modprobe-shim as the kernel's
 #      request_module(2) handler. Without this, the brcmfmac driver
 #      fails mid-attach because it can't pull in its vendor submodule
 #      brcmfmac-cyw (the Cypress flavour used by the 4345 chip).
@@ -41,7 +41,7 @@ start() {
     if toybox --help 2>&1 | grep -qw modprobe; then
         MODPROBE=/bin/modprobe
     else
-        MODPROBE=/usr/local/bin/modprobe-shim
+        MODPROBE=/bin/modprobe-shim
     fi
 
     ebegin "Registering $MODPROBE as kernel modprobe"

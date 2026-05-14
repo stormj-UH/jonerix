@@ -35,7 +35,7 @@ start() {
     # Log current wake-on-power / bootloader settings so they're
     # auditable in the boot log. Non-mutating — users control the
     # actual EEPROM state with `pi5-wake-on-power enable|disable`.
-    if [ -x /usr/local/bin/pi5-wake-on-power ]; then
-        einfo "$(/usr/local/bin/pi5-wake-on-power 2>&1 | tr '\n' ' ')"
+    if [ -x /bin/pi5-wake-on-power ]; then
+        einfo "$(/bin/pi5-wake-on-power 2>&1 | tr '\n' ' ')"
     fi
 }
