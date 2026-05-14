@@ -1,9 +1,28 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.27"
+version = "1.6.28"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.28: drop /usr/local/bin/* entirely.  All ten scripts that used to
+# live there (reboot-openrc, poweroff-openrc, modprobe-shim,
+# pi5-wifi-connect, pi5-wifi-set-country, pi5-fw, pi5-wake-on-power,
+# pi5-netboot-config, apply-pi5-boot-settings, pi5-rtc-battery-check)
+# now install directly to /bin.  jonerix is merged-usr-flat: /usr is a
+# runtime symlink to /, there's no FHS multi-prefix story, and the
+# /usr/local/bin -> /local/bin -> /usr/local/bin round-trip via the
+# /usr symlink was just adding indirection for no benefit.  The
+# /bin/reboot and /bin/poweroff symlinks switch to relative targets
+# (`reboot-openrc`, `poweroff-openrc` in the same dir) so the symlink
+# survives any future bind-mount of /bin elsewhere.  Co-shipped with
+# toybox 0.8.11-r10 which no longer claims /bin/{reboot,poweroff,halt,
+# shutdown} applets — together they eliminate the recurring
+# "toybox upgrade clobbered the OpenRC wrapper" failure mode reported
+# on tormenta 2026-05-14 10:03.  The post_remove restore logic keeps
+# the old /usr/local/bin/ and /local/bin/ patterns alongside the new
+# /bin/ and relative-symlink patterns so it cleans up correctly when
+# unpacking an old image's symlinks.
+#
 # 1.6.26: 1.6.25's revert hook didn't actually delete the old
 # /usr/local/bin/pi5-cold-poweroff and /etc/init.d/pi5-cold-shutdown
 # files on tormenta upgrade — jpkg's upgrade path leaves files that
@@ -224,7 +243,7 @@ ln -sf addgroup-safe $DESTDIR/bin/addgroup
 # Cypress name (cyfmac43455) while the Pi 5 driver asks for the
 # Broadcom name (brcmfmac43455). The shim handles the former; the
 # firmware symlinks in post_install handle the latter.
-install -Dm755 bin/modprobe-shim   $DESTDIR/usr/local/bin/modprobe-shim
+install -Dm755 bin/modprobe-shim   $DESTDIR/bin/modprobe-shim
 install -Dm755 init.d/pi5-wifi     $DESTDIR/etc/init.d/pi5-wifi
 
 # Onboard WiFi user setup. pi5-wifi-connect is an interactive helper:
@@ -237,7 +256,7 @@ install -Dm755 init.d/pi5-wifi     $DESTDIR/etc/init.d/pi5-wifi
 # there; runs wpa_supplicant -B against the user-written config when
 # it is. dhcpcd's default metric weighting keeps eth0 as the primary
 # uplink while it has carrier and falls over to wlan0 automatically.
-install -Dm755 bin/pi5-wifi-connect $DESTDIR/usr/local/bin/pi5-wifi-connect
+install -Dm755 bin/pi5-wifi-connect $DESTDIR/bin/pi5-wifi-connect
 install -Dm755 init.d/wpa_supplicant_wlan0 $DESTDIR/etc/init.d/wpa_supplicant_wlan0
 install -Dm755 init.d/shadow-login $DESTDIR/share/jonerix-raspi5-fixups/shadow-login
 
@@ -248,7 +267,7 @@ install -Dm755 init.d/shadow-login $DESTDIR/share/jonerix-raspi5-fixups/shadow-l
 # module. Effective on kernels that accept user-originated regulatory
 # hints; kernels built with CFG80211_INTERNAL_REGDB=y reject the
 # command with EINVAL and need a kernel rebuild or the iw tool.
-install -Dm755 bin/pi5-wifi-set-country $DESTDIR/usr/local/bin/pi5-wifi-set-country
+install -Dm755 bin/pi5-wifi-set-country $DESTDIR/bin/pi5-wifi-set-country
 
 # pi5-fw: direct /dev/vcio tool (stand-in for vcgencmd +
 # rpi-eeprom-config reads). Static-musl, zero deps.
@@ -257,40 +276,39 @@ rustc -O \
     -C target-feature=+crt-static \
     -o /tmp/pi5-fw \
     src/pi5-fw.rs
-install -Dm755 /tmp/pi5-fw $DESTDIR/usr/local/bin/pi5-fw
+install -Dm755 /tmp/pi5-fw $DESTDIR/bin/pi5-fw
 
 # pi5-wake-on-power: reads/writes the EEPROM bootloader config via
 # the VideoCore mailbox so the Pi 5 auto-boots after power is
 # restored (WAKE_ON_GPIO / POWER_OFF_ON_HALT). Python 3 stdlib only
 # (fcntl, os, struct, sys) — no pip deps, PSF-2.0.
-install -Dm755 bin/pi5-wake-on-power $DESTDIR/usr/local/bin/pi5-wake-on-power
+install -Dm755 bin/pi5-wake-on-power $DESTDIR/bin/pi5-wake-on-power
 
 # pi5-netboot-config: jonerix's stand-in for rpi-eeprom-config (which is
 # Debian-flavoured + GPL and not in jonerix). Same VideoCore mailbox
 # plumbing as pi5-wake-on-power, but writes BOOT_ORDER / TFTP_IP /
 # TFTP_PREFIX so a Pi 5 can be flipped between SD-boot and TFTP-boot
 # with one command. Python 3 stdlib only.
-install -Dm755 bin/pi5-netboot-config $DESTDIR/usr/local/bin/pi5-netboot-config
+install -Dm755 bin/pi5-netboot-config $DESTDIR/bin/pi5-netboot-config
 
 # apply-pi5-boot-settings: idempotent shell helper that patches
 # /boot/cmdline.txt (reboot=c) and /boot/config.txt
 # (hdmi_force_hotplug on both ports). Runs from post_install below.
-install -Dm755 bin/apply-pi5-boot-settings $DESTDIR/usr/local/bin/apply-pi5-boot-settings
+install -Dm755 bin/apply-pi5-boot-settings $DESTDIR/bin/apply-pi5-boot-settings
 
 # reboot-openrc: Pi 5-safe reboot backend. The package owns
 # /bin/reboot via replaces=["toybox"], while post_install also refreshes
 # the live /sbin aliases because jpkg intentionally flattens /sbin into
 # /bin during packaging.
-install -Dm755 bin/reboot-openrc $DESTDIR/usr/local/bin/reboot-openrc
-mkdir -p $DESTDIR/bin
-ln -sf /usr/local/bin/reboot-openrc $DESTDIR/bin/reboot
+install -Dm755 bin/reboot-openrc $DESTDIR/bin/reboot-openrc
+ln -sf reboot-openrc $DESTDIR/bin/reboot
 
 # poweroff-openrc: same pattern, sibling wrapper around
 # `openrc-shutdown -p now`. Without this, /bin/poweroff is the toybox
 # alias that calls reboot(2) RB_POWER_OFF directly and skips OpenRC's
 # orderly stop/sync/remount-ro path — likely to leave the rootfs dirty.
-install -Dm755 bin/poweroff-openrc $DESTDIR/usr/local/bin/poweroff-openrc
-ln -sf /usr/local/bin/poweroff-openrc $DESTDIR/bin/poweroff
+install -Dm755 bin/poweroff-openrc $DESTDIR/bin/poweroff-openrc
+ln -sf poweroff-openrc $DESTDIR/bin/poweroff
 
 # disable-eee-late: post-default-runlevel retry of /bin/disable-eee
 # to catch the case where the kernel re-inits the PHY AFTER the
@@ -317,7 +335,7 @@ install -Dm755 init.d/pi5-cold-reboot $DESTDIR/etc/init.d/pi5-cold-reboot
 # pi5-rtc-battery-check: reads /sys/class/rtc/rtc0/battery_voltage
 # and logs INFO / WARN / ERROR depending on the cell state. Paired
 # with a snooze-cron entry that runs it daily.
-install -Dm755 bin/pi5-rtc-battery-check $DESTDIR/usr/local/bin/pi5-rtc-battery-check
+install -Dm755 bin/pi5-rtc-battery-check $DESTDIR/bin/pi5-rtc-battery-check
 install -Dm644 cron.d/pi5-rtc-battery     $DESTDIR/etc/cron.d/pi5-rtc-battery
 
 # Periodic disable-eee re-apply. The init.d/disable-eee OpenRC service
@@ -336,12 +354,11 @@ install -Dm644 cron.d/disable-eee-watchdog $DESTDIR/etc/cron.d/disable-eee-watch
 # ntp-set) would never fire.
 install -Dm755 init.d/snooze-crond $DESTDIR/etc/init.d/snooze-crond
 
-# jonerix is merged-usr-flat: /usr is a runtime symlink to /. jpkg >= 1.1.0
-# refuses to silently flatten a DESTDIR/usr/ tree (layout bugs used to
-# slip through), so do the flatten ourselves. After this, $DESTDIR/usr/
-# is gone and files previously at $DESTDIR/usr/local/bin/* now live at
-# $DESTDIR/local/bin/* — which the /usr → / runtime symlink resolves
-# back to /usr/local/bin/* on the installed system.
+# 1.6.28 dropped /usr/local/bin/* entirely — every script previously
+# under /usr/local/bin/ now lives at /bin/.  This block stays as a
+# defensive no-op: if a future install line accidentally lands under
+# $DESTDIR/usr/, jpkg >= 1.1.0 would refuse it; flatten here instead
+# so the package builds cleanly.
 if [ -d "$DESTDIR/usr" ]; then
     cp -a "$DESTDIR/usr/." "$DESTDIR/"
     rm -rf "$DESTDIR/usr"
@@ -511,26 +528,26 @@ fi
 # same board successfully. /bin/reboot is package-owned; the hook below
 # also takes over /sbin and /usr/sbin aliases that may exist in older
 # images outside jpkg's file database.
-if [ -x /usr/local/bin/reboot-openrc ]; then
+if [ -x /bin/reboot-openrc ]; then
     if [ -L /bin/reboot ] && [ ! -e /etc/jpkg/raspi5-fixups/reboot.prev ]; then
         mkdir -p /etc/jpkg/raspi5-fixups
         readlink /bin/reboot > /etc/jpkg/raspi5-fixups/reboot.prev 2>/dev/null || true
     fi
-    ln -sf /usr/local/bin/reboot-openrc /bin/reboot
-    [ -d /sbin ] && ln -sf /usr/local/bin/reboot-openrc /sbin/reboot
-    [ -d /usr/sbin ] && ln -sf /usr/local/bin/reboot-openrc /usr/sbin/reboot
+    ln -sf reboot-openrc /bin/reboot
+    [ -d /sbin ] && ln -sf /bin/reboot-openrc /sbin/reboot
+    [ -d /usr/sbin ] && ln -sf /bin/reboot-openrc /usr/sbin/reboot
 fi
 
 # Same pattern for /bin/poweroff.  Stash the prior target so
 # post_remove can restore it (typically toybox).
-if [ -x /usr/local/bin/poweroff-openrc ]; then
+if [ -x /bin/poweroff-openrc ]; then
     if [ -L /bin/poweroff ] && [ ! -e /etc/jpkg/raspi5-fixups/poweroff.prev ]; then
         mkdir -p /etc/jpkg/raspi5-fixups
         readlink /bin/poweroff > /etc/jpkg/raspi5-fixups/poweroff.prev 2>/dev/null || true
     fi
-    ln -sf /usr/local/bin/poweroff-openrc /bin/poweroff
-    [ -d /sbin ] && ln -sf /usr/local/bin/poweroff-openrc /sbin/poweroff
-    [ -d /usr/sbin ] && ln -sf /usr/local/bin/poweroff-openrc /usr/sbin/poweroff
+    ln -sf poweroff-openrc /bin/poweroff
+    [ -d /sbin ] && ln -sf /bin/poweroff-openrc /sbin/poweroff
+    [ -d /usr/sbin ] && ln -sf /bin/poweroff-openrc /usr/sbin/poweroff
 fi
 
 # --- Pi 5 hardware fixups (only on a live Pi 5) ---
@@ -605,7 +622,7 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     if toybox --help 2>&1 | grep -qw modprobe; then
         MP=/bin/modprobe
     else
-        MP=/usr/local/bin/modprobe-shim
+        MP=/bin/modprobe-shim
     fi
     if [ -w /proc/sys/kernel/modprobe ]; then
         echo -n "$MP" > /proc/sys/kernel/modprobe
@@ -652,7 +669,7 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     # reboot=c in cmdline.txt overrides that (kernel keeps the last
     # reboot= token). Without it, `reboot` hangs because the RP1
     # southbridge can't be reset on a warm reboot.
-    /usr/local/bin/apply-pi5-boot-settings 2>/dev/null || true
+    /bin/apply-pi5-boot-settings 2>/dev/null || true
     if [ -w /sys/kernel/reboot/mode ]; then
         echo cold > /sys/kernel/reboot/mode 2>/dev/null || true
     fi
@@ -663,16 +680,16 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     # installs need nothing. Users who want the inverse run
     # `sudo pi5-wake-on-power disable` and that preference sticks
     # in EEPROM across installs/reboots.
-    if [ -x /usr/local/bin/pi5-wake-on-power ]; then
-        /usr/local/bin/pi5-wake-on-power 2>&1 | sed 's/^/raspi5-fixups: /' || true
+    if [ -x /bin/pi5-wake-on-power ]; then
+        /bin/pi5-wake-on-power 2>&1 | sed 's/^/raspi5-fixups: /' || true
     fi
 
     # --- RTC coin-cell initial read + daily cron wiring ---
     # Run the check once now so the current voltage (or "no battery"
     # verdict) shows up in the install log. Idempotent otherwise —
     # the cron.d entry handles the daily recurrence after boot.
-    if [ -x /usr/local/bin/pi5-rtc-battery-check ]; then
-        /usr/local/bin/pi5-rtc-battery-check -v 2>&1 | sed 's/^/raspi5-fixups: /' || true
+    if [ -x /bin/pi5-rtc-battery-check ]; then
+        /bin/pi5-rtc-battery-check -v 2>&1 | sed 's/^/raspi5-fixups: /' || true
     fi
 fi
 exit 0"""
@@ -715,7 +732,12 @@ _restore_reboot_link() {
     if [ -L "$_path" ]; then
         _cur=$(readlink "$_path" 2>/dev/null || true)
         case "$_cur" in
-            /usr/local/bin/reboot-openrc|/local/bin/reboot-openrc)
+            # /bin/reboot-openrc is the 1.6.27+ target (relative symlink
+            # to "reboot-openrc" resolves to /bin/reboot-openrc).  The
+            # /usr/local/bin/ and /local/bin/ patterns are kept so a
+            # post_remove that runs on an old image still recognises
+            # the pre-1.6.27 layout when cleaning up.
+            reboot-openrc|/bin/reboot-openrc|/usr/local/bin/reboot-openrc|/local/bin/reboot-openrc)
                 rm -f "$_path"
                 ;;
         esac
@@ -726,7 +748,7 @@ _reboot_bin_target=toybox
 if [ -f /etc/jpkg/raspi5-fixups/reboot.prev ]; then
     _saved=$(cat /etc/jpkg/raspi5-fixups/reboot.prev)
     case "$_saved" in
-        ""|/usr/local/bin/reboot-openrc|/local/bin/reboot-openrc)
+        ""|reboot-openrc|/bin/reboot-openrc|/usr/local/bin/reboot-openrc|/local/bin/reboot-openrc)
             ;;
         *)
             _reboot_bin_target=$_saved
@@ -747,7 +769,7 @@ _restore_poweroff_link() {
     if [ -L "$_path" ]; then
         _cur=$(readlink "$_path" 2>/dev/null || true)
         case "$_cur" in
-            /usr/local/bin/poweroff-openrc|/local/bin/poweroff-openrc)
+            poweroff-openrc|/bin/poweroff-openrc|/usr/local/bin/poweroff-openrc|/local/bin/poweroff-openrc)
                 rm -f "$_path"
                 ;;
         esac
@@ -758,7 +780,7 @@ _poweroff_bin_target=toybox
 if [ -f /etc/jpkg/raspi5-fixups/poweroff.prev ]; then
     _saved=$(cat /etc/jpkg/raspi5-fixups/poweroff.prev)
     case "$_saved" in
-        ""|/usr/local/bin/poweroff-openrc|/local/bin/poweroff-openrc)
+        ""|poweroff-openrc|/bin/poweroff-openrc|/usr/local/bin/poweroff-openrc|/local/bin/poweroff-openrc)
             ;;
         *)
             _poweroff_bin_target=$_saved
