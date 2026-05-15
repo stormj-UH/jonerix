@@ -9,7 +9,7 @@
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.21"
+version = "1.0.22"
 license = "MIT OR Apache-2.0"
 description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 0 real divergences vs real git, rPGP + SSH signing, LFS smudge, top-notch rustdoc)"
 
@@ -315,8 +315,14 @@ description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 
 # when present.  Full package suite passed single-threaded under
 # RUSTFLAGS=-D warnings; gitredoxide Forgejo push CI and GitHub mirror
 # both passed before this package recipe was bumped.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.21/gitredoxide-1.0.21-vendored.tar.gz"
-sha256 = "e827c8f67a81c3127b2644bdc04aaac1392094bef57dd47e2acc660204f3604f"
+#
+# 1.0.22: reflog identity hotfix.  Fast-forward pull and the other
+# reflog-backed ref update paths no longer fail when no committer
+# identity is configured.  They still use the configured identity when
+# present, and otherwise fall back to gitredoxide <gitredoxide@reflog>
+# in normal mode or git <git@reflog> in GITREDOXIDE_TEST_MODE.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.22/gitredoxide-1.0.22-vendored.tar.gz"
+sha256 = "df60039452b17b5abfb2f596f8a4dfb3b7f98119b48b9dfed6e8f8de7cf5ed4a"
 
 [build]
 system = "custom"

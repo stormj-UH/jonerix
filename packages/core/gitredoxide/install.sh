@@ -13,7 +13,7 @@
 set -eu
 
 PROG=$(basename "$0")
-DEFAULT_VERSION="1.0.21"
+DEFAULT_VERSION="1.0.22"
 DEFAULT_PREFIX="/usr/local"
 DEFAULT_RENAME="git-redoxide"
 RELEASE_BASE="https://github.com/stormj-UH/jonerix/releases/download/packages"
