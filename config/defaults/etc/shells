@@ -1,6 +1,24 @@
 # /etc/shells — valid login shells
-# base: toybox sh (POSIX) + mksh, optional: zsh || brash
+#
+# Shipped baseline:
+#   /bin/sh    — POSIX (toybox sh on bootstrap, mksh once mksh installs)
+#   /bin/mksh  — MirBSD Korn Shell, the canonical /bin/sh provider
+#
+# Provided by the brash package (clean-room Rust bash 5.3 reimplementation):
+#   /bin/brash — the binary itself
+#   /bin/bash  — symlink to brash (so #!/bin/bash scripts work)
+#   /bin/rash  — same binary, "restricted" alias
+#
+# Provided by the zsh package:
+#   /bin/zsh
+#
+# Package install/remove hooks add or strip the relevant entries.
+# This file is the bootstrap floor — packages append their lines on
+# install (brash post_install / zsh post_install) and remove them on
+# uninstall (post_remove).
 /bin/sh
 /bin/mksh
-/bin/zsh
+/bin/bash
 /bin/brash
+/bin/rash
+/bin/zsh

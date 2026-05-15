@@ -7,14 +7,30 @@
 ::sysinit:/bin/openrc boot
 ::wait:/bin/openrc default
 
-# Spawn getty on tty1-tty3
-tty1::respawn:/bin/getty 38400 tty1
-tty2::respawn:/bin/getty 38400 tty2
-tty3::respawn:/bin/getty 38400 tty3
+# tty1 is managed by the shadow-login OpenRC service (shadow-getty
+# supervises the login loop on /dev/tty1).  Do NOT spawn a getty
+# here for tty1 — having two PID-1 children fight for the same
+# console produces a respawn storm and the 60-second-login-timeout
+# regression reproduced on tormenta 2026-05-11.  See packages/core/
+# shadow recipe header for the full diagnosis.
+#
+# tty2 / tty3 — optional secondary consoles.  Commented out by
+# default; uncomment if you want a second/third VT.  When enabled,
+# use toybox's getty applet at /bin/toybox (the standalone /bin/
+# getty path doesn't exist on jonerix; toybox dispatches by argv[0]).
+#tty2::respawn:/bin/toybox getty 38400 tty2
+#tty3::respawn:/bin/toybox getty 38400 tty3
 
-# Serial console (for cloud / headless)
-#ttyS0::respawn:/bin/getty -L 115200 ttyS0
+# Serial console (for cloud / headless installs).  Pi 5 ships UART
+# on GPIO14/15 — the kernel cmdline already maps console=serial0,
+# so this getty is what catches a serial-cable user.  Uncomment in
+# image profiles that need it; commented here so a wall-powered
+# desktop install doesn't drive a getty against a non-existent UART.
+#ttyS0::respawn:/bin/toybox getty -L 115200 ttyS0
 
-# Shutdown / reboot
+# Shutdown / reboot.  /bin/reboot is provided by jonerix-raspi5-
+# fixups on Pi 5 (an OpenRC-aware wrapper that runs
+# `openrc-shutdown -r now`); on other targets it's the toybox
+# applet.  Either way the orderly path is the same here.
 ::shutdown:/bin/openrc shutdown
 ::ctrlaltdel:/bin/reboot

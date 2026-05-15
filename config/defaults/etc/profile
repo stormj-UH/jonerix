@@ -2,11 +2,15 @@
 # Sourced by login shells. Keep this POSIX-compatible.
 
 # --- PATH ---
-# jonerix uses merged /usr: all binaries live in /bin, all libraries in /lib.
+# jonerix is merged-usr-flat: /usr is a runtime symlink to / and every
+# package installs straight into /bin and /lib.  There is no
+# /usr/local/bin (that was a vestige of the FHS multi-prefix layout)
+# and no /sbin (packages that need iptables-style compat symlinks
+# plant them only when their consumer — e.g. docker — is installed).
+#
+# User-specific binaries go in ~/bin; that's picked up via the
+# per-user .profile / .brashrc / .zshrc layer, not here.
 export PATH="/bin"
-
-# Add local bin if it exists (for user-installed tools)
-[ -d "/usr/local/bin" ] && export PATH="/usr/local/bin:$PATH"
 
 # --- Prompt ---
 # zsh: handled by /etc/zshrc
