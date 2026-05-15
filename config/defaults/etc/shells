@@ -1,5 +1,5 @@
 # /etc/shells — valid login shells
-# base: toybox sh (POSIX) + mksh, optional: zsh
+# base: toybox sh (POSIX) + mksh, optional: zsh || brash
 /bin/sh
 /bin/mksh
 /bin/zsh
