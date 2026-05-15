@@ -1,0 +1,16 @@
+# /etc/hosts — static name resolution for the loopback interface.
+#
+# Without this, programs that hard-code `127.0.0.1 = localhost` (and
+# there are MANY) fall back to DNS lookups, which take their own
+# sweet time on a fresh host with a slow resolver.
+#
+# Add per-host entries below the floor.  Edit safely — packages
+# never overwrite /etc/hosts.
+
+127.0.0.1   localhost localhost.localdomain
+::1         localhost localhost.localdomain ip6-localhost ip6-loopback
+
+# IPv6 multicast — required by some applications even on IPv4-only
+# hosts (musl's getaddrinfo will short-circuit when it sees these).
+ff02::1     ip6-allnodes
+ff02::2     ip6-allrouters

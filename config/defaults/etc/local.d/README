@@ -1,0 +1,24 @@
+/etc/local.d/ — OpenRC drop-in scripts run at the `local` runlevel.
+
+Every executable file in this directory ending in `.start` is run
+after the default runlevel has finished starting (i.e. once the
+system is up, before login banners appear).  Files ending in
+`.stop` run at shutdown.  Anything else is ignored.
+
+This is the right place for small per-host customisations that don't
+warrant their own packaged init.d/<name> service:
+
+  /etc/local.d/00-fix-foo.start    — fix up a quirk on this host
+  /etc/local.d/load-some-modules.start
+  /etc/local.d/wipe-stale-cache.stop
+
+Files MUST be executable (chmod +x).  Order is alphabetical, so use
+numeric prefixes (00-, 50-, 99-) to control sequence when it matters.
+
+Logging: stdout/stderr is captured into /var/log/rc.log if
+`rc_logger="YES"` in /etc/rc.conf.  Otherwise the output goes to the
+console.
+
+See `man 8 rc-local` for full details.  Per-package init.d scripts
+under /etc/init.d/* should NOT live here — they belong in /etc/init.d/
+proper with `rc-update add <name> default` to register.

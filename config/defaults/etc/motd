@@ -1,0 +1,7 @@
+Welcome to jonerix — permissive-license Linux distribution.
+
+  Shells:    /bin/sh (mksh)   /bin/bash (brash)   /bin/zsh
+  Packages:  jpkg install <name>   jpkg search <pattern>
+  Services:  rc-service <name> {start|stop|restart|status}
+  Docs:      https://github.com/stormj-UH/jonerix
+

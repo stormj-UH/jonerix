@@ -1,0 +1,8 @@
+# /etc/conf.d/hostname — config for the OpenRC `hostname` service.
+#
+# Most installs leave this empty and let the hostname service read
+# /etc/hostname instead.  Set HOSTNAME below to force a specific name
+# regardless of what's in /etc/hostname (useful in image-builder
+# pipelines that produce one image but boot it as many machines).
+
+#HOSTNAME="jonerix"

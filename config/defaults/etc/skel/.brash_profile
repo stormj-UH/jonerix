@@ -1,0 +1,21 @@
+# ~/.brash_profile — brash login-shell init for jonerik
+#
+# Login shells source this file once at login.  Source .brashrc to get
+# interactive shell setup (prompt, aliases, history) for login shells too.
+
+# Source the interactive rc if present.
+[ -r "$HOME/.brashrc" ] && . "$HOME/.brashrc"
+
+# ── Login-only environment ────────────────────────────────────────────────
+# (variables set here are inherited by every shell spawned in the session)
+
+umask 022
+
+# Add common login-shell PATH entries.  Idempotent — won't double-add.
+for d in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+    case ":$PATH:" in
+        *":$d:"*) ;;
+        *) [ -d "$d" ] && PATH="$PATH:$d" ;;
+    esac
+done
+export PATH

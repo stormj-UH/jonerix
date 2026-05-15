@@ -1,0 +1,33 @@
+# /etc/protocols — internet protocol numbers <-> mnemonic names.
+#
+# Read by getprotoent / getprotobyname / getprotobynumber.  musl
+# ships a built-in fallback table that covers the common protocols
+# even when this file is missing, but some legacy daemons grep this
+# file directly (tcpdump, traceroute parsing, occasional network
+# diagnostic scripts).
+#
+# Trimmed to the well-known protocols actually in use on modern
+# Linux.  Full IANA registry has ~150 entries; if you need an exotic
+# one, append it here following the format:
+#
+#   <name>  <number>  [<aliases>...]  # comment
+
+ip      0       IP              # Internet protocol pseudo-protocol
+icmp    1       ICMP            # Internet control message
+igmp    2       IGMP            # Internet group management
+tcp     6       TCP             # Transmission control protocol
+egp     8       EGP             # Exterior gateway protocol
+udp     17      UDP             # User datagram protocol
+ipv6    41      IPv6            # IPv6
+ipv6-route 43   IPv6-Route      # Routing header for IPv6
+ipv6-frag  44   IPv6-Frag       # Fragment header for IPv6
+gre     47      GRE             # Generic routing encapsulation
+esp     50      ESP             # Encap security payload
+ah      51      AH              # Authentication header
+ipv6-icmp 58    IPv6-ICMP icmpv6    # ICMP for IPv6
+ipv6-nonxt 59   IPv6-NoNxt      # No next header for IPv6
+ipv6-opts 60    IPv6-Opts       # Destination options for IPv6
+ospf    89      OSPFIGP         # Open shortest path first
+pim     103     PIM             # Protocol independent multicast
+sctp    132     SCTP            # Stream control transmission protocol
+udplite 136     UDPLITE         # UDP-Lite RFC 3828

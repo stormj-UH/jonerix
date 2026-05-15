@@ -20,9 +20,14 @@ output/
 !packages/core/jpkg/vendor/**/*.o
 *.d
 *.dSYM/
-# Exceptions: directories named *.d that should be tracked
-!config/openrc/init.d/
+# Exceptions: directories named *.d under config/ (these are config
+# drop-in dirs — conf.d, sysctl.d, cron.d, local.d, limits.d, init.d)
+# and under packages/*/*/ (per-package init.d).  Without these, the
+# *.d wildcard above swallows every drop-in directory in the tree.
+!config/**/*.d/
+!config/**/*.d/**
 !packages/*/*/init.d/
+!packages/*/*/init.d/**
 !packages/*/*/cron.d/
 !packages/*/*/conf.d/
 # Test binaries (keep .c sources)

@@ -1,0 +1,35 @@
+# /etc/nanorc — system-wide nano defaults.
+#
+# nano isn't in the base install (jonerix ships pico/picocom not GNU
+# nano).  If you `jpkg install nano` to get the GNU editor, these
+# defaults take effect; if not, this file is a harmless no-op.
+
+# Show line numbers in the gutter.
+set linenumbers
+
+# Auto-indent new lines at the same level as the previous one.
+set autoindent
+
+# Make Tab insert spaces (4 of them).  Override per-language with
+# syntax rules below if you want hard tabs in Makefiles etc.
+set tabsize 4
+set tabstospaces
+
+# Don't wrap long lines at the window edge; scroll horizontally.
+set nowrap
+
+# Constantly update the cursor's line/column in the status bar.
+set constantshow
+
+# Smooth scrolling instead of jumping by half-screen.
+set smooth
+
+# Backup the file once on every save to <name>~ (in $HOME/.nano if set).
+set backup
+
+# Enable mouse support inside terminals that report mouse events.
+set mouse
+
+# Syntax highlighting — load every definition the nano-syntax package
+# drops into /share/nano/.
+include "/share/nano/*.nanorc"

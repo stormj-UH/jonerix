@@ -1,0 +1,61 @@
+# /etc/inputrc — system-wide readline configuration.
+#
+# Read by every readline-using program (brash, bash compat,
+# /bin/python3 interactive, sqlite3 CLI, etc.).  Per-user overrides
+# go in ~/.inputrc.
+
+# ── Bell ───────────────────────────────────────────────────────────────
+# No audible bell; a flash is fine but most jonerix installs are
+# headless so even that's a no-op.
+set bell-style none
+
+# ── Editing mode ───────────────────────────────────────────────────────
+set editing-mode emacs
+
+# ── Completion ─────────────────────────────────────────────────────────
+# Case-insensitive completion AND treat - and _ as equivalent.
+set completion-ignore-case on
+set completion-map-case on
+
+# Show common prefix immediately on Tab; only ring/list on second Tab.
+set show-all-if-unmodified on
+set show-all-if-ambiguous off
+
+# Color completions like ls --color does.
+set colored-stats on
+set colored-completion-prefix on
+
+# Don't quote the path when expanding hostnames after $.
+set mark-directories on
+set mark-symlinked-directories on
+
+# Skip the "Display all N possibilities?" prompt below 200.
+set completion-query-items 200
+set page-completions off
+
+# Visible cursor in the line buffer even after partial completion.
+set visible-stats on
+
+# ── History search ─────────────────────────────────────────────────────
+# Up/Down arrows search history by what's typed so far (not just
+# previous-line / next-line).  Huge quality-of-life win.
+"\e[A": history-search-backward
+"\e[B": history-search-forward
+
+# Ctrl-Left / Ctrl-Right: jump word at a time (xterm-style).
+"\e[1;5C": forward-word
+"\e[1;5D": backward-word
+
+# Alt-. inserts the last argument of the previous command (zsh muscle
+# memory).
+"\e.": yank-last-arg
+
+# ── Display ────────────────────────────────────────────────────────────
+# Don't expand the tilde to $HOME on the display — keeps prompts readable.
+set expand-tilde off
+
+# 8-bit input/output — UTF-8 just works without converting to backslash-
+# escapes when reading or writing.
+set input-meta on
+set output-meta on
+set convert-meta off

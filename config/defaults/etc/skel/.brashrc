@@ -1,0 +1,70 @@
+# ~/.brashrc — brash interactive-shell init for jonerik
+# Mirrors macOS zsh prompt: "%n@%m %1~ %# " → "\u@\h \W % "
+#   \u  = username
+#   \h  = short hostname
+#   \W  = basename of cwd ("~" when cwd == $HOME)
+#   %   = literal (matches zsh's non-root prompt char)
+
+# ── Prompt ────────────────────────────────────────────────────────────────
+PS1='\u@\h \W % '
+PS2='> '
+PS4='+ '
+
+# ── History ───────────────────────────────────────────────────────────────
+HISTFILE="$HOME/.brash_history"
+HISTSIZE=10000
+HISTFILESIZE=20000
+HISTCONTROL=ignoredups:ignorespace
+shopt -s histappend  2>/dev/null
+shopt -s cmdhist     2>/dev/null
+
+# ── Shell options ─────────────────────────────────────────────────────────
+shopt -s checkwinsize 2>/dev/null  # update LINES/COLUMNS after each cmd
+shopt -s extglob      2>/dev/null  # extended globbing
+shopt -s globstar     2>/dev/null  # ** matches all paths
+
+# ── Editing ───────────────────────────────────────────────────────────────
+set -o emacs
+
+# ── Aliases ───────────────────────────────────────────────────────────────
+# Use --color=auto on Linux; on macOS use -G (BSD ls).  Detect once.
+if ls --color=auto / >/dev/null 2>&1; then
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+else
+    alias ls='ls -G'
+fi
+alias ll='ls -lh'
+alias la='ls -lhA'
+alias l='ls -CF'
+
+alias ..='cd ..'
+alias ...='cd ../..'
+
+alias gs='git status'
+alias gd='git diff'
+alias gl='git log --oneline -20'
+alias gp='git pull --ff-only'
+
+# ── PATH ─────────────────────────────────────────────────────────────────
+case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH" ;;
+esac
+case ":$PATH:" in
+    *":$HOME/.cargo/bin:"*) ;;
+    *) [ -d "$HOME/.cargo/bin" ] && PATH="$HOME/.cargo/bin:$PATH" ;;
+esac
+export PATH
+
+# ── Editor ────────────────────────────────────────────────────────────────
+export EDITOR="${EDITOR:-vim}"
+export PAGER="${PAGER:-less}"
+export LESS='-R -i -M -W -z-2'
+
+# ── Locale ────────────────────────────────────────────────────────────────
+export LANG="${LANG:-en_US.UTF-8}"
+
+# ── Convenience functions ─────────────────────────────────────────────────
+mkcd() { mkdir -p "$1" && cd "$1"; }
+path() { printf '%s\n' "$PATH" | tr ':' '\n'; }

@@ -1,0 +1,17 @@
+# /etc/conf.d/net — OpenRC networking floor.
+#
+# jonerix uses dhcpcd for client-side network bring-up by default
+# (one service handles both IPv4 and IPv6; no separate dhclient or
+# wpa_supplicant-driven path).  Image profiles that want a different
+# network manager (ifupdown-ng for the router profile, NetworkManager
+# for a desktop profile if someone ever ships that) override here.
+
+# Default uplink interface name.  Most Pi 5 / cloud installs have
+# exactly one ethernet and dhcpcd picks it up automatically; this
+# variable is informational unless you've got multiple NICs.
+#default_iface="eth0"
+
+# Set rc_logger to log per-service output to /var/log/rc.log when
+# OpenRC's logger service is enabled.  Off by default — syslog
+# captures everything via /var/log/messages anyway.
+#rc_logger="YES"
