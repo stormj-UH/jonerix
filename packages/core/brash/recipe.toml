@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.17"
+version = "1.0.18"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -21,8 +21,13 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.17.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.18.tar.gz
 #
+# 1.0.18: fix pending-wrap clobber on 2-row to 1-row shrink.  When
+# the previous redraw left the cursor at exactly cols-character
+# fill (pending-wrap state), the next redraw computed one row too
+# many for old_cursor_row, emitted a spurious move-up, and wiped
+# the line above the prompt.
 # 1.0.17: fix history-nav redraw across multi-line entries — Up on a
 # wrapping entry then Up to a shorter entry left the first row of the
 # old entry visible underneath the new one.
@@ -40,8 +45,8 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # lists completions on the second consecutive Tab (matches readline's
 # show-all-if-unmodified=off default), instead of immediately prompting
 # "Display all N possibilities?" or dumping the whole command list.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.17/brash-1.0.17.tar.gz"
-sha256 = "276edf19db2171314e3548f81f2d8a21fee0bc0bf0d8b9da44392c5f9fed5bef"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.18/brash-1.0.18.tar.gz"
+sha256 = "9babddfadd5d7687d80c79fda32953645947dec95df9f3b6ef595af9ada3cfae"
 
 [build]
 system = "custom"
