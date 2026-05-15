@@ -465,7 +465,7 @@ jobs:
           # Config files present (these are COPY-ed, always present)
           [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
           [ -f /etc/hostapd/hostapd.conf ] && pass "hostapd.conf" || fail "hostapd.conf"
-          [ -f /etc/sysctl.conf ] && pass "sysctl.conf" || fail "sysctl.conf"
+          [ -f /etc/sysctl.d/router.conf ] && pass "router sysctl" || fail "router sysctl"
           [ -f /etc/network/interfaces ] && pass "interfaces" || fail "interfaces"
 
           # Shell must work
@@ -550,7 +550,7 @@ jobs:
           # Config files present (these are COPY-ed, always present)
           [ -f /etc/unbound/unbound.conf ] && pass "unbound.conf" || fail "unbound.conf"
           [ -f /etc/hostapd/hostapd.conf ] && pass "hostapd.conf" || fail "hostapd.conf"
-          [ -f /etc/sysctl.conf ] && pass "sysctl.conf" || fail "sysctl.conf"
+          [ -f /etc/sysctl.d/router.conf ] && pass "router sysctl" || fail "router sysctl"
           [ -f /etc/network/interfaces ] && pass "interfaces" || fail "interfaces"
 
           # Shell must work

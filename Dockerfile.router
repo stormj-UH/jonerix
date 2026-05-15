@@ -41,9 +41,14 @@ RUN jpkg update && \
     do \
       echo "Installing: $pkg" && jpkg install --force "$pkg" || echo "WARN: $pkg failed"; \
     done && \
-    toybox mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network && \
+    toybox mkdir -p /etc/unbound /etc/hostapd /etc/wpa_supplicant /etc/network /etc/sysctl.d && \
     sh /usr/local/sbin/image-slim && \
     rm /usr/local/sbin/image-slim
+
+# Router profile overlay. Keep this as a whole-profile copy so new
+# config/profile/router files land in the image without stale per-file COPY
+# paths.
+COPY config/profile/router/ /
 
 # Unbound: recursive DNS resolver with DNSSEC.
 #
@@ -55,18 +60,8 @@ RUN jpkg update && \
 # (opens :53 on 0.0.0.0 and adds LAN access-control), and re-assert
 # the rc-update in case a future :core grows an /etc/unbound/no-takeover
 # sentinel and the unbound post_install short-circuited on this layer.
-COPY config/router/etc/unbound/unbound.conf /etc/unbound/unbound.conf
 RUN rm -f /etc/unbound/no-takeover && \
     rc-update add unbound default 2>/dev/null || true
-
-# Default network interfaces
-COPY config/router/etc/network/interfaces /etc/network/interfaces
-
-# Hostapd: default AP config (disabled by default — user must configure)
-COPY config/router/etc/hostapd/hostapd.conf /etc/hostapd/hostapd.conf
-
-# IP forwarding sysctl
-COPY config/router/etc/sysctl.conf /etc/sysctl.conf
 
 # Router-specific hostname (use shell builtin echo, not /bin/echo)
 RUN echo "jonerix-router" > /etc/hostname
