@@ -1,0 +1,114 @@
+#!/bin/nft -f
+# /etc/nftables/jonerix-router.nft — canonical firewall + NAT ruleset
+# for jonerix-router-profile installs.
+#
+# Loaded via stormwall (the jonerix nftables provider): `nft -f
+# /etc/nftables/jonerix-router.nft` runs at boot from the
+# `nftables` OpenRC service in this profile.
+#
+# Topology assumed:
+#   eth0 = WAN (uplink, DHCP from ISP)
+#   eth1 = LAN (192.168.1.0/24, statically 192.168.1.1)
+#   wlan0 = Wi-Fi, BRIDGED to eth1 via hostapd (treated as LAN)
+#
+# Edit the WAN/LAN variables at the top to match your hardware.
+
+# Wipe any pre-existing rules so reload is idempotent.
+flush ruleset
+
+define WAN = eth0
+define LAN = { eth1, wlan0 }
+define LAN_NET = 192.168.1.0/24
+define LAN_NET6 = fd00::/8        # ULA — set to your delegated IPv6 prefix
+
+table inet filter {
+    # ── INPUT: traffic FOR the router itself ───────────────────────────
+    chain input {
+        type filter hook input priority 0; policy drop;
+
+        # Stateful: accept established + related immediately.
+        ct state established,related accept
+        ct state invalid drop
+
+        # Loopback always.
+        iif lo accept
+
+        # ICMP at low rate — pingable but not floodable.
+        ip protocol icmp limit rate 50/second accept
+        meta l4proto ipv6-icmp limit rate 50/second accept
+
+        # SSH from LAN only.  WAN access goes through tailscale or
+        # WireGuard, not raw inbound SSH.
+        iifname $LAN tcp dport 22 accept
+
+        # DHCP server replies (dnsmasq).
+        iifname $LAN udp dport { 67, 68 } accept
+
+        # DNS from LAN to our unbound.
+        iifname $LAN meta l4proto { tcp, udp } th dport 53 accept
+
+        # Multicast DNS / SSDP / mDNS — LAN only.
+        iifname $LAN udp dport { 5353, 1900, 5355 } accept
+
+        # WireGuard — UDP/51820, accept from anywhere (WG itself
+        # authenticates).  Edit port to match your config.
+        udp dport 51820 accept
+
+        # Tailscale uses UDP/41641 for direct connections.
+        udp dport 41641 accept
+
+        # Everything else dropped (the policy).
+        log prefix "INPUT-DROP: " level warn limit rate 5/second drop
+    }
+
+    # ── FORWARD: traffic THROUGH the router ────────────────────────────
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+
+        ct state established,related accept
+        ct state invalid drop
+
+        # LAN -> WAN (and inter-LAN) always allowed.
+        iifname $LAN accept
+
+        # WAN -> LAN only for state-tracked replies (above).
+        # Per-port DNAT exceptions go in the nat table below.
+
+        log prefix "FWD-DROP: " level warn limit rate 5/second drop
+    }
+
+    chain output {
+        type filter hook output priority 0; policy accept;
+        # Router-originated traffic is trusted.
+    }
+}
+
+# ── NAT — masquerade LAN -> WAN ─────────────────────────────────────────
+table inet nat {
+    chain prerouting {
+        type nat hook prerouting priority -100;
+        # Per-port forwards (e.g. game ports, self-hosted services)
+        # go here:
+        #
+        #   iif $WAN tcp dport 1234 dnat to 192.168.1.50:1234
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority 100;
+
+        # Masquerade outbound on the WAN interface.  `masquerade`
+        # auto-detects the WAN address; if you have a static IP, use
+        # `snat to 1.2.3.4` for slightly less per-packet overhead.
+        oifname $WAN masquerade
+    }
+}
+
+# ── Optional: bridge filtering (only if hostapd is bridged) ────────────
+# Uncomment when wlan0 bridges to eth1 — without this, hostapd
+# clients can't reach the LAN's DHCP server because the bridge
+# blocks 802.1d frames.
+#table bridge filter {
+#    chain forward {
+#        type filter hook forward priority 0; policy accept;
+#    }
+#}

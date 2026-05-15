@@ -1,0 +1,34 @@
+{
+  "_comment": "jonerix builder profile — Docker daemon defaults.",
+  "_comment2": "Per-host overrides go in /etc/docker/daemon.json.d/*.json (drop-in dir not yet supported upstream — for now, edit this file directly).",
+
+  "iptables": true,
+  "userland-proxy": true,
+
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "32m",
+    "max-file": "5"
+  },
+
+  "storage-driver": "overlay2",
+  "storage-opts": [
+    "overlay2.override_kernel_check=true"
+  ],
+
+  "default-ulimits": {
+    "nofile": {"Name": "nofile", "Soft": 262144, "Hard": 1048576},
+    "nproc":  {"Name": "nproc",  "Soft": 32768,  "Hard": 65536}
+  },
+
+  "live-restore": true,
+  "no-new-privileges": true,
+
+  "dns": ["1.1.1.1", "1.0.0.1"],
+  "dns-opts": ["edns0", "single-request-reopen"],
+
+  "experimental": false,
+  "default-runtime": "runc",
+
+  "cgroup-parent": "/system.slice/docker.slice"
+}
