@@ -61,7 +61,7 @@ NETBOOT_ROOTFS_PACKAGES = [
     "shadow",
 
     # Network tooling
-    "iproute-go",
+    "jonerix-netutils",
 
     # Live-installer extras (curl is needed to fetch firmware tarball
     # in mode A; libressl + ca-certificates for HTTPS).

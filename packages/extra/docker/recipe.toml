@@ -257,5 +257,5 @@ done
 # list a plain name and enforce the floor out-of-band (CI matrix + this
 # comment + PACKAGES.md). Switch to "stormwall >= 1.1.3" once jpkg 2.3+
 # ships version-qualified dep parsing.
-runtime = ["musl", "containerd", "runc", "cni-plugins", "tini", "iproute-go", "stormwall"]
+runtime = ["musl", "containerd", "runc", "cni-plugins", "tini", "jonerix-netutils", "stormwall"]
 build = ["go"]

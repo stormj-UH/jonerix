@@ -163,7 +163,7 @@ for pkg in \
     pigz mandoc onetrueawk \
     anvil exproxide \
     pico libcxx fastfetch ripgrep gitredoxide \
-    iproute-go zsh
+    jonerix-netutils zsh
 do
     echo "=== Installing: $pkg ==="
     if ! jpkg --root "${STAGING}" install "$pkg"; then

@@ -85,7 +85,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       mandoc \
       anvil exproxide \
       pico libcxx fastfetch ripgrep gitredoxide \
-      iproute-go zsh; \
+      jonerix-netutils zsh; \
     do \
       echo "Installing: $pkg" && \
       attempts=0 && \

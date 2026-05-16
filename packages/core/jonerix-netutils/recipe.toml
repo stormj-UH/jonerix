@@ -1,0 +1,91 @@
+[package]
+# jonerix-netutils — permissively-licensed Go reimplementations of
+# the Linux network userspace toolkit.  Subsumes iproute-go (which
+# only shipped /bin/ip) and extends coverage to other tools that
+# toybox provides but does badly (or that we want a clean-room
+# alternative for).
+#
+# v0.1.0 SCOPE (current):
+#   /bin/ip       — modern iproute2-style binary (handles every
+#                   link type, including TUN/TAP that toybox bails on)
+#   /bin/brctl    — Linux bridge utility
+#   /bin/netstat  — classic socket/route/interface table dump
+#
+# All three are u-root cmds/core/* builds (BSD-3-Clause), shipped
+# from the SAME vendored Go module tree as iproute-go.  We can
+# expand the build line to compile more u-root commands without
+# touching source.
+#
+# DEFERRED — toybox keeps providing these until v0.2.0:
+#   arp, arping, ifconfig, route, iptunnel, tunctl, ss, ethtool
+# u-root cmds/core does not currently ship these.  Pulling them in
+# requires either fishing them out of an older u-root tag (some
+# existed before the iproute2-centric refactor), porting from a
+# different permissive project, or writing from scratch in Go.  See
+# docs/netutils-roadmap.md for the plan.
+name = "jonerix-netutils"
+version = "0.1.0"
+license = "BSD-3-Clause"
+description = "Network userspace tools (ip, brctl, netstat) — u-root Go implementations, replaces iproute-go + parts of toybox"
+
+# `replaces` lets jpkg accept the conflict for /bin/{ip,brctl,netstat}
+# with whoever ships them today: iproute-go (only /bin/ip) and
+# toybox (/bin/brctl and /bin/netstat).  Together with toybox r13's
+# install-time skip list, the takeover survives every toybox upgrade.
+replaces = ["toybox", "iproute-go"]
+
+[source]
+# Re-uses iproute-go 0.16.0's vendored u-root tarball.  No need to
+# stage a new source release until we either bump u-root or add
+# commands that aren't covered by the 0.16.0 vendor cache.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-iproute-go-v0.16.0/iproute-go-0.16.0.tar.gz"
+sha256 = "33bf3361d9815b7533e4ef742d446a105963f313e07d3ae5d0de64715c3b3ce7"
+
+[build]
+system = "custom"
+build = """
+set -e
+# Pure-Go, statically linked.  Same flags iproute-go uses so the
+# resulting binaries behave identically — we're literally building
+# from the same u-root tree.
+export CGO_ENABLED=0
+export GOFLAGS="-mod=vendor"
+export GOPROXY=off
+export GOSUMDB=off
+mkdir -p bin
+go build -mod=vendor -trimpath -ldflags="-s -w" -o bin/ip      ./cmds/core/ip
+go build -mod=vendor -trimpath -ldflags="-s -w" -o bin/brctl   ./cmds/core/brctl
+go build -mod=vendor -trimpath -ldflags="-s -w" -o bin/netstat ./cmds/core/netstat
+"""
+install = """
+set -e
+install -Dm755 bin/ip      "$DESTDIR/bin/ip"
+install -Dm755 bin/brctl   "$DESTDIR/bin/brctl"
+install -Dm755 bin/netstat "$DESTDIR/bin/netstat"
+
+# Strip Go's embedded /lib64 dynamic-linker reference.  Same trick
+# the rclone and buildkit recipes use — null-pad /lib64 -> /lib\\0\\0
+# so an ELF reader doesn't see a phantom interpreter path.  CGO is
+# off so nothing actually consults the field at runtime; this is
+# cosmetic for binwalk / debuggers.
+python3 - "$DESTDIR/bin/ip" "$DESTDIR/bin/brctl" "$DESTDIR/bin/netstat" <<'PYEOF' || true
+import sys
+for p in sys.argv[1:]:
+    with open(p, "rb") as fh: d = fh.read()
+    n = d.count(b"/lib64")
+    if n:
+        d = d.replace(b"/lib64", b"/lib\\x00\\x00")
+        with open(p, "wb") as fh: fh.write(d)
+        print(f"netutils lib64-fix: replaced {n} refs in {p}")
+PYEOF
+
+for bin in ip brctl netstat; do
+    llvm-strip --strip-all "$DESTDIR/bin/$bin" 2>/dev/null || true
+done
+"""
+
+[depends]
+# Pure-Go static binaries: no shared library deps.  musl listed for
+# every package install, no other runtime requirements.
+runtime = ["musl"]
+build = ["go"]

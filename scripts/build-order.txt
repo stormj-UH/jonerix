@@ -127,10 +127,26 @@ go-bootstrap
 go
 go-current
 # Tier 8: Go-based packages (requires go-current)
+# Order within the tier: container runtime stack first (runc <-
+# containerd <- nerdctl), then network userspace, then the rest.
+# All depend only on `go`; the apparent ordering here is purely
+# size-and-affinity (related packages grouped).
 runc
 containerd
 nerdctl
 cni-plugins
+jonerix-netutils
+# iproute-go is being retired in favour of jonerix-netutils (which
+# subsumes /bin/ip and adds /bin/brctl + /bin/netstat).  Listed
+# here only until the migration completes so that bootstrap builds
+# don't have to fall through to alphabetical for it.
+iproute-go
+buildkit
+rclone
+derper
+headscale
+docker-cli
+docker
 # Tier 9: Rust from source (requires prebuilt rust + llvm) and split Rust tools
 rust
 rustdoc

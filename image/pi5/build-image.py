@@ -74,7 +74,7 @@ DEFAULT_PACKAGES = [
     # enumerate TUN devices (e.g. tailscale0) and prints "Invalid link"
     # for the whole `ip` invocation. iproute-go's recipe
     # `replaces=["toybox"]` claims /bin/ip via the package transition.
-    "iproute-go",
+    "jonerix-netutils",
 
     # ── Interactive niceties (parity with running jonerix-tormenta) ───
     # These bloat the image by ~25 MB total but make the resulting host
