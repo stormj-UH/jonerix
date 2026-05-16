@@ -1,0 +1,55 @@
+# jonerix-mlfq — Multi-Level Feedback Queue scheduler with macOS-style
+# interactivity heuristics for Linux sched_ext. Clean-room Rust crate,
+# zero unsafe blocks, no Mach IPC, no XNU source reference.
+#
+# This file is the canonical template. The release workflow (see
+# .github/workflows/release.yml) copies it into the jonerix tree at
+# packages/extra/jonerix-mlfq/recipe.toml after substituting:
+#   - [package].version
+#   - [source].url           (release tag derived from version)
+#   - [source].sha256        (computed from the actual built tarball)
+
+[package]
+name = "jonerix-mlfq"
+version = "0.1.1"
+license = "MIT"
+description = "MLFQ scheduler with macOS-style interactivity heuristics for Linux sched_ext"
+
+[source]
+# Source tarball pinned to a stormj-UH/jonerix GitHub release.
+# Tag convention: source-jonerix-mlfq-vX.Y.Z (mirrors the brash pattern).
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-jonerix-mlfq-v0.1.1/jonerix-mlfq-0.1.1.tar.gz"
+# Placeholder sha256 ("TBD" hashed): the release workflow rewrites this
+# line after building the tarball. Do not hand-edit unless you also
+# rebuild the tarball locally and recompute.
+sha256 = "19e61077294efdee175f4034b7f6d29322f8dca7dc29690e7b2aa7b2953c34e4"
+
+[build]
+system = "custom"
+build = """
+set -e
+export CARGO_HOME=/tmp/jonerix-mlfq-cargo
+export CARGO_TARGET_DIR="$PWD/target"
+# The source tarball ships with vendor/ and .cargo/config.toml so this
+# build never touches crates.io. jonerix-mlfq currently has zero deps,
+# but the offline contract is enforced regardless.
+export RUSTFLAGS="-C strip=symbols -C target-feature=+crt-static -D warnings"
+cargo build --release --frozen --offline --bin jonerix-mlfq
+"""
+install = """
+set -e
+BIN="$PWD/target/release/jonerix-mlfq"
+install -Dm755 "$BIN" "$DESTDIR/bin/jonerix-mlfq"
+install -Dm644 LICENSE "$DESTDIR/share/licenses/jonerix-mlfq/LICENSE"
+install -Dm644 README.md "$DESTDIR/share/doc/jonerix-mlfq/README.md"
+# SECURITY.md and DESIGN.md are installed if present in the source
+# tarball. The clean-room v0.1.0 tree does not yet ship them; future
+# releases will. Using `[ -f ]` keeps the install hermetic.
+[ -f SECURITY.md ] && install -Dm644 SECURITY.md "$DESTDIR/share/doc/jonerix-mlfq/SECURITY.md" || true
+[ -f DESIGN.md ]   && install -Dm644 DESIGN.md   "$DESTDIR/share/doc/jonerix-mlfq/DESIGN.md"   || true
+llvm-strip --strip-all "$DESTDIR/bin/jonerix-mlfq" 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["rust"]
