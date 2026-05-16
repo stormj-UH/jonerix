@@ -1,9 +1,19 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.30"
+version = "1.6.31"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.31: add `pi5-fw set boot_order HEX` subcommand.  Thin wrapper
+# that hands off to /bin/pi5-netboot-config's `set KEY=VALUE` mode
+# (which already owns the EEPROM .upd/.sig staging path).  Lets
+# operators stage USB-first or NVMe-first boot orders without
+# remembering the exact EEPROM key spelling or the
+# pi5-netboot-config command.  Common values:
+#   f41   factory default — try SD, then USB
+#   f14   USB-first with SD as fallback
+#   f164  USB, then NVMe, then SD
+#
 # 1.6.30: fix the /usr/local/bin/* references I missed in the 1.6.28
 # refactor.  The recipe's install lines were updated to drop scripts
 # into /bin/ but the SHIPPED INIT SCRIPTS still pointed at the old

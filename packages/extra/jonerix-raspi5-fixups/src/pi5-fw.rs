@@ -9,6 +9,7 @@
 //!   pi5-fw get_throttled
 //!   pi5-fw bootloader_config
 //!   pi5-fw reboot_mode [cold|warm]
+//!   pi5-fw set boot_order HEX     # e.g. f14 (try USB first, then SD)
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
@@ -263,6 +264,84 @@ fn cmd_bootloader_config() -> io::Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// `set` subcommand — persist EEPROM bootloader keys.
+//
+// The actual write path (TLV section parsing of the 2 MiB pieeprom
+// image, sha256 .sig generation, base-bin fetch from raspberrypi/
+// rpi-eeprom) is non-trivial — ~500 lines of Python live in
+// /bin/pi5-netboot-config.  Rather than duplicate it here we delegate:
+// pi5-netboot-config's `set KEY=VALUE` mode stages an arbitrary key,
+// not just the netboot ones, so it's the right tool for BOOT_ORDER.
+//
+// This wrapper exists so `pi5-fw set boot_order f14` reads as one
+// natural command instead of asking the operator to remember the
+// underscore-vs-dash spelling and uppercase rule of the EEPROM key.
+// ---------------------------------------------------------------------------
+
+fn cmd_set(args: &[String]) -> io::Result<()> {
+    if args.is_empty() {
+        eprintln!("usage: pi5-fw set KEY VALUE");
+        eprintln!();
+        eprintln!("Currently supported keys:");
+        eprintln!("  boot_order HEX   EEPROM BOOT_ORDER (read right-to-left)");
+        eprintln!("                   common values:");
+        eprintln!("                     f41   default — try SD, then USB");
+        eprintln!("                     f14   try USB, then SD");
+        eprintln!("                     f164  try USB, then NVMe, then SD");
+        eprintln!("                     f461  try NVMe, then USB, then SD");
+        process::exit(2);
+    }
+
+    match args[0].to_ascii_lowercase().as_str() {
+        "boot_order" | "boot-order" | "BOOT_ORDER" => {
+            if args.len() < 2 {
+                eprintln!("error: set boot_order requires a hex value (e.g. f14)");
+                process::exit(2);
+            }
+            let raw = &args[1];
+            let value = raw.trim_start_matches("0x").trim_start_matches("0X");
+            if value.is_empty() || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+                eprintln!("error: '{}' is not a valid hex value", raw);
+                process::exit(2);
+            }
+            // Hand off to pi5-netboot-config, which owns the .upd/.sig
+            // staging path the Pi 5 ROM bootloader uses to flash the
+            // EEPROM on next boot.  Any failure modes (no boot
+            // partition mounted, no base .bin in cache, sha256
+            // mismatch) are surfaced by that tool with its own
+            // diagnostics — don't paper over them here.
+            let arg = format!("BOOT_ORDER=0x{}", value);
+            let status = std::process::Command::new("/bin/pi5-netboot-config")
+                .arg("set")
+                .arg(&arg)
+                .status()?;
+            if !status.success() {
+                eprintln!(
+                    "error: /bin/pi5-netboot-config exited {}",
+                    status.code().unwrap_or(-1)
+                );
+                process::exit(1);
+            }
+            println!();
+            println!("BOOT_ORDER staged for next reboot:");
+            println!("  new value: 0x{}", value);
+            println!();
+            println!("Reboot to apply.  The Pi 5 ROM bootloader will verify");
+            println!("the staged image's sha256, flash it into the SPI EEPROM,");
+            println!("and then continue booting per the new BOOT_ORDER.  If");
+            println!("the new image is rejected (sha256 mismatch, wrong board");
+            println!("revision, etc.) the existing EEPROM is left untouched.");
+            Ok(())
+        }
+        other => {
+            eprintln!("error: unknown set key '{}'", other);
+            eprintln!("Run `pi5-fw set` with no arguments to list supported keys.");
+            process::exit(2);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -272,13 +351,16 @@ fn usage() {
     eprintln!("Usage: pi5-fw <command> [args...]");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  measure_temp       SoC temperature");
-    eprintln!("  get_throttled      Throttling/under-voltage flags");
-    eprintln!("  firmware_version   VideoCore firmware revision");
-    eprintln!("  board_info         Board model, revision, serial");
-    eprintln!("  clock_rates        ARM clock current/max");
-    eprintln!("  bootloader_config  Bootloader and reboot configuration");
-    eprintln!("  reboot_mode [MODE] Get/set kernel reboot mode (cold/warm)");
+    eprintln!("  measure_temp           SoC temperature");
+    eprintln!("  get_throttled          Throttling/under-voltage flags");
+    eprintln!("  firmware_version       VideoCore firmware revision");
+    eprintln!("  board_info             Board model, revision, serial");
+    eprintln!("  clock_rates            ARM clock current/max");
+    eprintln!("  bootloader_config      Bootloader and reboot configuration");
+    eprintln!("  reboot_mode [MODE]     Get/set kernel reboot mode (cold/warm)");
+    eprintln!("  set KEY VALUE          Stage an EEPROM bootloader key for");
+    eprintln!("                         flash on next reboot (`set` alone lists");
+    eprintln!("                         supported KEYs).");
 }
 
 fn main() {
@@ -297,6 +379,7 @@ fn main() {
         "clock_rates" => cmd_clock_rates(),
         "bootloader_config" => cmd_bootloader_config(),
         "reboot_mode" => cmd_reboot_mode(&args[2..]),
+        "set" => cmd_set(&args[2..]),
         "-h" | "--help" | "help" => { usage(); Ok(()) }
         other => {
             eprintln!("error: unknown command '{}'", other);
