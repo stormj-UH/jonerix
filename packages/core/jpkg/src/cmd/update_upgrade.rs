@@ -94,11 +94,7 @@ mod tests {
 
     #[test]
     fn upgrade_failure_propagates() {
-        let rc = run_with(
-            &[],
-            |_args| 0,
-            |_args| 1,
-        );
+        let rc = run_with(&[], |_args| 0, |_args| 1);
         assert_eq!(rc, 1);
     }
 

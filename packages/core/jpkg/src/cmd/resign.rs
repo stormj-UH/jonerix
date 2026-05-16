@@ -112,7 +112,13 @@ fn parse_args(args: &[String]) -> Result<ResignArgs, String> {
     }
 
     let key = key.unwrap_or_else(|| DEFAULT_KEY.to_string());
-    Ok(ResignArgs { paths, key, key_id, keep_existing, dry_run })
+    Ok(ResignArgs {
+        paths,
+        key,
+        key_id,
+        keep_existing,
+        dry_run,
+    })
 }
 
 // ── Core per-file logic ───────────────────────────────────────────────────────
@@ -124,7 +130,13 @@ enum FileResult {
     Error(String),
 }
 
-fn process_one(path: &Path, key_path: &Path, key_id: &str, keep_existing: bool, dry_run: bool) -> FileResult {
+fn process_one(
+    path: &Path,
+    key_path: &Path,
+    key_id: &str,
+    keep_existing: bool,
+    dry_run: bool,
+) -> FileResult {
     // 1. Open the archive and check for an existing signature.
     let archive = match JpkgArchive::open(path) {
         Ok(a) => a,
@@ -143,13 +155,20 @@ fn process_one(path: &Path, key_path: &Path, key_id: &str, keep_existing: bool, 
 
     // 2. Honor --keep-existing.
     if keep_existing && metadata.signature.is_some() {
-        log::info!("resign: skipping {} (already signed, --keep-existing)", path.display());
+        log::info!(
+            "resign: skipping {} (already signed, --keep-existing)",
+            path.display()
+        );
         return FileResult::Skipped;
     }
 
     // 3. Dry-run: stop here.
     if dry_run {
-        let action = if metadata.signature.is_some() { "re-sign" } else { "sign" };
+        let action = if metadata.signature.is_some() {
+            "re-sign"
+        } else {
+            "sign"
+        };
         log::info!("resign: dry-run — would {} {}", action, path.display());
         return FileResult::Resigned;
     }
@@ -216,7 +235,10 @@ pub fn run(args: &[String]) -> i32 {
                 succeeded += 1;
             }
             FileResult::Skipped => {
-                println!("skipped: {} (already signed, --keep-existing)", path.display());
+                println!(
+                    "skipped: {} (already signed, --keep-existing)",
+                    path.display()
+                );
                 skipped += 1;
             }
             FileResult::Error(reason) => {
@@ -231,7 +253,11 @@ pub fn run(args: &[String]) -> i32 {
         succeeded, skipped, failed, total
     );
 
-    if failed > 0 { 1 } else { 0 }
+    if failed > 0 {
+        1
+    } else {
+        0
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -252,7 +278,14 @@ mod tests {
         v.iter().map(|s| s.to_string()).collect()
     }
 
-    fn setup_key(dir: &std::path::Path, name: &str) -> (std::path::PathBuf, std::path::PathBuf, ed25519_dalek::SigningKey) {
+    fn setup_key(
+        dir: &std::path::Path,
+        name: &str,
+    ) -> (
+        std::path::PathBuf,
+        std::path::PathBuf,
+        ed25519_dalek::SigningKey,
+    ) {
         let sk = sign::keygen();
         let sec_path = dir.join(format!("{name}.sec"));
         let pub_path = dir.join(format!("{name}.pub"));
@@ -272,14 +305,20 @@ mod tests {
 
         let rc = run(&args(&[
             jpkg_path.to_str().unwrap(),
-            "--key", sec_path.to_str().unwrap(),
-            "--key-id", "resign-key",
+            "--key",
+            sec_path.to_str().unwrap(),
+            "--key-id",
+            "resign-key",
         ]));
         assert_eq!(rc, 0, "resign of unsigned package should succeed");
 
         // Verify the signature was written.
         let result = verify_jpkg_signature(&jpkg_path, &keys_dir);
-        assert!(result.is_ok(), "verify after resign must succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "verify after resign must succeed: {:?}",
+            result
+        );
 
         // The .pub file must be in keys_dir (same dir in this test).
         let _ = pub_path; // used above indirectly via keys_dir
@@ -312,18 +351,27 @@ mod tests {
         // Resign with key B (overwrite).
         let rc = run(&args(&[
             jpkg_path.to_str().unwrap(),
-            "--key", sec_b.to_str().unwrap(),
-            "--key-id", "key-b",
+            "--key",
+            sec_b.to_str().unwrap(),
+            "--key-id",
+            "key-b",
         ]));
         assert_eq!(rc, 0, "resign with key B should succeed");
 
         // Verify with key B — must succeed.
         let result_b = verify_jpkg_signature(&jpkg_path, &dir.path().join("keys-b"));
-        assert!(result_b.is_ok(), "verify with key B after resign must succeed: {:?}", result_b);
+        assert!(
+            result_b.is_ok(),
+            "verify with key B after resign must succeed: {:?}",
+            result_b
+        );
 
         // Verify with key A only — must fail (signature was overwritten).
         let result_a = verify_jpkg_signature(&jpkg_path, &dir.path().join("keys-a"));
-        assert!(result_a.is_err(), "verify with key A should fail after resign with key B");
+        assert!(
+            result_a.is_err(),
+            "verify with key A should fail after resign with key B"
+        );
     }
 
     /// Sign with key A, resign with --keep-existing and key B — key A sig preserved.
@@ -351,15 +399,21 @@ mod tests {
         // Resign with key B + --keep-existing → should be skipped.
         let rc = run(&args(&[
             jpkg_path.to_str().unwrap(),
-            "--key", sec_b.to_str().unwrap(),
-            "--key-id", "kb",
+            "--key",
+            sec_b.to_str().unwrap(),
+            "--key-id",
+            "kb",
             "--keep-existing",
         ]));
         assert_eq!(rc, 0, "resign --keep-existing should return 0");
 
         // Signature from key A must still verify.
         let result = verify_jpkg_signature(&jpkg_path, &dir.path().join("keys-a"));
-        assert!(result.is_ok(), "key A signature must still verify after --keep-existing skip: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "key A signature must still verify after --keep-existing skip: {:?}",
+            result
+        );
     }
 
     /// Pass three test jpkgs — all three must be signed.
@@ -377,14 +431,21 @@ mod tests {
             p1.to_str().unwrap(),
             p2.to_str().unwrap(),
             p3.to_str().unwrap(),
-            "--key", sec_path.to_str().unwrap(),
-            "--key-id", "multi-key",
+            "--key",
+            sec_path.to_str().unwrap(),
+            "--key-id",
+            "multi-key",
         ]));
         assert_eq!(rc, 0, "resign of three packages should succeed");
 
         for path in [&p1, &p2, &p3] {
             let result = verify_jpkg_signature(path, &keys_dir);
-            assert!(result.is_ok(), "verify of {} must succeed: {:?}", path.display(), result);
+            assert!(
+                result.is_ok(),
+                "verify of {} must succeed: {:?}",
+                path.display(),
+                result
+            );
         }
     }
 
@@ -401,15 +462,20 @@ mod tests {
 
         let rc = run(&args(&[
             jpkg_path.to_str().unwrap(),
-            "--key", sec_path.to_str().unwrap(),
-            "--key-id", "dry-key",
+            "--key",
+            sec_path.to_str().unwrap(),
+            "--key-id",
+            "dry-key",
             "--dry-run",
         ]));
         assert_eq!(rc, 0, "dry-run should return 0");
 
         // File on disk must be byte-for-byte identical.
         let after_bytes = fs::read(&jpkg_path).unwrap();
-        assert_eq!(original_bytes, after_bytes, "dry-run must not modify the .jpkg file");
+        assert_eq!(
+            original_bytes, after_bytes,
+            "dry-run must not modify the .jpkg file"
+        );
 
         // Parse metadata — must still have no signature.
         let archive = JpkgArchive::open(&jpkg_path).unwrap();

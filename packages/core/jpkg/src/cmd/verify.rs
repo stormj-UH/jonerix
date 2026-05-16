@@ -63,8 +63,8 @@ pub fn verify_jpkg_signature(jpkg_path: &Path, keys_dir: &Path) -> Result<String
         .metadata_str()
         .map_err(|e| format!("metadata UTF-8 error: {e}"))?;
 
-    let metadata = Metadata::from_str(meta_str)
-        .map_err(|e| format!("failed to parse metadata: {e}"))?;
+    let metadata =
+        Metadata::from_str(meta_str).map_err(|e| format!("failed to parse metadata: {e}"))?;
 
     // ── 2. Check signature section ────────────────────────────────────────────
     let sig_block = metadata
@@ -98,10 +98,7 @@ pub fn verify_jpkg_signature(jpkg_path: &Path, keys_dir: &Path) -> Result<String
         .map_err(|e| format!("failed to load keys from {}: {e}", keys_dir.display()))?;
 
     if keyset.is_empty() {
-        return Err(format!(
-            "no public keys found in {}",
-            keys_dir.display()
-        ));
+        return Err(format!("no public keys found in {}", keys_dir.display()));
     }
 
     let matched_key = keyset
@@ -112,7 +109,10 @@ pub fn verify_jpkg_signature(jpkg_path: &Path, keys_dir: &Path) -> Result<String
     let name = metadata.package.name.as_deref().unwrap_or("(unknown)");
     let version = metadata.package.version.as_deref().unwrap_or("(unknown)");
 
-    Ok(format!("OK {}-{} verified by {}", name, version, matched_key))
+    Ok(format!(
+        "OK {}-{} verified by {}",
+        name, version, matched_key
+    ))
 }
 
 fn run_jpkg_sig_verify(args: &[String]) -> i32 {
@@ -306,9 +306,17 @@ fn run_installed_verify(args: &[String]) -> i32 {
         println!("  Total issues:    {}", total_mismatches);
     }
 
-    println!("\n{} packages verified, {} mismatches", names_to_verify.len(), total_mismatches);
+    println!(
+        "\n{} packages verified, {} mismatches",
+        names_to_verify.len(),
+        total_mismatches
+    );
 
-    if total_mismatches > 0 { 1 } else { 0 }
+    if total_mismatches > 0 {
+        1
+    } else {
+        0
+    }
 }
 
 // ── Per-package verification ──────────────────────────────────────────────────

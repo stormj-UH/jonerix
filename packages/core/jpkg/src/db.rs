@@ -85,8 +85,7 @@ use nix::fcntl::{Flock, FlockArg};
 
 // ─── Symlink sentinel (db.c:88-89) ─────────────────────────────────────────
 
-const SYMLINK_SHA256: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
+const SYMLINK_SHA256: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 // ─── Public types ───────────────────────────────────────────────────────────
 
@@ -150,10 +149,15 @@ pub enum DbError {
     Io(io::Error),
     Recipe(crate::recipe::RecipeError),
     /// Another process holds the lock.
-    Locked { pid: i32 },
+    Locked {
+        pid: i32,
+    },
     NotInstalled(String),
     AlreadyInstalled(String),
-    BadManifestLine { line: u64, content: String },
+    BadManifestLine {
+        line: u64,
+        content: String,
+    },
 }
 
 impl std::fmt::Display for DbError {
@@ -307,10 +311,7 @@ fn parse_files(text: &str) -> Result<Vec<FileEntry>, DbError> {
 fn find_arrow(s: &str) -> Option<usize> {
     let bytes = s.as_bytes();
     for i in 0..bytes.len().saturating_sub(3) {
-        if bytes[i] == b' '
-            && bytes[i + 1] == b'-'
-            && bytes[i + 2] == b'>'
-            && bytes[i + 3] == b' '
+        if bytes[i] == b' ' && bytes[i + 1] == b'-' && bytes[i + 2] == b'>' && bytes[i + 3] == b' '
         {
             return Some(i);
         }
@@ -401,9 +402,7 @@ impl InstalledDb {
                 let pid = read_pid_from_lock(&lock_path).unwrap_or(-1);
                 Err(DbError::Locked { pid })
             }
-            Err((_file, e)) => {
-                Err(io::Error::from_raw_os_error(e as i32).into())
-            }
+            Err((_file, e)) => Err(io::Error::from_raw_os_error(e as i32).into()),
         }
     }
 
@@ -465,12 +464,7 @@ impl InstalledDb {
     ///
     /// Writes `metadata.toml` and `files` atomically (write to `.tmp`, rename).
     pub fn insert(&self, pkg: &InstalledPkg) -> Result<(), DbError> {
-        let name = pkg
-            .metadata
-            .package
-            .name
-            .as_deref()
-            .unwrap_or("(unnamed)");
+        let name = pkg.metadata.package.name.as_deref().unwrap_or("(unnamed)");
         let pkg_dir = self.installed_dir.join(name);
         fs::create_dir_all(&pkg_dir)?;
 
@@ -527,12 +521,7 @@ impl InstalledDb {
     ///
     /// The `to` package is expected to have already been inserted with its
     /// complete file list — this function only scrubs entries from `from`.
-    pub fn transfer_ownership(
-        &self,
-        from: &str,
-        _to: &str,
-        paths: &[&str],
-    ) -> Result<(), DbError> {
+    pub fn transfer_ownership(&self, from: &str, _to: &str, paths: &[&str]) -> Result<(), DbError> {
         let mut from_pkg = match self.get(from)? {
             Some(p) => p,
             None => return Ok(()), // nothing to transfer
@@ -540,7 +529,9 @@ impl InstalledDb {
 
         let path_set: std::collections::HashSet<&str> = paths.iter().copied().collect();
         let before = from_pkg.files.len();
-        from_pkg.files.retain(|e| !path_set.contains(e.path.as_str()));
+        from_pkg
+            .files
+            .retain(|e| !path_set.contains(e.path.as_str()));
 
         if from_pkg.files.len() == before {
             // Nothing was actually dropped — no-op.
@@ -694,10 +685,7 @@ mod tests {
         db.insert(&pkg).unwrap();
 
         let got = db.get("mytool").unwrap().expect("package should be found");
-        assert_eq!(
-            got.metadata.package.name.as_deref(),
-            Some("mytool")
-        );
+        assert_eq!(got.metadata.package.name.as_deref(), Some("mytool"));
         assert_eq!(got.metadata.package.version.as_deref(), Some("1.2.3"));
         assert_eq!(got.files.len(), 3);
 
@@ -709,7 +697,11 @@ mod tests {
         assert!(!bin.is_dir);
 
         // Symlink.
-        let link = got.files.iter().find(|e| e.path == "lib/libfoo.so").unwrap();
+        let link = got
+            .files
+            .iter()
+            .find(|e| e.path == "lib/libfoo.so")
+            .unwrap();
         assert_eq!(link.symlink_target.as_deref(), Some("../bin/mytool"));
         assert_eq!(link.sha256, ""); // empty for symlinks
 
@@ -750,7 +742,10 @@ mod tests {
         };
         db.insert(&pkg).unwrap();
 
-        let removed = db.remove("target").unwrap().expect("remove should return pkg");
+        let removed = db
+            .remove("target")
+            .unwrap()
+            .expect("remove should return pkg");
         assert_eq!(removed.metadata.package.name.as_deref(), Some("target"));
         assert_eq!(removed.files.len(), 3);
 
@@ -843,28 +838,21 @@ mod tests {
         };
         db.insert(&pkg).unwrap();
 
-        let raw = fs::read_to_string(
-            tmp.path()
-                .join("var/db/jpkg/installed/fmttest/files"),
-        )
-        .unwrap();
+        let raw =
+            fs::read_to_string(tmp.path().join("var/db/jpkg/installed/fmttest/files")).unwrap();
 
         let lines: Vec<&str> = raw.lines().collect();
         assert_eq!(lines.len(), 2);
 
         // Regular file: "<sha256> %06o <path>\n"
-        assert_eq!(
-            lines[0],
-            format!("{sha} {:06o} bin/fmttest", 0o100755u32)
-        );
+        assert_eq!(lines[0], format!("{sha} {:06o} bin/fmttest", 0o100755u32));
 
         // Symlink: "<zeros> %06o <path> -> <target>\n"
         assert_eq!(
             lines[1],
             format!(
                 "{} {:06o} lib/fmttest.so -> ../bin/fmttest",
-                SYMLINK_SHA256,
-                0o120777u32
+                SYMLINK_SHA256, 0o120777u32
             )
         );
     }
@@ -894,9 +882,7 @@ mod tests {
 
         // Write it into a temp rootfs as if C jpkg had installed a package.
         let tmp = TempDir::new().unwrap();
-        let pkg_dir = tmp
-            .path()
-            .join("var/db/jpkg/installed/compat-pkg");
+        let pkg_dir = tmp.path().join("var/db/jpkg/installed/compat-pkg");
         fs::create_dir_all(&pkg_dir).unwrap();
 
         // Write a minimal metadata.toml.

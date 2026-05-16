@@ -72,7 +72,11 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     // ── Resolve removal order ─────────────────────────────────────────────
-    let orphan_mode = if orphans { OrphanMode::PruneOrphans } else { OrphanMode::KeepOrphans };
+    let orphan_mode = if orphans {
+        OrphanMode::PruneOrphans
+    } else {
+        OrphanMode::KeepOrphans
+    };
     let order = match resolve_remove(&pkg_names, &db, orphan_mode) {
         Ok(o) => o,
         Err(e) => {
@@ -157,10 +161,7 @@ pub fn run(args: &[String]) -> i32 {
                     if m.is_dir() && !m.file_type().is_symlink() {
                         // Only remove directory if empty (mirrors C rmdir call).
                         if let Err(e) = fs::remove_dir(&full) {
-                            log::debug!(
-                                "jpkg: leaving non-empty dir {}: {e}",
-                                entry.path
-                            );
+                            log::debug!("jpkg: leaving non-empty dir {}: {e}", entry.path);
                         }
                     } else {
                         if let Err(e) = fs::remove_file(&full) {
@@ -173,9 +174,7 @@ pub fn run(args: &[String]) -> i32 {
         }
 
         if file_errors > 0 {
-            log::warn!(
-                "jpkg: {file_errors} file(s) could not be removed from {pkg_name}"
-            );
+            log::warn!("jpkg: {file_errors} file(s) could not be removed from {pkg_name}");
         }
 
         // Remove DB record.
@@ -244,8 +243,14 @@ mod tests {
 
         // Install.
         extract_and_register(&archive, &rootfs, &db).unwrap();
-        assert!(rootfs.join("bin/foo").exists(), "bin/foo should be installed");
-        assert!(rootfs.join("lib/bar").exists(), "lib/bar should be installed");
+        assert!(
+            rootfs.join("bin/foo").exists(),
+            "bin/foo should be installed"
+        );
+        assert!(
+            rootfs.join("lib/bar").exists(),
+            "lib/bar should be installed"
+        );
         assert!(db.get("rmpkg").unwrap().is_some(), "rmpkg should be in db");
 
         // Remove via the helper directly (bypasses run() to avoid process::exit).
@@ -285,14 +290,17 @@ mod tests {
         // Build a package with a pre_remove hook.
         let hook = "touch \"$JPKG_ROOT/pre_remove_ran\"";
         let jpkg_path = crate::cmd::common::tests::build_test_jpkg_with_hook(
-            tmp.path(), "hookrm", "1.0.0", hook,
+            tmp.path(),
+            "hookrm",
+            "1.0.0",
+            hook,
         );
         // Rebuild with pre_remove instead — we need a bespoke helper here.
         // Use the archive and db APIs directly to register a fake pkg with a pre_remove hook.
         drop(jpkg_path);
 
         use crate::db::InstalledPkg;
-        use crate::recipe::{DependsSection, HooksSection, Metadata, PackageSection, FilesSection};
+        use crate::recipe::{DependsSection, FilesSection, HooksSection, Metadata, PackageSection};
 
         let meta = Metadata {
             package: PackageSection {
@@ -319,7 +327,8 @@ mod tests {
         db.insert(&InstalledPkg {
             metadata: meta,
             files: vec![],
-        }).unwrap();
+        })
+        .unwrap();
 
         // Simulate the removal path that run() takes.
         let pkg = db.get("hookrm").unwrap().unwrap();

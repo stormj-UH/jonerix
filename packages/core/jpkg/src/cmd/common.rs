@@ -24,20 +24,40 @@ pub enum InstallError {
     Archive(ArchiveError),
     Db(DbError),
     Recipe(RecipeError),
-    HookFailed { hook: &'static str, status: i32 },
-    Conflict { path: String, owned_by: String },
+    HookFailed {
+        hook: &'static str,
+        status: i32,
+    },
+    Conflict {
+        path: String,
+        owned_by: String,
+    },
     /// Package has no signature but `signature_policy = require`.
-    SignatureMissing { name: String, version: String },
+    SignatureMissing {
+        name: String,
+        version: String,
+    },
     /// Package carries a signature but it did not verify.
-    SignatureInvalid { name: String, version: String, reason: String },
+    SignatureInvalid {
+        name: String,
+        version: String,
+        reason: String,
+    },
     /// Package carries a signature referencing an unknown key.
-    UnknownSigningKey { name: String, key_id: String },
+    UnknownSigningKey {
+        name: String,
+        key_id: String,
+    },
     /// I/O error tied to a specific filesystem path.
     ///
     /// Used wherever the bare `io::Error` would lose the path that triggered
     /// it — e.g. `symlinkat` returning `EEXIST` with no path attached.  See
     /// `install_files` for the canonical use site.
-    FileOp { path: PathBuf, op: &'static str, source: io::Error },
+    FileOp {
+        path: PathBuf,
+        op: &'static str,
+        source: io::Error,
+    },
     /// Upgrade-clean discovered a foreign file under a directory the new
     /// package wants to replace with a symlink.  The user must remove the
     /// foreign file by hand (or pass an as-yet-unwritten escape hatch); we
@@ -66,7 +86,11 @@ impl fmt::Display for InstallError {
             InstallError::SignatureMissing { name, version } => {
                 write!(f, "signature missing for {name}-{version} (policy=require)")
             }
-            InstallError::SignatureInvalid { name, version, reason } => {
+            InstallError::SignatureInvalid {
+                name,
+                version,
+                reason,
+            } => {
                 write!(f, "signature invalid for {name}-{version}: {reason}")
             }
             InstallError::UnknownSigningKey { name, key_id } => {
@@ -75,7 +99,12 @@ impl fmt::Display for InstallError {
             InstallError::FileOp { path, op, source } => {
                 write!(f, "cannot {op} at {}: {source}", path.display())
             }
-            InstallError::UpgradeForeignFiles { pkg, new_version, dir, foreign } => {
+            InstallError::UpgradeForeignFiles {
+                pkg,
+                new_version,
+                dir,
+                foreign,
+            } => {
                 // List up to 5 paths verbatim; truncate the rest.
                 let shown: Vec<String> = foreign
                     .iter()
@@ -155,12 +184,8 @@ pub fn build_manifest(tree_root: &Path) -> io::Result<Vec<FileEntry>> {
     let mut entries = Vec::new();
 
     for entry in WalkDir::new(tree_root).sort_by_file_name().into_iter() {
-        let entry = entry.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("walkdir error: {e}"),
-            )
-        })?;
+        let entry = entry
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("walkdir error: {e}")))?;
 
         let abs = entry.path();
 
@@ -182,9 +207,7 @@ pub fn build_manifest(tree_root: &Path) -> io::Result<Vec<FileEntry>> {
         let mode = meta.mode();
 
         if meta.file_type().is_symlink() {
-            let target = fs::read_link(abs)?
-                .to_string_lossy()
-                .into_owned();
+            let target = fs::read_link(abs)?.to_string_lossy().into_owned();
             entries.push(FileEntry {
                 path: rel,
                 sha256: String::new(), // db.rs serialises the zeros sentinel for symlinks
@@ -342,9 +365,8 @@ fn flatten_dir_into(destdir: &Path, src_name: &str, dest_dir: &Path) -> io::Resu
 
     // Walk src, recreate tree under dest_dir.
     for entry in WalkDir::new(&src).sort_by_file_name().into_iter() {
-        let entry = entry.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("walkdir: {e}"))
-        })?;
+        let entry =
+            entry.map_err(|e| io::Error::new(io::ErrorKind::Other, format!("walkdir: {e}")))?;
         let abs = entry.path();
         // SAFETY: every `abs` came from `WalkDir::new(&src)`, so
         // `strip_prefix(&src)` always succeeds.  The expect is unreachable.
@@ -390,11 +412,7 @@ fn flatten_dir_into(destdir: &Path, src_name: &str, dest_dir: &Path) -> io::Resu
 /// like `File exists (os error 17)` with no file path — useless triage info.
 /// Every callsite in `install_files` and `clean_old_files_for_upgrade` that
 /// touches the filesystem goes through this helper.
-fn wrap_io<T>(
-    result: io::Result<T>,
-    path: &Path,
-    op: &'static str,
-) -> Result<T, InstallError> {
+fn wrap_io<T>(result: io::Result<T>, path: &Path, op: &'static str) -> Result<T, InstallError> {
     result.map_err(|e| InstallError::FileOp {
         path: path.to_path_buf(),
         op,
@@ -421,10 +439,12 @@ fn wrap_io<T>(
 /// (see the 2.2.3 changelog: `symlinkat ... = -1 EEXIST` with no path).
 fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
     for entry in WalkDir::new(stage_dir).sort_by_file_name().into_iter() {
-        let entry = entry.map_err(|e| InstallError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            format!("walkdir: {e}"),
-        )))?;
+        let entry = entry.map_err(|e| {
+            InstallError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                format!("walkdir: {e}"),
+            ))
+        })?;
         let abs = entry.path();
 
         if abs == stage_dir {
@@ -594,10 +614,12 @@ fn clean_old_files_for_upgrade(
             // old_owned (with the rootfs-relative form).
             let mut foreign: Vec<PathBuf> = Vec::new();
             for entry in WalkDir::new(&on_disk).into_iter() {
-                let entry = entry.map_err(|e| InstallError::Io(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("walkdir while scanning {}: {e}", on_disk.display()),
-                )))?;
+                let entry = entry.map_err(|e| {
+                    InstallError::Io(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("walkdir while scanning {}: {e}", on_disk.display()),
+                    ))
+                })?;
                 let abs = entry.path();
                 if abs == on_disk {
                     continue;
@@ -792,13 +814,7 @@ pub fn extract_and_register(
             old_pkg.metadata.package.version.as_deref().unwrap_or("?"),
             pkg_version,
         );
-        clean_old_files_for_upgrade(
-            rootfs,
-            &old_pkg,
-            &files,
-            &pkg_name,
-            &pkg_version,
-        )?;
+        clean_old_files_for_upgrade(rootfs, &old_pkg, &files, &pkg_name, &pkg_version)?;
     }
 
     // ── 7. Install files into rootfs ──────────────────────────────────────
@@ -839,7 +855,10 @@ fn choose_install_stage_parent(
     explicit_stage_dir: Option<PathBuf>,
     temp_env_set: bool,
 ) -> Option<PathBuf> {
-    if explicit_stage_dir.as_ref().is_some_and(|p| !p.as_os_str().is_empty()) {
+    if explicit_stage_dir
+        .as_ref()
+        .is_some_and(|p| !p.as_os_str().is_empty())
+    {
         return explicit_stage_dir;
     }
     if temp_env_set {
@@ -864,11 +883,13 @@ fn make_install_stage_dir(rootfs: &Path) -> Result<tempfile::TempDir, InstallErr
             op: "create staging directory parent",
             source,
         })?;
-        builder.tempdir_in(&parent).map_err(|source| InstallError::FileOp {
-            path: parent,
-            op: "create staging directory",
-            source,
-        })
+        builder
+            .tempdir_in(&parent)
+            .map_err(|source| InstallError::FileOp {
+                path: parent,
+                op: "create staging directory",
+                source,
+            })
     } else {
         builder.tempdir().map_err(InstallError::Io)
     }
@@ -914,7 +935,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::archive;
     use crate::db::InstalledDb;
-    use crate::recipe::{DependsSection, HooksSection, Metadata, PackageSection, FilesSection};
+    use crate::recipe::{DependsSection, FilesSection, HooksSection, Metadata, PackageSection};
     use std::os::unix::fs::symlink;
     use tempfile::TempDir;
 
@@ -938,7 +959,11 @@ pub(crate) mod tests {
         }
     }
 
-    pub fn make_metadata_with_replaces(name: &str, version: &str, replaces: Vec<String>) -> Metadata {
+    pub fn make_metadata_with_replaces(
+        name: &str,
+        version: &str,
+        replaces: Vec<String>,
+    ) -> Metadata {
         let mut m = make_metadata(name, version);
         m.package.replaces = replaces;
         m
@@ -978,7 +1003,12 @@ pub(crate) mod tests {
     }
 
     /// Build a .jpkg with a custom post_install hook.
-    pub fn build_test_jpkg_with_hook(tmp: &Path, name: &str, version: &str, post_install: &str) -> PathBuf {
+    pub fn build_test_jpkg_with_hook(
+        tmp: &Path,
+        name: &str,
+        version: &str,
+        post_install: &str,
+    ) -> PathBuf {
         let destdir = tmp.join(format!("destdir-hook-{name}"));
         fs::create_dir_all(destdir.join("bin")).unwrap();
         fs::write(destdir.join("bin/foo"), b"hook content\n").unwrap();
@@ -1078,11 +1108,7 @@ pub(crate) mod tests {
     /// `../share/terminfo`, with the real terminfo content under
     /// `share/terminfo/`.  Mirrors ncurses-6.5-r4's intended layout.
     /// This is the v2 in the dir→symlink upgrade test.
-    pub fn build_jpkg_with_terminfo_symlink(
-        tmp: &Path,
-        name: &str,
-        version: &str,
-    ) -> PathBuf {
+    pub fn build_jpkg_with_terminfo_symlink(tmp: &Path, name: &str, version: &str) -> PathBuf {
         let destdir = tmp.join(format!("destdir-sym-{name}-{version}"));
         fs::create_dir_all(destdir.join("share/terminfo")).unwrap();
         fs::write(destdir.join("share/terminfo/a"), b"a entry\n").unwrap();
@@ -1170,7 +1196,10 @@ pub(crate) mod tests {
 
         let baz = entries.iter().find(|e| e.path == "lib/baz").unwrap();
         assert_eq!(baz.symlink_target.as_deref(), Some("bar"));
-        assert!(baz.sha256.is_empty(), "symlink sha256 should be empty in FileEntry");
+        assert!(
+            baz.sha256.is_empty(),
+            "symlink sha256 should be empty in FileEntry"
+        );
     }
 
     // ── 2. flatten_merged_usr ─────────────────────────────────────────────────
@@ -1184,7 +1213,10 @@ pub(crate) mod tests {
 
         flatten_merged_usr(&destdir).unwrap();
 
-        assert!(destdir.join("bin/hello").exists(), "bin/hello should exist after flatten");
+        assert!(
+            destdir.join("bin/hello").exists(),
+            "bin/hello should exist after flatten"
+        );
         assert!(!destdir.join("usr").exists(), "usr/ should be gone");
     }
 
@@ -1198,7 +1230,10 @@ pub(crate) mod tests {
 
         flatten_merged_usr(&destdir).unwrap();
 
-        assert!(destdir.join("lib/ld.so").exists(), "lib/ld.so should exist after flatten");
+        assert!(
+            destdir.join("lib/ld.so").exists(),
+            "lib/ld.so should exist after flatten"
+        );
         assert!(!destdir.join("lib64").exists(), "lib64/ should be gone");
     }
 
@@ -1212,7 +1247,12 @@ pub(crate) mod tests {
 
         // Should not error, and the symlink should still be there.
         flatten_merged_usr(&destdir).unwrap();
-        assert!(destdir.join("usr").symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(destdir
+            .join("usr")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     // ── 3. extract_and_register ───────────────────────────────────────────────
@@ -1232,8 +1272,14 @@ pub(crate) mod tests {
         let _pkg = extract_and_register(&archive, &rootfs, &db).unwrap();
 
         // Verify on-disk.
-        assert!(rootfs.join("bin/foo").exists(), "bin/foo should be installed");
-        assert!(rootfs.join("lib/bar").exists(), "lib/bar should be installed");
+        assert!(
+            rootfs.join("bin/foo").exists(),
+            "bin/foo should be installed"
+        );
+        assert!(
+            rootfs.join("lib/bar").exists(),
+            "lib/bar should be installed"
+        );
 
         // Verify DB record.
         let got = db.get("mypkg").unwrap().expect("mypkg should be in db");
@@ -1258,10 +1304,14 @@ pub(crate) mod tests {
         extract_and_register(&a_arc, &rootfs, &db).unwrap();
 
         let a_before = db.get("pkgA").unwrap().unwrap();
-        assert!(a_before.files.iter().any(|e| e.path == "bin/sh"), "A should own bin/sh");
+        assert!(
+            a_before.files.iter().any(|e| e.path == "bin/sh"),
+            "A should own bin/sh"
+        );
 
         // Install pkg B — it replaces A and installs its own bin/sh.
-        let b_jpkg = build_jpkg_with_replaces(tmp.path(), "pkgB", "1.0.0", vec!["pkgA".to_string()]);
+        let b_jpkg =
+            build_jpkg_with_replaces(tmp.path(), "pkgB", "1.0.0", vec!["pkgA".to_string()]);
         let b_arc = JpkgArchive::open(&b_jpkg).unwrap();
         extract_and_register(&b_arc, &rootfs, &db).unwrap();
 
@@ -1274,7 +1324,10 @@ pub(crate) mod tests {
 
         // B's manifest should list bin/sh.
         let b = db.get("pkgB").unwrap().unwrap();
-        assert!(b.files.iter().any(|e| e.path == "bin/sh"), "B should own bin/sh");
+        assert!(
+            b.files.iter().any(|e| e.path == "bin/sh"),
+            "B should own bin/sh"
+        );
     }
 
     // ── 5. run_hook (non-root / host path) ────────────────────────────────────
@@ -1291,9 +1344,7 @@ pub(crate) mod tests {
         let tmp = TempDir::new().unwrap();
         let marker = tmp.path().join("marker");
         // Hook uses JPKG_ROOT to place the marker inside our temp rootfs.
-        let hook = format!(
-            "touch \"$JPKG_ROOT/marker\"",
-        );
+        let hook = format!("touch \"$JPKG_ROOT/marker\"",);
         let status = run_hook(tmp.path(), &hook).unwrap();
         assert!(status.success(), "hook should exit 0");
         assert!(marker.exists(), "hook should have created the marker file");
@@ -1335,9 +1386,18 @@ pub(crate) mod tests {
 
         // Sanity: dir + entries are there.
         let lib_terminfo = rootfs.join("lib/terminfo");
-        assert!(lib_terminfo.is_dir(), "v1 should install lib/terminfo as a directory");
-        assert!(lib_terminfo.join("a").exists(), "v1 should install lib/terminfo/a");
-        assert!(lib_terminfo.join("b").exists(), "v1 should install lib/terminfo/b");
+        assert!(
+            lib_terminfo.is_dir(),
+            "v1 should install lib/terminfo as a directory"
+        );
+        assert!(
+            lib_terminfo.join("a").exists(),
+            "v1 should install lib/terminfo/a"
+        );
+        assert!(
+            lib_terminfo.join("b").exists(),
+            "v1 should install lib/terminfo/b"
+        );
 
         // v2: lib/terminfo as a symlink to ../share/terminfo.
         let v2 = build_jpkg_with_terminfo_symlink(tmp.path(), "ncurses", "6.5-r4");
@@ -1379,7 +1439,10 @@ pub(crate) mod tests {
         let arc_v1 = JpkgArchive::open(&v1).unwrap();
         extract_and_register(&arc_v1, &rootfs, &db).unwrap();
 
-        assert!(rootfs.join("share/dropme").exists(), "v1 should install share/dropme");
+        assert!(
+            rootfs.join("share/dropme").exists(),
+            "v1 should install share/dropme"
+        );
         assert!(rootfs.join("bin/foo").exists(), "v1 should install bin/foo");
 
         // v2: bin/foo + lib/bar (build_test_jpkg's layout, no share/dropme).
@@ -1393,9 +1456,15 @@ pub(crate) mod tests {
             "share/dropme should be removed during upgrade (not in v2's manifest)"
         );
         // bin/foo should still be there (in both manifests).
-        assert!(rootfs.join("bin/foo").exists(), "bin/foo should survive upgrade");
+        assert!(
+            rootfs.join("bin/foo").exists(),
+            "bin/foo should survive upgrade"
+        );
         // lib/bar (new in v2) should appear.
-        assert!(rootfs.join("lib/bar").exists(), "lib/bar should be installed by v2");
+        assert!(
+            rootfs.join("lib/bar").exists(),
+            "lib/bar should be installed by v2"
+        );
 
         // DB reflects v2.
         let after = db.get("droptest").unwrap().unwrap();
@@ -1429,9 +1498,8 @@ pub(crate) mod tests {
         // v2 wants lib/terminfo as a symlink — should error out cleanly.
         let v2 = build_jpkg_with_terminfo_symlink(tmp.path(), "ncurses", "6.5-r4");
         let arc_v2 = JpkgArchive::open(&v2).unwrap();
-        let err = extract_and_register(&arc_v2, &rootfs, &db).expect_err(
-            "upgrade should fail when foreign files are present in dir being replaced",
-        );
+        let err = extract_and_register(&arc_v2, &rootfs, &db)
+            .expect_err("upgrade should fail when foreign files are present in dir being replaced");
 
         // Error must name the foreign file.
         let msg = err.to_string();
@@ -1453,7 +1521,10 @@ pub(crate) mod tests {
         assert_eq!(still.metadata.package.version.as_deref(), Some("6.5-r3"));
 
         // The foreign file must still be on disk — we refused to blast it.
-        assert!(foreign.exists(), "foreign file should not have been touched");
+        assert!(
+            foreign.exists(),
+            "foreign file should not have been touched"
+        );
     }
 
     // ── 9. Path-aware error wrapping: io::Error now carries the path ──────────
@@ -1481,9 +1552,8 @@ pub(crate) mod tests {
         fs::create_dir_all(&collision).unwrap();
         fs::write(collision.join("squatter"), b"x").unwrap();
 
-        let err = install_files(&stage, &rootfs).expect_err(
-            "install_files should fail when target dir is populated",
-        );
+        let err = install_files(&stage, &rootfs)
+            .expect_err("install_files should fail when target dir is populated");
 
         match &err {
             InstallError::FileOp { path, op, source } => {
@@ -1557,7 +1627,13 @@ pub(crate) mod tests {
         let arc2 = JpkgArchive::open(&v1).unwrap();
         extract_and_register(&arc2, &rootfs, &db).expect("reinstall should succeed");
 
-        assert!(rootfs.join("bin/foo").exists(), "bin/foo should still exist");
-        assert!(rootfs.join("lib/bar").exists(), "lib/bar should still exist");
+        assert!(
+            rootfs.join("bin/foo").exists(),
+            "bin/foo should still exist"
+        );
+        assert!(
+            rootfs.join("lib/bar").exists(),
+            "lib/bar should still exist"
+        );
     }
 }

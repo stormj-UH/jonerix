@@ -38,11 +38,11 @@ use std::path::Path;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum SanitizeState {
     Outside,
-    Comment,        // `#` to end-of-line, only when reached from Outside
-    BasicSingle,    // "…"
-    BasicMulti,     // """…"""
-    LiteralSingle,  // '…'
-    LiteralMulti,   // '''…'''
+    Comment,       // `#` to end-of-line, only when reached from Outside
+    BasicSingle,   // "…"
+    BasicMulti,    // """…"""
+    LiteralSingle, // '…'
+    LiteralMulti,  // '''…'''
 }
 
 /// True iff `b` is a valid escape character after `\` in a TOML basic string.
@@ -50,7 +50,10 @@ enum SanitizeState {
 /// line-continuation in multi-line basic strings.
 #[inline]
 fn is_valid_basic_escape(b: u8) -> bool {
-    matches!(b, b'b' | b'f' | b'n' | b'r' | b't' | b'"' | b'\\' | b'u' | b'U' | b'\n' | b'\r')
+    matches!(
+        b,
+        b'b' | b'f' | b'n' | b'r' | b't' | b'"' | b'\\' | b'u' | b'U' | b'\n' | b'\r'
+    )
 }
 
 /// Pre-process a TOML document so that the standard `toml` crate accepts
@@ -828,14 +831,26 @@ mod tests {
         // bumps and the MIT→0BSD relicense (2026-04-30); the license
         // value is only checked to be non-empty.
         assert_eq!(recipe.package.name.as_deref(), Some("jpkg"));
-        assert!(recipe.package.license.as_deref().map_or(false, |l| !l.is_empty()),
-            "license must be set");
+        assert!(
+            recipe
+                .package
+                .license
+                .as_deref()
+                .map_or(false, |l| !l.is_empty()),
+            "license must be set"
+        );
         // mksh joined musl as a runtime dep in 2.0.1-r2 because
         // jpkg-conform's #!/bin/mksh shebang requires it; the test
         // accepts either ["musl"] (older recipes) or any superset.
-        assert!(recipe.depends.runtime.iter().any(|d| d == "musl"),
-            "runtime deps must include musl");
-        assert!(recipe.package.version.as_deref().map_or(false, |v| !v.is_empty()));
+        assert!(
+            recipe.depends.runtime.iter().any(|d| d == "musl"),
+            "runtime deps must include musl"
+        );
+        assert!(recipe
+            .package
+            .version
+            .as_deref()
+            .map_or(false, |v| !v.is_empty()));
 
         // Re-serialise then re-parse — fields must survive a round-trip.
         let serialised = toml::to_string(&recipe).expect("serialise");
@@ -872,9 +887,15 @@ size = 1234567
 
         let meta = Metadata::from_str(toml_str).expect("parse metadata");
         assert_eq!(meta.package.name.as_deref(), Some("libressl"));
-        assert_eq!(meta.files.sha256.as_deref(), Some("abc123def456abc123def456abc123def456abc123def456abc123def456abcd"));
+        assert_eq!(
+            meta.files.sha256.as_deref(),
+            Some("abc123def456abc123def456abc123def456abc123def456abc123def456abcd")
+        );
         assert_eq!(meta.files.size, Some(1234567));
-        assert_eq!(meta.hooks.post_install.as_deref(), Some("ldconfig /lib 2>/dev/null || true"));
+        assert_eq!(
+            meta.hooks.post_install.as_deref(),
+            Some("ldconfig /lib 2>/dev/null || true")
+        );
 
         // Re-serialise and re-parse.
         let serialised = meta.to_string().expect("serialise");
@@ -921,7 +942,9 @@ build-depends = ["clang", "cmake", "samurai"]
         assert_eq!(mksh.arch, "x86_64");
         assert!(mksh.build_depends.is_empty());
 
-        let libressl = index.get("libressl", "aarch64").expect("libressl-aarch64 not found");
+        let libressl = index
+            .get("libressl", "aarch64")
+            .expect("libressl-aarch64 not found");
         assert_eq!(libressl.version, "4.0.0");
         assert_eq!(libressl.build_depends, vec!["clang", "cmake", "samurai"]);
 
@@ -931,14 +954,21 @@ build-depends = ["clang", "cmake", "samurai"]
         assert_eq!(s1, s2, "serialisation is not deterministic");
 
         // Keys appear in alphabetical order: libressl-aarch64 before mksh-x86_64.
-        let libressl_pos = s1.find("libressl-aarch64").expect("libressl-aarch64 missing");
+        let libressl_pos = s1
+            .find("libressl-aarch64")
+            .expect("libressl-aarch64 missing");
         let mksh_pos = s1.find("mksh-x86_64").expect("mksh-x86_64 missing");
-        assert!(libressl_pos < mksh_pos, "BTreeMap order not preserved in output");
+        assert!(
+            libressl_pos < mksh_pos,
+            "BTreeMap order not preserved in output"
+        );
 
         // Re-parse the serialised output and check it's equivalent.
         let index2 = Index::parse(&s1).expect("re-parse INDEX");
         assert_eq!(index2.entries.len(), 2);
-        let mksh2 = index2.get("mksh", "x86_64").expect("mksh-x86_64 missing after re-parse");
+        let mksh2 = index2
+            .get("mksh", "x86_64")
+            .expect("mksh-x86_64 missing after re-parse");
         assert_eq!(mksh2.version, mksh.version);
     }
 
@@ -955,7 +985,10 @@ build-depends = ["clang", "cmake", "samurai"]
             },
             ..Default::default()
         };
-        assert!(matches!(r.validate(), Err(RecipeError::Missing("package.name"))));
+        assert!(matches!(
+            r.validate(),
+            Err(RecipeError::Missing("package.name"))
+        ));
     }
 
     #[test]
@@ -969,7 +1002,10 @@ build-depends = ["clang", "cmake", "samurai"]
             },
             ..Default::default()
         };
-        assert!(matches!(r.validate(), Err(RecipeError::Missing("package.name"))));
+        assert!(matches!(
+            r.validate(),
+            Err(RecipeError::Missing("package.name"))
+        ));
     }
 
     #[test]
@@ -983,7 +1019,10 @@ build-depends = ["clang", "cmake", "samurai"]
             },
             ..Default::default()
         };
-        assert!(matches!(r.validate(), Err(RecipeError::Missing("package.version"))));
+        assert!(matches!(
+            r.validate(),
+            Err(RecipeError::Missing("package.version"))
+        ));
     }
 
     #[test]
@@ -1019,8 +1058,15 @@ build-depends = ["clang", "cmake", "samurai"]
     #[test]
     fn validate_accepts_permissive_licenses() {
         let permissive = [
-            "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC",
-            "0BSD", "MirOS", "PSF-2.0", "MIT OR Apache-2.0",
+            "MIT",
+            "Apache-2.0",
+            "BSD-2-Clause",
+            "BSD-3-Clause",
+            "ISC",
+            "0BSD",
+            "MirOS",
+            "PSF-2.0",
+            "MIT OR Apache-2.0",
         ];
         for lic in permissive {
             let r = Recipe {
@@ -1077,7 +1123,11 @@ build-depends = ["clang", "cmake", "samurai"]
         // packages/core/jpkg/ — auto-discovery makes the test path-stable.
         let mut pkgs_dir: Option<std::path::PathBuf> = None;
         for ancestor in manifest_dir().ancestors() {
-            if ancestor.file_name().map(|n| n == "packages").unwrap_or(false) {
+            if ancestor
+                .file_name()
+                .map(|n| n == "packages")
+                .unwrap_or(false)
+            {
                 pkgs_dir = Some(ancestor.to_path_buf());
                 break;
             }
@@ -1085,10 +1135,7 @@ build-depends = ["clang", "cmake", "samurai"]
         let pkgs_dir = match pkgs_dir {
             Some(p) => p,
             None => {
-                eprintln!(
-                    "skipping: no `packages` ancestor of {:?}",
-                    manifest_dir()
-                );
+                eprintln!("skipping: no `packages` ancestor of {:?}", manifest_dir());
                 return;
             }
         };
@@ -1115,7 +1162,12 @@ build-depends = ["clang", "cmake", "samurai"]
             match Recipe::from_file(path) {
                 Ok(recipe) => {
                     assert!(
-                        recipe.package.name.as_deref().map(|n| !n.is_empty()).unwrap_or(false),
+                        recipe
+                            .package
+                            .name
+                            .as_deref()
+                            .map(|n| !n.is_empty())
+                            .unwrap_or(false),
                         "empty/missing name in {:?}",
                         path
                     );
@@ -1125,7 +1177,11 @@ build-depends = ["clang", "cmake", "samurai"]
             }
         }
 
-        assert!(parsed > 0, "no recipe.toml files found under {:?}", pkgs_dir);
+        assert!(
+            parsed > 0,
+            "no recipe.toml files found under {:?}",
+            pkgs_dir
+        );
         assert!(
             failures.is_empty(),
             "{} recipes failed to parse (out of {} total).  First few:\n{}",
@@ -1193,8 +1249,10 @@ license = "MIT"
         use super::sanitize_legacy_escapes;
         let input = "key = '''path\\with\\;backslashes'''\n";
         let out = sanitize_legacy_escapes(input);
-        assert!(matches!(out, std::borrow::Cow::Borrowed(_)),
-                "literal strings shouldn't trigger doubling");
+        assert!(
+            matches!(out, std::borrow::Cow::Borrowed(_)),
+            "literal strings shouldn't trigger doubling"
+        );
     }
 
     // ── Extra: from_recipe constructor ───────────────────────────────────────
@@ -1234,8 +1292,14 @@ license = "MIT"
         // source / build sections are gone from Metadata — confirm they're absent
         // from the serialised output.
         let toml_out = meta.to_string().expect("serialise");
-        assert!(!toml_out.contains("[source]"), "source section must not appear in metadata");
-        assert!(!toml_out.contains("[build]"), "build section must not appear in metadata");
+        assert!(
+            !toml_out.contains("[source]"),
+            "source section must not appear in metadata"
+        );
+        assert!(
+            !toml_out.contains("[build]"),
+            "build section must not appear in metadata"
+        );
     }
 
     /// Regression for the publish-images iteration that broke on the live
@@ -1301,14 +1365,20 @@ key_id = "jonerix-2026"
 sig = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 "#;
         let meta = Metadata::from_str(toml_str).expect("parse metadata with signature");
-        let sig = meta.signature.as_ref().expect("signature should be present");
+        let sig = meta
+            .signature
+            .as_ref()
+            .expect("signature should be present");
         assert_eq!(sig.algorithm, "ed25519");
         assert_eq!(sig.key_id, "jonerix-2026");
         assert_eq!(sig.sig, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         // Re-serialise and re-parse — fields must match.
         let serialised = meta.to_string().expect("serialise");
-        assert!(serialised.contains("[signature]"), "serialised form must contain [signature]");
+        assert!(
+            serialised.contains("[signature]"),
+            "serialised form must contain [signature]"
+        );
         let meta2 = Metadata::from_str(&serialised).expect("re-parse");
         assert_eq!(meta2.signature, meta.signature);
     }
@@ -1329,7 +1399,10 @@ sha256 = "bbbb"
 size = 2
 "#;
         let meta = Metadata::from_str(toml_str).expect("parse metadata without signature");
-        assert!(meta.signature.is_none(), "signature should be None when absent from TOML");
+        assert!(
+            meta.signature.is_none(),
+            "signature should be None when absent from TOML"
+        );
 
         let serialised = meta.to_string().expect("serialise");
         assert!(
@@ -1338,7 +1411,10 @@ size = 2
         );
 
         let meta2 = Metadata::from_str(&serialised).expect("re-parse");
-        assert!(meta2.signature.is_none(), "re-parsed signature should still be None");
+        assert!(
+            meta2.signature.is_none(),
+            "re-parsed signature should still be None"
+        );
     }
 
     /// And section keys without an `-arch` suffix (e.g. a stray legacy

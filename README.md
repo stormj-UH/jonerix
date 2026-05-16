@@ -13,8 +13,8 @@
 **jonerix is a self-hosting alt-Linux built around permissive licensing.**
 
 The current tagged distro release is
-**[v1.2.1](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.1)**.
-The tree currently tracks **106 package recipes** and builds for
+**[v1.2.2](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.2)**.
+The tree currently tracks **116 package recipes** and builds for
 `x86_64` and `aarch64`.
 
 jonerix is a "bring your own kernel" distribution. The Linux kernel is not part
@@ -130,7 +130,7 @@ iwr -useb https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/wsl/i
   -OutFile $env:TEMP\jonerix-install.ps1
 
 & $env:TEMP\jonerix-install.ps1 -InstallDir "D:\WSL\jonerix" -DistroName "jonerix-dev"
-& $env:TEMP\jonerix-install.ps1 -Release "v1.2.1"
+& $env:TEMP\jonerix-install.ps1 -Release "v1.2.2"
 ```
 
 See [install/wsl/install.ps1](install/wsl/install.ps1) and
@@ -152,7 +152,7 @@ Pin the package set to a tagged release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
-  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.1
+  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.2
 ```
 
 Complete a CI image after `dd` by adding the firmware/kernel payload that the
@@ -201,10 +201,10 @@ jpkg install fastfetch
 jpkg list
 jpkg local install ./pkg.jpkg
 jpkg local build ./packages/core/jpkg
-jpkg conform 1.2.1
+jpkg conform 1.2.2
 ```
 
-The current source tree packages `jpkg` **2.2.3**. The Rust implementation
+The current source tree packages `jpkg` **2.2.9**. The Rust implementation
 keeps the C jpkg wire formats compatible and keeps the crate itself
 `unsafe`-free.
 
@@ -247,7 +247,7 @@ that traditional Linux systems usually take for granted.
 | libnl | `nloxide` | 1.2.3 | Netlink and Generic Netlink for hostapd/wpa_supplicant. |
 | expr | `exproxide` | 0.1.1-r0 | POSIX `expr(1)` for configure scripts. |
 | util-linux subset | `jonerix-util` | see PACKAGES.md | Small replacements for the util-linux commands jonerix actually needs. |
-| jpkg C implementation | `jpkg` | 2.2.3 | Rust package manager retaining the historical jpkg file formats. |
+| jpkg C implementation | `jpkg` | 2.2.9 | Rust package manager retaining the historical jpkg file formats. |
 
 Third-party permissive replacements include `uutils` for a larger coreutils
 surface and `ripgrep` for recursive search.
@@ -355,7 +355,7 @@ See [DESIGN.md](DESIGN.md) for the full rule set.
 
 | Release surface | Location |
 | --------------- | -------- |
-| Tagged distro release | GitHub release tags like `v1.2.1` |
+| Tagged distro release | GitHub release tags like `v1.2.2` |
 | Rolling jpkg packages | [`packages`](https://github.com/stormj-UH/jonerix/releases/tag/packages) release |
 | Source mirrors | `source-*` releases plus vendored files under [sources/](sources) |
 | Container images | `ghcr.io/stormj-uh/jonerix:*` |
@@ -371,7 +371,7 @@ the release, and regenerates a signed package index.
     _                       _            jonerik@tormenta
    (_) ___  _ __   ___ _ __(_)_  __      ----------------
    | |/ _ \| '_ \ / _ \ '__| \ \/ /      Host -> Raspberry Pi 5 Model B Rev 1.1
-   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.2.1 aarch64
+   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.2.2 aarch64
   _/ |\___/|_| |_|\___|_|  |_/_/\_\      Init System -> openrc-init
  |__/                                    Packages -> 87 (jpkg)
  ========= permissive + linux =========  Shell -> brash

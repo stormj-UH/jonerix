@@ -44,9 +44,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 // Real db types (Worker E):
-use crate::db::{DbError, InstalledDb};
 #[cfg(test)]
 use crate::db::InstalledPkg;
+use crate::db::{DbError, InstalledDb};
 use crate::recipe::{Index, IndexEntry};
 use crate::types::{InstallMode, OrphanMode};
 
@@ -149,10 +149,7 @@ fn dfs_visit(
         NodeState::Visited => return Ok(()),
         NodeState::Visiting => {
             // Back-edge: build cycle path from `stack`.
-            let cycle_start = stack
-                .iter()
-                .position(|n| n == name)
-                .unwrap_or(0);
+            let cycle_start = stack.iter().position(|n| n == name).unwrap_or(0);
             let mut cycle: Vec<String> = stack[cycle_start..].to_vec();
             cycle.push(name.to_string()); // close the loop
             return Err(DepsError::Cycle(cycle));
@@ -322,10 +319,7 @@ pub fn resolve_remove(
             let mut runtime_deps = pkg.metadata.depends.runtime.clone();
             runtime_deps.sort();
             for dep in runtime_deps {
-                rev_deps
-                    .entry(dep)
-                    .or_default()
-                    .insert(pkg_name.clone());
+                rev_deps.entry(dep).or_default().insert(pkg_name.clone());
             }
         }
     }
@@ -333,10 +327,7 @@ pub fn resolve_remove(
     // Step 4: check that no target has a live rev-dependent outside the removal set.
     for target in targets {
         if let Some(rdeps) = rev_deps.get(target) {
-            let live: Vec<&String> = rdeps
-                .iter()
-                .filter(|r| !removal_set.contains(*r))
-                .collect();
+            let live: Vec<&String> = rdeps.iter().filter(|r| !removal_set.contains(*r)).collect();
             if !live.is_empty() {
                 return Err(DepsError::UnknownDependency {
                     dependent: live[0].clone(),
@@ -432,20 +423,18 @@ fn cycle_dfs(
     stack.push(node.to_string());
 
     // Sort neighbours for deterministic traversal.
-    let mut neighbours: Vec<String> = graph
-        .get(node)
-        .cloned()
-        .unwrap_or_default();
+    let mut neighbours: Vec<String> = graph.get(node).cloned().unwrap_or_default();
     neighbours.sort();
 
     for neighbour in &neighbours {
-        match state.get(neighbour).copied().unwrap_or(NodeState::Unvisited) {
+        match state
+            .get(neighbour)
+            .copied()
+            .unwrap_or(NodeState::Unvisited)
+        {
             NodeState::Visiting => {
                 // Back-edge: build cycle path.
-                let start = stack
-                    .iter()
-                    .position(|n| n == neighbour)
-                    .unwrap_or(0);
+                let start = stack.iter().position(|n| n == neighbour).unwrap_or(0);
                 let mut cycle: Vec<String> = stack[start..].to_vec();
                 cycle.push(neighbour.clone()); // close the loop
                 return Some(cycle);
@@ -554,14 +543,16 @@ mod tests {
     #[test]
     fn test_linear_chain() {
         // A depends on B, B depends on C.  Expected install order: [C, B, A].
-        let index = make_index(&[
-            ("a", vec!["b"]),
-            ("b", vec!["c"]),
-            ("c", vec![]),
-        ]);
+        let index = make_index(&[("a", vec!["b"]), ("b", vec!["c"]), ("c", vec![])]);
         let (_tmp, db) = make_db(&[]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
-            .expect("resolve_install failed");
+        let plan = resolve_install(
+            &[String::from("a")],
+            "x86_64",
+            &db,
+            &index,
+            InstallMode::Normal,
+        )
+        .expect("resolve_install failed");
         assert_eq!(plan.to_install, vec!["c", "b", "a"]);
         assert!(plan.already_installed.is_empty());
     }
@@ -581,8 +572,14 @@ mod tests {
             ("d", vec![]),
         ]);
         let (_tmp, db) = make_db(&[]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
-            .expect("resolve_install failed");
+        let plan = resolve_install(
+            &[String::from("a")],
+            "x86_64",
+            &db,
+            &index,
+            InstallMode::Normal,
+        )
+        .expect("resolve_install failed");
 
         // D must be first, A must be last; B and C in between.
         assert_eq!(plan.to_install[0], "d", "D must be first");
@@ -591,9 +588,21 @@ mod tests {
             "a",
             "A must be last"
         );
-        let b_pos = plan.to_install.iter().position(|x| x == "b").expect("b missing");
-        let c_pos = plan.to_install.iter().position(|x| x == "c").expect("c missing");
-        let a_pos = plan.to_install.iter().position(|x| x == "a").expect("a missing");
+        let b_pos = plan
+            .to_install
+            .iter()
+            .position(|x| x == "b")
+            .expect("b missing");
+        let c_pos = plan
+            .to_install
+            .iter()
+            .position(|x| x == "c")
+            .expect("c missing");
+        let a_pos = plan
+            .to_install
+            .iter()
+            .position(|x| x == "a")
+            .expect("a missing");
         assert!(b_pos < a_pos, "B must come before A");
         assert!(c_pos < a_pos, "C must come before A");
     }
@@ -602,13 +611,16 @@ mod tests {
 
     #[test]
     fn test_cycle() {
-        let index = make_index(&[
-            ("a", vec!["b"]),
-            ("b", vec!["a"]),
-        ]);
+        let index = make_index(&[("a", vec!["b"]), ("b", vec!["a"])]);
         let (_tmp, db) = make_db(&[]);
-        let err = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
-            .expect_err("expected cycle error");
+        let err = resolve_install(
+            &[String::from("a")],
+            "x86_64",
+            &db,
+            &index,
+            InstallMode::Normal,
+        )
+        .expect_err("expected cycle error");
         match err {
             DepsError::Cycle(path) => {
                 // Path must contain a, b, and close with a repeated node.
@@ -636,13 +648,16 @@ mod tests {
     #[test]
     fn test_already_installed_excluded() {
         // A depends on B.  B is already installed.  With force=false, plan = [A].
-        let index = make_index(&[
-            ("a", vec!["b"]),
-            ("b", vec![]),
-        ]);
+        let index = make_index(&[("a", vec!["b"]), ("b", vec![])]);
         let (_tmp, db) = make_db(&["b"]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
-            .expect("resolve_install failed");
+        let plan = resolve_install(
+            &[String::from("a")],
+            "x86_64",
+            &db,
+            &index,
+            InstallMode::Normal,
+        )
+        .expect("resolve_install failed");
         assert_eq!(plan.to_install, vec!["a"]);
         assert!(
             plan.already_installed.contains(&String::from("b")),
@@ -657,8 +672,14 @@ mod tests {
         // A is already installed.  With force=true, plan = [A].
         let index = make_index(&[("a", vec![])]);
         let (_tmp, db) = make_db(&["a"]);
-        let plan = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Force)
-            .expect("resolve_install failed");
+        let plan = resolve_install(
+            &[String::from("a")],
+            "x86_64",
+            &db,
+            &index,
+            InstallMode::Force,
+        )
+        .expect("resolve_install failed");
         assert!(
             plan.to_install.contains(&String::from("a")),
             "a must be in to_install with force=true"
@@ -671,11 +692,7 @@ mod tests {
 
     #[test]
     fn test_preserves_requested_package_order() {
-        let index = make_index(&[
-            ("toybox", vec![]),
-            ("mksh", vec![]),
-            ("shadow", vec![]),
-        ]);
+        let index = make_index(&[("toybox", vec![]), ("mksh", vec![]), ("shadow", vec![])]);
         let (_tmp, db) = make_db(&[]);
         let want = vec![
             String::from("toybox"),
@@ -694,8 +711,14 @@ mod tests {
         // A depends on B, but B is not in the index.
         let index = make_index(&[("a", vec!["b"])]);
         let (_tmp, db) = make_db(&[]);
-        let err = resolve_install(&[String::from("a")], "x86_64", &db, &index, InstallMode::Normal)
-            .expect_err("expected error for unknown dep");
+        let err = resolve_install(
+            &[String::from("a")],
+            "x86_64",
+            &db,
+            &index,
+            InstallMode::Normal,
+        )
+        .expect_err("expected error for unknown dep");
         match err {
             DepsError::UnknownDependency { dependent, missing } => {
                 assert_eq!(dependent, "a");
@@ -722,14 +745,17 @@ mod tests {
     fn test_remove_with_orphans() {
         // A depends on B.  Remove A with orphans=true.
         // B has no other rev-dependents → B is orphaned → result = [A, B].
-        let (_tmp, db) = make_db_with_deps(&[
-            ("a", vec!["b"]),
-            ("b", vec![]),
-        ]);
+        let (_tmp, db) = make_db_with_deps(&[("a", vec!["b"]), ("b", vec![])]);
         let order = resolve_remove(&[String::from("a")], &db, OrphanMode::PruneOrphans)
             .expect("resolve_remove failed");
-        assert!(order.contains(&String::from("a")), "a must be in removal list");
-        assert!(order.contains(&String::from("b")), "b must be in removal list as orphan");
+        assert!(
+            order.contains(&String::from("a")),
+            "a must be in removal list"
+        );
+        assert!(
+            order.contains(&String::from("b")),
+            "b must be in removal list as orphan"
+        );
         // A should appear before B in the result.
         let a_pos = order.iter().position(|x| x == "a").unwrap();
         let b_pos = order.iter().position(|x| x == "b").unwrap();
@@ -741,10 +767,7 @@ mod tests {
     #[test]
     fn test_remove_blocked_by_rev_dep() {
         // A depends on B.  Try to remove B without removing A → error.
-        let (_tmp, db) = make_db_with_deps(&[
-            ("a", vec!["b"]),
-            ("b", vec![]),
-        ]);
+        let (_tmp, db) = make_db_with_deps(&[("a", vec!["b"]), ("b", vec![])]);
         let err = resolve_remove(&[String::from("b")], &db, OrphanMode::KeepOrphans)
             .expect_err("expected error: b is needed by a");
         match err {
@@ -768,9 +791,18 @@ mod tests {
 
         let cycle = has_cycle(&graph).expect("expected cycle to be detected");
         // Cycle path must contain all three nodes.
-        assert!(cycle.contains(&String::from("a")), "a missing from cycle: {cycle:?}");
-        assert!(cycle.contains(&String::from("b")), "b missing from cycle: {cycle:?}");
-        assert!(cycle.contains(&String::from("c")), "c missing from cycle: {cycle:?}");
+        assert!(
+            cycle.contains(&String::from("a")),
+            "a missing from cycle: {cycle:?}"
+        );
+        assert!(
+            cycle.contains(&String::from("b")),
+            "b missing from cycle: {cycle:?}"
+        );
+        assert!(
+            cycle.contains(&String::from("c")),
+            "c missing from cycle: {cycle:?}"
+        );
         // Last element closes the cycle.
         let last = cycle.last().unwrap();
         assert!(

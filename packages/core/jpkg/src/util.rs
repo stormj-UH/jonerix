@@ -375,7 +375,7 @@ pub fn license_is_permissive(license: &str) -> bool {
     // is a genuine top-level split point.
     if let Some((op, left, right)) = find_top_level_op(license) {
         return match op {
-            TopOp::Or  => license_is_permissive(left) || license_is_permissive(right),
+            TopOp::Or => license_is_permissive(left) || license_is_permissive(right),
             TopOp::And => license_is_permissive(left) && license_is_permissive(right),
         };
     }
@@ -413,7 +413,10 @@ fn strip_outer_parens(s: &str) -> &str {
 }
 
 #[derive(Copy, Clone)]
-enum TopOp { Or, And }
+enum TopOp {
+    Or,
+    And,
+}
 
 /// Find the first top-level ` OR ` or ` AND ` (paren-depth == 0) in `s`.
 /// Returns `Some((op, left, right))` or `None`.
@@ -425,24 +428,32 @@ fn find_top_level_op(s: &str) -> Option<(TopOp, &str, &str)> {
 
     while i < n {
         match bytes[i] {
-            b'(' => { depth += 1; i += 1; }
-            b')' => { depth -= 1; i += 1; }
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' => {
+                depth -= 1;
+                i += 1;
+            }
             b' ' if depth == 0 => {
                 // Try " OR " (4 bytes including leading space already consumed)
                 if i + 4 <= n && &bytes[i..i + 4] == b" OR " {
-                    let left  = &s[..i];
+                    let left = &s[..i];
                     let right = &s[i + 4..];
                     return Some((TopOp::Or, left, right));
                 }
                 // Try " AND " (5 bytes)
                 if i + 5 <= n && &bytes[i..i + 5] == b" AND " {
-                    let left  = &s[..i];
+                    let left = &s[..i];
                     let right = &s[i + 5..];
                     return Some((TopOp::And, left, right));
                 }
                 i += 1;
             }
-            _ => { i += 1; }
+            _ => {
+                i += 1;
+            }
         }
     }
     None
@@ -581,8 +592,7 @@ fn audit_path_is_doc_payload(rel: &str) -> bool {
         "info/",
     ];
     let doc_exacts = ["share/man", "share/doc", "share/info", "man", "doc", "info"];
-    doc_prefixes.iter().any(|p| rel.starts_with(p))
-        || doc_exacts.iter().any(|e| rel == *e)
+    doc_prefixes.iter().any(|p| rel.starts_with(p)) || doc_exacts.iter().any(|e| rel == *e)
 }
 
 fn audit_buffer_is_elf(buf: &[u8]) -> bool {
@@ -639,9 +649,7 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     if needle.is_empty() {
         return true;
     }
-    haystack
-        .windows(needle.len())
-        .any(|w| w == needle)
+    haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 // ── File-walking for manifest construction ───────────────────────────────────
@@ -681,7 +689,9 @@ pub fn walk_tree(root: &Path) -> io::Result<Vec<TreeEntry>> {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
             .to_path_buf();
 
-        let meta = entry.metadata().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let meta = entry
+            .metadata()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         use std::os::unix::fs::MetadataExt;
         let mode = meta.mode();
         let size = if meta.is_file() { meta.len() } else { 0 };

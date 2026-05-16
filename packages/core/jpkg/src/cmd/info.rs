@@ -65,20 +65,15 @@ pub fn run(args: &[String]) -> i32 {
 
     // Try the installed DB.
     let db = InstalledDb::open(rootfs).ok();
-    let installed = db
-        .as_ref()
-        .and_then(|d| d.get(pkg_name).ok())
-        .flatten();
+    let installed = db.as_ref().and_then(|d| d.get(pkg_name).ok()).flatten();
 
     // Try the repository INDEX (cached preferred).
-    let index = Repo::from_rootfs(rootfs, &arch)
-        .ok()
-        .and_then(|repo| {
-            repo.load_cached_index()
-                .ok()
-                .flatten()
-                .or_else(|| repo.fetch_index().ok())
-        });
+    let index = Repo::from_rootfs(rootfs, &arch).ok().and_then(|repo| {
+        repo.load_cached_index()
+            .ok()
+            .flatten()
+            .or_else(|| repo.fetch_index().ok())
+    });
 
     let index_entry = index.as_ref().and_then(|idx| idx.get(pkg_name, &arch));
 
@@ -111,15 +106,9 @@ pub fn run(args: &[String]) -> i32 {
 
         if entry.size > 0 {
             if entry.size >= 1_048_576 {
-                println!(
-                    "Package size: {:.1} MiB",
-                    entry.size as f64 / 1_048_576.0
-                );
+                println!("Package size: {:.1} MiB", entry.size as f64 / 1_048_576.0);
             } else if entry.size >= 1024 {
-                println!(
-                    "Package size: {:.1} KiB",
-                    entry.size as f64 / 1024.0
-                );
+                println!("Package size: {:.1} KiB", entry.size as f64 / 1024.0);
             } else {
                 println!("Package size: {} bytes", entry.size);
             }
@@ -174,7 +163,10 @@ pub fn run(args: &[String]) -> i32 {
             "Architecture: {}",
             meta.arch.as_deref().unwrap_or("unknown")
         );
-        println!("Description:  {}", meta.description.as_deref().unwrap_or(""));
+        println!(
+            "Description:  {}",
+            meta.description.as_deref().unwrap_or("")
+        );
 
         let runtime = &inst.metadata.depends.runtime;
         if !runtime.is_empty() {
@@ -242,16 +234,14 @@ mod tests {
                 },
                 ..Default::default()
             },
-            files: vec![
-                FileEntry {
-                    path: "bin/test".to_string(),
-                    sha256: "a".repeat(64),
-                    size: 0,
-                    mode: 0o100755,
-                    symlink_target: None,
-                    is_dir: false,
-                },
-            ],
+            files: vec![FileEntry {
+                path: "bin/test".to_string(),
+                sha256: "a".repeat(64),
+                size: 0,
+                mode: 0o100755,
+                symlink_target: None,
+                is_dir: false,
+            }],
         }
     }
 

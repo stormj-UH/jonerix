@@ -112,7 +112,10 @@ pub enum RepoError {
     NoMirrors,
     /// sig verify failed AND at least one key was loaded
     SignatureRejected,
-    PackageNotFound { name: String, arch: String },
+    PackageNotFound {
+        name: String,
+        arch: String,
+    },
 }
 
 impl std::fmt::Display for RepoError {
@@ -241,12 +244,7 @@ impl Repo {
 
     /// Manually construct a Repo from in-memory config (used by tests and by
     /// callers that want to inject a non-default arch).
-    pub fn new(
-        mirrors: Vec<String>,
-        keys: PublicKeySet,
-        cache_dir: PathBuf,
-        arch: String,
-    ) -> Self {
+    pub fn new(mirrors: Vec<String>, keys: PublicKeySet, cache_dir: PathBuf, arch: String) -> Self {
         Self {
             mirrors,
             keys,
@@ -276,10 +274,7 @@ impl Repo {
             parse_repos_conf(&text)
         } else {
             // Default mirror matches the C fallback in repo_config_load.
-            vec![
-                "https://github.com/stormj-UH/jonerix/releases/download/packages"
-                    .to_owned(),
-            ]
+            vec!["https://github.com/stormj-UH/jonerix/releases/download/packages".to_owned()]
         };
 
         // --- keys ----------------------------------------------------------
@@ -293,9 +288,7 @@ impl Repo {
         // Read `signature_policy = "warn|require|ignore"` from
         // `etc/jpkg/repos.conf` if it exists.  Fall back to the enum default
         // (Warn) when absent — matches the Phase-0 rollout plan.
-        let signature_policy = read_signature_policy_from_conf(
-            &rootfs.join("etc/jpkg/repos.conf"),
-        );
+        let signature_policy = read_signature_policy_from_conf(&rootfs.join("etc/jpkg/repos.conf"));
 
         Ok(Self {
             mirrors,
@@ -361,9 +354,7 @@ impl Repo {
         // --- verify signature ----------------------------------------------
         if self.keys.is_empty() {
             // Audit § 3: no keys configured → warn-and-proceed.
-            log::warn!(
-                "no public keys loaded; skipping INDEX signature verification"
-            );
+            log::warn!("no public keys loaded; skipping INDEX signature verification");
         } else if let Some(ref sig) = sig_bytes {
             // We verify the compressed bytes (that is what the C code does:
             // it passes cdata/clen — the raw INDEX.zst — to sign_verify_detached).
@@ -543,9 +534,7 @@ fn zstd_decompress(data: &[u8]) -> Result<Vec<u8>, RepoError> {
 
 /// Write `data` to `path` atomically: write to a sibling tempfile then rename.
 fn atomic_write(path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
-    let parent = path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let tmp = tempfile::Builder::new()
         .prefix(".INDEX.tmp")
         .tempfile_in(parent)?;
@@ -582,7 +571,9 @@ mod tests {
     }
 
     /// Serve a map of path → (status_code, body_bytes).
-    fn fake_http_server(routes: Arc<std::collections::HashMap<String, (u16, Vec<u8>)>>) -> FakeServer {
+    fn fake_http_server(
+        routes: Arc<std::collections::HashMap<String, (u16, Vec<u8>)>>,
+    ) -> FakeServer {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("local_addr");
 
@@ -763,11 +754,14 @@ https://mirror2.example.com/packages
   https://mirror3.example.com/packages
 "#;
         let mirrors = parse_mirrors_conf(conf);
-        assert_eq!(mirrors, vec![
-            "https://mirror1.example.com/packages",
-            "https://mirror2.example.com/packages",
-            "https://mirror3.example.com/packages",
-        ]);
+        assert_eq!(
+            mirrors,
+            vec![
+                "https://mirror1.example.com/packages",
+                "https://mirror2.example.com/packages",
+                "https://mirror3.example.com/packages",
+            ]
+        );
     }
 
     #[test]
@@ -781,11 +775,11 @@ https://mirror2.example.com/packages
         let conf = r#"
 # legacy jpkg config
 [repo]
-url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
+url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.2"
 "#;
         assert_eq!(
             parse_repos_conf(conf),
-            vec!["https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"],
+            vec!["https://github.com/stormj-UH/jonerix/releases/download/v1.2.2"],
         );
     }
 
@@ -796,12 +790,12 @@ url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
         std::fs::create_dir_all(etc_jpkg.join("keys")).expect("mkdir keys");
         std::fs::write(
             etc_jpkg.join("repos.conf"),
-            "[repo]\nurl = \"https://example.invalid/v1.2.1\"\n",
+            "[repo]\nurl = \"https://example.invalid/v1.2.2\"\n",
         )
         .expect("write repos.conf");
 
         let repo = Repo::from_rootfs(dir.path(), "aarch64").expect("repo");
-        assert_eq!(repo.mirrors, vec!["https://example.invalid/v1.2.1"]);
+        assert_eq!(repo.mirrors, vec!["https://example.invalid/v1.2.2"]);
     }
 
     #[test]
@@ -938,8 +932,12 @@ url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
         let fetched = repo.fetch_index().expect("fetch_index must succeed");
 
         // Assert round-trip equality.
-        let orig_entry = index.get("musl", "x86_64").expect("musl-x86_64 in original");
-        let got_entry = fetched.get("musl", "x86_64").expect("musl-x86_64 in fetched");
+        let orig_entry = index
+            .get("musl", "x86_64")
+            .expect("musl-x86_64 in original");
+        let got_entry = fetched
+            .get("musl", "x86_64")
+            .expect("musl-x86_64 in fetched");
         assert_eq!(orig_entry.version, got_entry.version);
         assert_eq!(orig_entry.license, got_entry.license);
 
@@ -998,8 +996,7 @@ url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
         let index = minimal_index("zstd", "aarch64", "1.5.6");
         let toml_text = index.to_string().expect("serialise");
 
-        std::fs::write(cache_dir.path().join("INDEX"), &toml_text)
-            .expect("write cached INDEX");
+        std::fs::write(cache_dir.path().join("INDEX"), &toml_text).expect("write cached INDEX");
 
         let repo = Repo::new(
             vec![],
@@ -1028,7 +1025,9 @@ url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
             "x86_64".to_owned(),
         );
 
-        let cached = repo.load_cached_index().expect("load_cached_index should not error");
+        let cached = repo
+            .load_cached_index()
+            .expect("load_cached_index should not error");
         assert!(cached.is_none(), "must return None when cache file absent");
     }
 
@@ -1096,7 +1095,11 @@ url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.1"
         assert!(
             result.is_ok(),
             "second mirror must succeed after first returns 404: {}",
-            result.as_ref().err().map(|e| e.to_string()).unwrap_or_default()
+            result
+                .as_ref()
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default()
         );
         let idx = result.unwrap();
         assert!(idx.get("mksh", "x86_64").is_some());

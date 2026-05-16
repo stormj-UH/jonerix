@@ -37,17 +37,17 @@
 // error, not a code-review escape.
 #![forbid(unsafe_code)]
 
-pub mod util;
-pub mod recipe;
 pub mod archive;
-pub mod sign;
 pub mod canon;
+pub mod recipe;
+pub mod sign;
 pub mod types;
+pub mod util;
 
 pub mod db;
+pub mod deps;
 pub mod fetch;
 pub mod repo;
-pub mod deps;
 
 pub mod cmd;
 

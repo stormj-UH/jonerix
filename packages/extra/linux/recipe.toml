@@ -8,9 +8,9 @@ license = "GPL-2.0-only"
 description = "Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers."
 
 # r1: bake jonerix branding into the kernel release string via
-# CONFIG_LOCALVERSION="-jonerix-1.2.1" in jonerix-x86_64.config. Once
+# CONFIG_LOCALVERSION="-jonerix-1.2.2" in jonerix-x86_64.config. Once
 # this is rebuilt and deployed, `uname -r`, /proc/version, and
-# /proc/sys/kernel/osrelease all surface `-jonerix-1.2.1`. aarch64
+# /proc/sys/kernel/osrelease all surface `-jonerix-1.2.2`. aarch64
 # tracks the RPi vendor kernel separately (Pi5 hardware support) and
 # is intentionally NOT auto-branded here.
 

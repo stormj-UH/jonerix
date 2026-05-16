@@ -73,10 +73,18 @@ impl fmt::Display for SignError {
         match self {
             SignError::Io(e) => write!(f, "I/O error: {}", e),
             SignError::BadKeyLen { expected, got } => {
-                write!(f, "bad key length: expected {} bytes, got {}", expected, got)
+                write!(
+                    f,
+                    "bad key length: expected {} bytes, got {}",
+                    expected, got
+                )
             }
             SignError::BadSigLen { expected, got } => {
-                write!(f, "bad signature length: expected {} bytes, got {}", expected, got)
+                write!(
+                    f,
+                    "bad signature length: expected {} bytes, got {}",
+                    expected, got
+                )
             }
             SignError::Verify(e) => write!(f, "signature verification failed: {}", e),
             SignError::NoKeys => write!(f, "no public keys loaded; cannot verify signature"),
@@ -192,11 +200,7 @@ pub fn sign_detached(secret: &SigningKey, msg: &[u8]) -> [u8; SIGNATURE_LEN] {
 }
 
 /// Verify a raw 64-byte detached signature.
-pub fn verify_detached(
-    public: &VerifyingKey,
-    msg: &[u8],
-    sig: &[u8],
-) -> Result<(), SignError> {
+pub fn verify_detached(public: &VerifyingKey, msg: &[u8], sig: &[u8]) -> Result<(), SignError> {
     if sig.len() != SIGNATURE_LEN {
         return Err(SignError::BadSigLen {
             expected: SIGNATURE_LEN,
@@ -387,18 +391,25 @@ mod tests {
 
         let mut names = set.names();
         names.sort();
-        assert!(names.contains(&"alice.pub"), "alice.pub should be in names()");
+        assert!(
+            names.contains(&"alice.pub"),
+            "alice.pub should be in names()"
+        );
         assert!(names.contains(&"bob.pub"), "bob.pub should be in names()");
 
         // Verify a sig made by sk_a
         let msg = b"package index bytes";
         let sig_a = sign_detached(&sk_a, msg);
-        let matched = set.verify_detached(msg, &sig_a).expect("sk_a sig must verify");
+        let matched = set
+            .verify_detached(msg, &sig_a)
+            .expect("sk_a sig must verify");
         assert_eq!(matched, "alice.pub");
 
         // Verify a sig made by sk_b
         let sig_b = sign_detached(&sk_b, msg);
-        let matched_b = set.verify_detached(msg, &sig_b).expect("sk_b sig must verify");
+        let matched_b = set
+            .verify_detached(msg, &sig_b)
+            .expect("sk_b sig must verify");
         assert_eq!(matched_b, "bob.pub");
     }
 
@@ -422,7 +433,10 @@ mod tests {
         let path = dir.path().join("short.pub");
         std::fs::write(&path, &[0u8; 31]).unwrap();
         match read_public_key(&path) {
-            Err(SignError::BadKeyLen { expected: 32, got: 31 }) => {}
+            Err(SignError::BadKeyLen {
+                expected: 32,
+                got: 31,
+            }) => {}
             other => panic!("expected BadKeyLen(32, 31), got {:?}", other),
         }
     }
@@ -437,7 +451,11 @@ mod tests {
         write_secret_key(&path, &sk).unwrap();
         let meta = std::fs::metadata(&path).unwrap();
         let mode = meta.permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "secret key must have mode 0600, got {:04o}", mode);
+        assert_eq!(
+            mode, 0o600,
+            "secret key must have mode 0600, got {:04o}",
+            mode
+        );
     }
 
     // Bonus: secret key file round-trip (write then read back)

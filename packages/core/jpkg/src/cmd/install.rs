@@ -8,7 +8,7 @@ use base64::Engine as _;
 
 use crate::archive::JpkgArchive;
 use crate::canon::{canonical_bytes, compute_payload_sha256};
-use crate::cmd::common::{self, InstallError, resolve_arch, resolve_rootfs};
+use crate::cmd::common::{self, resolve_arch, resolve_rootfs, InstallError};
 use crate::db::InstalledDb;
 use crate::deps::resolve_install;
 use crate::recipe::{Index, Metadata};
@@ -114,7 +114,9 @@ pub(crate) fn verify_jpkg_signature(
     }
 
     match key_set.verify_detached(&canon, &sig_bytes) {
-        Ok(matched_key) => Ok(VerifyOutcome::Verified { key_id: matched_key }),
+        Ok(matched_key) => Ok(VerifyOutcome::Verified {
+            key_id: matched_key,
+        }),
         Err(crate::sign::SignError::NoKeys) => Err(SignatureError::UnknownKey(key_id)),
         Err(e) => Err(SignatureError::Invalid(format!("verification failed: {e}"))),
     }
@@ -245,12 +247,7 @@ pub(crate) fn install_packages(
         // Skip if already installed at same version and not forced.
         if !mode.is_force() {
             if let Some(existing) = db.get(name)? {
-                let installed_ver = existing
-                    .metadata
-                    .package
-                    .version
-                    .as_deref()
-                    .unwrap_or("");
+                let installed_ver = existing.metadata.package.version.as_deref().unwrap_or("");
                 if installed_ver == entry.version {
                     log::info!("jpkg: {name}-{} is already installed", entry.version);
                     continue;
@@ -272,12 +269,12 @@ pub(crate) fn install_packages(
         // libressl jpkg cached from `packages` and `jpkg conform 1.2.1`
         // expecting v1.2.1's sha256.
         let jpkg_path = {
-            let path = repo
-                .fetch_package(name, &entry.version)
-                .map_err(|e| InstallError::Io(std::io::Error::new(
+            let path = repo.fetch_package(name, &entry.version).map_err(|e| {
+                InstallError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("fetch failed: {e}"),
-                )))?;
+                ))
+            })?;
             match Repo::verify_package(&path, &entry.sha256) {
                 Ok(()) => path,
                 Err(first_err) => {
@@ -288,19 +285,20 @@ pub(crate) fn install_packages(
                     // Remove the bad file so fetch_package's cache check
                     // misses and goes to the network.
                     let _ = std::fs::remove_file(&path);
-                    let path = repo
-                        .fetch_package(name, &entry.version)
-                        .map_err(|e| InstallError::Io(std::io::Error::new(
+                    let path = repo.fetch_package(name, &entry.version).map_err(|e| {
+                        InstallError::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             format!("re-fetch after cache invalidation failed: {e}"),
-                        )))?;
-                    Repo::verify_package(&path, &entry.sha256)
-                        .map_err(|e| InstallError::Io(std::io::Error::new(
+                        ))
+                    })?;
+                    Repo::verify_package(&path, &entry.sha256).map_err(|e| {
+                        InstallError::Io(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
                             format!(
                                 "verification failed even after re-fetch (corrupted mirror?): {e}"
                             ),
-                        )))?;
+                        ))
+                    })?;
                     path
                 }
             }
@@ -317,7 +315,8 @@ pub(crate) fn install_packages(
         // empty keyset and a spurious "unknown signing key" install failure
         // for every signed package even when /etc/jpkg/keys/jonerix.pub is
         // present and correct.)
-        let keys_dir = repo.cache_dir
+        let keys_dir = repo
+            .cache_dir
             .parent()
             .and_then(|p| p.parent())
             .and_then(|p| p.parent())
@@ -332,7 +331,9 @@ pub(crate) fn install_packages(
             Ok(VerifyOutcome::Verified { key_id }) => {
                 log::info!(
                     "verified signature for {}-{} (key {})",
-                    name, entry.version, key_id
+                    name,
+                    entry.version,
+                    key_id
                 );
             }
             Ok(VerifyOutcome::UnsignedAccepted) => {
@@ -434,7 +435,8 @@ fn load_index(repo: &Repo) -> Result<Index, String> {
             log::warn!("jpkg: failed to load cached INDEX ({e}), fetching");
         }
     }
-    repo.fetch_index().map_err(|e| format!("failed to fetch INDEX: {e}"))
+    repo.fetch_index()
+        .map_err(|e| format!("failed to fetch INDEX: {e}"))
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -463,7 +465,7 @@ mod tests {
     use std::path::Path;
     use tempfile::TempDir;
 
-    use super::{SignatureError, VerifyOutcome, verify_jpkg_signature};
+    use super::{verify_jpkg_signature, SignatureError, VerifyOutcome};
 
     // ── Signature test helpers ────────────────────────────────────────────────
 
@@ -522,15 +524,11 @@ mod tests {
 
             // The payload sha256 is what was just computed by create_with_metadata_factory.
             // We need the raw 32-byte form; hex-decode it.
-            let payload_sha256_raw: [u8; 32] = hex::decode(sha_hex)
-                .unwrap()
-                .try_into()
-                .unwrap();
+            let payload_sha256_raw: [u8; 32] = hex::decode(sha_hex).unwrap().try_into().unwrap();
 
             let canon = canonical_bytes(&meta, &payload_sha256_raw);
             let sig_bytes = sign_detached(&sk_clone, &canon);
-            let sig_b64 =
-                base64::engine::general_purpose::STANDARD.encode(sig_bytes);
+            let sig_b64 = base64::engine::general_purpose::STANDARD.encode(sig_bytes);
 
             meta.signature = Some(Signature {
                 algorithm: "ed25519".to_string(),
@@ -588,16 +586,12 @@ mod tests {
                 signature: None,
             };
 
-            let payload_sha256_raw: [u8; 32] = hex::decode(sha_hex)
-                .unwrap()
-                .try_into()
-                .unwrap();
+            let payload_sha256_raw: [u8; 32] = hex::decode(sha_hex).unwrap().try_into().unwrap();
             let canon = canonical_bytes(&meta, &payload_sha256_raw);
             let mut sig_bytes = sign_detached(&sk_clone, &canon);
             // Flip a byte in the signature.
             sig_bytes[0] ^= 0xFF;
-            let sig_b64 =
-                base64::engine::general_purpose::STANDARD.encode(sig_bytes);
+            let sig_b64 = base64::engine::general_purpose::STANDARD.encode(sig_bytes);
 
             meta.signature = Some(Signature {
                 algorithm: "ed25519".to_string(),
@@ -634,8 +628,14 @@ mod tests {
 
         let _pkg = extract_and_register(&archive, &rootfs, &db).unwrap();
 
-        assert!(rootfs.join("bin/foo").exists(), "bin/foo should be installed");
-        assert!(rootfs.join("lib/bar").exists(), "lib/bar should be installed");
+        assert!(
+            rootfs.join("bin/foo").exists(),
+            "bin/foo should be installed"
+        );
+        assert!(
+            rootfs.join("lib/bar").exists(),
+            "lib/bar should be installed"
+        );
 
         let got = db.get("mypkg").unwrap().expect("mypkg should be in db");
         assert_eq!(got.metadata.package.name.as_deref(), Some("mypkg"));
@@ -769,11 +769,14 @@ mod tests {
         fs::create_dir_all(&keys_dir).unwrap();
         write_public_key(&keys_dir.join(key_id), &sk.verifying_key()).unwrap();
 
-        let jpkg_path =
-            build_tampered_sig_jpkg(tmp.path(), "tamperedpkg", "1.0.0", &sk, key_id);
+        let jpkg_path = build_tampered_sig_jpkg(tmp.path(), "tamperedpkg", "1.0.0", &sk, key_id);
 
         // All three policies should error on an invalid signature.
-        for policy in [SignaturePolicy::Warn, SignaturePolicy::Ignore, SignaturePolicy::Require] {
+        for policy in [
+            SignaturePolicy::Warn,
+            SignaturePolicy::Ignore,
+            SignaturePolicy::Require,
+        ] {
             let archive = JpkgArchive::open(&jpkg_path).unwrap();
             let result = verify_jpkg_signature(&archive, &keys_dir, policy);
             assert!(
@@ -795,19 +798,20 @@ mod tests {
         fs::create_dir_all(&keys_dir).unwrap();
         write_public_key(&keys_dir.join(key_id), &sk.verifying_key()).unwrap();
 
-        let jpkg_path =
-            build_signed_jpkg(tmp.path(), "signedpkg", "2.0.0", &sk, key_id);
+        let jpkg_path = build_signed_jpkg(tmp.path(), "signedpkg", "2.0.0", &sk, key_id);
 
-        for policy in [SignaturePolicy::Warn, SignaturePolicy::Ignore, SignaturePolicy::Require] {
+        for policy in [
+            SignaturePolicy::Warn,
+            SignaturePolicy::Ignore,
+            SignaturePolicy::Require,
+        ] {
             let archive = JpkgArchive::open(&jpkg_path).unwrap();
             let result = verify_jpkg_signature(&archive, &keys_dir, policy);
             match result {
                 Ok(VerifyOutcome::Verified { key_id: ref kid }) => {
                     assert_eq!(kid, key_id, "matched key should be {key_id}");
                 }
-                other => panic!(
-                    "expected Verified (policy={policy:?}), got: {:?}", other
-                ),
+                other => panic!("expected Verified (policy={policy:?}), got: {:?}", other),
             }
         }
     }

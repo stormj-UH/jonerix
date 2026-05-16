@@ -123,7 +123,11 @@ impl JpkgArchive {
         if bytes.len() < HEADER_MIN {
             return Err(ArchiveError::Io(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                format!("file is only {} bytes (minimum {})", bytes.len(), HEADER_MIN),
+                format!(
+                    "file is only {} bytes (minimum {})",
+                    bytes.len(),
+                    HEADER_MIN
+                ),
             )));
         }
 
@@ -143,7 +147,10 @@ impl JpkgArchive {
         let metadata_raw = bytes[meta_start..meta_end].to_vec();
         let payload_raw = bytes[meta_end..].to_vec();
 
-        Ok(JpkgArchive { metadata_raw, payload_raw })
+        Ok(JpkgArchive {
+            metadata_raw,
+            payload_raw,
+        })
     }
 
     pub fn metadata(&self) -> &str {
@@ -264,7 +271,9 @@ fn build_compressed_tar(root: &Path) -> Result<Vec<u8>, ArchiveError> {
     entries.sort();
 
     for abs_path in &entries {
-        let rel = abs_path.strip_prefix(root).expect("walkdir yields children of root");
+        let rel = abs_path
+            .strip_prefix(root)
+            .expect("walkdir yields children of root");
         tar_builder
             .append_path_with_name(abs_path, rel)
             .map_err(ArchiveError::Tar)?;
@@ -299,9 +308,8 @@ fn extract_zstd_tar(zstd_tar_bytes: &[u8], dest: &Path) -> Result<Vec<PathBuf>, 
         let entry_path = entry.path().map_err(ArchiveError::Tar)?.into_owned();
 
         // Security check 1: path traversal
-        validate_entry_path(dest, &entry_path).map_err(|msg| {
-            ArchiveError::Io(io::Error::new(io::ErrorKind::InvalidData, msg))
-        })?;
+        validate_entry_path(dest, &entry_path)
+            .map_err(|msg| ArchiveError::Io(io::Error::new(io::ErrorKind::InvalidData, msg)))?;
 
         // Security check 2: symlink target must stay within dest
         if entry.header().entry_type().is_symlink() {
@@ -317,12 +325,13 @@ fn extract_zstd_tar(zstd_tar_bytes: &[u8], dest: &Path) -> Result<Vec<PathBuf>, 
                 .into_owned();
 
             let symlink_parent = dest.join(
-                entry_path.parent().unwrap_or_else(|| std::path::Path::new("")),
+                entry_path
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new("")),
             );
 
-            validate_symlink_target(&symlink_parent, &link_target, dest).map_err(|msg| {
-                ArchiveError::Io(io::Error::new(io::ErrorKind::InvalidData, msg))
-            })?;
+            validate_symlink_target(&symlink_parent, &link_target, dest)
+                .map_err(|msg| ArchiveError::Io(io::Error::new(io::ErrorKind::InvalidData, msg)))?;
         }
 
         entry.unpack_in(dest).map_err(ArchiveError::Tar)?;
@@ -339,10 +348,7 @@ fn extract_zstd_tar(zstd_tar_bytes: &[u8], dest: &Path) -> Result<Vec<PathBuf>, 
 /// Pure path arithmetic — no filesystem calls.
 pub(crate) fn validate_entry_path(dest: &Path, entry_path: &Path) -> Result<(), String> {
     if entry_path.is_absolute() {
-        return Err(format!(
-            "archive entry has absolute path: {:?}",
-            entry_path
-        ));
+        return Err(format!("archive entry has absolute path: {:?}", entry_path));
     }
 
     let mut depth: i64 = 0;
@@ -393,7 +399,9 @@ pub(crate) fn validate_entry_path(dest: &Path, entry_path: &Path) -> Result<(), 
                 use std::path::Component;
                 match component {
                     Component::Normal(p) => lexical.push(p),
-                    Component::ParentDir => { lexical.pop(); }
+                    Component::ParentDir => {
+                        lexical.pop();
+                    }
                     Component::CurDir => {}
                     _ => {}
                 }
@@ -503,14 +511,29 @@ mod tests {
         let paths = arch.extract(&extract_dir).expect("extract() failed");
         assert!(!paths.is_empty(), "expected at least one extracted path");
 
-        assert_eq!(fs::read(extract_dir.join("bin/hello")).unwrap(), b"hello world\n");
-        assert_eq!(fs::read(extract_dir.join("lib/libx.so.1")).unwrap(), b"\x7fELF");
-        assert_eq!(fs::read(extract_dir.join("share/doc/x.txt")).unwrap(), b"docs\n");
+        assert_eq!(
+            fs::read(extract_dir.join("bin/hello")).unwrap(),
+            b"hello world\n"
+        );
+        assert_eq!(
+            fs::read(extract_dir.join("lib/libx.so.1")).unwrap(),
+            b"\x7fELF"
+        );
+        assert_eq!(
+            fs::read(extract_dir.join("share/doc/x.txt")).unwrap(),
+            b"docs\n"
+        );
 
         let symlink_path = extract_dir.join("lib/libx.so");
         let meta = symlink_path.symlink_metadata().unwrap();
-        assert!(meta.file_type().is_symlink(), "lib/libx.so should be a symlink");
-        assert_eq!(fs::read_link(&symlink_path).unwrap().to_str().unwrap(), "libx.so.1");
+        assert!(
+            meta.file_type().is_symlink(),
+            "lib/libx.so should be a symlink"
+        );
+        assert_eq!(
+            fs::read_link(&symlink_path).unwrap().to_str().unwrap(),
+            "libx.so.1"
+        );
     }
 
     // ── 2. Magic check ────────────────────────────────────────────────────────
@@ -533,7 +556,10 @@ mod tests {
     fn test_truncated_header_too_short() {
         let buf = vec![b'J', b'P', b'K', b'G'];
         let err = JpkgArchive::from_bytes(buf).unwrap_err();
-        assert!(matches!(err, ArchiveError::Io(_)), "expected Io(UnexpectedEof): {err}");
+        assert!(
+            matches!(err, ArchiveError::Io(_)),
+            "expected Io(UnexpectedEof): {err}"
+        );
     }
 
     #[test]
@@ -574,7 +600,10 @@ mod tests {
 
         let out = tmp.path().join("bad.jpkg");
         let err = create(&out, SYNTHETIC_TOML, &destdir).unwrap_err();
-        assert!(matches!(err, ArchiveError::UnflatLayout(_)), "expected UnflatLayout: {err}");
+        assert!(
+            matches!(err, ArchiveError::UnflatLayout(_)),
+            "expected UnflatLayout: {err}"
+        );
     }
 
     // ── 5. Real .jpkg sniff (skip if none present) ───────────────────────────
@@ -588,9 +617,14 @@ mod tests {
             Path::new("/Users/jonerik/Desktop/jonerix/packages"),
         ];
         let jpkg_file: Option<PathBuf> = search_roots.iter().find_map(|root| {
-            if !root.exists() { return None; }
-            WalkDir::new(root).max_depth(4).into_iter()
-                .filter_map(|e| e.ok()).map(|e| e.into_path())
+            if !root.exists() {
+                return None;
+            }
+            WalkDir::new(root)
+                .max_depth(4)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .map(|e| e.into_path())
                 .find(|p| p.extension() == Some(OsStr::new("jpkg")))
         });
         match jpkg_file {
@@ -624,9 +658,14 @@ mod tests {
         arch.extract(&extract_dir).expect("extract() failed");
 
         let sym_path = extract_dir.join("lib/real.so");
-        let sym_meta = sym_path.symlink_metadata().expect("real.so not found after extract");
+        let sym_meta = sym_path
+            .symlink_metadata()
+            .expect("real.so not found after extract");
         assert!(sym_meta.file_type().is_symlink());
-        assert_eq!(fs::read_link(&sym_path).unwrap().to_str().unwrap(), "real.so.1");
+        assert_eq!(
+            fs::read_link(&sym_path).unwrap().to_str().unwrap(),
+            "real.so.1"
+        );
         assert_eq!(fs::read(&sym_path).unwrap(), b"\x7fELF stub");
     }
 
@@ -756,7 +795,11 @@ mod tests {
         fs::create_dir_all(extract_dir.join("lib")).unwrap();
 
         let result = arch.extract(&extract_dir);
-        assert!(result.is_ok(), "absolute symlink target should be allowed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "absolute symlink target should be allowed: {:?}",
+            result.err()
+        );
         // Verify the symlink was created (as a dangling symlink)
         let link_path = extract_dir.join("lib/link");
         assert!(link_path.symlink_metadata().is_ok(), "symlink should exist");
@@ -800,11 +843,15 @@ mod tests {
 
         let arch = JpkgArchive::open(&out).unwrap();
         let extract_dir = tmp.path().join("extract");
-        arch.extract(&extract_dir).expect("valid relative symlink must extract");
+        arch.extract(&extract_dir)
+            .expect("valid relative symlink must extract");
 
         let sym = extract_dir.join("lib/libfoo.so");
         assert!(sym.symlink_metadata().unwrap().file_type().is_symlink());
-        assert_eq!(fs::read_link(&sym).unwrap().to_str().unwrap(), "libfoo.so.1");
+        assert_eq!(
+            fs::read_link(&sym).unwrap().to_str().unwrap(),
+            "libfoo.so.1"
+        );
     }
 
     // SEC-6: atomic write uses unpredictable temp name, not `{out_path}.tmp`.
@@ -834,7 +881,8 @@ mod tests {
         );
 
         // No .jpkg-write-*.tmp files must remain (tempfile cleans up on persist).
-        let leftover: Vec<_> = fs::read_dir(tmp.path()).unwrap()
+        let leftover: Vec<_> = fs::read_dir(tmp.path())
+            .unwrap()
             .filter_map(|e| e.ok())
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| n.starts_with(".jpkg-write-") && n.ends_with(".tmp"))

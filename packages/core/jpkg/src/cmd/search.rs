@@ -63,10 +63,7 @@ pub fn run(args: &[String]) -> i32 {
 
     // Optionally open the installed DB so we can show [installed].
     let db = InstalledDb::open(rootfs).ok();
-    let installed_names: Vec<String> = db
-        .as_ref()
-        .and_then(|d| d.list().ok())
-        .unwrap_or_default();
+    let installed_names: Vec<String> = db.as_ref().and_then(|d| d.list().ok()).unwrap_or_default();
 
     // Collect matching entries, sorted by name (BTreeMap already sorted by key).
     let query_lower = query.to_ascii_lowercase();

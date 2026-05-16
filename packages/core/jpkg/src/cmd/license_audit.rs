@@ -117,12 +117,7 @@ fn audit_installed(rootfs: &Path, verbose: bool) -> i32 {
 
         total += 1;
 
-        let license = pkg
-            .metadata
-            .package
-            .license
-            .as_deref()
-            .unwrap_or("unknown");
+        let license = pkg.metadata.package.license.as_deref().unwrap_or("unknown");
 
         let status = if license.is_empty() || license == "unknown" {
             unknown += 1;
@@ -248,10 +243,7 @@ fn print_summary(total: i32, violations: i32, unknown: i32) {
         println!("jonerix requires all packages to use permissive licenses");
         println!("(MIT, BSD, ISC, Apache-2.0, public domain, etc.)");
     } else if unknown > 0 {
-        println!(
-            "\nWARNING: {} package(s) have unknown licenses.",
-            unknown
-        );
+        println!("\nWARNING: {} package(s) have unknown licenses.", unknown);
         println!("Verify these manually before deployment.");
     } else {
         println!("\nPASSED: All packages have permissive licenses.");

@@ -183,7 +183,9 @@ fn external_subcommand(name: &str, rest: &[String]) -> ExitCode {
     }
 
     let Some(bin) = candidate else {
-        eprintln!("jpkg: '{name}' is not a built-in subcommand and no `{target}` was found on PATH");
+        eprintln!(
+            "jpkg: '{name}' is not a built-in subcommand and no `{target}` was found on PATH"
+        );
         return ExitCode::from(127);
     };
 

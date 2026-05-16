@@ -109,17 +109,16 @@ fn build_agent() -> ureq::Agent {
     let root_store = rustls::RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
-    let tls_cfg = ClientConfig::builder_with_provider(
-        rustls::crypto::ring::default_provider().into(),
-    )
-    // SAFETY: with_protocol_versions returns Err only when a protocol version
-    // is unsupported by the selected crypto provider.  The ring provider
-    // ships with TLS 1.2 and TLS 1.3 support compiled in, so this is
-    // unreachable in all configurations we build.
-    .with_protocol_versions(&[&rustls::version::TLS12, &rustls::version::TLS13])
-    .expect("TLS protocol config: ring provider always supports TLS 1.2 and 1.3")
-    .with_root_certificates(root_store)
-    .with_no_client_auth();
+    let tls_cfg =
+        ClientConfig::builder_with_provider(rustls::crypto::ring::default_provider().into())
+            // SAFETY: with_protocol_versions returns Err only when a protocol version
+            // is unsupported by the selected crypto provider.  The ring provider
+            // ships with TLS 1.2 and TLS 1.3 support compiled in, so this is
+            // unreachable in all configurations we build.
+            .with_protocol_versions(&[&rustls::version::TLS12, &rustls::version::TLS13])
+            .expect("TLS protocol config: ring provider always supports TLS 1.2 and 1.3")
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
 
     ureq::AgentBuilder::new()
         .tls_config(Arc::new(tls_cfg))
@@ -417,8 +416,7 @@ mod tests {
                 let mut buf = [0u8; 4096];
                 let _ = stream.read(&mut buf);
                 // Lie about content-length, then drop before sending the full body.
-                let partial_resp =
-                    b"HTTP/1.0 200 OK\r\nContent-Length: 10000\r\n\r\nhello";
+                let partial_resp = b"HTTP/1.0 200 OK\r\nContent-Length: 10000\r\n\r\nhello";
                 let _ = stream.write_all(partial_resp);
                 // Drop `stream` → connection closes prematurely.
             }

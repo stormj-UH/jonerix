@@ -185,8 +185,7 @@ fn load_archive(source: &str) -> Result<JpkgArchive, String> {
         let bytes = download(source).map_err(|e| format!("downloading {source}: {e}"))?;
         JpkgArchive::from_bytes(bytes).map_err(|e| format!("parsing downloaded archive: {e}"))
     } else {
-        JpkgArchive::open(Path::new(source))
-            .map_err(|e| format!("opening {source}: {e}"))
+        JpkgArchive::open(Path::new(source)).map_err(|e| format!("opening {source}: {e}"))
     }
 }
 
@@ -219,11 +218,20 @@ mod tests {
         let _pkg = extract_and_register(&archive, &rootfs, &db).unwrap();
 
         // Verify on-disk files.
-        assert!(rootfs.join("bin/foo").exists(), "bin/foo should be installed");
-        assert!(rootfs.join("lib/bar").exists(), "lib/bar should be installed");
+        assert!(
+            rootfs.join("bin/foo").exists(),
+            "bin/foo should be installed"
+        );
+        assert!(
+            rootfs.join("lib/bar").exists(),
+            "lib/bar should be installed"
+        );
 
         // Verify DB state.
-        let got = db.get("localpkg").unwrap().expect("localpkg should be in db");
+        let got = db
+            .get("localpkg")
+            .unwrap()
+            .expect("localpkg should be in db");
         assert_eq!(got.metadata.package.name.as_deref(), Some("localpkg"));
         assert_eq!(got.metadata.package.version.as_deref(), Some("1.0.0"));
         assert!(!got.files.is_empty(), "files manifest should be non-empty");
@@ -238,7 +246,8 @@ mod tests {
         fs::create_dir_all(&rootfs).unwrap();
 
         let hook = "touch \"$JPKG_ROOT/local_hook_marker\"";
-        let jpkg_path = common_tests::build_test_jpkg_with_hook(tmp.path(), "hooklocal", "1.0.0", hook);
+        let jpkg_path =
+            common_tests::build_test_jpkg_with_hook(tmp.path(), "hooklocal", "1.0.0", hook);
 
         let archive = load_archive(jpkg_path.to_str().unwrap()).unwrap();
 
@@ -276,10 +285,18 @@ mod tests {
         extract_and_register(&a_arc, &rootfs, &db).unwrap();
 
         let a_before = db.get("shpkgA").unwrap().unwrap();
-        assert!(a_before.files.iter().any(|e| e.path == "bin/sh"), "A should own bin/sh");
+        assert!(
+            a_before.files.iter().any(|e| e.path == "bin/sh"),
+            "A should own bin/sh"
+        );
 
         // Install B via local_install path with replaces = [shpkgA].
-        let b_jpkg = common_tests::build_jpkg_with_replaces(tmp.path(), "shpkgB", "1.0.0", vec!["shpkgA".to_string()]);
+        let b_jpkg = common_tests::build_jpkg_with_replaces(
+            tmp.path(),
+            "shpkgB",
+            "1.0.0",
+            vec!["shpkgA".to_string()],
+        );
         let b_path = b_jpkg.to_str().unwrap();
         let b_arc = load_archive(b_path).unwrap();
         extract_and_register(&b_arc, &rootfs, &db).unwrap();

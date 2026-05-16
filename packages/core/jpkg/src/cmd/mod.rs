@@ -8,21 +8,21 @@
 //! `Result`) and is wired up by the main dispatcher in `src/bin/jpkg.rs`
 //! (or `src/bin/jpkg-local.rs` for the local-only verbs).
 
-pub mod search;
-pub mod info;
-pub mod license_audit;
-pub mod keygen;
-pub mod sign;
-pub mod resign;
-pub mod update;
-pub mod update_upgrade;
-pub mod verify;
-pub mod install;
-pub mod remove;
-pub mod upgrade;
 pub mod build;
 pub mod build_world;
+pub mod info;
+pub mod install;
+pub mod keygen;
+pub mod license_audit;
 pub mod local_install;
+pub mod remove;
+pub mod resign;
+pub mod search;
+pub mod sign;
+pub mod update;
+pub mod update_upgrade;
+pub mod upgrade;
+pub mod verify;
 
 /// Shared helpers: chroot+bind-mount for hooks, payload extraction, db.insert
 /// wrappers, replaces-ownership transfer.  Owned by Worker L (install side);

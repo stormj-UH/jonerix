@@ -70,7 +70,10 @@ pub fn run(args: &[String]) -> i32 {
 
     // ── Create directory ─────────────────────────────────────────────────────
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("jpkg keygen: cannot create directory {}: {e}", dir.display());
+        eprintln!(
+            "jpkg keygen: cannot create directory {}: {e}",
+            dir.display()
+        );
         return 1;
     }
 
@@ -170,7 +173,10 @@ mod tests {
         // File must not have been touched.
         let meta_after = std::fs::metadata(&pub_path).unwrap();
         let mtime_after = meta_after.modified().unwrap();
-        assert_eq!(mtime_before, mtime_after, "existing .pub must not be modified");
+        assert_eq!(
+            mtime_before, mtime_after,
+            "existing .pub must not be modified"
+        );
     }
 
     // 3. Generate with explicit --dir; assert keys land in that dir.
@@ -183,8 +189,14 @@ mod tests {
         let rc = run(&args(&["mykey", "--dir", &subdir_str]));
         assert_eq!(rc, 0, "expected exit 0");
 
-        assert!(subdir.join("mykey.pub").exists(), "mykey.pub must be in explicit dir");
-        assert!(subdir.join("mykey.sec").exists(), "mykey.sec must be in explicit dir");
+        assert!(
+            subdir.join("mykey.pub").exists(),
+            "mykey.pub must be in explicit dir"
+        );
+        assert!(
+            subdir.join("mykey.sec").exists(),
+            "mykey.sec must be in explicit dir"
+        );
     }
 
     // 4. Verify mode bits: secret 0600, public 0644.
@@ -207,8 +219,16 @@ mod tests {
             .mode()
             & 0o777;
 
-        assert_eq!(pub_mode, 0o644, "public key must have mode 0644, got {:04o}", pub_mode);
-        assert_eq!(sec_mode, 0o600, "secret key must have mode 0600, got {:04o}", sec_mode);
+        assert_eq!(
+            pub_mode, 0o644,
+            "public key must have mode 0644, got {:04o}",
+            pub_mode
+        );
+        assert_eq!(
+            sec_mode, 0o600,
+            "secret key must have mode 0600, got {:04o}",
+            sec_mode
+        );
     }
 
     // 5. Wrong number of positional args → exit 2.

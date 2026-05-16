@@ -104,7 +104,10 @@ pub(crate) fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
             }
             let v = table[bytes[j] as usize];
             if v == 0xff {
-                return Err(format!("invalid base64 character at position {j}: 0x{:02x}", bytes[j]));
+                return Err(format!(
+                    "invalid base64 character at position {j}: 0x{:02x}",
+                    bytes[j]
+                ));
             }
             Ok(v)
         };
@@ -217,7 +220,9 @@ pub fn run(args: &[String]) -> i32 {
     //
     // Mode detection: if any positional argument ends with ".jpkg", use the
     // archive-signing path.
-    let has_jpkg = args.iter().any(|a| !a.starts_with('-') && a.ends_with(".jpkg"));
+    let has_jpkg = args
+        .iter()
+        .any(|a| !a.starts_with('-') && a.ends_with(".jpkg"));
 
     if has_jpkg {
         run_jpkg_sign(args)
@@ -640,7 +645,10 @@ mod tests {
 
         let keys_dir = dir.path().join("keys");
         let result = verify_jpkg_signature(&jpkg_path, &keys_dir);
-        assert!(result.is_err(), "verify must fail when signed with key-a but only key-b is trusted");
+        assert!(
+            result.is_err(),
+            "verify must fail when signed with key-a but only key-b is trusted"
+        );
     }
 
     /// Build with --sign-key produces a .jpkg that verifies.

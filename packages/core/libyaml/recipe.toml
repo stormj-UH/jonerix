@@ -1,0 +1,35 @@
+[package]
+name = "libyaml"
+version = "0.2.5"
+license = "MIT"
+description = "YAML 1.1 parser and emitter library"
+
+[source]
+url = "https://pyyaml.org/download/libyaml/yaml-0.2.5.tar.gz"
+sha256 = "c642ae9b75fee120b2d96c712538bd2cf283228d2337df2cf2988e3c02678ef4"
+
+[build]
+system = "custom"
+configure = """CC=clang \
+CFLAGS="-O2 -fPIC" \
+LDFLAGS="-fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind" \
+./configure \
+  --prefix=/ \
+  --libdir=/lib \
+  --includedir=/include \
+  --enable-shared \
+  --disable-static"""
+build = "make -j${BUILD_JOBS:-1}"
+install = """set -e
+make install DESTDIR="$DESTDIR"
+# Flatten merged-usr in case Autotools ignores the / prefix on some hosts.
+if [ -d "$DESTDIR/usr" ]; then cp -pR "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -pR "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+[ -f "$DESTDIR/include/yaml.h" ] || { printf '%s\n' "libyaml: yaml.h missing after install" >&2; exit 1; }
+[ -e "$DESTDIR/lib/libyaml.so" ] || { printf '%s\n' "libyaml: libyaml.so missing after install" >&2; exit 1; }
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find "$DESTDIR/lib" -name '*.so*' -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["libllvm", "clang", "lld", "make"]

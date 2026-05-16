@@ -103,13 +103,11 @@ pub fn canonical_bytes(metadata: &Metadata, payload_sha256: &[u8; 32]) -> Vec<u8
         .expect("Metadata serialisation must not fail — all field types are TOML-compatible");
 
     // Assemble: prefix || version || sha256 || toml_bytes
-    let mut out = Vec::with_capacity(
-        CANON_PREFIX.len() + 1 + 32 + meta_toml.len(),
-    );
-    out.extend_from_slice(CANON_PREFIX);            // "jpkg-canon\0"
-    out.push(CANON_VERSION);                        // version byte
-    out.extend_from_slice(payload_sha256);          // 32-byte hash
-    out.extend_from_slice(meta_toml.as_bytes());    // TOML body
+    let mut out = Vec::with_capacity(CANON_PREFIX.len() + 1 + 32 + meta_toml.len());
+    out.extend_from_slice(CANON_PREFIX); // "jpkg-canon\0"
+    out.push(CANON_VERSION); // version byte
+    out.extend_from_slice(payload_sha256); // 32-byte hash
+    out.extend_from_slice(meta_toml.as_bytes()); // TOML body
     out
 }
 
@@ -210,7 +208,10 @@ mod tests {
         let meta = make_metadata("1.0.0", false);
         let b1 = canonical_bytes(&meta, &zero_sha256());
         let b2 = canonical_bytes(&meta, &ones_sha256());
-        assert_ne!(b1, b2, "different payload sha256 must produce different canonical bytes");
+        assert_ne!(
+            b1, b2,
+            "different payload sha256 must produce different canonical bytes"
+        );
     }
 
     // ── 4. Different metadata version → different bytes ───────────────────────
@@ -220,7 +221,10 @@ mod tests {
         let sha = zero_sha256();
         let b1 = canonical_bytes(&make_metadata("1.0.0", false), &sha);
         let b2 = canonical_bytes(&make_metadata("2.0.0", false), &sha);
-        assert_ne!(b1, b2, "bumping version must produce different canonical bytes");
+        assert_ne!(
+            b1, b2,
+            "bumping version must produce different canonical bytes"
+        );
     }
 
     // ── 5. Format invariants ──────────────────────────────────────────────────
@@ -248,8 +252,7 @@ mod tests {
 
         // Version byte immediately follows prefix.
         assert_eq!(
-            bytes[prefix_len],
-            CANON_VERSION,
+            bytes[prefix_len], CANON_VERSION,
             "version byte at offset {prefix_len} must be {CANON_VERSION}"
         );
 
@@ -295,6 +298,9 @@ mod tests {
     fn test_compute_payload_sha256_different_for_different_input() {
         let d1 = compute_payload_sha256(b"payload A");
         let d2 = compute_payload_sha256(b"payload B");
-        assert_ne!(d1, d2, "distinct payloads must have distinct SHA-256 digests");
+        assert_ne!(
+            d1, d2,
+            "distinct payloads must have distinct SHA-256 digests"
+        );
     }
 }

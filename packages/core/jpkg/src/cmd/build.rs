@@ -189,9 +189,7 @@ fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
 
 /// Load a `Recipe` from a path (dir or direct .toml), a URL, or "-" (stdin).
 /// Returns (recipe, recipe_dir) where recipe_dir is used for RECIPE_DIR env.
-fn load_recipe_from_arg(
-    arg: &str,
-) -> Result<(Recipe, PathBuf), String> {
+fn load_recipe_from_arg(arg: &str) -> Result<(Recipe, PathBuf), String> {
     if arg == "-" {
         let mut s = String::new();
         io::stdin()
@@ -202,10 +200,8 @@ fn load_recipe_from_arg(
     }
 
     if arg.starts_with("https://") || arg.starts_with("http://") {
-        let bytes = crate::fetch::download(arg)
-            .map_err(|e| format!("download recipe URL: {e}"))?;
-        let s = std::str::from_utf8(&bytes)
-            .map_err(|e| format!("recipe UTF-8: {e}"))?;
+        let bytes = crate::fetch::download(arg).map_err(|e| format!("download recipe URL: {e}"))?;
+        let s = std::str::from_utf8(&bytes).map_err(|e| format!("recipe UTF-8: {e}"))?;
         let recipe = Recipe::from_str(s).map_err(|e| format!("parse recipe: {e}"))?;
         return Ok((recipe, PathBuf::from(".")));
     }
@@ -264,8 +260,10 @@ fn fetch_source(
         let status = Command::new("curl")
             .args([
                 "-fsSL",
-                "--retry", "3",
-                "--retry-delay", "2",
+                "--retry",
+                "3",
+                "--retry-delay",
+                "2",
                 "--retry-connrefused",
                 "--retry-all-errors",
                 "-o",
@@ -282,8 +280,7 @@ fn fetch_source(
     // Verify sha256 if provided.
     if let Some(expected) = recipe.source.sha256.as_deref() {
         if !expected.is_empty() {
-            let actual = sha256_file(&tarball)
-                .map_err(|e| format!("hash tarball: {e}"))?;
+            let actual = sha256_file(&tarball).map_err(|e| format!("hash tarball: {e}"))?;
             if actual != expected {
                 return Err(format!(
                     "source hash mismatch:\n  expected: {expected}\n  actual:   {actual}"
@@ -329,9 +326,7 @@ fn try_source_cache(url: &str, name: &str, version: &str, dest: &Path) -> bool {
                 let fname = entry.file_name();
                 let fname = fname.to_string_lossy();
                 if fname.starts_with(&prefix)
-                    || base_prefix
-                        .as_deref()
-                        .is_some_and(|p| fname.starts_with(p))
+                    || base_prefix.as_deref().is_some_and(|p| fname.starts_with(p))
                 {
                     let src = entry.path();
                     if fs::copy(&src, dest).is_ok() {
@@ -429,7 +424,10 @@ fn apply_patches(recipe_dir: &Path, src_dir: &Path) -> Result<(), String> {
     patches.sort();
 
     for patch in patches {
-        eprintln!("  applying patch: {}", patch.file_name().unwrap_or_default().to_string_lossy());
+        eprintln!(
+            "  applying patch: {}",
+            patch.file_name().unwrap_or_default().to_string_lossy()
+        );
         let status = Command::new("patch")
             .args(["-p1"])
             .stdin(fs::File::open(&patch).map_err(|e| format!("open patch: {e}"))?)
@@ -437,10 +435,7 @@ fn apply_patches(recipe_dir: &Path, src_dir: &Path) -> Result<(), String> {
             .status()
             .map_err(|e| format!("patch exec: {e}"))?;
         if !status.success() {
-            return Err(format!(
-                "failed to apply patch: {}",
-                patch.display()
-            ));
+            return Err(format!("failed to apply patch: {}", patch.display()));
         }
     }
     Ok(())
@@ -523,8 +518,7 @@ fn run_build_step(
         .tempfile()
         .map_err(|e| format!("create build script: {e}"))?;
     let script_path = script_file.path().to_path_buf();
-    fs::write(&script_path, script.as_bytes())
-        .map_err(|e| format!("write build script: {e}"))?;
+    fs::write(&script_path, script.as_bytes()).map_err(|e| format!("write build script: {e}"))?;
 
     // chmod +x
     {
@@ -533,8 +527,7 @@ fn run_build_step(
             .map_err(|e| format!("stat script: {e}"))?
             .permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(&script_path, perms)
-            .map_err(|e| format!("chmod script: {e}"))?;
+        fs::set_permissions(&script_path, perms).map_err(|e| format!("chmod script: {e}"))?;
     }
 
     let status = Command::new("/bin/sh")
@@ -621,18 +614,9 @@ fn create_archive(
     output_dir: &Path,
     target_arch: &str,
 ) -> Result<PathBuf, String> {
-    let name = recipe
-        .package
-        .name
-        .as_deref()
-        .unwrap_or("unknown");
-    let version = recipe
-        .package
-        .version
-        .as_deref()
-        .unwrap_or("0.0.0");
-    fs::create_dir_all(output_dir)
-        .map_err(|e| format!("create output dir: {e}"))?;
+    let name = recipe.package.name.as_deref().unwrap_or("unknown");
+    let version = recipe.package.version.as_deref().unwrap_or("0.0.0");
+    fs::create_dir_all(output_dir).map_err(|e| format!("create output dir: {e}"))?;
 
     let out_path = output_dir.join(format!("{name}-{version}-{target_arch}.jpkg"));
 
@@ -709,7 +693,9 @@ fn build_inner(opts: &BuildOpts) -> Result<(), String> {
     let (recipe, recipe_dir) = load_recipe_from_arg(&opts.recipe_arg)?;
 
     // ── 2. Validate ─────────────────────────────────────────────────────────
-    recipe.validate().map_err(|e| format!("recipe validation: {e}"))?;
+    recipe
+        .validate()
+        .map_err(|e| format!("recipe validation: {e}"))?;
 
     let name = recipe.package.name.as_deref().unwrap_or("unknown");
     let version = recipe.package.version.as_deref().unwrap_or("0.0.0");
@@ -780,10 +766,12 @@ fn build_inner(opts: &BuildOpts) -> Result<(), String> {
         Ok(()) => {}
         Err(AuditResult::Lib64Path(_)) => {
             // FIXME(integrator): use crate::cmd::common::flatten_merged_usr
-            inline_flatten_merged_usr(&dest_dir)
-                .map_err(|e| format!("flatten: {e}"))?;
+            inline_flatten_merged_usr(&dest_dir).map_err(|e| format!("flatten: {e}"))?;
             audit_layout_tree(&dest_dir).map_err(|r| {
-                format!("layout audit still failing after flatten: {}", r.description())
+                format!(
+                    "layout audit still failing after flatten: {}",
+                    r.description()
+                )
             })?;
         }
         Err(other) => {
@@ -812,9 +800,7 @@ fn build_inner(opts: &BuildOpts) -> Result<(), String> {
     }
 
     // ── 10. Report ───────────────────────────────────────────────────────────
-    let file_size = fs::metadata(&out_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
 
     println!(
         "Built {} ({} bytes)",
@@ -919,8 +905,14 @@ arch = "x86_64"
         inline_flatten_merged_usr(destdir).expect("flatten");
 
         // usr/ should be gone; bin/foo should be present.
-        assert!(!destdir.join("usr").exists(), "usr/ should have been removed");
-        assert!(destdir.join("bin/foo").exists(), "bin/foo should exist after flatten");
+        assert!(
+            !destdir.join("usr").exists(),
+            "usr/ should have been removed"
+        );
+        assert!(
+            destdir.join("bin/foo").exists(),
+            "bin/foo should exist after flatten"
+        );
 
         // Audit should now pass.
         audit_layout_tree(destdir).expect("audit should pass after flatten");
@@ -1092,10 +1084,7 @@ install = "mkdir -p \"$DESTDIR/bin\" && touch \"$DESTDIR/bin/archpkg\""
             if let Ok((mut stream, _)) = listener.accept() {
                 let mut buf = [0u8; 4096];
                 let _ = stream.read(&mut buf);
-                let resp = format!(
-                    "HTTP/1.0 200 OK\r\nContent-Length: {}\r\n\r\n",
-                    body.len()
-                );
+                let resp = format!("HTTP/1.0 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
                 let _ = stream.write_all(resp.as_bytes());
                 let _ = stream.write_all(body);
             }

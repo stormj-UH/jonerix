@@ -42,8 +42,7 @@ use crate::cmd::build::run_build;
 fn find_build_order_file() -> Option<PathBuf> {
     // 1. JPKG_ROOT env var.
     if let Ok(root) = std::env::var("JPKG_ROOT") {
-        let p = PathBuf::from(&root)
-            .join("usr/share/jpkg/build-order.txt");
+        let p = PathBuf::from(&root).join("usr/share/jpkg/build-order.txt");
         if p.exists() {
             return Some(p);
         }
@@ -58,8 +57,7 @@ fn find_build_order_file() -> Option<PathBuf> {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
     if !manifest.is_empty() {
         // packages/jpkg-rs → ../../scripts/build-order.txt
-        let p = PathBuf::from(&manifest)
-            .join("../../scripts/build-order.txt");
+        let p = PathBuf::from(&manifest).join("../../scripts/build-order.txt");
         if p.exists() {
             return p.canonicalize().ok();
         }
@@ -219,11 +217,7 @@ fn parse_args(args: &[String]) -> Result<BuildWorldOpts, String> {
 
 /// `build_world` with explicit paths — called from tests and CI without going
 /// through the arg parser.
-pub fn run_with_paths(
-    order_file: &Path,
-    packages_root: &Path,
-    output_dir: &Path,
-) -> i32 {
+pub fn run_with_paths(order_file: &Path, packages_root: &Path, output_dir: &Path) -> i32 {
     match build_world_inner(order_file, packages_root, output_dir) {
         Ok(exit_code) => exit_code,
         Err(e) => {
@@ -244,7 +238,12 @@ pub fn run(args: &[String]) -> i32 {
     };
 
     // Resolve build-order.txt.
-    let order_file = match opts.order_file.as_deref().map(|p| p.to_path_buf()).or_else(find_build_order_file) {
+    let order_file = match opts
+        .order_file
+        .as_deref()
+        .map(|p| p.to_path_buf())
+        .or_else(find_build_order_file)
+    {
         Some(f) => f,
         None => {
             eprintln!("jpkg build-world: cannot find build-order.txt (set JPKG_ROOT or run from repo root)");
@@ -277,16 +276,14 @@ fn build_world_inner(
         output_dir.display()
     );
 
-    let names = parse_build_order(order_file)
-        .map_err(|e| format!("read build-order.txt: {e}"))?;
+    let names = parse_build_order(order_file).map_err(|e| format!("read build-order.txt: {e}"))?;
 
     if names.is_empty() {
         eprintln!("build-world: build-order.txt has no packages");
         return Ok(0);
     }
 
-    std::fs::create_dir_all(output_dir)
-        .map_err(|e| format!("create output dir: {e}"))?;
+    std::fs::create_dir_all(output_dir).map_err(|e| format!("create output dir: {e}"))?;
 
     let mut built = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -376,7 +373,10 @@ install = "mkdir -p \"$DESTDIR/bin\" && touch \"$DESTDIR/bin/{name}\""
         let rc = run_with_paths(&order, &pkgs, &out);
         // "alpha" should build OK; "missing" is skipped (no recipe found).
         // "missing" is skipped (not counted as failure), so exit 0.
-        assert_eq!(rc, 0, "missing recipe should be warned and skipped, not fail");
+        assert_eq!(
+            rc, 0,
+            "missing recipe should be warned and skipped, not fail"
+        );
 
         // At least one artifact for "alpha" must exist.
         let artifacts: Vec<_> = fs::read_dir(&out)
