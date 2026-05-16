@@ -66,23 +66,33 @@ chmod +x /tmp/clang-jonerix"""
 # Once the builder image carries jmake 1.2.6+, this can flip back to
 # USE_JEMALLOC=yes (or BUILD_WITH_SYSTEM_MALLOC switched off) for a
 # few-percent allocator-throughput win.
-build = "make -j$(nproc) CC=/tmp/clang-jonerix BUILD_TLS=yes MALLOC=libc"
-# Install with PREFIX=/ so binaries land at $DESTDIR/bin/* and skip
-# the default /usr/local intermediate.  Valkey's `install` target
+build = "make -j${BUILD_JOBS:-1} CC=/tmp/clang-jonerix BUILD_TLS=yes MALLOC=libc"
+# Valkey's install target does not honor DESTDIR, so use PREFIX to
+# stage directly under jpkg's package root.  This makes binaries land
+# at $DESTDIR/bin/* and skips the default /usr/local intermediate.
+# Valkey's `install` target
 # creates `valkey-check-rdb`, `valkey-check-aof`, and
 # `valkey-sentinel` as ln -sf symlinks to valkey-server, which
 # transparently dispatches based on argv[0].
-install = """make PREFIX=/ install DESTDIR="$DESTDIR" CC=/tmp/clang-jonerix BUILD_TLS=yes MALLOC=libc
-# Some Valkey versions write to /usr/local/bin even under PREFIX=/;
+install = """make PREFIX="$DESTDIR" install CC=/tmp/clang-jonerix BUILD_TLS=yes MALLOC=libc
+# Some Valkey versions write to /usr/local/bin instead of /bin;
 # normalise into /bin.
 if [ -d "$DESTDIR/usr/local/bin" ]; then
     mkdir -p "$DESTDIR/bin"
-    cp -a "$DESTDIR/usr/local/bin/." "$DESTDIR/bin/"
+    cp -pR "$DESTDIR/usr/local/bin/." "$DESTDIR/bin/"
     rm -rf "$DESTDIR/usr"
 fi
+[ -x "$DESTDIR/bin/valkey-server" ] || {
+    printf '%s\n' "valkey: valkey-server missing after install" >&2
+    exit 1
+}
+[ -x "$DESTDIR/bin/valkey-cli" ] || {
+    printf '%s\n' "valkey: valkey-cli missing after install" >&2
+    exit 1
+}
 # Strip release binaries.  Symlinks are skipped automatically
 # (llvm-strip refuses non-regular files).
-find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 """
 
 [depends]
