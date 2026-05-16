@@ -1,9 +1,17 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.31"
+version = "1.6.32"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.32: strip keymaps + save-keymaps + save-termencoding from the
+# boot runlevel.  OpenRC's upstream meson install symlinks them in
+# by default but they need /bin/kbd_mode and /bin/dumpkeys from
+# GNU kbd-tools — jonerix doesn't ship those.  Result on every
+# fresh boot: three failure markers and a cascade that delayed
+# syslogd long enough for syslog-forward to give up on
+# `need syslogd`.  termencoding stays (works without kbd-tools).
+#
 # 1.6.31: add `pi5-fw set boot_order HEX` subcommand.  Thin wrapper
 # that hands off to /bin/pi5-netboot-config's `set KEY=VALUE` mode
 # (which already owns the EEPROM .upd/.sig staging path).  Lets
@@ -596,6 +604,19 @@ fi
 mkdir -p /etc/runlevels/boot /etc/runlevels/default /etc/runlevels/shutdown
 rm -f /etc/runlevels/boot/devfs /etc/runlevels/boot/modules
 rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
+# OpenRC's upstream install symlinks keymaps + save-keymaps +
+# save-termencoding into the boot runlevel by default, but their
+# start() scripts call /bin/kbd_mode and /bin/dumpkeys from the
+# GNU kbd-tools package — jonerix doesn't ship them.  Result on
+# every fresh Pi 5 boot: three [!!] failure markers and a cascade
+# that delays syslogd long enough for syslog-forward to give up
+# on `need syslogd`.  Strip them here so the boot is quiet and
+# nothing depends on a service that can't run.  termencoding stays
+# (it works without kbd-tools — only fonts are skipped, not console
+# encoding).  Reproduced 2026-05-15 on tormenta.
+rm -f /etc/runlevels/boot/keymaps \
+      /etc/runlevels/boot/save-keymaps \
+      /etc/runlevels/boot/save-termencoding
 for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
 done
