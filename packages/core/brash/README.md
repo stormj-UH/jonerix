@@ -15,14 +15,14 @@ curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/packages/cor
 Or with options:
 
 ```sh
-sh install.sh --version 1.0.16 --prefix /usr/local --arch aarch64
+sh install.sh --version 1.0.18 --prefix /usr/local --arch aarch64
 ```
 
 Flags:
 
 | Flag                       | Default       | Meaning                                                                 |
 |----------------------------|---------------|-------------------------------------------------------------------------|
-| `--version VER`            | `1.0.16`      | Published `.jpkg` version to fetch                                       |
+| `--version VER`            | `1.0.18`      | Published `.jpkg` version to fetch                                       |
 | `--prefix DIR`             | `/usr/local`  | Install root                                                             |
 | `--arch ARCH`              | `uname -m`    | `aarch64` or `x86_64`                                                    |
 | `--register-shell`         | off           | Append `$PREFIX/bin/brash` to `/etc/shells`                              |

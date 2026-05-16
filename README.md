@@ -238,7 +238,7 @@ that traditional Linux systems usually take for granted.
 
 | Replaces | Package | Current version | Notes |
 | -------- | ------- | --------------- | ----- |
-| Bash | `brash` | 1.0.16 | Clean-room Bash 5.3-compatible shell. Provides `/bin/bash`; `/bin/sh` stays mksh. |
+| Bash | `brash` | 1.0.18 | Clean-room Rust drop-in Bash 5.3 clone that passes Bash's upstream test suite. Provides `/bin/bash` and `/bin/rash`; `/bin/sh` stays mksh. |
 | GNU make | `jmake` | 1.2.6 | Clean-room make with GNU make compatibility work and POSIX-friendly bootstrap behavior. |
 | GNU libreadline/libhistory | `readlineoxide` | 0.1.12-r0 | Shared-library compatibility layer for readline users without GPL-3. |
 | Git | `gitredoxide` | 1.0.22 | Drop-in `/bin/git` plus helper-mode dispatch for upload-pack and receive-pack. |

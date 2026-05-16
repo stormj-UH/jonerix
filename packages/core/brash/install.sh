@@ -17,11 +17,11 @@
 #                   [--make-default-bash | --no-make-default-bash]
 #                   [--no-prompt | --yes] [--help]
 #
-# Defaults: --version 1.0.16  --prefix /usr/local  --arch <autodetected>
+# Defaults: --version 1.0.18  --prefix /usr/local  --arch <autodetected>
 
 set -eu
 
-DEFAULT_VERSION=1.0.16
+DEFAULT_VERSION=1.0.18
 DEFAULT_PREFIX=/usr/local
 RELEASE_BASE=https://github.com/stormj-UH/jonerix/releases/download/packages
 
@@ -45,7 +45,7 @@ Default behaviour installs ONLY the brash binary, license, and man pages
 under --prefix.  No system-global files are touched unless you opt in.
 
 Options:
-  --version VER             brash version to install (default 1.0.16)
+  --version VER             brash version to install (default 1.0.18)
   --prefix  DIR             install prefix (default /usr/local)
   --arch    ARCH            override autodetect (x86_64 | aarch64)
 
