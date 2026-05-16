@@ -31,8 +31,18 @@
 # tarball — 1.9 MB compressed). Pure-Go, static, CGO_ENABLED=0.
 
 name = "jonerix-netutils"
-version = "0.2.0"
-license = "BSD-3-Clause"
+version = "0.2.0-r1"
+# License of THIS package's deliverables (the 11 binaries in /bin) is a
+# mix: 8 of the 11 cmds (arp, arping, ifconfig, route, iptunnel, tunctl,
+# ss, ethtool) are MIT, written from scratch and (C) 2026 Jon-Erik G.
+# Storm, Inc., a California Corporation, doing business as LAVA GOAT
+# SOFTWARE.  The remaining 3 (ip, brctl, netstat) come straight from
+# u-root v0.16.0 and stay BSD-3-Clause as their upstream headers say.
+# We pick the more-restrictive top-level tag (BSD-3-Clause) so jpkg's
+# license_audit gate continues to treat the package as permissively
+# licensed end-to-end; the MIT files are individually labelled inside
+# the source tree (see LICENSE.MIT) and stay MIT-licensed regardless.
+license = "BSD-3-Clause AND MIT"
 description = "Network userspace tools (ip, brctl, netstat, arp, arping, ifconfig, route, iptunnel, tunctl, ss, ethtool) — Go implementations, replaces iproute-go + toybox network applets"
 
 # `replaces` lets jpkg accept the conflict for /bin/{ip,brctl,netstat,
@@ -47,7 +57,7 @@ replaces = ["toybox", "iproute-go"]
 # the 3 pkg/ dirs they depend on, and a regenerated vendor/ from
 # `go mod vendor` after `go mod tidy`. 1.9 MB compressed.
 url = "https://github.com/stormj-UH/jonerix/releases/download/source-jonerix-netutils-v0.2.0/jonerix-netutils-0.2.0.tar.gz"
-sha256 = "5cfb00db74ae57af006889455d2c7945b28c754dbb22c716406ea1496baa23b1"
+sha256 = "ce943768df7cc68fb618053034405920376a799fdf0c544af535b49e494c5825"
 
 [build]
 system = "custom"
