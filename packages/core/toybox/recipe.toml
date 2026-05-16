@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r11"
+version = "0.8.11-r12"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -34,6 +34,16 @@ description = "BSD-licensed coreutils replacement"
 # 0.8.11-r9: make post_install/post_remove honor JPKG_ROOT when hooks run
 # outside a chroot, as happens for alternate-root installs before /bin/sh is
 # present in the target root.
+#
+# 0.8.11-r12: add `ip` to the install-time skip list.  iproute-go
+# legitimately owns /bin/ip (real Go binary that handles every link
+# type including TUN), declares `replaces=["toybox"]`, and the yield
+# loop's real-binary recovery path is supposed to re-extract its
+# .jpkg from cache when toybox upgrades — but that recovery has
+# silently failed on tormenta repeatedly (2026-05-09, -05-11,
+# -05-14).  Skipping the bin/ip symlink at install time makes the
+# takeover survive every upgrade regardless.  Same pattern as r10
+# (reboot/poweroff) and r11 (login/passwd/useradd).
 #
 # 0.8.11-r11: expand the install-time skip list to cover all of shadow's
 # user-management surface (login, passwd, su, useradd, userdel, usermod,
@@ -149,6 +159,31 @@ while read applet; do
     pwck|grpck|pwconv|pwunconv|grpconv|grpunconv|vipw) continue ;;
     nologin|sulogin|expiry|logoutd|newgidmap|newuidmap) continue ;;
     faillog|lastlog) continue ;;
+    # `ip` (r12).  Toybox's `ip` is incomplete — it can't enumerate
+    # interfaces of type ARPHRD_NONE / 65534 (Tailscale's tailscale0
+    # TUN, WireGuard's wg0).  Reproduced 2026-05-09 on tormenta:
+    # `ip a` returned "Invalid link." because /bin/ip was the toybox
+    # symlink.  iproute-go's u-root Go reimplementation handles every
+    # link type the kernel reports.  iproute-go declares
+    # `replaces = ["toybox"]` AND ships /bin/ip as a real ELF binary,
+    # so jpkg accepts the conflict at install time — but toybox's
+    # tarball still includes bin/ip -> toybox, and on every toybox
+    # upgrade the symlink REOVERWRITES iproute-go's real binary.
+    # The yield-loop's real-binary recovery path (r8+) is supposed
+    # to re-extract iproute-go from /var/cache/jpkg, but it has
+    # silently failed on tormenta at least three times this session
+    # alone (2026-05-09, -05-11, -05-14).  Skipping at install time
+    # makes the takeover survive every upgrade regardless of yield-
+    # loop reliability — same fix pattern as reboot/poweroff (r10)
+    # and login/passwd/useradd (r11).
+    #
+    # Why not also skip iptunnel/arp/brctl/ifconfig/netstat/route?
+    # Toybox is currently jonerix's ONLY provider for those — they
+    # are broken (same Go-rewrite-vs-busybox-grade-toybox-applet
+    # divide) but removing them would leave the system with no
+    # provider at all.  Add to this list ONLY when an iproute-go or
+    # other-package replacement actually ships /bin/<name>.
+    ip) continue ;;
   esac
   ln -sf toybox "$DESTDIR/bin/$applet"
 done < /tmp/_applets.txt
