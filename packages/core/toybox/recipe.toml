@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r13"
+version = "0.8.11-r14"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -34,6 +34,13 @@ description = "BSD-licensed coreutils replacement"
 # 0.8.11-r9: make post_install/post_remove honor JPKG_ROOT when hooks run
 # outside a chroot, as happens for alternate-root installs before /bin/sh is
 # present in the target root.
+#
+# 0.8.11-r14: extend the skip list to cover all 11 jonerix-netutils
+# 0.2.0 applets — adds arp, arping, ifconfig, route, iptunnel, tunctl,
+# ss, ethtool on top of r13's ip/brctl/netstat.  Toybox stops shipping
+# /bin/<name> for any of them at install time; jonerix-netutils owns
+# the takeover surface entirely.  Of the original toybox networking
+# applets, only `ping` (which is fine) remains as a toybox symlink.
 #
 # 0.8.11-r13: extend the skip list with `brctl` and `netstat`.
 # jonerix-netutils 0.1.0 now provides both alongside `ip` (all from
@@ -188,7 +195,16 @@ while read applet; do
     # arping, ifconfig, route, tunctl, ss, ethtool — stay because
     # jonerix doesn't ship a replacement YET; they'll move to this list
     # as jonerix-netutils 0.2.0+ adds them.
-    ip|brctl|netstat) continue ;;
+    #
+    # r14 (2026-05-15): jonerix-netutils 0.2.0 ships the full charter —
+    # arp, arping, ifconfig, route, iptunnel, tunctl, ss, ethtool are
+    # all real Go binaries now (8 fresh implementations written from
+    # scratch on top of the u-root v0.16.0 vendored netlink / ethtool
+    # / packet libs).  Promote every one of them to the skip list so
+    # toybox stops competing on the takeover surface entirely.  After
+    # this, the only networking applet toybox still owns is `ping`
+    # (and that one's good).
+    ip|brctl|netstat|arp|arping|ifconfig|route|iptunnel|tunctl|ss|ethtool) continue ;;
   esac
   ln -sf toybox "$DESTDIR/bin/$applet"
 done < /tmp/_applets.txt
