@@ -57,4 +57,4 @@ find "$DESTDIR/lib" -name 'libwlroots*.so*' -type f -exec llvm-strip --strip-unn
 
 [depends]
 runtime = ["musl", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libinput", "pixman", "mesa", "seatd", "libcxx"]
-build = ["clang", "meson", "samurai", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libinput", "libevdev", "pixman", "mesa", "seatd", "libcxx", "jonerix-headers"]
+build = ["clang", "meson", "samurai", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libinput", "libudev-zero", "libevdev", "pixman", "mesa", "seatd", "libcxx", "jonerix-headers"]

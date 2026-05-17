@@ -133,8 +133,15 @@ jpkg_version_key() {
 latest_cached_jpkg() {
     pkg="$1"
     arch="$2"
-    for f in /var/cache/jpkg/${pkg}-*-"${arch}".jpkg \
-             /var/cache/jpkg-published/${pkg}-*-"${arch}".jpkg; do
+    # Require the version segment to start with a digit so e.g.
+    # `latest_cached_jpkg wayland aarch64` doesn't also match
+    # `wayland-protocols-*-aarch64.jpkg`.  Without the [0-9]
+    # prefix gate, both wayland AND wayland-protocols match when
+    # looking for either, and the alphabetically-last one wins —
+    # which broke foot/grim/wlroots builds 2026-05-16 by installing
+    # the wrong package when their build-deps asked for `wayland`.
+    for f in /var/cache/jpkg/${pkg}-[0-9]*-"${arch}".jpkg \
+             /var/cache/jpkg-published/${pkg}-[0-9]*-"${arch}".jpkg; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
         rest=${base#${pkg}-}

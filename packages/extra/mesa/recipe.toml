@@ -147,4 +147,4 @@ runtime = ["musl", "libcxx", "libdrm", "wayland", "libxkbcommon", "libllvm", "ex
 #   python3                  — codegen scripts (mako installed into venv)
 #   clang / lld              — toolchain
 #   wayland-protocols        — XML protocol files for the wayland-egl path
-build = ["clang", "meson", "samurai", "pkgconf", "python3", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libcxx", "libllvm", "expat", "zlib", "zstd"]
+build = ["clang", "meson", "samurai", "pkgconf", "python3", "byacc", "flex", "m4oxide", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libcxx", "libllvm", "expat", "zlib", "zstd", "jonerix-headers"]
