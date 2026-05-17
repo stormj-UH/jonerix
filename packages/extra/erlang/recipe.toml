@@ -1,0 +1,154 @@
+[package]
+name = "erlang"
+version = "29.0"
+license = "Apache-2.0"
+description = "Erlang/OTP language runtime — BEAM VM (BeamAsm JIT), OTP standard library, crypto, ssl, escript, dialyzer, observer (CLI)"
+
+[source]
+# OTP 29.0 — released 2026-05-13.  License flipped from EPL-1.0 to
+# Apache-2.0 back in OTP 18 (2015), so the whole tree is permissive.
+url = "https://github.com/erlang/otp/releases/download/OTP-29.0/otp_src_29.0.tar.gz"
+sha256 = "149bb67708427ae50fce861d54ff676134e003438012efb41187d28122938564"
+
+[build]
+# Standard autoconf dance.  Erlang/OTP ships a pre-generated
+# ./configure in the otp_src_*.tar.gz release tarballs (the GitHub
+# auto-tarballs do NOT have it; pull from releases/download, not
+# /archive/refs/tags).
+system = "custom"
+configure = """
+set -e
+
+# Toolchain: jonerix clang/lld/llvm-* userspace, musl libc.
+# OTP 29 builds cleanly with clang ≥ 12; we ship 21.x via packages/core/clang.
+#
+# Flag rationale:
+#   --prefix=/                — jonerix is merged-usr-flat; install at root
+#   --libdir=/lib             — keep libraries under /lib (no /usr/lib)
+#   --enable-threads          — SMP scheduler needs pthread
+#   --enable-smp-support      — multi-scheduler runtime
+#   --enable-kernel-poll      — epoll-based I/O wait (Linux fast path)
+#   --enable-dynamic-ssl-lib  — load libcrypto dynamically (don't bake it in)
+#   --enable-jit              — BeamAsm JIT (x86_64 + aarch64; auto-detected
+#                                but we set it explicitly for clarity)
+#   --with-ssl=/              — point crypto/ssl apps at LibreSSL under /
+#   --without-wx              — no wxWidgets; we don't ship a desktop
+#   --without-javac           — no JDK; skip Jinterface Java bindings
+#   --without-odbc            — no unixODBC on jonerix
+#   --without-termcap         — terminfo is in ncurses (which we ship);
+#                                termcap is a separate library we don't.
+#                                erl's tty driver falls back to a built-in
+#                                vt100 emulation when termcap is absent.
+
+CC=clang \
+CXX=clang++ \
+LD=ld.lld \
+AR=llvm-ar \
+RANLIB=llvm-ranlib \
+NM=llvm-nm \
+STRIP=llvm-strip \
+CFLAGS="-O2 -fomit-frame-pointer -fPIC" \
+CXXFLAGS="-O2 -fomit-frame-pointer -fPIC" \
+LDFLAGS="-fuse-ld=lld" \
+./configure \
+  --prefix=/ \
+  --libdir=/lib \
+  --enable-threads \
+  --enable-smp-support \
+  --enable-kernel-poll \
+  --enable-dynamic-ssl-lib \
+  --enable-jit \
+  --with-ssl=/ \
+  --without-wx \
+  --without-javac \
+  --without-odbc \
+  --without-termcap
+"""
+# Erlang's top-level Makefile is GNU-make-flavoured (multiple `$(if ...)`,
+# `$(eval ...)`, `$(call ...)` invocations and `:=` assignments).  jmake
+# 1.2.7+ handles all of those.  We invoke `make` (resolves via jmake)
+# rather than `jmake` directly so the embedded recursive make calls
+# inside lib/*/Makefile inherit the same MAKE.
+build = "make -j$(nproc)"
+install = """set -e
+make DESTDIR=$DESTDIR install
+
+# Flatten merged-usr: /usr -> / symlink at runtime means usr/ must not
+# exist in the package payload, ditto /lib64.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+# Erlang/OTP installs everything under /lib/erlang/ — the BEAM VM, the
+# OTP applications, the .beam bytecode, the NIF .so files, and the
+# top-level driver scripts (erl, erlc, escript, dialyzer, typer, etc.)
+# live in /lib/erlang/bin/.  The configure --prefix=/ also drops
+# convenience symlinks at /bin/{erl,erlc,...} pointing into /lib/erlang/bin/.
+#
+# Strip aggressively but carefully:
+#   - .beam files are BEAM bytecode and MUST NOT be touched
+#   - .so files (NIFs and dyn libs) can be stripped of unneeded symbols
+#   - ELF executables in /lib/erlang/erts-*/bin can be fully stripped
+
+# NIF .so files — keep export tables, drop debug info.
+find "$DESTDIR/lib/erlang" -type f -name '*.so' \\
+    -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+find "$DESTDIR/lib/erlang" -type f -name '*.so.*' \\
+    -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+
+# erts-*/bin: beam.smp, erlexec, child_setup, dyn_erl, epmd, escript,
+# inet_gethost, run_erl, to_erl, ...  All standard ELF, safe to strip
+# fully.  Globbing because the erts version embeds in the dirname.
+for d in "$DESTDIR"/lib/erlang/erts-*/bin; do
+    [ -d "$d" ] || continue
+    find "$d" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+done
+
+# Top-level /bin/* convenience scripts — these are shell wrappers, not
+# ELF — but strip will silently no-op anything it can't recognise.
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+
+# OTP's install dance writes some build-host paths into Install scripts
+# under /lib/erlang/Install — they're meant to be re-run at install
+# time to fixate the actual install root.  jpkg post_install does
+# that below.
+"""
+
+[hooks]
+# OTP ships a magic /lib/erlang/Install script that hard-bakes the
+# install directory into bin/erl and bin/start so the shell wrappers
+# find the runtime.  It MUST be re-run after the package is unpacked
+# into its real location — without this, `erl` fails to start with
+# "Could not find ... /lib/erlang/erts-15.x.x/bin/erlexec".
+#
+# JPKG_ROOT honours alt-root installs (used by image builds and
+# chroot bootstraps); fall through to / otherwise.
+post_install = """set -e
+root=${JPKG_ROOT:-/}
+target="${root%/}/lib/erlang"
+if [ -x "$target/Install" ]; then
+    # Install takes an absolute path.  Use the in-target path (post-chroot
+    # for alt-root installs, since the script is re-run from inside the
+    # final filesystem).
+    (cd "$target" && ./Install -minimal "/lib/erlang") >/dev/null 2>&1 \\
+        || echo "erlang: WARNING: /lib/erlang/Install -minimal failed; erl may not start. Re-run manually after first boot." >&2
+else
+    echo "erlang: WARNING: /lib/erlang/Install missing — erl may not start." >&2
+fi
+"""
+
+[depends]
+# Runtime deps:
+#   musl     — libc
+#   libressl — libcrypto/libssl for the crypto, ssl, ssh, public_key apps
+#   ncurses  — terminfo database for nicer terminal handling in shell.tty
+#   zlib     — used by the zlib NIF (compress/decompress in OTP)
+#
+# Erlang does NOT need readline (it has its own line editor in
+# lib/stdlib/src/edlin.erl) so it does not depend on readlineoxide.
+runtime = ["musl", "libressl", "ncurses", "zlib"]
+
+# Build deps:
+#   clang/make/lld — already in builder image
+#   perl           — required by Erlang's build scripts (code generation)
+#   libressl/ncurses/zlib  — headers + libs at configure time
+build = ["clang", "make", "perl", "libressl", "ncurses", "zlib"]
