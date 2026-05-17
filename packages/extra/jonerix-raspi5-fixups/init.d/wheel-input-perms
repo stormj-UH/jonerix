@@ -1,0 +1,90 @@
+#!/bin/openrc-run
+# SPDX-License-Identifier: 0BSD
+# wheel-input-perms — assign /dev/dri/* and /dev/input/event* to the
+# `wheel` group at boot so unprivileged users in `wheel` can run a
+# Wayland compositor without sudo.
+#
+# In a normal Linux distro this is udev's job — rules like
+# `KERNEL=="card*", GROUP="video"` and `KERNEL=="event*", GROUP="input"`
+# fire when devtmpfs creates each node.  jonerix doesn't ship real
+# udev (it's part of systemd; libudev-zero is just a libudev *API*
+# shim so wlroots / libinput don't fail to link).  Devtmpfs creates
+# the nodes mode 0660 root:root by default, which means /dev/dri/card1
+# isn't readable by anyone except root and `cage` (or sway, river, …)
+# bails with EACCES at open(2).
+#
+# Two device classes need fixing:
+#
+#   /dev/dri/card*       The DRM master nodes.  A Wayland compositor
+#   /dev/dri/renderD*    opens card* for KMS (modesetting via libdrm)
+#                        and renderD* for GPU rendering (mesa /
+#                        libgbm).  seatd would normally hand both
+#                        FDs over via the seat protocol — but seatd
+#                        ITSELF runs as root, and the libseat client
+#                        path that talks to it needs the user-mode
+#                        compositor to be able to open the nodes
+#                        directly when launched from a non-DRM
+#                        backend (e.g. WLR_BACKENDS=headless for
+#                        diagnostics).  Group-readable removes one
+#                        cliff edge.
+#
+#   /dev/input/event*    libinput needs every keyboard / mouse /
+#                        touchscreen evdev node.  Same rationale as
+#                        DRM: seatd can hand them over once running,
+#                        but on a headless-or-broken seatd path the
+#                        compositor wants direct access.
+#
+# We re-run on every boot rather than once at install time because
+# devtmpfs nodes are recreated on every cold start and any chmod we
+# baked into install would be lost.  `chgrp wheel … || true` and
+# `chmod g+rw … || true` are idempotent and tolerate missing nodes
+# (the box may have no GPU on a model without V3D firmware, or no
+# attached input devices on a headless install).
+#
+# Why `wheel` and not `video` / `input`: jonerix doesn't ship the
+# Debian/Ubuntu video+input split groups; `wheel` is the only system
+# group every user with a login shell is already a member of on a
+# default jonerix Pi image.  Re-using it keeps the model simple and
+# avoids /etc/group churn.
+
+description="Group-grant DRM + input devices to the wheel group (Wayland prep)"
+
+depend() {
+    # Devtmpfs nodes are populated by `devfs` (in sysinit) and the
+    # vc4 modules are loaded by pi5-modules.  Run AFTER pi5-modules
+    # so /dev/dri/card* exists by the time we chgrp it.
+    need sysfs
+    after pi5-modules localmount devfs
+    before seatd shadow-login
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+start() {
+    ebegin "Re-grouping DRM + input device nodes to wheel"
+
+    # Use globs guarded by `2>/dev/null` so an unmatched glob (no
+    # /dev/dri/card* yet) doesn't print noisy "no such file" errors.
+    # chgrp/chmod are run in pairs because we don't want a half-fixed
+    # node where the chmod fired but chgrp didn't.
+    for n in /dev/dri/card* /dev/dri/renderD* /dev/input/event*; do
+        [ -e "$n" ] || continue
+        chgrp wheel "$n" 2>/dev/null || true
+        chmod g+rw "$n" 2>/dev/null || true
+    done
+
+    # Report what we ended up with so a `rc-status -a` lists what's
+    # been prepared.  Useful when triaging "why can't cage open the
+    # GPU" on first boot.
+    if [ -d /dev/dri ]; then
+        local visible
+        visible=$(ls -1 /dev/dri 2>/dev/null | tr '\n' ' ')
+        einfo "DRM nodes (now wheel-readable): ${visible:-none}"
+    fi
+    eend 0
+}
+
+stop() {
+    # Reverting permissions on shutdown would help nobody — the next
+    # boot reapplies them anyway.
+    return 0
+}

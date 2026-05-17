@@ -13,11 +13,17 @@
 #                         root (e.g. for diagnostic SSH-driven sway).
 #
 # The seatd binary is the server component; libseat is what
-# compositors link.  We ship both plus the OpenRC-friendly seatd
-# command, but the recipe does NOT install an OpenRC service file —
-# compositor packages should add their own (or users can write one).
-# This keeps seatd usable in both daemon and standalone modes without
-# baking in service assumptions.
+# compositors link.  We ship both plus an OpenRC service that
+# runs `seatd -g wheel` so /run/seatd.sock is root:wheel mode
+# 0660 — every member of `wheel` (the default human-user group
+# on jonerix images, including UID 1000 `jonerik`) can talk to
+# seatd and launch a compositor without sudo.  The service is
+# enabled in the `boot` runlevel by post_install so a fresh
+# install boots ready for cage / sway / labwc.  Users who want
+# the builtin (single-process) backend instead can disable the
+# service with `rc-update del seatd boot`; the libseat library
+# falls back to builtin mode when /run/seatd.sock isn't there
+# and the compositor was launched as root.
 #
 # MIT-licensed.
 
@@ -81,7 +87,51 @@ if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DE
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find "$DESTDIR/lib" -name 'libseat*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
 find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+
+# OpenRC service.  See init.d/seatd header for why we run `seatd -g
+# wheel` and not a separate seat group.  The service is enabled in
+# the boot runlevel by the post_install hook below.
+install -Dm755 "$RECIPE_DIR/init.d/seatd" "$DESTDIR/etc/init.d/seatd"
 """
+
+[hooks]
+# Wire seatd into the boot runlevel so /run/seatd.sock exists by the
+# time a compositor service or interactive shadow-login -> cage
+# pipeline tries to talk to it.  Also live-start on a host where rc
+# is available so the user gets a working seatd without a reboot.
+#
+# We deliberately do NOT delete the runlevel symlink on a normal
+# `jpkg upgrade seatd` — only post_remove cleans it up — so an
+# operator who has manually toggled the service off (rc-update del
+# seatd boot) doesn't have it silently re-enabled on every package
+# bump.  The `ln -sf` below only creates the symlink when it isn't
+# already present.
+post_install = """set -e
+mkdir -p /etc/runlevels/boot
+if [ -f /etc/init.d/seatd ] && [ ! -e /etc/runlevels/boot/seatd ]; then
+    ln -sf /etc/init.d/seatd /etc/runlevels/boot/seatd 2>/dev/null || true
+fi
+
+# Live-start on hosts with rc-service available.  Idempotent — if
+# seatd is already running we restart so any change to the init
+# script (e.g. group ACL) takes effect.
+if command -v rc-service >/dev/null 2>&1; then
+    if rc-service seatd status >/dev/null 2>&1; then
+        rc-service seatd restart 2>/dev/null || true
+    else
+        rc-service seatd start 2>/dev/null || true
+    fi
+fi
+exit 0"""
+
+# Tear down the boot-runlevel symlink so a `jpkg remove seatd`
+# doesn't leave a dangling reference.  jpkg removes manifest-owned
+# files (the init script itself, the binaries) automatically.
+post_remove = """rm -f /etc/runlevels/boot/seatd 2>/dev/null || true
+if command -v rc-service >/dev/null 2>&1; then
+    rc-service seatd stop 2>/dev/null || true
+fi
+exit 0"""
 
 [depends]
 runtime = ["musl"]

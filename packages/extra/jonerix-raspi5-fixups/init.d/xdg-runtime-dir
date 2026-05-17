@@ -1,0 +1,109 @@
+#!/bin/openrc-run
+# SPDX-License-Identifier: 0BSD
+# xdg-runtime-dir — create /run/user/<uid> for known interactive users
+# at boot so Wayland clients can find their per-user socket directory.
+#
+# Wayland requires $XDG_RUNTIME_DIR.  The libwayland client searches
+# for `$XDG_RUNTIME_DIR/wayland-0`; absent the env var it falls back
+# to /tmp but compositors refuse to BIND there (security — /tmp is
+# world-writable).  cage / sway / labwc all abort at startup with
+# "XDG_RUNTIME_DIR is not set in the environment" unless something
+# has both created the directory AND placed the variable in the
+# user's shell environment.
+#
+# On systemd distros pam_systemd creates /run/user/<uid> on login;
+# on jonerix /bin/login is shadow's stock binary with no pam_systemd
+# equivalent, and we don't want to ship a custom PAM stack just for
+# this.  Doing it as an OpenRC boot service is the simpler shape:
+# one place, one rule, no per-shell rc dance.
+#
+# Spec from systemd's pam_systemd man page (which the rest of the
+# ecosystem treats as the de-facto contract):
+#
+#     /run/user/$UID    mode 0700, owned by $USER:$USER
+#
+# Mode 0700 is mandatory.  wlroots and pipewire both refuse to use
+# the directory if any group/other bit is set, with a security
+# warning logged at startup.
+#
+# How we pick UIDs to provision: we read /etc/passwd and pick every
+# entry with UID in [1000, 60000) and a real shell (not /sbin/nologin
+# or /bin/false).  This catches the default `jonerik` user (UID 1000
+# on jonerix images — see bin/adduser-safe's default) plus any
+# additional human users the operator has added.  We deliberately do
+# NOT hard-code UID 1000 — operators who renumber their user ID would
+# silently lose the directory.
+#
+# The env var itself is set by the cage wrapper script
+# (/bin/jonerix-cage-session), not exported globally here.  System-
+# wide /etc/profile.d/ would be cleaner but jonerix's /bin/login
+# (from shadow) sources /etc/profile only for login shells, not for
+# SSH-driven `cage` runs; the wrapper covers both cases.
+
+description="Create /run/user/<uid> for interactive users (Wayland XDG_RUNTIME_DIR)"
+
+depend() {
+    # /run is tmpfs (see raspi5-fixups fstab rescue), populated by
+    # localmount.  Must run after localmount and before any service
+    # that drops into a user session (shadow-login on tty1, or any
+    # compositor service a user has wired in).
+    need localmount
+    before shadow-login seatd
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+# Iterate /etc/passwd for human-ish users.  POSIX awk only — no GNU
+# extensions, so this works under toybox awk and mawk both.
+_iter_users() {
+    [ -r /etc/passwd ] || return 0
+    awk -F: '
+        $3 >= 1000 && $3 < 60000 \
+        && $7 != "/sbin/nologin" \
+        && $7 != "/bin/nologin" \
+        && $7 != "/bin/false" \
+        && $7 != "" {
+            print $1 ":" $3 ":" $4
+        }
+    ' /etc/passwd
+}
+
+start() {
+    ebegin "Provisioning /run/user/<uid> for interactive users"
+
+    local created=0
+    _iter_users | while IFS=: read -r user uid gid; do
+        [ -n "$uid" ] || continue
+        local dir="/run/user/$uid"
+
+        # Idempotent: if the directory exists with correct ownership
+        # and mode, leave it alone.  We check explicitly because a
+        # blind `mkdir -p` would silently leave an out-of-spec
+        # permissions state if a previous boot ran the directory
+        # under a different uid (e.g. user renumbered).
+        if [ -d "$dir" ]; then
+            cur_owner=$(stat -c '%u' "$dir" 2>/dev/null || echo -)
+            cur_mode=$(stat -c '%a' "$dir" 2>/dev/null || echo -)
+            if [ "$cur_owner" = "$uid" ] && [ "$cur_mode" = "700" ]; then
+                continue
+            fi
+        fi
+
+        mkdir -p "$dir" 2>/dev/null || {
+            ewarn "could not create $dir"
+            continue
+        }
+        chown "$uid:$gid" "$dir" 2>/dev/null || true
+        chmod 0700 "$dir" 2>/dev/null || true
+        einfo "  $user (uid=$uid) -> $dir"
+        created=$((created + 1))
+    done
+
+    eend 0
+}
+
+stop() {
+    # Don't remove the directories — running user sessions may still
+    # hold sockets in there, and the tmpfs evaporates on reboot
+    # anyway.
+    return 0
+}

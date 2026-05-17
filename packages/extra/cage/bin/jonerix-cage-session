@@ -1,0 +1,109 @@
+#!/bin/sh
+# SPDX-License-Identifier: 0BSD
+# jonerix-cage-session — launcher wrapper for the cage Wayland kiosk
+# compositor on jonerix.
+#
+# Why a wrapper at all: cage itself is the upstream kiosk compositor
+# binary and takes a single client command to run fullscreen.  But on
+# jonerix there's no pam_systemd to populate $XDG_RUNTIME_DIR, no
+# desktop session manager to set $WLR_BACKENDS, and the V3D GPU is
+# not always guaranteed to be ready (the v3d module loads in
+# pi5-modules but the firmware blob and overlay can be absent on
+# minimal builds).  Each of those is a one-line export in the
+# environment; bundling them into a wrapper means the user runs
+# exactly one command:
+#
+#     jonerix-cage-session foot
+#
+# …and the wrapper handles the rest before exec'ing cage.
+#
+# Environment we set up:
+#
+#   XDG_RUNTIME_DIR=/run/user/$(id -u)
+#       Required by every Wayland client.  pi5-fixups'
+#       xdg-runtime-dir init.d service creates this directory at
+#       boot for every /etc/passwd user in UID range [1000, 60000),
+#       but: (a) a freshly-added user since last boot won't have it
+#       yet, and (b) a user with UID >= 60000 won't be covered.  We
+#       create it ourselves as a belt-and-suspenders measure.  Mode
+#       0700 is mandatory — wlroots refuses to use the directory
+#       otherwise.
+#
+#   WLR_BACKENDS=drm,libinput
+#       The default wlroots backend probe order is "drm,libinput,
+#       wayland,x11" with a heuristic that prefers nested-Wayland if
+#       $WAYLAND_DISPLAY is set.  On a jonerix Pi 5 we're always the
+#       outermost compositor (there's no enclosing display server)
+#       and a stray $WAYLAND_DISPLAY in an inherited environment
+#       (e.g. from an SSH client whose user has a Wayland session
+#       elsewhere) would silently push us into nested mode and
+#       attach to nothing.  Pin to drm+libinput explicitly to avoid
+#       that footgun.
+#
+#   WLR_RENDERER_ALLOW_SOFTWARE=1
+#       Permit the Pixman software renderer.  V3D acceleration is
+#       not yet fully verified on jonerix (the v3d driver loads but
+#       end-to-end EGL/GBM is still in bring-up); a hardware-only
+#       wlroots would refuse to start with "no usable EGL device".
+#       Pixman is ~10x slower but always works and renders cage's
+#       single-client output fine for terminal / dashboard kiosks.
+#       Drop this flag once V3D is verified end-to-end.
+#
+# Anything passed to this wrapper is forwarded verbatim to cage,
+# so the standard cage usage (`cage [-d] [-s] -- CMD [ARGS …]`) is
+# preserved.  The `--` argument is supported transparently because
+# `exec cage "$@"` doesn't interpret it.
+#
+# We intentionally do NOT set XDG_SESSION_TYPE or XDG_CURRENT_DESKTOP
+# here.  Cage doesn't depend on them; some XDG-aware clients use
+# them for fontconfig theming, and the operator is in a better
+# position than us to choose a value (e.g. some Qt apps want
+# "wayland" set as XDG_SESSION_TYPE to avoid falling back to xcb).
+
+set -e
+
+# ----- XDG_RUNTIME_DIR --------------------------------------------------
+# `id -u` is in toybox 0BSD; falls back to $UID if for some reason
+# id(1) is missing.
+_uid=$(id -u 2>/dev/null || printf '%s' "$UID")
+if [ -z "$_uid" ]; then
+    # As a final fallback, parse /proc/self/status.  This is robust
+    # against a broken /bin/id.
+    _uid=$(awk '/^Uid:/{print $2; exit}' /proc/self/status 2>/dev/null || echo 0)
+fi
+
+: "${XDG_RUNTIME_DIR:=/run/user/$_uid}"
+
+# Create on demand.  The boot service does this for every interactive
+# user, but a brand-new user (added since last reboot) won't have it
+# yet — and the cost of an idempotent mkdir is trivial.  Race-safe:
+# mkdir -m 0700 atomically creates with the right mode, so a second
+# concurrent launcher can't observe a 0755 directory.
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    mkdir -p -m 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || {
+        echo "jonerix-cage-session: could not create $XDG_RUNTIME_DIR" >&2
+        exit 1
+    }
+fi
+
+# Tighten perms in case a previous boot left them looser (e.g. user
+# was running as root, then the boot service later relaxed without
+# resetting).  Failures are non-fatal — most likely we don't own it.
+chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+export XDG_RUNTIME_DIR
+
+# ----- wlroots backend pinning -----------------------------------------
+# Caller can override either of these by setting them in the environment
+# before invoking this wrapper.  The `: "${VAR:=default}"` idiom sets
+# only when unset OR empty — so explicit `WLR_BACKENDS=headless
+# jonerix-cage-session …` still wins for diagnostic runs.
+: "${WLR_BACKENDS:=drm,libinput}"
+: "${WLR_RENDERER_ALLOW_SOFTWARE:=1}"
+export WLR_BACKENDS WLR_RENDERER_ALLOW_SOFTWARE
+
+# ----- exec ------------------------------------------------------------
+# Hand off to cage with all original arguments preserved.  `exec`
+# replaces the wrapper's PID so signals / supervisord / shadow-login's
+# `wait` see the cage process directly (no extra mksh layer).
+exec /bin/cage "$@"

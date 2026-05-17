@@ -1,9 +1,50 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.32"
+version = "1.6.33"
 arch = "aarch64"
 license = "0BSD"
-description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro + Wayland prep (vc4/v3d modprobe, /dev/dri+/dev/input wheel perms, /run/user/<uid>)"
+# 1.6.33: Wayland-ready bring-up for fresh Pi 5 boots.
+# Three new boot-runlevel services + one modules-load.d snippet
+# so a non-root user in the wheel group can run a Wayland
+# compositor (cage/sway/labwc) immediately without manual prep:
+#
+#   - init.d/pi5-modules     loads i2c_brcmstb -> vc4 -> v3d in
+#                            order (i2c_brcmstb must precede vc4
+#                            or vc4_hdmi defers indefinitely on
+#                            DDC probe and /dev/dri/card1 never
+#                            appears).  Generic — reads every
+#                            /etc/modules-load.d/*.conf so site-
+#                            local module preloads work too.
+#   - init.d/wheel-input-perms
+#                            chgrps /dev/dri/card*, /dev/dri/
+#                            renderD*, /dev/input/event* to wheel
+#                            and chmods g+rw.  jonerix has no udev
+#                            so devtmpfs leaves them root:root
+#                            mode 0660; without this seatd-less
+#                            and unsupervised wlroots backends
+#                            fail with EACCES.
+#   - init.d/xdg-runtime-dir creates /run/user/<uid> mode 0700 for
+#                            each /etc/passwd entry in UID range
+#                            [1000, 60000) with a real shell.
+#                            Replaces pam_systemd's role on
+#                            systemd distros; without this every
+#                            Wayland client aborts with
+#                            "XDG_RUNTIME_DIR is not set".
+#   - etc/modules-load.d/pi5-vc4.conf
+#                            kmod-style module list consumed by
+#                            init.d/pi5-modules.  Header documents
+#                            the i2c_brcmstb / vc4 / v3d ordering
+#                            constraint.
+#
+# Companion changes that ship in their own recipes (not this one):
+#   - packages/extra/seatd:  init.d/seatd running `seatd -g wheel`
+#                            so /run/seatd.sock is root:wheel 0660.
+#   - packages/extra/cage:   /bin/jonerix-cage-session wrapper that
+#                            sets XDG_RUNTIME_DIR / WLR_BACKENDS /
+#                            WLR_RENDERER_ALLOW_SOFTWARE before
+#                            execing cage.
+#
 # 1.6.32: strip keymaps + save-keymaps + save-termencoding from the
 # boot runlevel.  OpenRC's upstream meson install symlinks them in
 # by default but they need /bin/kbd_mode and /bin/dumpkeys from
@@ -404,6 +445,22 @@ install -Dm644 cron.d/disable-eee-watchdog $DESTDIR/etc/cron.d/disable-eee-watch
 # ntp-set) would never fire.
 install -Dm755 init.d/snooze-crond $DESTDIR/etc/init.d/snooze-crond
 
+# --- Wayland prep (1.6.33+) ---
+# Three boot-runlevel services that together make a freshly-booted
+# Pi 5 ready to run an unprivileged Wayland compositor.  See the
+# version-history header above for the rationale; the per-file
+# headers carry the load-order / permissions / spec details.
+install -Dm755 init.d/pi5-modules        $DESTDIR/etc/init.d/pi5-modules
+install -Dm755 init.d/wheel-input-perms  $DESTDIR/etc/init.d/wheel-input-perms
+install -Dm755 init.d/xdg-runtime-dir    $DESTDIR/etc/init.d/xdg-runtime-dir
+
+# Module list consumed by init.d/pi5-modules.  Mode 0644 — config
+# file, not executable.  Ships under /etc/modules-load.d/ to match
+# the systemd-coined name every distro now uses, even though jonerix
+# doesn't otherwise process the directory (init.d/pi5-modules is the
+# only reader).
+install -Dm644 etc/modules-load.d/pi5-vc4.conf $DESTDIR/etc/modules-load.d/pi5-vc4.conf
+
 # 1.6.28 dropped /usr/local/bin/* entirely — every script previously
 # under /usr/local/bin/ now lives at /bin/.  This block stays as a
 # defensive no-op: if a future install line accidentally lands under
@@ -617,7 +674,7 @@ rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
 rm -f /etc/runlevels/boot/keymaps \
       /etc/runlevels/boot/save-keymaps \
       /etc/runlevels/boot/save-termencoding
-for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot; do
+for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot pi5-modules wheel-input-perms xdg-runtime-dir; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
 done
 for svc in ntp-bootstrap ntpd shadow-login syslogd snooze-crond wpa_supplicant_wlan0 disable-eee-late; do
@@ -727,6 +784,20 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
         rc-service disable-eee-late start 2>/dev/null || true
     fi
 
+    # --- Wayland prep services (1.6.33+) ---
+    # Live-start the three new boot services so the user doesn't need
+    # a reboot before launching cage.  All three are idempotent:
+    #   pi5-modules         no-op if i2c_brcmstb/vc4/v3d already in
+    #                       /proc/modules.
+    #   wheel-input-perms   chgrp+chmod is idempotent.
+    #   xdg-runtime-dir     checks current ownership/mode before
+    #                       touching the directory.
+    if command -v rc-service >/dev/null 2>&1; then
+        rc-service pi5-modules start         2>/dev/null || true
+        rc-service wheel-input-perms start   2>/dev/null || true
+        rc-service xdg-runtime-dir start     2>/dev/null || true
+    fi
+
     # --- cold-reboot: patch cmdline.txt once + live-flip sysfs ---
     # Firmware prepends reboot=w to the kernel command line; our
     # reboot=c in cmdline.txt overrides that (kernel keeps the last
@@ -760,7 +831,7 @@ exit 0"""
 # Tear down the runlevel symlinks that post_install created.
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
 # Also restore the original /bin/adduser symlink if we have a record of it.
-post_remove = """rm -f /etc/runlevels/boot/boot-trace /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/hwclock /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console /etc/runlevels/default/wpa_supplicant_wlan0 /etc/runlevels/shutdown/reboot-trace-shutdown
+post_remove = """rm -f /etc/runlevels/boot/boot-trace /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/hwclock /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/boot/pi5-modules /etc/runlevels/boot/wheel-input-perms /etc/runlevels/boot/xdg-runtime-dir /etc/runlevels/default/tty1-console /etc/runlevels/default/wpa_supplicant_wlan0 /etc/runlevels/shutdown/reboot-trace-shutdown
 if [ -f /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
     cp -p /etc/init.d/shadow-login.pre-raspi5-fixups /etc/init.d/shadow-login
     chmod 0755 /etc/init.d/shadow-login 2>/dev/null || true

@@ -1,0 +1,135 @@
+#!/bin/openrc-run
+# SPDX-License-Identifier: 0BSD
+# pi5-modules — load the kernel modules a fresh Pi 5 needs before any
+# downstream service touches /dev/dri or /dev/input.
+#
+# Why this exists at all: jonerix's permissive-license runtime ships
+# neither kmod (LGPL-2.1) nor real udev (the upstream udev is part of
+# systemd).  Without udev, the kernel doesn't auto-bind the vc4 KMS
+# driver from device-tree probe alone — the bind only happens after
+# someone modprobes vc4 explicitly.  Same story for v3d (the GPU
+# renderer node).  And vc4_hdmi defers indefinitely if i2c_brcmstb
+# isn't already up to provide the DDC bus — see etc/modules-load.d/
+# pi5-vc4.conf header for the full chain.
+#
+# We do NOT use OpenRC's stock `modules` service.  It assumes kmod-
+# style flag handling (`modprobe --first-time`, etc.) that neither
+# toybox modprobe nor /bin/modprobe-shim implements, and it sources
+# /etc/conf.d/modules instead of /etc/modules-load.d/*.conf so any
+# config we ship would be invisible to it.  See init.d/netfilter-nft-
+# modules header for the same reasoning applied to nft modules.
+#
+# Order of operations:
+#   1. Resolve a working modprobe — toybox's own when 0.8.11-r2+ ships
+#      the applet, else our shell shim at /bin/modprobe-shim.
+#   2. Load each module listed in /etc/modules-load.d/*.conf in file
+#      order, ignoring blank lines and `#`-prefixed comments.  Within
+#      a single file, lines are loaded top-to-bottom — so authors can
+#      encode load order (vc4 must follow i2c_brcmstb).
+#   3. Idempotent: if a module is already in /proc/modules we skip it.
+#      Failures are warned but don't abort the runlevel; a missing
+#      non-essential module (e.g. v3d on a host with no V3D firmware
+#      blob yet) should not block the rest of boot.
+#
+# Only runs on Pi 5.  Other boards skip cleanly (the runlevel symlink
+# is still created on those builds, but start() returns early — keeps
+# the package arch-independent in terms of installed file set).
+
+description="Load /etc/modules-load.d/*.conf modules (Pi 5 KMS + GPU + I2C)"
+
+depend() {
+    # Need sysfs/procfs mounted so /proc/modules and /sys/class are
+    # readable.  Run BEFORE anything that opens DRM or input devices:
+    # seatd, wheel-input-perms, any compositor service.  `localmount`
+    # is in the boot runlevel before us; we want to run as early in
+    # boot as possible so devices exist by the time later services
+    # care.
+    need sysfs procfs
+    after localmount
+    before wheel-input-perms seatd net
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+is_pi5() {
+    [ -r /proc/device-tree/model ] && \
+        grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null
+}
+
+_modprobe() {
+    # Same pattern as init.d/netfilter-nft-modules.  Prefer toybox's
+    # built-in modprobe applet when available (it understands .ko.xz
+    # via libxz directly), else fall back to the shell shim.
+    if toybox --help 2>&1 | grep -qw modprobe; then
+        echo /bin/modprobe
+        return 0
+    fi
+    if [ -x /bin/modprobe-shim ]; then
+        echo /bin/modprobe-shim
+        return 0
+    fi
+    return 1
+}
+
+start() {
+    is_pi5 || { einfo "not a Pi 5; skipping module preload"; return 0; }
+
+    local mp m modu rc=0
+    mp=$(_modprobe) || {
+        eerror "no modprobe implementation found"
+        return 1
+    }
+
+    # Iterate every .conf in /etc/modules-load.d in shell-glob order.
+    # We deliberately do NOT sort: pi5-vc4.conf and any future site-
+    # local file have meaningful internal ordering, and a stable file
+    # name prefix (the package ships pi5-*.conf) handles cross-file
+    # ordering well enough.
+    for conf in /etc/modules-load.d/*.conf; do
+        [ -r "$conf" ] || continue
+        ebegin "Loading modules from $conf"
+        while IFS= read -r m || [ -n "$m" ]; do
+            # Strip whitespace and skip blanks + comments.
+            m=${m%%#*}
+            m=$(echo "$m" | tr -d '[:space:]')
+            [ -z "$m" ] && continue
+
+            # Already loaded?  /proc/modules uses underscore form.
+            modu=$(echo "$m" | tr '-' '_')
+            if grep -q "^${modu} " /proc/modules 2>/dev/null; then
+                continue
+            fi
+
+            "$mp" "$m" 2>/dev/null || {
+                ewarn "modprobe $m failed (continuing)"
+                rc=1
+            }
+        done < "$conf"
+        eend 0
+    done
+
+    # Give vc4 a beat to publish /dev/dri/card1.  The probe is async
+    # (component master waits for vc4_hdmi + vc4_crtc + vc4_dpi etc.
+    # to register), so /dev/dri may not exist the instant modprobe
+    # returns.  Five 200 ms ticks is well under perceptible boot
+    # delay even when the device never appears.
+    for _ in 1 2 3 4 5; do
+        [ -e /dev/dri/card1 ] || [ -e /dev/dri/card0 ] && break
+        sleep 0.2 2>/dev/null || sleep 1
+    done
+
+    if [ -e /dev/dri/card1 ] || [ -e /dev/dri/card0 ]; then
+        einfo "DRM device present: $(ls -1 /dev/dri/card* 2>/dev/null | tr '\n' ' ')"
+    else
+        ewarn "no /dev/dri/card* after modprobe — KMS will be unavailable"
+    fi
+
+    # Always succeed; partial module-load failures should not cascade
+    # into killing seatd / shadow-login / dhcpcd dependents.
+    return 0
+}
+
+stop() {
+    # No teardown — unloading vc4 with an active DRM client is
+    # fragile, and we'd lose the console framebuffer too.
+    return 0
+}

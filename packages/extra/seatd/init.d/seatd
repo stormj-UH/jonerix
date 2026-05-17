@@ -1,0 +1,138 @@
+#!/bin/openrc-run
+# SPDX-License-Identifier: 0BSD
+# seatd — seat management daemon for unprivileged Wayland compositors.
+#
+# Why we need a daemon at all: a Wayland compositor needs to acquire
+# the DRM master FD on /dev/dri/card* and a stack of /dev/input/
+# event* FDs without running as root.  The kernel insists those opens
+# come from a privileged process (DRM master is a per-fd capability
+# the kernel hands to whoever opened the node first as root).  seatd
+# runs as root, accepts requests on a Unix socket
+# (/run/seatd.sock), and passes FDs over SCM_RIGHTS to clients that
+# pass its group ACL check.
+#
+# Group model:
+#   `seatd -g wheel`  — socket created with group=wheel and mode
+#                       0660.  Every member of `wheel` (which on
+#                       jonerix images includes the default
+#                       interactive user `jonerik`, UID 1000) can
+#                       talk to seatd and therefore launch a
+#                       compositor.  We don't ship a separate
+#                       `seat` group because jonerix doesn't have
+#                       the systemd-style fine-grained groups
+#                       split (input/video/render/seat).
+#
+# Why the seatd binary is run as root rather than dropping into the
+# `wheel` group: VT switching (KDSETMODE, VT_ACTIVATE) requires
+# CAP_SYS_TTY_CONFIG, which is only available to euid 0.  Without
+# it, the compositor can't honour Ctrl+Alt+F2 to switch consoles.
+#
+# This service lives in the seatd package (not in raspi5-fixups)
+# because seatd is hardware-agnostic — any jonerix host that wants
+# to run a Wayland compositor needs it, not just Pi 5s.
+
+description="Seat management daemon for unprivileged Wayland compositors"
+
+# start-stop-daemon-managed.  seatd runs in the foreground by default;
+# command_background=yes tells OpenRC's start-stop-daemon to
+# double-fork and daemonise it.  pidfile tracks the resulting child.
+command="/bin/seatd"
+command_args="-g wheel"
+command_background="yes"
+pidfile="/run/seatd.pid"
+
+# Logs to stdout/stderr — capture so an `rc-status` user can find
+# them without digging into kernel-level dmesg noise.
+output_log="/var/log/seatd.log"
+error_log="/var/log/seatd.log"
+
+depend() {
+    # We need /run mounted (seatd binds /run/seatd.sock there) and
+    # the wheel group present in /etc/group (which the standard
+    # jonerix base image ships, but we don't gate startup on it —
+    # missing-group failures are loud enough on their own).
+    #
+    # We deliberately do NOT depend on net.  seatd is a Unix-socket-
+    # only IPC daemon; bringing up the network shouldn't gate
+    # graphical login.  Conversely we want seatd available before
+    # shadow-login on tty1 so an autologin-into-cage setup works
+    # on first boot.
+    need localmount
+    after wheel-input-perms pi5-modules
+    before shadow-login
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+start_pre() {
+    # Ensure the wheel group exists.  On a stock jonerix image it
+    # always does (shipped in the base /etc/group), but a recovery
+    # workflow that hand-restored /etc/group from a bare snapshot
+    # could be missing it — and seatd's `-g wheel` ABORTs at
+    # startup with "no such group" rather than falling back to
+    # mode 0600 root:root, which would leave every compositor
+    # unable to start.
+    #
+    # Use addgroup-safe (shipped by jonerix-raspi5-fixups, falls
+    # back to a plain echo into /etc/group on hosts that don't
+    # have it) — addgroup-safe is idempotent and never truncates
+    # /etc/group on the already-exists path, unlike toybox
+    # addgroup which has the truncation bug documented in
+    # raspi5-fixups bin/addgroup-safe.
+    if ! getent group wheel >/dev/null 2>&1 \
+        && ! grep -q '^wheel:' /etc/group 2>/dev/null
+    then
+        if [ -x /bin/addgroup-safe ]; then
+            /bin/addgroup-safe -S wheel 2>/dev/null || true
+        else
+            # Last resort: append a system group directly.  GID 10
+            # is the Wheel-group convention inherited from BSD,
+            # which is what most jonerix image builds use anyway.
+            echo 'wheel:x:10:' >> /etc/group
+        fi
+    fi
+
+    # /var/log may not exist on a fresh devbox.
+    mkdir -p /var/log 2>/dev/null || true
+
+    # Sweep a stale socket from a prior unclean shutdown — seatd
+    # bind()s with no SO_REUSEADDR and dies with EADDRINUSE if the
+    # socket inode is still present.
+    if [ -S /run/seatd.sock ]; then
+        # Only remove if no live process has it open.  fuser is
+        # toybox-provided; absent that, do a permissive rm.
+        if command -v fuser >/dev/null 2>&1; then
+            fuser /run/seatd.sock >/dev/null 2>&1 || rm -f /run/seatd.sock
+        else
+            rm -f /run/seatd.sock 2>/dev/null || true
+        fi
+    fi
+}
+
+start_post() {
+    # Wait briefly for the socket to appear so dependents don't race
+    # us.  seatd creates /run/seatd.sock synchronously inside its
+    # accept-loop init, so a few hundred ms is more than enough.
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if [ -S /run/seatd.sock ]; then
+            # Sanity-check the perms — if -g wheel silently
+            # degraded (e.g. wheel didn't exist and our start_pre
+            # add failed), we'd be left with a root:root 0660
+            # socket that no compositor can open.  Warn loudly so
+            # a `rc-status` shows the regression.
+            local g
+            g=$(stat -c '%G' /run/seatd.sock 2>/dev/null)
+            if [ "$g" != "wheel" ]; then
+                ewarn "seatd.sock group is '$g', expected 'wheel'"
+            fi
+            return 0
+        fi
+        sleep 0.1 2>/dev/null || sleep 1
+    done
+    eerror "seatd started but /run/seatd.sock did not appear"
+    return 1
+}
+
+stop_post() {
+    rm -f /run/seatd.sock 2>/dev/null || true
+}

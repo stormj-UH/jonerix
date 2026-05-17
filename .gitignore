@@ -30,6 +30,14 @@ output/
 !packages/*/*/init.d/**
 !packages/*/*/cron.d/
 !packages/*/*/conf.d/
+# /etc/* drop-in dirs that a package ships under its etc/ subtree.
+# Same purpose as the entries above: jonerix-raspi5-fixups ships
+# etc/modules-load.d/pi5-vc4.conf (consumed by init.d/pi5-modules),
+# and future packages may ship etc/sysctl.d/, etc/profile.d/, etc.
+# Use a wildcard so any well-known drop-in dir under a package's
+# etc/ tree stays tracked.
+!packages/*/*/etc/
+!packages/*/*/etc/**
 # Test binaries (keep .c sources)
 packages/jpkg/tests/test_toml
 packages/jpkg/tests/test_pkg

@@ -38,8 +38,24 @@ DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+
+# /bin/jonerix-cage-session — POSIX-sh launcher wrapper that sets
+# XDG_RUNTIME_DIR, WLR_BACKENDS=drm,libinput and
+# WLR_RENDERER_ALLOW_SOFTWARE=1 before exec'ing cage.  See the
+# script header for the rationale behind each environment knob.
+# Lives in this package (rather than its own micro-package) because
+# the wrapper is small, references cage by absolute path, and any
+# user installing cage on jonerix wants it.  0BSD-licensed shell —
+# does not contaminate cage's MIT license metadata.
+install -Dm755 "$RECIPE_DIR/bin/jonerix-cage-session" \
+    "$DESTDIR/bin/jonerix-cage-session"
 """
 
 [depends]
-runtime = ["musl", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman"]
-build = ["clang", "meson", "samurai", "pkgconf", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman"]
+# wlroots-0.20.pc's `Requires.private:` cascades into libdrm, mesa
+# (egl/gbm/glesv2), libudev-zero, libseat (seatd).  pkg-config needs
+# every one of those resolvable at configure time even though cage
+# doesn't directly link them.  See `pkgconf --print-requires-private
+# wlroots-0.20` for the full chain.
+runtime = ["musl", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman", "mesa", "libdrm", "libudev-zero", "seatd", "hwdata-stub", "libdisplay-info"]
+build = ["clang", "meson", "samurai", "pkgconf", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman", "mesa", "libdrm", "libudev-zero", "seatd", "hwdata-stub", "libdisplay-info", "jonerix-headers"]
