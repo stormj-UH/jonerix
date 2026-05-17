@@ -103,23 +103,25 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 #   - .so files (NIFs and dyn libs) can be stripped of unneeded symbols
 #   - ELF executables in /lib/erlang/erts-*/bin can be fully stripped
 
-# NIF .so files — keep export tables, drop debug info.
-find "$DESTDIR/lib/erlang" -type f -name '*.so' \\
-    -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
-find "$DESTDIR/lib/erlang" -type f -name '*.so.*' \\
-    -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true
+# NIF .so files — keep export tables, drop debug info.  Note: every
+# find here is one single shell line, with the -exec terminator quoted
+# as ';' rather than the more common \\; form.  The recipe runner does
+# not preserve shell line-continuation reliably, and the quoted ';'
+# avoids needing any escape character at all.
+find "$DESTDIR/lib/erlang" -type f -name '*.so' -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/lib/erlang" -type f -name '*.so.*' -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
 
 # erts-*/bin: beam.smp, erlexec, child_setup, dyn_erl, epmd, escript,
 # inet_gethost, run_erl, to_erl, ...  All standard ELF, safe to strip
 # fully.  Globbing because the erts version embeds in the dirname.
 for d in "$DESTDIR"/lib/erlang/erts-*/bin; do
     [ -d "$d" ] || continue
-    find "$d" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+    find "$d" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 done
 
 # Top-level /bin/* convenience scripts — these are shell wrappers, not
 # ELF — but strip will silently no-op anything it can't recognise.
-find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 
 # OTP's install dance writes some build-host paths into Install scripts
 # under /lib/erlang/Install — they're meant to be re-run at install
@@ -143,8 +145,7 @@ if [ -x "$target/Install" ]; then
     # Install takes an absolute path.  Use the in-target path (post-chroot
     # for alt-root installs, since the script is re-run from inside the
     # final filesystem).
-    (cd "$target" && ./Install -minimal "/lib/erlang") >/dev/null 2>&1 \\
-        || echo "erlang: WARNING: /lib/erlang/Install -minimal failed; erl may not start. Re-run manually after first boot." >&2
+    if ! (cd "$target" && ./Install -minimal "/lib/erlang") >/dev/null 2>&1; then echo "erlang: WARNING: /lib/erlang/Install -minimal failed; erl may not start. Re-run manually after first boot." >&2; fi
 else
     echo "erlang: WARNING: /lib/erlang/Install missing — erl may not start." >&2
 fi
