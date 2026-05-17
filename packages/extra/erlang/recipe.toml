@@ -19,6 +19,19 @@ system = "custom"
 configure = """
 set -e
 
+# WORKAROUND: jmake does not yet handle the colon-separated dirlist
+# form of GNU make's `vpath` directive.  OTP 29 has exactly one such
+# line, in lib/erl_interface/src/Makefile.in:143:
+#     vpath %.c connect:encode:decode:misc:epmd:global:erts
+# Rewriting it to the equivalent space-separated form
+#     vpath %.c connect encode decode misc epmd global erts
+# is semantically identical (GNU make accepts both per make(1)) but
+# parses correctly under jmake.  Remove this hack once jmake learns
+# the colon-separated form.  Tracked in TODO under "jmake / vpath".
+sed 's|^vpath %.c connect:encode:decode:misc:epmd:global:erts$|vpath %.c connect encode decode misc epmd global erts|' \\
+    lib/erl_interface/src/Makefile.in > lib/erl_interface/src/Makefile.in.new
+mv lib/erl_interface/src/Makefile.in.new lib/erl_interface/src/Makefile.in
+
 # Toolchain: jonerix clang/lld/llvm-* userspace, musl libc.
 # OTP 29 builds cleanly with clang ≥ 12; we ship 21.x via packages/core/clang.
 #
