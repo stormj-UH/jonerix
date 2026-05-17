@@ -28,9 +28,10 @@ set -e
 # is semantically identical (GNU make accepts both per make(1)) but
 # parses correctly under jmake.  Remove this hack once jmake learns
 # the colon-separated form.  Tracked in TODO under "jmake / vpath".
-sed 's|^vpath %.c connect:encode:decode:misc:epmd:global:erts$|vpath %.c connect encode decode misc epmd global erts|' \\
-    lib/erl_interface/src/Makefile.in > lib/erl_interface/src/Makefile.in.new
-mv lib/erl_interface/src/Makefile.in.new lib/erl_interface/src/Makefile.in
+_vpath_in=lib/erl_interface/src/Makefile.in
+sed 's|^vpath %.c connect:encode:decode:misc:epmd:global:erts$|vpath %.c connect encode decode misc epmd global erts|' "$_vpath_in" > "$_vpath_in.new"
+mv "$_vpath_in.new" "$_vpath_in"
+unset _vpath_in
 
 # Toolchain: jonerix clang/lld/llvm-* userspace, musl libc.
 # OTP 29 builds cleanly with clang ≥ 12; we ship 21.x via packages/core/clang.
