@@ -1,0 +1,87 @@
+# libdrm — userspace API for the Linux DRM/KMS subsystem.  Every
+# Wayland compositor uses this to drive the GPU's mode-setting and
+# buffer-management ioctls (drmModeSetCrtc, drmModeAddFB, ...).
+#
+# Vendor-specific helpers: jonerix's primary GPU target is the Pi 5's
+# VideoCore VII (vc4/v3d kernel driver), so we enable vc4 and disable
+# everything else.  amdgpu/radeon/intel/nouveau/vmwgfx are turned off
+# explicitly to keep the binary small and avoid pulling in vendor
+# headers we don't ship.
+#
+# MIT-licensed (the COPYING file at the top of the source tree).
+
+[package]
+name = "libdrm"
+version = "2.4.133"
+license = "MIT"
+description = "Userspace library for the Linux Direct Rendering Manager (DRM/KMS) — vc4/v3d enabled for Pi 5; vendor-specific helpers for AMD/Intel/Nouveau/VMware disabled"
+
+[source]
+url = "https://dri.freedesktop.org/libdrm/libdrm-2.4.133.tar.xz"
+sha256 = "fc68f9d0ba2ea63c9432a299e14fea09fad7a8a66e8039fcd7802ca59f77b4f5"
+
+[build]
+# Meson + samurai.
+#
+# Vendor backends:
+#   intel    disabled — no Intel GPUs in jonerix's hardware matrix.
+#   nouveau  disabled — NVIDIA via FOSS driver; not a target.
+#   vc4      enabled  — Pi 5's display controller (VideoCore VII).
+#   v3d      implicitly built via vc4 helpers; libdrm exposes the
+#            generic DRM ioctls for it.  No separate -Dv3d= toggle —
+#            v3d userspace lives in mesa, not libdrm.
+#   vmwgfx   disabled — no VMware guest workloads in scope.
+#   amdgpu   disabled — see intel comment.
+#   radeon   disabled — see intel comment.
+#   freedreno disabled by default (no toggle needed since the option
+#            defaults to disabled).
+#   etnaviv  same as freedreno (defaults disabled).
+#   exynos / omap / tegra — all disabled by default; not toggled.
+#
+# Build matrix:
+#   udev         false   — no udev in jonerix; libdrm falls back to
+#                          scanning /dev/dri/card* directly.  ARCHITECTURAL
+#                          CHOICE: matches the OpenRC-only init story.
+#   tests        false   — saves time; the kmscube demo + drm-test
+#                          aren't needed in production.
+#   man-pages    disabled — no xmlto/docbook in jonerix.
+#   install-test-programs  false — same as tests.
+#   valgrind     disabled — not part of the toolchain.
+#   cairo-tests  disabled — no cairo.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — see fontconfig recipe for the rationale.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dintel=disabled \
+  -Dnouveau=disabled \
+  -Dvc4=enabled \
+  -Dvmwgfx=disabled \
+  -Damdgpu=disabled \
+  -Dradeon=disabled \
+  -Dudev=false \
+  -Dtests=false \
+  -Dman-pages=disabled \
+  -Dvalgrind=disabled \
+  -Dcairo-tests=disabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libdrm*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "meson", "samurai", "pkgconf", "jonerix-headers"]

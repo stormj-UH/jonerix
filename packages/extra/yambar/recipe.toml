@@ -1,0 +1,48 @@
+# yambar — modular status bar for Wayland (and X11), dnkl ecosystem.
+# Cairo-free (pixman + fcft); YAML config; built-in modules for clock,
+# battery, network, mpd, pulseaudio etc.  MIT.
+
+[package]
+name = "yambar"
+version = "1.11.0"
+license = "MIT"
+description = "Modular status bar for Wayland (cairo-free; pixman + fcft). YAML config; clock/battery/network/etc. modules"
+
+[source]
+url = "https://codeberg.org/dnkl/yambar/archive/1.11.0.tar.gz"
+sha256 = "3649878ae7282203b4ff2aa9f45afad32a6fc8c921d94b6abdac2a1d21045aaf"
+
+[build]
+system = "custom"
+configure = """
+set -e
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+# Disable optional modules whose deps aren't packaged in jonerix:
+#   mpd/alsa/pulse: no audio stack yet.  river: only useful with river WM.
+#   x11: no X11.  i3: only useful with i3.
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  -Dbackend-x11=disabled \
+  -Dbackend-wayland=enabled \
+  -Dcore-plugins-as-shared-libraries=false \
+  -Dplugin-alsa=disabled \
+  -Dplugin-mpd=disabled \
+  -Dplugin-pulse=disabled \
+  -Dplugin-pipewire=disabled \
+  -Dplugin-river=disabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "wayland", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz"]
+build = ["clang", "meson", "samurai", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz"]

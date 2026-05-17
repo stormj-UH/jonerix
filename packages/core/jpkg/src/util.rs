@@ -345,6 +345,21 @@ static PERMISSIVE_LICENSES: &[&str] = &[
     "MPL-2.0",
     "Info-ZIP",
     "bzip2-1.0.6",
+    // FreeType Project License — BSD-style with attribution.  FSF Free; SPDX
+    // categorises as permissive.  Used by FreeType (dual-licensed with
+    // GPL-2.0-only; recipes select FTL).
+    "FTL",
+    // Historical Permission Notice and Disclaimer — pre-MIT permissive
+    // template (X11-style).  OSI-approved.  Used by fontconfig and libtiff.
+    "HPND",
+    // Unicode Data Files and Software licenses — MIT-style with a
+    // non-endorsement clause on the Unicode trademark.  ICU 60 through 75
+    // ship Unicode-DFS-2016; ICU 76+ moved to Unicode-3.0 (textual cleanup,
+    // not a substantive change).  Both are OSI-approved.
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    // libpng License v2 (2018-) — zlib-style permissive, OSI-approved.
+    "libpng-2.0",
 ];
 
 /// Return `true` if `license` is on the project's permissive whitelist.
@@ -816,6 +831,15 @@ mod tests {
         assert!(license_is_permissive("bzip2-1.0.6"));
         assert!(license_is_permissive("Public-Domain"));
         assert!(license_is_permissive("public domain"));
+        // Typography stack additions (freetype/fontconfig/icu/libpng).
+        assert!(license_is_permissive("FTL"));
+        assert!(license_is_permissive("HPND"));
+        assert!(license_is_permissive("Unicode-DFS-2016"));
+        assert!(license_is_permissive("Unicode-3.0"));
+        assert!(license_is_permissive("libpng-2.0"));
+        // Common dual-licensed forms used in recipe metadata.
+        assert!(license_is_permissive("FTL OR GPL-2.0-only"));
+        assert!(license_is_permissive("GPL-2.0-only OR FTL"));
     }
 
     #[test]

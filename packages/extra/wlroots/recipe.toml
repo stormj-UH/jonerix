@@ -1,0 +1,60 @@
+# wlroots — modular Wayland compositor library.  The wlroots library
+# is the standard substrate for permissively-licensed Wayland
+# compositors (sway, cage, hyprland, river, niri all build on it).
+# We use it to back cage (and any future compositor recipes).
+
+[package]
+name = "wlroots"
+version = "0.20.0"
+license = "MIT"
+description = "Modular Wayland compositor library — DRM/KMS, libinput, EGL/Vulkan, xdg-shell, layer-shell, scene graph"
+
+[source]
+url = "https://gitlab.freedesktop.org/wlroots/wlroots/-/releases/0.20.0/downloads/wlroots-0.20.0.tar.gz"
+sha256 = "33f52414e1b280839aeb70786f0ae2c9f54e27ad4873108d86270a2f89c4934b"
+
+[build]
+system = "custom"
+configure = """
+set -e
+# Same meson cc.has_type workaround.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+
+# Backends:
+#   drm     — KMS/DRM direct rendering (Pi 5 native, headless Linux).
+#   libinput — input events.
+#   wayland — nested compositor (run inside another Wayland session, useful
+#             for WSLg where the host is Weston).
+#   x11     — DISABLED (no X11 in jonerix).
+#   session — seatd-backed seat management.
+#
+# Renderers: gles2 + vulkan + pixman (CPU fallback).
+# Allocators: gbm (DRM) + shm.
+# xwayland disabled (no Xwayland in jonerix).
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dxwayland=disabled \
+  -Dexamples=false \
+  -Dwerror=false \
+  -Dbackends=libinput \
+  -Drenderers=gles2 \
+  -Dallocators=gbm \
+  -Dxcb-errors=disabled \
+  -Dsession=enabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libwlroots*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libinput", "pixman", "mesa", "seatd", "libcxx"]
+build = ["clang", "meson", "samurai", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libinput", "libevdev", "pixman", "mesa", "seatd", "libcxx", "jonerix-headers"]

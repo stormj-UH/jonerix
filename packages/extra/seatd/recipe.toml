@@ -1,0 +1,92 @@
+# seatd — minimal seat management daemon + libseat client library.
+# In a no-systemd world (jonerix runs OpenRC), seatd is the canonical
+# way for unprivileged Wayland compositors to acquire the DRM master
+# handle on /dev/dri/card* and the input event device FDs on
+# /dev/input/event*.  Sway, hyprland, river, and wlroots-based
+# compositors all link libseat and talk to seatd over a Unix socket.
+#
+# Three libseat backends matter here:
+#   - logind   DISABLED — pulls in systemd-logind which we don't ship.
+#   - seatd    ENABLED  — the daemon path; standard for OpenRC systems.
+#   - builtin  ENABLED  — fallback that runs seatd-style logic inside
+#                         the compositor's process when launched as
+#                         root (e.g. for diagnostic SSH-driven sway).
+#
+# The seatd binary is the server component; libseat is what
+# compositors link.  We ship both plus the OpenRC-friendly seatd
+# command, but the recipe does NOT install an OpenRC service file —
+# compositor packages should add their own (or users can write one).
+# This keeps seatd usable in both daemon and standalone modes without
+# baking in service assumptions.
+#
+# MIT-licensed.
+
+[package]
+name = "seatd"
+version = "0.9.3"
+license = "MIT"
+description = "Minimal seat-management daemon + libseat client library for unprivileged Wayland compositors on non-systemd systems (builtin + seatd backends)"
+
+[source]
+# sourcehut archive tarball.  Extracts as `seatd-0.9.3/` (sourcehut's
+# default), so no extraction-path workaround.
+url = "https://git.sr.ht/~kennylevinsen/seatd/archive/0.9.3.tar.gz"
+sha256 = "302564d54d8e28191fadfd734f2675ecb0c9e0615a58011b89ef15dfa4dbaa96"
+
+[build]
+# Meson + samurai.
+#
+# Build matrix:
+#   libseat-builtin  enabled  — in-process fallback for root launches.
+#   libseat-logind   disabled — no systemd-logind on jonerix.
+#   libseat-seatd    enabled  — primary backend; talks to the seatd
+#                               daemon over /run/seatd.sock.
+#   server           enabled  — builds the seatd binary itself.
+#   man-pages        disabled — needs scdoc.
+#   examples         disabled — small but unnecessary in production.
+#   defaultpath      /run/seatd.sock — kept as default; called out
+#                                      here so the OpenRC service
+#                                      writer downstream knows where
+#                                      to look.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — see fontconfig recipe.
+# seatd's source triggers a `[-Wsign-compare]` in musl's CMSG_NXTHDR
+# macro under clang — `__CMSG_LEN(cmsg) + sizeof(struct cmsghdr) >=
+# __MHDR_END(mhdr) - (unsigned char *)(cmsg)` compares an unsigned
+# sum with a signed ptrdiff_t.  Suppress at the project level so
+# seatd's strict -Werror doesn't escalate it.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 -Wno-error=sign-compare"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dlibseat-builtin=enabled \
+  -Dlibseat-logind=disabled \
+  -Dlibseat-seatd=enabled \
+  -Dserver=enabled \
+  -Dman-pages=disabled \
+  -Dexamples=disabled \
+  -Dwerror=false
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libseat*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+# Build:
+#   jonerix-headers  — seatd uses <linux/major.h> + <linux/vt.h> from
+#                      the kernel UAPI headers for the TTY-multiplexing
+#                      ioctls (VT_GETMODE etc.).
+build = ["clang", "meson", "samurai", "pkgconf", "jonerix-headers"]

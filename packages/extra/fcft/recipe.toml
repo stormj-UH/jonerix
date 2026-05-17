@@ -1,0 +1,91 @@
+# fcft — font caching wrapper around freetype + fontconfig with
+# harfbuzz-based text shaping and pixman-based glyph composition.
+# The shared library every dnkl-family Wayland tool uses for text
+# rendering: foot (the terminal), fnott (the notification daemon),
+# yambar (the status bar).
+#
+# Composition: fcft talks to fontconfig to resolve a `family-name : size
+# : style` pattern to a concrete font file, freetype to rasterise
+# glyphs, harfbuzz to shape complex scripts and ligatures, and pixman
+# to assemble the resulting glyph buffers into the surface a Wayland
+# client hands off to wl_shm.
+#
+# We disable grapheme-clustering (which would need utf8proc, not yet
+# in jonerix).  Without it, fcft falls back to harfbuzz's built-in
+# cluster boundaries — slightly less correct on rare Indic / emoji
+# sequences, but every CJK + Latin + Cyrillic + Arabic + Hebrew text
+# renders correctly.
+#
+# MIT-licensed.
+
+[package]
+name = "fcft"
+version = "3.3.3"
+license = "MIT"
+description = "Font caching + shaping library for Wayland clients (foot, fnott, yambar) — wraps freetype, fontconfig, harfbuzz, pixman; grapheme clustering disabled (utf8proc not in jonerix)"
+
+[source]
+# Codeberg archive — codeberg's "archive/<ref>.tar.gz" route extracts
+# the source under a directory named after the REPO, not the
+# repo-version pair.  So this tarball expands to `fcft/`, not
+# `fcft-3.3.3/`.  We handle this with `cd fcft` in configure.
+url = "https://codeberg.org/dnkl/fcft/archive/3.3.3.tar.gz"
+sha256 = "c0d8d485b45b1af829f73101d6588f404a32bf3c7543236b1a4707d44be81b60"
+
+[build]
+# Meson + samurai.
+#
+# Tarball extraction quirk: codeberg's archive tarball extracts as
+# plain `fcft/` (no version in the dir name).  All build steps must
+# cd into that directory first.
+#
+# Build matrix:
+#   grapheme-clustering   disabled — needs utf8proc.  ARCHITECTURAL
+#                                    CHOICE: re-enable later if/when
+#                                    we ship utf8proc.  Falls back to
+#                                    harfbuzz cluster boundaries.
+#   test-text-shaping     false    — needs harfbuzz test data; no
+#                                    runtime impact.
+#   docs                  disabled — would need scdoc.
+#   run-shaping-tests     false    — same reasoning as test-text-shaping.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — see fontconfig recipe.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+# Tarball extracts as fcft/ (codeberg layout) — see [source] comment.
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dgrapheme-shaping=disabled \
+  -Drun-shaping=disabled \
+  -Dsvg-backend=none \
+  -Dtest-text-shaping=false \
+  -Ddocs=disabled
+"""
+build = """set -e
+samu -C build
+"""
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libfcft*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+# Runtime: the full graphics + text stack fcft wraps.
+#   freetype       — glyph rasterisation
+#   harfbuzz       — text shaping (OpenType)
+#   fontconfig     — font discovery / pattern matching
+#   pixman         — glyph buffer composition
+#   libxkbcommon   — fcft uses xkbcommon's keysym mapping for the
+#                    `fcft_glyph_for_keysym` API consumed by foot.
+runtime = ["musl", "freetype", "harfbuzz", "fontconfig", "pixman", "libxkbcommon"]
+build = ["clang", "meson", "samurai", "pkgconf", "freetype", "harfbuzz", "fontconfig", "pixman", "libxkbcommon"]

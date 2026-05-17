@@ -1,0 +1,69 @@
+# wayland-protocols — XML protocol definitions on top of core wayland.
+# Data-only package: every file installed is either an .xml protocol
+# definition or a pkg-config .pc descriptor.  No code, no shared libs,
+# no binaries.  Compositors and clients consume these XMLs via
+# wayland-scanner (shipped by the `wayland` package) at *their* build
+# time to generate C bindings.
+#
+# Examples of what lives here: xdg-shell (the toplevel window protocol
+# everyone uses), xdg-decoration, viewporter, presentation-time,
+# fractional-scale-v1, etc.  Pi 5 compositor stacks (sway, hyprland,
+# wayfire) all need the stable + staging subset at minimum.
+#
+# MIT-licensed.
+
+[package]
+name = "wayland-protocols"
+version = "1.48"
+license = "MIT"
+description = "Wayland protocol extensions (xdg-shell, xdg-decoration, viewporter, presentation-time, etc.) — data-only XML + .pc files"
+
+[source]
+url = "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.48/downloads/wayland-protocols-1.48.tar.xz"
+sha256 = "398036ac0eb6484982ddbde7ff86848d753231f9cdeeae983f06b52946625aa1"
+
+[build]
+# Meson + samurai.  No compiler is actually invoked — the install step
+# just copies XML files and writes the .pc file — but meson is the
+# upstream-sanctioned build system, and using it gives us a consistent
+# pkg-config location (/lib/pkgconfig/wayland-protocols.pc) that
+# matches every other distro.
+#
+# Build matrix:
+#   tests        disabled — would require wayland-scanner runs against
+#                           every XML to verify they round-trip; we
+#                           trust the upstream release process.
+system = "custom"
+configure = """
+set -e
+# Strip unwindlib/rtlib for the meson probe phase even though no real
+# C compilation happens — meson's sanity check still invokes the
+# compiler with -c and trips on the same -Werror=unused-command-line-
+# argument issue.  Match the typography-stack pattern verbatim for
+# consistency.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  -Dtests=false
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# No binaries or shared libraries to strip — payload is pure data.
+"""
+
+[depends]
+# Runtime: none.  Anything that consumes these XMLs is a build-time
+# consumer (e.g. a compositor's meson build calling wayland-scanner).
+# We don't even need wayland at runtime — the .xml files are inert.
+runtime = []
+# Build deps:
+#   wayland   — provides wayland-scanner, which meson uses to validate
+#               protocol XMLs at configure time.
+build = ["clang", "meson", "samurai", "pkgconf", "wayland"]

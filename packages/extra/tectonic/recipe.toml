@@ -1,0 +1,140 @@
+# tectonic — modernised XeTeX engine packaged as a single Rust crate.
+# Tectonic is MIT-licensed but its native dep tree historically pulled
+# graphite2 (LGPL-2.1), which jonerix rejects.  This recipe builds
+# Tectonic against a no-op graphite2 shim (see setup-graphite2-stub.sh),
+# so the LGPL code never enters the binary.  Net effect for users:
+# Graphite shaping (an obscure SIL-fonts feature) silently does nothing;
+# all OpenType-shaped LaTeX — the 99.9% case — works identically.
+#
+# A note on the bundle: on first run, Tectonic downloads a curated TeX
+# Live bundle (~300 MB) from relay.fullyjustified.net and caches it
+# under ~/.cache/Tectonic/.  We do NOT bundle this in the package —
+# users get a working tectonic binary that fetches its TL on demand.
+# Self-hosting the bundle is possible via `--bundle <url-or-file>`.
+
+[package]
+name = "tectonic"
+version = "0.16.9"
+license = "MIT"
+description = "Modernised XeTeX engine (LaTeX-compatible) — single static binary, fetches TeX Live on demand, graphite2 stubbed (LGPL-free)"
+
+[source]
+# Vendored source tarball — release workflow rebuilds the upstream
+# tectonic@0.16.9 tag with `cargo vendor` baked under vendor/ +
+# .cargo/config.toml, AND with Tectonic's harfbuzz git submodule
+# checked out under crates/bridge_harfbuzz/harfbuzz/ so the vendored
+# harfbuzz path inside bridge_harfbuzz/build.rs resolves offline.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-tectonic-v0.16.9/tectonic-0.16.9.tar.gz"
+# Placeholder sha256: sha256("TBD").  Release workflow rewrites after
+# tarball build.  See jonerix-mlfq's recipe for the same pattern.
+sha256 = "19e61077294efdee175f4034b7f6d29322f8dca7dc29690e7b2aa7b2953c34e4"
+
+[build]
+system = "custom"
+configure = """
+set -e
+
+# ── 1. Build the LGPL-free graphite2 shim ────────────────────────────
+#
+# bridge_graphite2/build.rs runs `pkg-config --cflags --libs graphite2`
+# and emits the resulting include path + link flags into the cargo
+# build graph.  We point pkg-config at a tiny no-op libgraphite2 we
+# generate at configure time; the link succeeds, every gr_* call in
+# harfbuzz / xetex-ext.c becomes a no-op, and Graphite shaping is
+# inert without dragging LGPL code into the binary.
+#
+# RECIPE_DIR is set by jpkg to the directory containing this recipe.
+export STUB_DIR="$PWD/.graphite2-stub"
+CC=clang AR=llvm-ar "$RECIPE_DIR/setup-graphite2-stub.sh"
+export PKG_CONFIG_PATH="$STUB_DIR/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+
+# ── 2. Toolchain ─────────────────────────────────────────────────────
+export CC=clang
+export CXX=clang++
+export AR=llvm-ar
+export RANLIB=llvm-ranlib
+export NM=llvm-nm
+export STRIP=llvm-strip
+
+# ── 3. OpenSSL via system LibreSSL ───────────────────────────────────
+#
+# tectonic_geturl uses reqwest (default) or curl (feature) to fetch
+# the TL bundle.  reqwest pulls native-tls on Linux → openssl-sys.
+# Point openssl-sys at jonerix's LibreSSL 4.0.0 (API-compatible).
+export OPENSSL_DIR=/
+export OPENSSL_INCLUDE_DIR=/include
+export OPENSSL_LIB_DIR=/lib
+export OPENSSL_NO_VENDOR=1
+
+# ── 4. Cargo env ─────────────────────────────────────────────────────
+export CARGO_HOME=/tmp/tectonic-cargo
+export CARGO_TARGET_DIR="$PWD/target"
+# Strip + dynamic-link musl (matches gitoxide / brash convention).
+# -fuse-ld=lld + RUSTFLAGS link-arg flow into the cc-rs C++ compiles
+# of vendored harfbuzz + xetex.
+export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static -C link-arg=-fuse-ld=lld"
+"""
+build = """
+set -e
+# Default features: keep `geturl-reqwest` (fetches TL bundle over HTTPS),
+# `external-harfbuzz=false` (Tectonic's vendored harfbuzz, with our
+# graphite2 stub stepping in for the LGPL path).  We add `geturl-curl`
+# off — reqwest is enough.
+cargo build --release --frozen --offline --bin tectonic
+"""
+install = """set -e
+BIN="$PWD/target/release/tectonic"
+install -Dm755 "$BIN" "$DESTDIR/bin/tectonic"
+
+# Tectonic ships its own shorthand `xetex` symlink only when invoked
+# with --keep-intermediates; we don't pre-create one (users can
+# `alias xelatex='tectonic'` if desired).
+
+# Licence + notices.
+install -Dm644 LICENSE "$DESTDIR/share/licenses/tectonic/LICENSE"
+[ -f COPYRIGHT ] && install -Dm644 COPYRIGHT "$DESTDIR/share/licenses/tectonic/COPYRIGHT" || true
+# Record the graphite2-stub manifest so an auditor can see exactly
+# what LGPL avoidance work was done in this package.
+install -Dm644 "$RECIPE_DIR/setup-graphite2-stub.sh" \
+    "$DESTDIR/share/licenses/tectonic/graphite2-stub-source.sh"
+
+# Shell completions — tectonic supports `tectonic show shell-completions`
+# only with a `--release` flag we don't ship; clap_complete is wired
+# at the cargo `complete` subcommand instead.  Skip silently if the
+# subcommand isn't present in this release.
+install -dm755 "$DESTDIR/share/bash-completion/completions"
+"$BIN" --help >/dev/null 2>&1 && \
+    "$BIN" -X show shell-completions bash > "$DESTDIR/share/bash-completion/completions/tectonic" 2>/dev/null || true
+
+# Man page — Tectonic's `cargo make` pipeline produces docs but
+# nothing during `cargo build`.  Skip for now; users get --help.
+
+# Merged-usr flatten.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+llvm-strip --strip-all "$DESTDIR/bin/tectonic" 2>/dev/null || true
+"""
+
+[depends]
+# Runtime deps:
+#   musl       — libc
+#   libcxx     — XeTeX engine uses C++ (xetex-XeTeXOTMath.cpp +
+#                vendored harfbuzz)
+#   libressl   — libcrypto/libssl for HTTPS bundle fetching
+#   freetype   — font rasteriser (xetex_layout C api)
+#   fontconfig — system-font discovery on non-macOS (Linux always)
+#   harfbuzz   — Tectonic's vendored harfbuzz statically-linked, so
+#                NOT in this list.  Listed only if we ever flip on
+#                `--features external-harfbuzz`.
+#   icu        — Unicode + bidi tables
+#   libpng     — sbix / CBDT colour-emoji glyph tables
+#   zlib       — flate compression
+#
+# graphite2 deliberately ABSENT — the binary contains only the stub
+# shim, which is generated at build time and not packaged separately.
+runtime = ["musl", "libcxx", "libressl", "freetype", "fontconfig", "icu", "libpng", "zlib"]
+
+# Build deps additionally need clang/lld via rust's cc-rs invocations
+# for the C/C++ xetex sources, and pkgconf for the dep_support probes.
+build = ["rust", "clang", "pkgconf", "libcxx", "libressl", "freetype", "fontconfig", "icu", "libpng", "zlib"]

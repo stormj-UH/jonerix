@@ -125,7 +125,7 @@ install_cached_pkg_if_available() {
     echo "=== Installing cached ${pkg}: $(basename "$cached_pkg") ==="
     hdr_len=$(od -An -v -tu4 -N4 -j8 "$cached_pkg" | tr -d ' ')
     skip=$((12 + hdr_len))
-    tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | tar xf - -C /
+    tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | bsdtar xpf - -C /
     return 0
 }
 

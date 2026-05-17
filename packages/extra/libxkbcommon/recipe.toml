@@ -1,0 +1,112 @@
+# libxkbcommon — keymap handling for Wayland (and legacy X11) clients.
+# Every Wayland compositor and toolkit needs this to translate kernel
+# evdev keycodes into XKB symbols (e.g. KEY_A → XK_a + Unicode).
+# Reads keymap data from xkeyboard-config (separate package).
+#
+# We build the Wayland backend ENABLED and the X11 backend DISABLED:
+# jonerix has no X server in its dep graph, so the X11 backend would
+# pull in libxcb and friends for nothing.  Compositors that genuinely
+# need X11 keysyms can rebuild this recipe locally with -Denable-x11=true.
+#
+# MIT-licensed (the upstream COPYING file is a textbook MIT notice).
+
+[package]
+# Pinned to 1.9.2 — the LAST version that supports byacc as the parser
+# generator.  libxkbcommon 1.10.0 (May 2025) dropped byacc and now
+# requires bison >= 3.6.  bison is GPL-3, which is blocked by jpkg's
+# license gate, and we deliberately don't ship a bison build.  byacc
+# (Berkeley Yacc, public-domain) is available in jonerix's develop/.
+#
+# Upstream changelog (xkbcommon-1.10.0 → "Removed support for byacc")
+# is the reason for this pin.  Re-evaluate when either:
+#   a) jonerix gains a non-GPL bison alternative, or
+#   b) libxkbcommon adds a way to ship a pre-generated parser.
+name = "libxkbcommon"
+version = "1.9.2"
+license = "MIT"
+description = "XKB keymap handling library for Wayland clients and compositors (libxkbcommon + xkbcli)"
+
+[source]
+# GitHub tag archive — the upstream xkbcommon project's preferred
+# download for tagged releases.  Extracts as
+# `libxkbcommon-xkbcommon-1.13.1/` (the repo name "libxkbcommon"
+# concatenated with the tag prefix "xkbcommon-"), so the configure
+# step has to cd into that directory before invoking meson.
+url = "https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.9.2.tar.gz"
+sha256 = "8d68a8b45796f34f7cace357b9f89b8c92b158557274fef5889b03648b55fe59"
+
+[build]
+# Meson + samurai.
+#
+# Tarball layout: the GitHub archive extracts as
+# `libxkbcommon-xkbcommon-1.13.1/` (NOT plain `libxkbcommon-1.13.1/`).
+# We handle this with a glob `cd libxkbcommon-xkbcommon-*` rather than
+# hard-coding the version twice — easier to bump.
+#
+# Build matrix:
+#   enable-wayland enabled  — primary target (Pi 5 / sway / etc.).
+#   enable-x11     disabled — no libxcb in jonerix; skips xkbcli-list
+#                             needing X11.
+#   enable-docs    disabled — needs doxygen.
+#   enable-tools   disabled — `xkbcli` requires a yacc-family parser
+#                             generator (byacc is available in develop,
+#                             but the CLI is a debugging tool we don't
+#                             ship in compositor images).  Compositors
+#                             don't need it; the library is unaffected.
+#                             ARCHITECTURAL CHOICE: turning tools off is
+#                             the minimal-build default per project
+#                             conventions.  Re-enable with byacc in
+#                             build deps if /bin/xkbcli is wanted later.
+#   xkb-config-root /share/X11/xkb — where xkeyboard-config lives,
+#                                    matches that package's install path.
+#   x-locale-root   /share/X11/locale — Compose key data path
+#                                    (the libX11 locale dir convention;
+#                                    we don't ship libX11 but the path
+#                                    is just a runtime search hint).
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — same pattern as fontconfig/harfbuzz/wayland.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+# Tarball extracts as libxkbcommon-xkbcommon-<ver>/, not the typical
+# <name>-<ver>/.  Glob the prefix so a version bump doesn't break this.
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Denable-wayland=true \
+  -Denable-x11=false \
+  -Denable-docs=false \
+  -Denable-tools=false \
+  -Dxkb-config-root=/share/X11/xkb \
+  -Dx-locale-root=/share/X11/locale \
+  -Denable-xkbregistry=false
+"""
+build = """set -e
+samu -C build
+"""
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libxkbcommon*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+# Runtime:
+#   musl              — libc
+#   xkeyboard-config  — provides the actual keymap data under
+#                       /share/X11/xkb that libxkbcommon parses at
+#                       compose time.
+runtime = ["musl", "xkeyboard-config"]
+# Build:
+#   wayland, wayland-protocols  — required for the Wayland backend
+#                                 (xkbcommon links the wayland-client
+#                                 lib for the keymap-passing FD-based
+#                                 protocol).
+build = ["clang", "meson", "samurai", "pkgconf", "byacc", "wayland", "wayland-protocols"]

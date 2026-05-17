@@ -1,0 +1,63 @@
+# pixman — pixel manipulation library.  Software rasteriser used by
+# cairo (which we don't ship) and directly by several Wayland-stack
+# clients (foot, wlroots-based screen-capture helpers) for blending,
+# compositing, and image transformations.  Has hand-tuned ARM NEON
+# assembly that's hot-path on the Pi 5.
+#
+# fcft links pixman for glyph buffer composition; that's the primary
+# reason we ship it.  No graphics-toolkit consumer (GTK/Qt) is in the
+# jonerix dep graph.
+#
+# MIT-licensed.
+
+[package]
+name = "pixman"
+version = "0.46.4"
+license = "MIT"
+description = "Low-level pixel manipulation library (software rasteriser) — ARM NEON-optimised on aarch64; used by cairo and fcft"
+
+[source]
+url = "https://cairographics.org/releases/pixman-0.46.4.tar.xz"
+sha256 = "a098c33924754ad43f981b740f6d576c70f9ed1006e12221b1845431ebce1239"
+
+[build]
+# Meson + samurai.  Modern pixman releases ship only a meson build —
+# the autotools path was dropped in 0.43.
+#
+# Build matrix:
+#   tests   disabled — the test suite is gold-standard for pixman
+#                      development but takes ~5 min on aarch64 and
+#                      isn't part of our integration story.
+#   demos   disabled — needs GTK.
+#   libpng  enabled  — used for the optional pixman_image_t→PNG
+#                      round-trip helper (fcft doesn't use it, but
+#                      it's tiny and keeps the .pc file complete).
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — see fontconfig recipe.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dtests=disabled \
+  -Ddemos=disabled \
+  -Dlibpng=enabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libpixman*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "libpng"]
+build = ["clang", "meson", "samurai", "pkgconf", "libpng"]

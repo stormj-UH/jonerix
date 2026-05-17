@@ -1,0 +1,39 @@
+# fnott — desktop notification daemon for Wayland (dnkl).  Speaks
+# org.freedesktop.Notifications via DBus — but DBus is OPTIONAL in
+# our build (jonerix doesn't ship dbus yet).  In no-DBus mode, fnott
+# only listens to its own CLI client `fnottctl`.  Cairo-free.  MIT.
+
+[package]
+name = "fnott"
+version = "1.8.0"
+license = "MIT"
+description = "Wayland notification daemon (cairo-free; pixman + fcft). Listens to org.freedesktop.Notifications via DBus when available; fnottctl works without DBus"
+
+[source]
+url = "https://codeberg.org/dnkl/fnott/archive/1.8.0.tar.gz"
+sha256 = "7e784133bec7cc197bbeed18daf92192f297f7c60d1c25cce318ae09f70ab0e1"
+
+[build]
+system = "custom"
+configure = """
+set -e
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  -Ddocs=disabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "wayland", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz"]
+build = ["clang", "meson", "samurai", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz"]

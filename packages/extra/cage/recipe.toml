@@ -1,0 +1,45 @@
+# cage — minimal MIT-licensed Wayland kiosk compositor.  About 3 kLOC
+# of C, no cairo / no pango (unlike sway/labwc/hyprland which are all
+# blocked by cairo's LGPL-2.1-only sub-licence).  Runs a single client
+# fullscreen; ideal for: foot-as-terminal-shell, embedded UIs, and as
+# the WSL host compositor when WSLg's Weston is too heavyweight.
+#
+# Choice rationale: every other wlroots compositor that draws title
+# bars or system menus pulls cairo + pango, both LGPL.  Cage delegates
+# all drawing to the client (xdg-shell only), so its dep graph stays
+# permissive.
+
+[package]
+name = "cage"
+version = "0.3.0"
+license = "MIT"
+description = "Minimal Wayland kiosk compositor — runs a single fullscreen client. Permissive top-to-bottom (no cairo / pango / LGPL deps)"
+
+[source]
+url = "https://github.com/cage-kiosk/cage/releases/download/v0.3.0/cage-0.3.0.tar.gz"
+sha256 = "cd2510f83bef3e08e660d99492ca7761b218ecb53ee01cdbbeee3d6aabc7734e"
+
+[build]
+system = "custom"
+configure = """
+set -e
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  -Dman-pages=disabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman"]
+build = ["clang", "meson", "samurai", "pkgconf", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman"]

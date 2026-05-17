@@ -1,0 +1,100 @@
+# libinput — input handling for Wayland compositors and the X.Org
+# evdev/synaptics replacement driver.  Sits on top of libevdev +
+# mtdev and exposes the cooked event stream every modern compositor
+# (sway, hyprland, mutter, kwin_wayland) consumes: pointer motion
+# with acceleration, touchpad gestures (pinch, swipe), tap-to-click,
+# scroll method selection, etc.
+#
+# We deliberately skip libwacom (drawing-tablet metadata DB — needs
+# glib + json-glib, neither in jonerix) and udev (no udev in jonerix).
+# The non-udev path is supported upstream via the libinput.h "path"
+# backend: callers (compositors) open /dev/input/event* manually and
+# pass FDs into libinput_path_create_context().  Compositors targeting
+# jonerix must use this backend.
+#
+# MIT-licensed.
+
+[package]
+name = "libinput"
+version = "1.31.2"
+license = "MIT"
+description = "Input handling for Wayland compositors and X.Org evdev driver (path backend only — no udev/libwacom). Acceleration, gestures, tap-to-click, palm rejection."
+
+[source]
+# GitLab archive tarball.  Extracts as `libinput-1.31.2/` (the dash-
+# version naming GitLab uses for tag archives), so no extraction-path
+# workaround needed.
+url = "https://gitlab.freedesktop.org/libinput/libinput/-/archive/1.31.2/libinput-1.31.2.tar.gz"
+sha256 = "507a40b8a74568ed7c2bd05acf2e15ee3d9f4703102dca86d4f6a804e73bf1f6"
+
+[build]
+# Meson + samurai.
+#
+# Build matrix:
+#   libwacom        false   — needs glib + json-glib; we don't ship
+#                             those.  Loses drawing-tablet auto-config
+#                             (Wacom Intuos / Cintiq tooling) — not
+#                             relevant to Pi 5 / generic-keyboard hardware.
+#   documentation   false   — needs sphinx + doxygen.
+#   debug-gui       false   — needs GTK; not in jonerix.
+#   tests           false   — needs check + uinput root permissions;
+#                             ARCHITECTURAL CHOICE consistent with
+#                             libevdev (matching style for the input
+#                             stack).
+#   udev-dir       /lib/udev — installs the (otherwise harmless)
+#                             quirks data files here.  No udev daemon
+#                             reads them on jonerix; consumers using
+#                             libinput's path backend reference the
+#                             files via /lib/udev/quirks-*.quirks
+#                             explicitly via the libinput context.
+#                             ARCHITECTURAL CHOICE: shipping the data
+#                             files is cheap (<200 KB) and keeps the
+#                             library functional if udev is ever added.
+#   zshcompletiondir  no    — we ship zsh but completions live in
+#                             /share/zsh/site-functions; libinput's
+#                             default would write to /share/zsh/vendor-
+#                             completions which we don't index.  Set
+#                             to "no" per the meson option's
+#                             documented sentinel.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — see fontconfig recipe.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dlibwacom=false \
+  -Ddocumentation=false \
+  -Ddebug-gui=false \
+  -Dtests=false \
+  -Dudev-dir=/lib/udev \
+  -Dzshcompletiondir=no
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libinput*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+# Runtime:
+#   libevdev      — input event handling on top of which libinput sits.
+#   mtdev         — multitouch translation (always loaded).
+#   libudev-zero  — drop-in libudev ABI stub (no systemd/eudev).
+#                   Compositors must use libinput's path backend; the
+#                   stub's enumeration API returns empty.
+runtime = ["musl", "libevdev", "mtdev", "libudev-zero"]
+# Build:
+#   python3          — meson runs python3 helpers for quirks generation.
+#   jonerix-headers  — libinput uses <linux/input.h> + <linux/uinput.h>.
+#   libudev-zero     — provides libudev.pc for pkgconfig.
+build = ["clang", "meson", "samurai", "pkgconf", "python3", "libevdev", "mtdev", "libudev-zero", "jonerix-headers"]

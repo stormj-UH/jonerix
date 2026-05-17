@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **112 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **119 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS / FTL / HPND / Unicode / libpng-2.0). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -103,8 +103,12 @@ Generated from tracked `packages/**/recipe.toml` -- **112 recipes**. All jonerix
 | **`derper`** | `extra` | 1.96.5 | BSD-3-Clause | any | `musl` | `go` | Tailscale DERP relay server |
 | **`docker`** | `extra` | 27.5.1-r1 | Apache-2.0 | any | `musl`, `containerd`, `runc`, `cni-plugins`, `tini`, `iproute-go`, `stormwall >= 1.1.0` | `go` | Docker daemon (dockerd + docker-proxy) — container engine backed by containerd; ships OpenRC service and default daemon.json |
 | **`docker-cli`** | `extra` | 27.5.1-r1 | Apache-2.0 | any | `musl` | `go` | Docker CLI (`/bin/docker`) — client for dockerd or containerd; replaces nerdctl's `/bin/docker` symlink |
+| **`fontconfig`** | `extra` | 2.16.0 | HPND | any | `musl`, `freetype`, `expat` | `clang`, `meson`, `samurai`, `pkgconf`, `freetype`, `expat` | Font discovery and matching library (libfontconfig + fc-cache + fc-list + fc-match) |
+| **`freetype`** | `extra` | 2.13.3 | FTL | any | `musl`, `zlib`, `bzip2`, `libpng` | `clang`, `meson`, `samurai`, `pkgconf`, `zlib`, `bzip2`, `libpng` | TrueType / OpenType / Type1 / WOFF / WOFF2 / SFNT rasteriser (libfreetype). Brotli + harfbuzz integration disabled to keep the dep graph permissive and break the freetype↔harfbuzz cycle |
+| **`harfbuzz`** | `extra` | 11.2.0 | MIT | any | `musl`, `libcxx`, `freetype`, `icu` | `clang`, `meson`, `samurai`, `pkgconf`, `libcxx`, `freetype`, `icu` | OpenType text shaping engine. Built WITHOUT graphite2 — that backend is LGPL and jpkg rejects copyleft. OpenType (the 99.9% case) is unaffected |
 | **`headscale`** | `extra` | 0.28.0 | BSD-3-Clause | any | `musl` | `go` | Open-source self-hosted Tailscale control server |
 | **`hostapd`** | `extra` | 2.11-r1 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | IEEE 802.11 AP, IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator |
+| **`icu`** | `extra` | 76.1 | Unicode-3.0 | any | `musl`, `libcxx` | `clang`, `make`, `libcxx` | International Components for Unicode (libicuuc, libicui18n, libicudata, libicuio + uconv/genrb). Data packaged as a single mmap-able archive under /share/icu/76/ |
 | **`jcarp`** | `extra` | 0.1.0-r1 | BSD-2-Clause | any | `musl`, `openrc`, `stormwall` | `rust`, `mksh` | Rust OpenBSD-CARP-compatible failover daemon for jonerix |
 | **`jfsck`** | `extra` | 0.1.0-r1 | BSD-2-Clause | any | - | `rust` | Clean-room fsck for ext4 + FAT32 (Raspberry Pi scope) derived from Ghidra binary analysis of e2fsprogs and dosfstools |
 | **`jonerix-ext4-rescue`** | `extra` | 0.1.0-r1 | 0BSD | any | - | `rust` | Reset a corrupted ext4 inode's extent header so the file can be rm'd |
@@ -116,6 +120,7 @@ Generated from tracked `packages/**/recipe.toml` -- **112 recipes**. All jonerix
 | **`libnghttp2`** | `extra` | 1.69.0-r1 | MIT | any | `musl` | `clang`, `make`, `pkgconf` | HTTP/2 C library and tools (nghttp2) |
 | **`libnghttp3`** | `extra` | 1.13.0-r1 | MIT | any | `musl` | `clang`, `make`, `pkgconf` | HTTP/3 C library (nghttp3) — implements RFC 9114 framing and QPACK |
 | **`libngtcp2`** | `extra` | 1.18.0-r1 | MIT | any | `musl`, `libressl` | `clang`, `make`, `pkgconf`, `libressl` | QUIC C library (ngtcp2) — implements RFC 9000 / 9001 |
+| **`libpng`** | `extra` | 1.6.45 | libpng-2.0 | any | `musl`, `zlib` | `clang`, `cmake`, `samurai`, `zlib` | Reference PNG codec (libpng + pngfix + pnginfo + pngtest) |
 | **`limine`** | `extra` | 11.2.1 | BSD-2-Clause | any | `musl` | `clang`, `jmake` | Modern, portable bootloader supporting UEFI and legacy BIOS (BSD-2-Clause) |
 | **`linux`** | `extra` | 6.14.2 | GPL-2.0-only | any | - | - | Linux kernel — the sole GPL exception in jonerix. Provides vmlinuz, kernel modules, and kernel headers. |
 | **`lsusb-rs`** | `extra` | 0.1.1-r0 | MIT | any | `musl` | `rust` | Permissive-license lsusb drop-in (pure Rust, sysfs backend) |
@@ -131,8 +136,10 @@ Generated from tracked `packages/**/recipe.toml` -- **112 recipes**. All jonerix
 | **`ruby`** | `extra` | 3.4.3-r1 | BSD-2-Clause AND Ruby | any | `musl`, `libressl`, `zlib` | `clang`, `jmake`, `onetrueawk`, `mksh` | Ruby programming language interpreter |
 | **`runc`** | `extra` | 1.4.1-r3 | Apache-2.0 | any | `musl` | `go` | OCI container runtime |
 | **`sqlite`** | `extra` | 3.51.3-r1 | Public-Domain | any | `musl` | `clang`, `make` | Self-contained SQL database engine (with sqlite3.pc) |
+| **`tectonic`** | `extra` | 0.16.9 | MIT | any | `musl`, `libcxx`, `libressl`, `freetype`, `fontconfig`, `icu`, `libpng`, `zlib` | `rust`, `clang`, `pkgconf`, `libcxx`, `libressl`, `freetype`, `fontconfig`, `icu`, `libpng`, `zlib` | Modernised XeTeX engine — LaTeX-compatible, single static binary, fetches TeX Live on demand. graphite2 (LGPL) is stubbed at build time via `setup-graphite2-stub.sh`: Graphite shaping becomes a no-op, OpenType (the 99.9% case) is unaffected |
 | **`tini`** | `extra` | 0.19.0-r1 | MIT | any | `musl` | `clang`, `cmake`, `samurai` | Minimal container init — reaps zombie processes and forwards signals; used as `docker run --init` PID 1 |
 | **`tmux`** | `extra` | 3.6a-r1 | ISC | any | `musl`, `ncurses`, `libevent` | `clang`, `make`, `exproxide`, `libevent`, `ncurses`, `jonerix-headers`, `byacc` | Terminal multiplexer |
+| **`typst`** | `extra` | 0.14.2 | Apache-2.0 | any | `musl`, `libressl` | `rust`, `libressl` | Modern markup-based typesetting (LaTeX alternative). Pure Rust, single static binary, fonts for math + text embedded into the binary by default. `fontconfig` is a runtime suggestion — not required |
 | **`unzip`** | `extra` | 0.1.0 | Apache-2.0 | any | `libarchive` | - | Compatibility package: /bin/unzip → /bin/bsdunzip (libarchive) |
 | **`wpa_supplicant`** | `extra` | 2.11-r2 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | WPA/WPA2/WPA3 supplicant for wireless network authentication |
 | **`zsh`** | `extra` | 5.9-r15 | MIT | any | `musl`, `ncurses` | `clang`, `make` | Z shell — feature-rich interactive shell |

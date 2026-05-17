@@ -1,0 +1,64 @@
+# libpng — reference PNG codec.  Required by the Rust `png` crate's
+# C-FFI path, by FreeType's PNG-glyph (sbix/CBDT) support, and by the
+# Tectonic XeTeX engine.  No GNU runtime: clang/lld/musl/zlib only.
+
+[package]
+name = "libpng"
+version = "1.6.45"
+license = "libpng-2.0"
+description = "Reference PNG codec (libpng + pngfix + pnginfo + pngtest)"
+
+[source]
+# Canonical upstream is github.com/pnggroup/libpng.  The release
+# tarballs on SourceForge are bit-identical to the GitHub tag
+# archive; we pull from GitHub so jpkg fetches through HTTPS without
+# SourceForge's redirect dance.
+url = "https://github.com/pnggroup/libpng/archive/refs/tags/v1.6.45.tar.gz"
+sha256 = "7ff6898520645716ddc3d8381d97b6e02937b03da92e6fd0d7cf9d7d2b0da780"
+
+[build]
+# libpng ships both a CMake build and an autotools build.  We use
+# CMake under samurai because the rest of the jonerix C-lib stack
+# (zlib, xz, libressl, libnghttp2) is built the same way.
+system = "custom"
+configure = """
+set -e
+mkdir -p build
+cd build
+cmake \
+  -G Ninja \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_LINKER=ld.lld \
+  -DCMAKE_AR=$(which llvm-ar) \
+  -DCMAKE_RANLIB=$(which llvm-ranlib) \
+  -DCMAKE_NM=$(which llvm-nm) \
+  -DCMAKE_INSTALL_PREFIX=/ \
+  -DCMAKE_INSTALL_LIBDIR=lib \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPNG_SHARED=ON \
+  -DPNG_STATIC=ON \
+  -DPNG_TESTS=OFF \
+  -DPNG_TOOLS=ON \
+  -DPNG_FRAMEWORK=OFF \
+  -DZLIB_ROOT=/ \
+  -DCMAKE_C_FLAGS="-O2 -fPIC" \
+  ..
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+
+# Merged-usr flatten — jonerix uses /usr -> / symlink so usr/ must
+# not exist inside the package payload.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+# Strip shared libraries (keep export table) and tools (fully).
+find "$DESTDIR/lib" -name 'libpng*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "zlib"]
+build = ["clang", "cmake", "samurai", "zlib"]

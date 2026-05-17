@@ -1,0 +1,39 @@
+# fuzzel — Wayland app launcher (dmenu-style), dnkl ecosystem.
+# Cairo-free; pixman + fcft.  MIT.
+
+[package]
+name = "fuzzel"
+version = "1.14.1"
+license = "MIT"
+description = "Wayland app launcher / dmenu replacement (cairo-free; pixman + fcft). XDG .desktop scan + stdin mode"
+
+[source]
+url = "https://codeberg.org/dnkl/fuzzel/archive/1.14.1.tar.gz"
+sha256 = "c6416786c3a0600b8ad91ed951c43c002a639870c3823b4a60c910442f4ae097"
+
+[build]
+system = "custom"
+configure = """
+set -e
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  -Denable-cairo=disabled \
+  -Dpng-backend=libpng \
+  -Dsvg-backend=none
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "wayland", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz", "libpng"]
+build = ["clang", "meson", "samurai", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz", "libpng"]

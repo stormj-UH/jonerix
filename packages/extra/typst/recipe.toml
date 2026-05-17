@@ -1,0 +1,125 @@
+# typst — modern markup-based typesetting system, the permissively-
+# licensed answer to LaTeX.  Pure Rust, single static binary, Apache-2.0
+# end-to-end (no LGPL in the dep graph).  Fonts for math + text are
+# embedded into the binary by default — typst can typeset useful
+# documents without any system fonts installed.
+#
+# Why this is in extra and not develop: typst is end-user typesetting,
+# not a build-time toolchain piece.  Following the same precedent as
+# nodejs being develop but rclone being extra.
+#
+# Dep graph at-a-glance (jonerix-relevant subset):
+#   typst-cli
+#     ├─ typst-kit (default features: fonts, packages)
+#     │    ├─ fontdb (with fontconfig-parser — PURE RUST, no libfontconfig)
+#     │    ├─ ttf-parser  (pure Rust)
+#     │    ├─ openssl ──→ system libcrypto/libssl (we point at libressl)
+#     │    └─ tar / flate2 / fastrand
+#     ├─ tiny_http (pure Rust HTTP server for `typst watch`)
+#     └─ image / png / jpeg-decoder (all pure Rust)
+#
+# fontconfig listed as runtime *suggestion* only — typst reads
+# /etc/fonts/*.conf via fontdb's pure-Rust XML parser when it's
+# present, but works fine without it (falls back to scanning the
+# standard font directories: /usr/share/fonts/, ~/.fonts/, etc.).
+
+[package]
+name = "typst"
+version = "0.14.2"
+license = "Apache-2.0"
+description = "Modern markup-based typesetting system (LaTeX alternative); single static binary; embedded math + text fonts"
+
+[source]
+# Source tarball pinned to a stormj-UH/jonerix release.  The release
+# workflow (.github/workflows/release.yml) rebuilds the upstream
+# typst v0.14.2 tag with `cargo vendor` baked into the tree under
+# vendor/ + .cargo/config.toml so this recipe never touches crates.io.
+# Tag convention: source-typst-vX.Y.Z (matches the mlfq/brash pattern).
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-typst-v0.14.2/typst-0.14.2.tar.gz"
+# Placeholder sha256: sha256("TBD") — the release workflow rewrites
+# this line after building the vendored tarball.  Do not hand-edit
+# unless you also rebuild the tarball locally and recompute.
+sha256 = "19e61077294efdee175f4034b7f6d29322f8dca7dc29690e7b2aa7b2953c34e4"
+
+[build]
+system = "custom"
+build = """
+set -e
+export CARGO_HOME=/tmp/typst-cargo
+export CARGO_TARGET_DIR="$PWD/target"
+
+# Strip symbols at link time; dynamic-link against musl (matches the
+# gitoxide / uutils / brash convention).  -C target-feature=-crt-static
+# turns off Rust's static-musl default so the binary resolves
+# /lib/ld-musl-*.so.1 at runtime and benefits from libc + libcrypto
+# updates without a rebuild.
+export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
+
+# OpenSSL crate (pulled in by typst-kit's `downloads` feature for
+# fetching typst packages over HTTPS) needs to find a system openssl
+# build.  jonerix ships LibreSSL 4.0.0 — API-compatible with OpenSSL
+# 1.1.1+ from the openssl-sys crate's perspective (it autodetects
+# LibreSSL via the LIBRESSL_VERSION_NUMBER macro).
+#
+# OPENSSL_NO_VENDOR=1 prevents accidental fallback to the `vendored`
+# feature if the workspace ever flips it on by default.
+export OPENSSL_DIR=/
+export OPENSSL_INCLUDE_DIR=/include
+export OPENSSL_LIB_DIR=/lib
+export OPENSSL_NO_VENDOR=1
+
+# Build the CLI binary.  Default features are kept (`embed-fonts`,
+# `http-server`) so users get out-of-the-box typesetting without
+# installing any system fonts; the http-server is needed for
+# `typst watch` to serve preview HTML.  `self-update` is left off
+# (default) — package-managed typst shouldn't replace itself.
+cargo build --release --frozen --offline \
+  --package typst-cli \
+  --bin typst
+"""
+install = """set -e
+BIN="$PWD/target/release/typst"
+install -Dm755 "$BIN" "$DESTDIR/bin/typst"
+
+# License + notices.
+install -Dm644 LICENSE "$DESTDIR/share/licenses/typst/LICENSE"
+[ -f NOTICE ] && install -Dm644 NOTICE "$DESTDIR/share/licenses/typst/NOTICE" || true
+
+# Shell completions — typst-cli has an embedded generator behind
+# `typst completions <shell>`.  We ship bash + mksh-friendly forms.
+# Use the just-built binary; it runs natively on the builder.
+install -dm755 "$DESTDIR/share/bash-completion/completions"
+"$BIN" completions bash > "$DESTDIR/share/bash-completion/completions/typst" 2>/dev/null || true
+
+# Man page — typst-cli embeds clap_mangen.
+install -dm755 "$DESTDIR/share/man/man1"
+"$BIN" --help 2>/dev/null >/dev/null && \
+    "$BIN" man --output-dir "$DESTDIR/share/man/man1" 2>/dev/null || true
+
+# Merged-usr flatten.
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+llvm-strip --strip-all "$DESTDIR/bin/typst" 2>/dev/null || true
+"""
+
+[depends]
+# Hard runtime deps:
+#   musl      — libc
+#   libressl  — libcrypto/libssl (for typst-kit's package downloads
+#               over HTTPS).  If we ever switch typst-kit to a rustls
+#               feature, libressl drops out of this list.
+runtime = ["musl", "libressl"]
+
+# Build deps:
+#   rust      — compiler + std + cargo
+#   libressl  — openssl-sys probes headers/libs here at configure
+build = ["rust", "libressl"]
+
+# fontconfig is a runtime SUGGESTION, not a requirement.  Without it,
+# typst still works — it scans /usr/share/fonts directly via fontdb's
+# directory walker.  With it, users get fontconfig's pattern matching
+# (FC_MATCH, generic family aliasing).  Marked as a suggestion so
+# minimal images stay minimal.
+# [depends.suggests]
+# runtime = ["fontconfig"]

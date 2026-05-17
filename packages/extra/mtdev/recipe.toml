@@ -1,0 +1,62 @@
+# mtdev — multitouch protocol translation library.  Converts the
+# legacy Linux kernel "type A" multitouch protocol (one ABS_MT_*
+# packet stream multiplexed across fingers) to the "type B" slot-based
+# protocol that libinput and other modern consumers expect.
+#
+# Required by libinput on hardware whose kernel driver still emits
+# type-A events (some older touchscreens, some VC4-attached HDMI
+# touch panels).  Always-loaded by libinput regardless of whether
+# the running device actually needs the translation — small enough
+# that this is cheaper than autodetecting.
+#
+# MIT-licensed (the COPYING file is a Stéphane Chatty / Henrik
+# Rydberg attribution notice in textbook MIT form).
+
+[package]
+name = "mtdev"
+version = "1.1.7"
+license = "MIT"
+description = "Multitouch protocol translation library (kernel type-A → type-B slot protocol) used by libinput"
+
+[source]
+url = "https://bitmath.org/code/mtdev/mtdev-1.1.7.tar.bz2"
+sha256 = "a107adad2101fecac54ac7f9f0e0a0dd155d954193da55c2340c97f2ff1d814e"
+
+[build]
+# Pure autotools — no meson upstream.  The ./configure path here is
+# vintage autoconf 2.69, so we ride the same GREP / EGREP / FGREP env
+# overrides as libffi/byacc for jonerix's clang+musl toolchain.
+#
+# --disable-static=false keeps both shared + static (matches what
+# --default-library=both does for the meson packages); libinput's
+# meson build looks for libmtdev shared so we must ship .so, and
+# any static-only consumer (rare) gets .a too.
+system = "custom"
+build = """set -e
+ulimit -n 65536 || true
+GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
+  CC=clang \
+  CFLAGS="-O2 -fPIC -fomit-frame-pointer" \
+  LDFLAGS="-fuse-ld=lld" \
+  ./configure \
+    --prefix=/ \
+    --libdir=/lib \
+    --includedir=/include \
+    --enable-shared \
+    --enable-static
+make -j$(nproc)
+"""
+install = """set -e
+make DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libmtdev*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+# Build:
+#   jonerix-headers  — mtdev uses <linux/input.h> from the Linux UAPI
+#                      headers for ABS_MT_* defines.
+build = ["clang", "make", "jonerix-headers"]

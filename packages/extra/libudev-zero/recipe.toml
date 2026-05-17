@@ -1,0 +1,40 @@
+# libudev-zero — drop-in libudev ABI replacement that satisfies the
+# linker without bringing in systemd/eudev (both LGPL/GPL).  Provides
+# all the libudev symbols that libinput, Mesa, and friends look for;
+# enumeration calls succeed-and-return-nothing, monitor calls block
+# forever.  Compositors driven by libinput's "path backend" (where
+# devices are added explicitly rather than enumerated via udev) work
+# fine against this stub.
+#
+# ISC-licensed (same as the existing jonerix `dropbear`/`openntpd`
+# recipes — already on jpkg's whitelist).
+#
+# Repo: https://github.com/illiliti/libudev-zero
+
+[package]
+name = "libudev-zero"
+version = "1.0.3"
+license = "ISC"
+description = "Drop-in libudev ABI stub (no systemd / no eudev). libinput + Mesa link cleanly; device enumeration returns empty. Compositors use libinput's path backend instead of udev-enumerated devices"
+
+[source]
+url = "https://github.com/illiliti/libudev-zero/archive/refs/tags/1.0.3.tar.gz"
+sha256 = "0bd89b657d62d019598e6c7ed726ff8fed80e8ba092a83b484d66afb80b77da5"
+
+[build]
+# Plain Makefile.  Upstream's Makefile honours PREFIX, LIBDIR, INCDIR,
+# DESTDIR — exactly the layout jonerix wants.
+system = "custom"
+build = """set -e
+make CC=clang AR=llvm-ar PREFIX=/ LIBDIR=/lib INCLUDEDIR=/include PKGCONFIGDIR=/lib/pkgconfig -j$(nproc)
+"""
+install = """set -e
+make PREFIX=/ LIBDIR=/lib INCLUDEDIR=/include PKGCONFIGDIR=/lib/pkgconfig DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libudev*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make", "jonerix-headers"]

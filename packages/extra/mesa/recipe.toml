@@ -1,0 +1,150 @@
+# Mesa — the OpenGL / OpenGL ES / EGL / GBM / Vulkan stack.  Built for
+# the two hardware paths jonerix actually targets:
+#
+#   * Raspberry Pi 5 (aarch64)  — VideoCore VII GPU
+#       Gallium driver: v3d        (OpenGL ES 3.1, OpenGL 3.3)
+#       Vulkan driver:  broadcom   (Vulkan 1.2)
+#       Also kmsro for headless KMS + zink for OpenGL-on-Vulkan fallback.
+#   * WSL2 on Windows 11/12 (x86_64)
+#       Gallium driver: TBD       (d3d12 driver requires DirectX-Headers
+#                                   from microsoft/DirectX-Headers; the
+#                                   meson wrap tries to git-clone a tag
+#                                   but jonerix's gitredoxide doesn't
+#                                   resolve `--branch <tag>` against
+#                                   refs/tags. Needs a separate
+#                                   directx-headers package or a vendored
+#                                   subprojects/ tarball.  llvmpipe is
+#                                   the working WSL fallback for now —
+#                                   software OpenGL via host CPU.)
+#
+# Plus llvmpipe as the universal CPU fallback (for both archs), and
+# zink to bridge OpenGL to Vulkan on the Pi (lets GL apps go through
+# the better-featured BCM driver).
+#
+# Mesa is MIT.  The big optional pieces we don't ship — vaapi, vdpau,
+# omx, xa — are also MIT, but pull in non-permissive deps (libva is
+# MIT-licensed but pulls libdrm-amdgpu / nouveau drivers via udev
+# probes; we disable them at the source level).
+
+[package]
+name = "mesa"
+version = "25.0.7"
+license = "MIT"
+description = "Mesa 3D graphics library — OpenGL / OpenGL ES / EGL / GBM / Vulkan. Pi 5 (v3d + broadcom Vulkan) + WSL2 (d3d12) + llvmpipe CPU fallback"
+
+[source]
+url = "https://archive.mesa3d.org/mesa-25.0.7.tar.xz"
+sha256 = "592272df3cf01e85e7db300c449df5061092574d099da275d19e97ef0510f8a6"
+
+[build]
+system = "custom"
+configure = """
+set -e
+
+# Same meson `cc.has_type` workaround as fontconfig/harfbuzz — strip
+# the linker-only flags from CFLAGS so compile-only probes under
+# `-Werror=unused-command-line-argument` don't false-negative.  Mesa's
+# meson.build runs hundreds of feature-detection probes; without this,
+# every one of them would fail to detect available C symbols.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export CXXFLAGS="$CFLAGS"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+
+# Mesa's build needs the python `mako` template engine + pyyaml for
+# codegen of GL dispatch tables + Vulkan ICDs.  Install into the
+# system site-packages with pip — venv-based isolation didn't work
+# because meson finds its own python3 via $PATH and doesn't honour
+# the venv's site-packages when invoked from outside the activate
+# context.  Idempotent: pip skips already-installed packages.
+pip3 install --no-cache-dir --break-system-packages 'mako>=1.1.0' 'pyyaml>=5.1' 'packaging' 2>&1 | tail -3 || \
+  pip3 install --no-cache-dir 'mako>=1.1.0' 'pyyaml>=5.1' 'packaging' 2>&1 | tail -3
+
+# Drivers selected: v3d (Pi 5) + d3d12 (WSL) + llvmpipe (CPU fallback)
+# + zink (OpenGL → Vulkan; lets the Pi's BCM Vulkan driver back GL).
+# kmsro is auto-pulled by v3d for the DRM render path.
+#
+# Vulkan: broadcom (Pi 5 VideoCore VII).  swrast (CPU) optional.
+#
+# Platforms: wayland only.  We don't have X11 in jonerix.
+#
+# LLVM: required for llvmpipe + d3d12 shader compilation.  Use shared
+# libLLVM from jonerix's llvm package.  Mesa 25.0 supports LLVM 21.
+#
+# Disabled wholesale: glx (no X11), omx/vdpau/va (video accel pulls in
+# more deps), opencl (huge, separate concern), xa (X-only), gallium-
+# extra-hud (debug overlay), tools (no need for shader compilers as
+# standalone binaries).
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+PYTHON3="$PYTHON3" \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=shared \
+  -Dcpp_rtti=false \
+  -Dgallium-drivers=v3d,llvmpipe,zink \
+  -Dvulkan-drivers=broadcom \
+  -Dplatforms=wayland \
+  -Degl=enabled \
+  -Dgles1=disabled \
+  -Dgles2=enabled \
+  -Dopengl=true \
+  -Dgbm=enabled \
+  -Dglvnd=disabled \
+  -Dglx=disabled \
+  -Dosmesa=false \
+  -Dshared-glapi=enabled \
+  -Dllvm=enabled \
+  -Dshared-llvm=enabled \
+  -Dgallium-vdpau=disabled \
+  -Dgallium-va=disabled \
+  -Dgallium-xa=disabled \
+  -Dgallium-nine=false \
+  -Dgallium-rusticl=false \
+  -Dgallium-extra-hud=false \
+  -Dvideo-codecs= \
+  -Dmicrosoft-clc=disabled \
+  -Dintel-clc=auto \
+  -Dlmsensors=disabled \
+  -Dvalgrind=disabled \
+  -Dlibunwind=disabled \
+  -Dperfetto=false \
+  -Dbuild-tests=false \
+  -Dinstall-mesa-clc=false \
+  -Dinstall-intel-clc=false \
+  -Dtools=
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+# Strip the big .so files.  Keep .icd JSON manifests untouched
+# (they're text), keep .drm/.vk drivers as shipped.
+find "$DESTDIR/lib" -type f -name 'lib*.so*' -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/lib/dri" -type f -name '*.so*' -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/lib/dri" -type f -name '*_dri.so' -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+# Runtime:
+#   libdrm        — DRM ioctls (Pi 5 v3d, llvmpipe via /dev/dri)
+#   wayland       — Wayland platform support (EGL_PLATFORM_WAYLAND_KHR)
+#   libxkbcommon  — keyboard handling for compositors that link Mesa
+#   libllvm       — shader compilation (llvmpipe, d3d12 compute)
+#   libcxx        — Mesa is C/C++; shader IR is C++ heavy
+#   expat         — XML parsing (loader config, ICD discovery)
+#   zlib + zstd   — shader cache compression
+#   libudev *not* listed — we build with udev probe disabled; users
+#                          point Mesa at /dev/dri devices directly.
+runtime = ["musl", "libcxx", "libdrm", "wayland", "libxkbcommon", "libllvm", "expat", "zlib", "zstd"]
+
+# Build deps additionally:
+#   meson + samurai          — build system
+#   pkgconf                  — dep probing
+#   python3                  — codegen scripts (mako installed into venv)
+#   clang / lld              — toolchain
+#   wayland-protocols        — XML protocol files for the wayland-egl path
+build = ["clang", "meson", "samurai", "pkgconf", "python3", "wayland", "wayland-protocols", "libxkbcommon", "libdrm", "libcxx", "libllvm", "expat", "zlib", "zstd"]

@@ -1,0 +1,80 @@
+# ICU — International Components for Unicode.  Required by Tectonic
+# (XeTeX's bidi + line-break code) and by harfbuzz (Unicode
+# normalisation tables).  Ships under the Unicode Data Files / Software
+# licence — MIT-style with a non-endorsement clause on the "Unicode"
+# trademark; on jpkg's whitelist as `Unicode-DFS-2016`.
+#
+# Heads-up: this is the biggest package in extra/ by a wide margin.
+# ICU's full data tables run ~30 MB even with default --with-data-packaging
+# (split into a single .dat file under /share/icu/<ver>/).  We keep
+# everything in one .dat blob rather than splitting per-locale; ICU
+# memory-maps the file, so installed-but-unused data costs disk, not RAM.
+
+[package]
+name = "icu"
+version = "76.1"
+license = "Unicode-3.0"
+description = "International Components for Unicode (libicuuc, libicui18n, libicudata, libicuio + uconv/genrb tools)"
+
+[source]
+url = "https://github.com/unicode-org/icu/releases/download/release-76-1/icu4c-76_1-src.tgz"
+sha256 = "dfacb46bfe4747410472ce3e1144bf28a102feeaa4e3875bac9b4c6cf30f4f3e"
+
+[build]
+# ICU's build system is its own beast — `runConfigureICU` is a thin
+# wrapper around autoconf that picks per-platform compiler flags.
+# We bypass it and call ./configure directly so we can plug in our
+# clang/lld toolchain explicitly.
+#
+# --prefix=/ --libdir=/lib: merged-usr.
+# --enable-static --enable-shared: ship both — Tectonic links static,
+#   typst's optional ICU path (it doesn't enable ICU) would link shared.
+# --disable-tests --disable-samples --disable-extras: trim build time
+#   and binary count.  `extras` includes legacy demos we don't need.
+# --with-data-packaging=archive: ONE icudt*.dat file (memory-mappable)
+#   under /share/icu/<ver>/.  Alternatives are `library` (built into
+#   libicudata.so — 30 MB shared object; harder to update locales) and
+#   `files` (one .res per locale; thousands of tiny files in /share).
+# CXXFLAGS includes -fno-omit-frame-pointer because ICU's optimised
+# normalisation paths use longjmp and benefit from preserved frames
+# for cleaner stack traces under crash reporting tools.
+system = "custom"
+configure = """
+set -e
+cd source
+CC=clang \
+CXX=clang++ \
+LD=ld.lld \
+AR=llvm-ar \
+RANLIB=llvm-ranlib \
+NM=llvm-nm \
+STRIP=llvm-strip \
+CFLAGS="-O2 -fPIC" \
+CXXFLAGS="-O2 -fPIC -fno-omit-frame-pointer" \
+LDFLAGS="-fuse-ld=lld" \
+./configure \
+  --prefix=/ \
+  --libdir=/lib \
+  --enable-static \
+  --enable-shared \
+  --disable-tests \
+  --disable-samples \
+  --disable-extras \
+  --enable-strict=no \
+  --with-data-packaging=archive
+"""
+build = "make -C source -j$(nproc)"
+install = """set -e
+make -C source DESTDIR=$DESTDIR install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+
+# Strip the .so files but keep the .dat archive untouched —
+# llvm-strip on a non-ELF .dat blob is a no-op but emits warnings.
+find "$DESTDIR/lib" -name 'libicu*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "libcxx"]
+build = ["clang", "make", "libcxx"]

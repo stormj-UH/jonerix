@@ -119,7 +119,7 @@ install_cached_pkg_if_available() {
     echo "=== Installing cached ${pkg}: $(basename "$cached_pkg") ==="
     hdr_len=$(od -An -v -tu4 -N4 -j8 "$cached_pkg" | tr -d ' ')
     skip=$((12 + hdr_len))
-    tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | tar xf - -C /
+    tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | bsdtar xpf - -C /
     return 0
 }
 
@@ -313,7 +313,12 @@ install_local_jpkg() {
     local hdr_len skip
     hdr_len=$(od -An -v -tu4 -N4 -j8 "$f" | tr -d ' ')
     skip=$((12 + hdr_len))
-    tail -c +$((skip + 1)) "$f" | zstd -dc | tar xf - -C /
+    # bsdtar (libarchive) tolerates forward-reference symlinks in the
+    # archive (e.g. libcxx's `include/c++/v1/print` -> `__format/print.h`
+    # where the target appears later in the stream).  Toybox tar refuses
+    # those as "bad symlink" and aborts with `set -e`, which broke the
+    # harfbuzz build (libcxx local-cache extraction step) on 2026-05-16.
+    tail -c +$((skip + 1)) "$f" | zstd -dc | bsdtar xpf - -C /
 }
 
 install_target_build_deps() {

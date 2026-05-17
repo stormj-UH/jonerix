@@ -1,0 +1,69 @@
+# libevdev — wrapper over the Linux evdev kernel interface.  Higher-
+# level than raw read() on /dev/input/event*: handles event-code
+# enumeration, repeat key state, multi-touch slot tracking, and the
+# UI_DEV_CREATE uinput device-creation ioctls used by libinput's test
+# harness.
+#
+# Required by libinput (which sits on top), and by anything that wants
+# to talk to keyboards/mice/touchpads/touchscreens directly without
+# going through a compositor.
+#
+# Upstream's COPYING file is the textbook X11 licence — functionally
+# identical to MIT (permission notice + no warranty disclaimer with
+# the same "shall be included in all copies or substantial portions"
+# wording).  jpkg's whitelist accepts "MIT" for X11-style notices;
+# we tag it accordingly per the project's convention for libpng,
+# expat, and other X11/MIT-style licences.
+
+[package]
+name = "libevdev"
+version = "1.13.6"
+license = "MIT"
+description = "Wrapper library for the Linux evdev interface (libevdev, libevdev-uinput) — multi-touch slot tracking, key-repeat state, uinput device creation"
+
+[source]
+url = "https://www.freedesktop.org/software/libevdev/libevdev-1.13.6.tar.xz"
+sha256 = "73f215eccbd8233f414737ac06bca2687e67c44b97d2d7576091aa9718551110"
+
+[build]
+# Meson + samurai.
+#
+# Build matrix:
+#   tests         disabled — needs check + uinput root permission;
+#                            don't run in CI.
+#   documentation disabled — needs doxygen.
+#   coverity      false    — Coverity Scan integration, irrelevant.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — see fontconfig recipe for rationale.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dtests=disabled \
+  -Ddocumentation=disabled \
+  -Dcoverity=false
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libevdev*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl"]
+# Build:
+#   python3          — meson invokes python3 to generate the event-code
+#                      name tables from include/linux/input-event-codes.h.
+#   jonerix-headers  — input-event-codes.h itself lives in the Linux
+#                      UAPI headers package.
+build = ["clang", "meson", "samurai", "pkgconf", "python3", "jonerix-headers"]
