@@ -1,6 +1,6 @@
 [package]
 name = "reforger"
-version = "0.2.2"
+version = "0.2.3"
 license = "MIT"
 description = "Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...)"
 # reforger ships the full MIT-licensed ext4/vfat tooling. It overlaps
@@ -13,21 +13,22 @@ replaces = ["toybox", "anvil"]
 
 [source]
 # Canonical source of truth is the Forgejo repo jonerik/reforger on
-# castle.great-morpho.ts.net:3000 at commit 991fd1b (Reforger rename
+# castle.great-morpho.ts.net:3000 at commit b379e76 (Reforger rename
 # plus ext4 fsck false-positive fixes). That host sits behind Tailscale
 # and GitHub's cloud-hosted runners can't reach it, so the tarball is
-# mirrored to a jonerix GH release (source-reforger-v0.2.2) for CI to
+# mirrored to a jonerix GH release (source-reforger-v0.2.3) for CI to
 # fetch.
 #
-# 0.2.2 bugfix-and-rename: package/project is now Reforger. e2fsck no
+# 0.2.3 bugfix-and-rename: package/project is now Reforger. e2fsck no
 # longer scans uninitialized inode groups, no longer treats uninitialized
 # block/inode bitmaps as authoritative, and no longer feeds HTree dx_root
-# blocks to the leaf directory-tail checksum verifier.
+# blocks to the leaf directory-tail checksum verifier. This also carries
+# the final upstream CI smoke-test rename away from the old project name.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/reforger/archive/991fd1b.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-reforger-v0.2.2/reforger-0.2.2.tar.gz"
-sha256 = "ff5079a7c7a3af5273be7b3e4948309c14e4fc27465a632a8bde615533b86732"
+#   https://castle.great-morpho.ts.net:3000/jonerik/reforger/archive/b379e76.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-reforger-v0.2.3/reforger-0.2.3.tar.gz"
+sha256 = "461a420e76728710f9926d210ac6af190dcfc69c8d7d98eee67d26f7818e7b60"
 
 [build]
 system = "custom"
