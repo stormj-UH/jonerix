@@ -436,7 +436,7 @@ jobs:
         # 24651362217: wpa_supplicant failed, 10+ other recipes
         # built cleanly but were never uploaded so INDEX stayed
         # stale and Pi 5 image builds couldn't pick up the new
-        # anvil / openrc / openntpd.
+        # reforger / openrc / openntpd.
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
