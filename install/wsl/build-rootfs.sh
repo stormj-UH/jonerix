@@ -161,7 +161,7 @@ for pkg in \
     shadow \
     libarchive bsdtar openrsync \
     pigz mandoc onetrueawk \
-    anvil exproxide \
+    reforger exproxide \
     pico libcxx fastfetch ripgrep gitredoxide \
     jonerix-netutils zsh
 do

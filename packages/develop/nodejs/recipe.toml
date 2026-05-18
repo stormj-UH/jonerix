@@ -253,7 +253,7 @@ fi
 echo "=== Verifying ICU is built in ==="
 "$DESTDIR/bin/node" -e 'if(!process.versions.icu){console.error("ICU NOT built in");process.exit(1)}console.log("ICU version:",process.versions.icu)'
 # Quote the `;` terminator. Same TOML + shell escape trap the
-# anvil and bzip2 recipes hit: `\\;` inside a basic string
+# reforger and bzip2 recipes hit: `\\;` inside a basic string
 # arrives at find as a bare `;` and errors with
 # "find: -exec without \\;". Single-quoted `;` survives both.
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true

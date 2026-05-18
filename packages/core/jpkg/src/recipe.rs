@@ -25,7 +25,7 @@ use std::path::Path;
 // recipe corpus (36+ recipes) relies on the lenient behaviour, with several
 // recipes containing comments that document the parser's laxity (e.g.
 // `packages/extra/nloxide/recipe.toml:220-221`,
-// `packages/core/anvil/recipe.toml:108-111`).
+// `packages/core/reforger/recipe.toml:108-111`).
 //
 // Sanitiser: walk the input once, identify positions that are inside a
 // basic-string literal (`"…"` or `"""…"""`), and double any backslash whose
@@ -1314,8 +1314,8 @@ license = "MIT"
         let live_shape = r#"[meta]
 timestamp = "2026-04-26T23:54:05Z"
 
-[anvil-x86_64]
-version = "0.2.1-r1"
+[reforger-x86_64]
+version = "0.2.2"
 license = "MIT"
 description = "ext2/3/4 userland in pure Rust"
 arch = "x86_64"
@@ -1336,7 +1336,7 @@ build-depends = ["rust"]
 "#;
         let idx = Index::parse(live_shape).expect("parse INDEX with [meta]");
         assert_eq!(idx.entries.len(), 2, "[meta] must be skipped");
-        assert!(idx.get("anvil", "x86_64").is_some());
+        assert!(idx.get("reforger", "x86_64").is_some());
         assert!(idx.get("brash", "aarch64").is_some());
         // [meta] must NOT have leaked through as a package
         assert!(!idx.entries.contains_key("meta"));

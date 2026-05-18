@@ -83,7 +83,7 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
       shadow \
       libarchive bsdtar openrsync \
       mandoc \
-      anvil exproxide \
+      reforger exproxide \
       pico libcxx fastfetch ripgrep gitredoxide \
       jonerix-netutils zsh; \
     do \

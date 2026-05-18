@@ -25,7 +25,7 @@ Generated from tracked `packages/**/recipe.toml` -- **112 recipes**. All jonerix
 
 | Package | Folder | Version | License | Arch | Runtime deps | Build deps | Description |
 |---|---|---|---|---|---|---|---|
-| **`anvil`** | `core` | 0.2.1-r1 | MIT | any | `musl` | `rust` | Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...) |
+| **`reforger`** | `core` | 0.2.2 | MIT | any | `musl` | `rust` | Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...) |
 | **`brash`** | `core` | 1.0.14 | MIT | any | `musl` | `rust` | Clean-room Rust reimplementation of bash 5.3 — full surface (`[[ ]]`, regex, indexed + associative arrays, here-docs, command/arithmetic/process substitution, traps, history, mapfile/declare/printf/test/read/compgen). Byte-equivalent to bash 5.3 across the upstream test suite + 1100+ realworld / dash-POSIX / mksh / shellcheck / shfmt corpora. Installs `/bin/brash` and a `/bin/bash` symlink (no GNU runtime). |
 | **`bsdtar`** | `core` | 3.8.6-r7 | Apache-2.0 | any | `libarchive` | - | Compatibility package providing /bin/tar via libarchive bsdtar |
 | **`curl`** | `core` | 8.11.1-r6 | MIT | any | `musl`, `libressl`, `zlib`, `libnghttp2` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `libnghttp2` | Command-line tool and library for transferring data with URLs |

@@ -1,9 +1,9 @@
 #!/bin/sh
-# anvil installer — fetches an anvil .jpkg from the jonerix release feed and
+# reforger installer - fetches a reforger .jpkg from the jonerix release feed and
 # unpacks it under $PREFIX on any Linux. POSIX shell; dash/mksh/busybox safe.
 #
 # One-liner:
-#   curl -fsSL https://castle.great-morpho.ts.net:3000/jonerik/anvil/raw/branch/main/install.sh | sh
+#   curl -fsSL https://castle.great-morpho.ts.net:3000/jonerik/reforger/raw/branch/main/install.sh | sh
 #
 # Default install set: all binaries (with their internal package symlinks
 # mkfs.ext{2,3} -> mkfs.ext4, fsck.ext{2,3,4} -> e2fsck, mkfs.{fat,msdos} +
@@ -13,7 +13,7 @@
 # shadow GNU e2fsprogs (see the post-install trailer for guidance).
 #
 # Flags:
-#   --version <V>           anvil version (default 0.2.1-r1)
+#   --version <V>           reforger version (default 0.2.2)
 #   --prefix  <DIR>         install root  (default /usr/local)
 #   --arch    <A>           override arch (default: uname -m)
 #   --install-etc           also stage etc/ from the payload to $PREFIX/etc-default/
@@ -25,16 +25,16 @@
 
 set -eu
 
-VERSION="0.2.1-r1"
+VERSION="0.2.2"
 PREFIX="/usr/local"
 ARCH=""
 INSTALL_ETC=""        # "" = unset (ask), 1 = yes, 0 = no
 NO_PROMPT=0
-URL_BASE="${ANVIL_INSTALL_URL_BASE:-https://github.com/stormj-UH/jonerix/releases/download/packages}"
+URL_BASE="${REFORGER_INSTALL_URL_BASE:-https://github.com/stormj-UH/jonerix/releases/download/packages}"
 
 usage() {
     cat <<'EOF'
-anvil installer
+reforger installer
 
 Usage: install.sh [--version V] [--prefix DIR] [--arch A]
                   [--install-etc | --no-install-etc]
@@ -48,7 +48,7 @@ Default install (no flags) puts the full set under $PREFIX:
     fsck.ext{2,3,4} -> e2fsck, mkfs.{fat,msdos} + mkdosfs -> mkfs.vfat,
     mklost+found -> mklostfound (all live in $PREFIX/bin alongside their
     targets — these are NOT system-level symlinks)
-  - LICENSE under $PREFIX/share/licenses/anvil/
+  - LICENSE under $PREFIX/share/licenses/reforger/
   - man pages under $PREFIX/share/man/
 
 The installer NEVER writes outside $PREFIX. It does NOT install etc/
@@ -56,7 +56,7 @@ defaults by default — pass --install-etc to stage them to
 $PREFIX/etc-default/ for manual review.
 
 Flags:
-  --version <V>       .jpkg version to fetch (default 0.2.1-r1)
+  --version <V>       .jpkg version to fetch (default 0.2.2)
   --prefix  <DIR>     install root (default /usr/local)
   --arch    <A>       arch override (default: detected via uname -m)
   --install-etc       stage etc/ from the payload to $PREFIX/etc-default/
@@ -70,7 +70,7 @@ Flags:
 Examples:
   sh install.sh
   sh install.sh --prefix=$HOME/.local
-  sh install.sh --version 0.2.1-r1 --arch aarch64
+  sh install.sh --version 0.2.2 --arch aarch64
   sh install.sh --install-etc --no-prompt
 EOF
 }
@@ -140,16 +140,16 @@ else
 fi
 
 # --- workspace --------------------------------------------------------------
-TMP=$(mktemp -d 2>/dev/null || mktemp -d -t anvil-install)
+TMP=$(mktemp -d 2>/dev/null || mktemp -d -t reforger-install)
 # shellcheck disable=SC2329  # invoked indirectly via trap
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT HUP TERM
 
-JPKG="$TMP/anvil.jpkg"
+JPKG="$TMP/reforger.jpkg"
 EXTRACT="$TMP/extract"
 mkdir -p "$EXTRACT"
 
-URL="$URL_BASE/anvil-$VERSION-$ARCH.jpkg"
+URL="$URL_BASE/reforger-$VERSION-$ARCH.jpkg"
 printf 'install.sh: fetching %s\n' "$URL"
 # shellcheck disable=SC2086
 $DL "$JPKG" "$URL" || {
@@ -178,7 +178,7 @@ read_le_u32() {
     echo $(( $1 + $2 * 256 + $3 * 65536 + $4 * 16777216 ))
 }
 
-# Format-version field at bytes 4..7. The published 0.2.1-r1 packages encode
+# Format-version field at bytes 4..7. The published 0.2.2 packages encode
 # this as a 16-bit value with two trailing zero bytes (so a naive LE u32 read
 # yields 256), but the meaningful guard for a valid JPKG is the magic above
 # and a sane metadata length below. We surface unfamiliar values as a notice
@@ -301,7 +301,7 @@ fi
 # --- post-install trailer ---------------------------------------------------
 printf '\n'
 printf '==========================================================================\n'
-printf 'install.sh: anvil %s installed under %s\n' "$VERSION" "$PREFIX"
+printf 'install.sh: reforger %s installed under %s\n' "$VERSION" "$PREFIX"
 printf '==========================================================================\n'
 
 # Summary of installed paths.
@@ -309,8 +309,8 @@ printf '\nInstalled paths:\n'
 for d in $INSTALLED_DIRS; do
     printf '  %s/%s/\n' "$PREFIX" "$d"
 done
-if [ -f "$PREFIX/share/licenses/anvil/LICENSE" ]; then
-    printf '  %s/share/licenses/anvil/LICENSE\n' "$PREFIX"
+if [ -f "$PREFIX/share/licenses/reforger/LICENSE" ]; then
+    printf '  %s/share/licenses/reforger/LICENSE\n' "$PREFIX"
 fi
 
 # PATH warning.
@@ -328,13 +328,13 @@ case ":${PATH:-}:" in
 esac
 
 # e2fsprogs independence note.
-printf '\nIMPORTANT: anvil is INDEPENDENT of GNU e2fsprogs.\n'
-printf '  anvil ships its own mkfs.ext4, e2fsck, tune2fs, debugfs, etc.\n'
+printf '\nIMPORTANT: reforger is INDEPENDENT of GNU e2fsprogs.\n'
+printf '  reforger ships its own mkfs.ext4, e2fsck, tune2fs, debugfs, etc.\n'
 printf '  in %s/bin/. They do NOT shadow /sbin/mkfs.ext4 from a system\n' "$PREFIX"
 printf '  e2fsprogs install — system tools (mount, mkfs, fsck wrapper) look\n'
 printf '  in /sbin first.\n'
 printf '\n'
-printf '  To use anvil in place of e2fsprogs system-wide, you would have to\n'
+printf '  To use reforger in place of e2fsprogs system-wide, you would have to\n'
 printf '  manually symlink the binaries into /sbin yourself, e.g.:\n'
 printf '\n'
 printf '      sudo ln -sf %s/bin/mkfs.ext4 /sbin/mkfs.ext4\n' "$PREFIX"

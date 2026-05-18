@@ -1,6 +1,6 @@
 [package]
 # Clean-room Rust implementation of expr(1). Naming matches the
-# other "-oxide" Rust reimplementations in jonerix (anvil, nloxide,
+# other "-oxide" Rust reimplementations in jonerix (reforger, nloxide,
 # m4oxide). Cargo crate, binary on disk, and jpkg package are all
 # named `exproxide`; a /bin/expr symlink is installed so autoconf
 # ./configure scripts resolve `expr` to the Rust implementation

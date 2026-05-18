@@ -53,11 +53,11 @@ DEFAULT_PACKAGES = [
     "jonerix-ntp-http-bootstrap",  # HTTP Date fallback when RTC time is stale
     "sudo",
     "python3",    # raspi-config nonint shells out to it; cheap to include
-    # anvil: MIT clean-room ext2/3/4 + FAT12/16/32 userland
+    # reforger: MIT clean-room ext2/3/4 + FAT12/16/32 userland
     # (mkfs.ext4, mkfs.vfat, e2fsck, tune2fs, debugfs, resize2fs,
     # dumpe2fs, e2image, e2label, e2freefrag, e4defrag, logsave,
     # findfs, filefrag, blkid, chattr, lsattr, mklost+found).
-    "anvil",
+    "reforger",
     # raspi-config: MIT-licensed Raspberry Pi configuration tool vendored
     # from RPi-Distro/raspi-config@08a52319 (trixie branch). nonint
     # subcommands work without whiptail + parted.

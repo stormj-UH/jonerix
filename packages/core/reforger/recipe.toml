@@ -1,9 +1,9 @@
 [package]
-name = "anvil"
-version = "0.2.1-r1"
+name = "reforger"
+version = "0.2.2"
 license = "MIT"
 description = "Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs, debugfs, ...)"
-# anvil ships the full MIT-licensed ext4/vfat tooling, which overlaps
+# reforger ships the full MIT-licensed ext4/vfat tooling, which overlaps
 # with three multicall symlinks that toybox also owns: /bin/blkid,
 # /bin/chattr, /bin/lsattr. Claim them via `replaces` so jpkg transfers
 # ownership transparently instead of failing the install with a file
@@ -13,23 +13,22 @@ description = "Clean-room MIT Rust ext2/3/4 userland (mkfs.ext4, e2fsck, tune2fs
 replaces = ["toybox"]
 
 [source]
-# Canonical source of truth is the Forgejo repo jonerik/anvil on
-# castle.great-morpho.ts.net:3000 at commit
-# 822efda (mkfs_vfat: skip backup boot when reserved_sectors < 8 to
-# avoid FAT overlap). That host sits behind Tailscale and GitHub's
-# cloud-hosted runners can't reach it, so the tarball is mirrored
-# to a jonerix GH release (source-anvil-v0.2.1) for CI to fetch.
+# Canonical source of truth is the Forgejo repo jonerik/reforger on
+# castle.great-morpho.ts.net:3000 at commit 991fd1b (Reforger rename
+# plus ext4 fsck false-positive fixes). That host sits behind Tailscale
+# and GitHub's cloud-hosted runners can't reach it, so the tarball is
+# mirrored to a jonerix GH release (source-reforger-v0.2.2) for CI to
+# fetch.
 #
-# 0.2.1 bugfix-only: mkfs_vfat no longer writes the backup-boot /
-# backup-FSInfo sectors at LBA 6 / 7 when the user asks for
-# -R N with N < 8. Previously those writes clobbered the first
-# FAT and fsck.vfat rejected the image. Verified on the
-# dosfstools reference corpus at 7/7 fsck-valid (up from 6/7).
+# 0.2.2 bugfix-and-rename: package/project is now Reforger. e2fsck no
+# longer scans uninitialized inode groups, no longer treats uninitialized
+# block/inode bitmaps as authoritative, and no longer feeds HTree dx_root
+# blocks to the leaf directory-tail checksum verifier.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/anvil/archive/822efda.tar.gz
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-anvil-v0.2.1/anvil-0.2.1.tar.gz"
-sha256 = "a7f46aebc37f9628ef750f97f40fcfa17027e5897076ef9669907367ffb137c9"
+#   https://castle.great-morpho.ts.net:3000/jonerik/reforger/archive/991fd1b.tar.gz
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-reforger-v0.2.2/reforger-0.2.2.tar.gz"
+sha256 = "ff5079a7c7a3af5273be7b3e4948309c14e4fc27465a632a8bde615533b86732"
 
 [build]
 system = "custom"
@@ -91,7 +90,7 @@ for m in docs/man/*.8; do
 done
 
 # License tracking (same convention as lsusb-rs) ------------------
-install -Dm644 LICENSE "$DESTDIR/share/licenses/anvil/LICENSE"
+install -Dm644 LICENSE "$DESTDIR/share/licenses/reforger/LICENSE"
 
 # merged-usr flatten + strip (same post-pass as ripgrep / lsusb-rs).
 # Guard the flatten against DESTDIR unset/empty/root — jpkg < 1.0.5

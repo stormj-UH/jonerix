@@ -76,7 +76,7 @@ if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm 
 # string gets stripped to bare `;` by the time /usr/bin/find
 # parses it and errors with "find: -exec without \\;". Single-
 # quoted `;` survives TOML and shell intact. Same workaround
-# as the anvil recipe.
+# as the reforger recipe.
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
 find $DESTDIR/lib -name '*.so*' -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
 """

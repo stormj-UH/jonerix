@@ -21,7 +21,7 @@ tty1, offering the user:
   3) Drop to a shell
 
 The package set is intentionally larger than the SD/USB image's
-minimal-boot core: a live installer needs anvil (mkfs.ext4 +
+minimal-boot core: a live installer needs reforger (mkfs.ext4 +
 mkfs.vfat for mode A), curl + bsdtar (firmware download in mode A),
 python3 (pi5-install.sh runs python helpers), and the same shadow +
 iproute-go + niceties so a user dropped into mode-B can poke around.
@@ -54,7 +54,7 @@ NETBOOT_ROOTFS_PACKAGES = [
     "bsdtar", "openntpd", "sudo", "python3",
 
     # mkfs + fsck (mode A target formatting)
-    "anvil",
+    "reforger",
     "raspi-config",
 
     # Login chain

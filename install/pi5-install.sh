@@ -80,18 +80,18 @@ FIRMWARE_ONLY=0     # --firmware-only: skip partition/format/userland,
 
 # Minimal package set for a bootable headless Pi 5. Anything else is
 # additive — you can `jpkg -r /mnt/usb-root add <pkg>` after boot.
-# `anvil` — MIT clean-room mkfs.ext4 / mkfs.vfat / e2fsck / fsck.vfat
+# `reforger` — MIT clean-room mkfs.ext4 / mkfs.vfat / e2fsck / fsck.vfat
 # / dumpe2fs / tune2fs / resize2fs / debugfs / blkid / chattr / lsattr /
 # e2image / e2label / e2freefrag / e4defrag / filefrag / findfs /
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 anvil raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch"
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 reforger raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch"
 # Kept identical to image/pi5/build-image.py's DEFAULT_PACKAGES so a
 # Pi installed by hand via this script lands at the same package set
 # as a CI-built jonerix-pi5.img. Beyond the minimal boot core (musl,
 # toybox, mksh, openrc, dhcpcd, dropbear, ifupdown-ng, bsdtar,
-# openntpd, sudo, python3, anvil, raspi-config), the list adds:
+# openntpd, sudo, python3, reforger, raspi-config), the list adds:
 #   shadow      — proper /bin/login + shadow-getty on tty1
 #   jonerix-netutils  — u-root ip(8) (toybox ip can't enumerate TUN devs)
 #   zsh, gitredoxide, ripgrep, pico, fastfetch — interactive niceties
@@ -298,9 +298,9 @@ fi
 
 # Filesystem sanity. Don't auto-mkfs unless tools exist AND the user
 # confirms. blkid is the preferred probe, but on jonerix blkid is
-# whatever anvil ships — currently ext-only and reports "unrecognized
+# whatever reforger ships — currently ext-only and reports "unrecognized
 # filesystem" on FAT partitions. Always cross-check with magic bytes
-# so anvil's blkid doesn't cause a false-negative FAT32 detection.
+# so reforger's blkid doesn't cause a false-negative FAT32 detection.
 _have_fat32=0; _have_ext4=0
 if command -v blkid >/dev/null 2>&1; then
     case "$(blkid -s TYPE -o value "$P1" 2>/dev/null)" in
@@ -504,7 +504,7 @@ fi
 # UUID lives at offset 0x468 in the ext4 superblock (16 bytes) and we
 # can poke it with dd + /dev/urandom when mkfs.ext4 wasn't available.
 # Helper: return a blkid token if blkid recognises the partition,
-# empty otherwise. Anvil's blkid prints its "unrecognized filesystem"
+# empty otherwise. Reforger's blkid prints its "unrecognized filesystem"
 # line to stdout and exits non-zero, which both poisons the capture
 # and trips `set -e`. Swallow both and re-validate the output looks
 # UUID/PARTUUID-shaped (hex or 4345-C4D4 FAT-style) before trusting it.

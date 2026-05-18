@@ -24,7 +24,7 @@
 #   rust      → musl, libllvm, rust (prebuilt)
 #   ripgrep   → musl, rust
 #   uutils    → musl, rust
-#   anvil     → musl, rust
+#   reforger     → musl, rust
 #
 # Within each dependency tier, packages are ordered smallest-first
 # so that interrupted builds leave the most useful artifacts.
@@ -166,7 +166,7 @@ readlineoxide
 uutils
 ripgrep
 jfsck
-anvil
+reforger
 # jpkg 2.0 — Rust port of jpkg.  Listed at this tier because cargo build
 # needs the from-source rust toolchain.  The C jpkg 1.1.5 series shipped
 # from packages/jpkg/{src,build.ninja} as C; that tree was retired when

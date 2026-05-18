@@ -400,7 +400,7 @@ def build_readme(args: argparse.Namespace, fw_ref: dict) -> str:
         "# rpi-eeprom-config equivalent via vcmailbox (config change\n"
         "# persists in EEPROM across reboots):\n"
         "printf '[all]\\nBOOT_ORDER=0xf241\\n' | sudo tee /tmp/boot.conf\n"
-        "# upload /tmp/boot.conf as EEPROM config (TODO: anvil or\n"
+        "# upload /tmp/boot.conf as EEPROM config (TODO: reforger or\n"
         "# upstream rpi-eeprom-config; both unavailable in jonerix\n"
         "# today — file against jonerix issue tracker).\n"
         "```\n\n"
