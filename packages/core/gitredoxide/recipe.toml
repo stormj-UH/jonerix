@@ -1,17 +1,17 @@
 [package]
 # Permissively licensed drop-in replacement for /bin/git, built on the
-# gitoxide gix-* crate ecosystem.  43 Git commands implemented (29
-# porcelain, 12 plumbing, 2 global).  302 tests passing, zero-warning
-# release build.  MIT OR Apache-2.0.
+# gitoxide gix-* crate ecosystem.  44 Git commands implemented (30
+# porcelain, 12 plumbing, 2 global).  931 release-gate tests passing
+# (3 ignored).  MIT OR Apache-2.0.
 #
 # gitredoxide replaces the gitoxide package (gix + ein) as the primary
 # Git provider on jonerix.  It installs as /bin/gitredoxide and provides
 # /bin/git as a symlink.  The gix and ein plumbing tools remain available
 # via the gitoxide package if needed, but this package owns /bin/git.
 name = "gitredoxide"
-version = "1.0.22"
+version = "1.0.23"
 license = "MIT OR Apache-2.0"
-description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 0 real divergences vs real git, rPGP + SSH signing, LFS smudge, top-notch rustdoc)"
+description = "Permissively licensed drop-in /bin/git replacement (native apply, 1100+ flags, 0 real divergences vs real git, rPGP + SSH signing, LFS smudge, top-notch rustdoc)"
 
 [source]
 # Canonical source: Forgejo jonerik/gitoxide on castle.great-morpho.ts.net:3000.
@@ -321,8 +321,14 @@ description = "Permissively licensed drop-in /bin/git replacement (1100+ flags, 
 # identity is configured.  They still use the configured identity when
 # present, and otherwise fall back to gitredoxide <gitredoxide@reflog>
 # in normal mode or git <git@reflog> in GITREDOXIDE_TEST_MODE.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.22/gitredoxide-1.0.22-vendored.tar.gz"
-sha256 = "df60039452b17b5abfb2f596f8a4dfb3b7f98119b48b9dfed6e8f8de7cf5ed4a"
+#
+# 1.0.23: native git apply for unified-diff text patches.  Supports
+# patch files and stdin, default -p1 path stripping, --check dry-run,
+# --index worktree-plus-index refresh, -R/--reverse, --directory=, and
+# whitespace matching knobs.  Adds focused integration tests and parity
+# smoke test 100_apply_patch; release gate passed 931 tests, 3 ignored.
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-gitredoxide-v1.0.23/gitredoxide-1.0.23-vendored.tar.gz"
+sha256 = "4117677aee5e94a7afa7e7e7e2b0337e899f242bf429c93aaab90644c67701da"
 
 [build]
 system = "custom"
