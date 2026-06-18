@@ -45,6 +45,25 @@ The project ships:
 - Raspberry Pi 5 install and image tooling
 - WSL2 rootfs import tooling
 
+## Multi-Shell, Multi-Userland Shape
+
+The intended end state is a multi-shell, multi-userland jonerix: `uni7`,
+`brash`, and `uutils` should consolidate into a small number of coherent
+multicall entry points instead of a pile of unrelated replacement binaries.
+
+- **Unix mode shell:** a standards-first SUS/POSIX surface, using `brash` for
+  shell execution and `uni7` for the missing utilities jonerix needs for UNIX
+  V7/SUSv4 coverage.
+- **GNU mode shell:** a compatibility-oriented surface for scripts that expect
+  GNU-ish utility behavior. This mode is not greenfield: jonerix already ships
+  a substantial set of permissively licensed GNU drop-in clones, including
+  `uutils` and other focused replacements, and GNU mode should consolidate that
+  existing surface behind an intentional shell profile.
+
+Both modes should stay clean-room and permissively licensed. The distinction is
+behavioral, not licensing-based: Unix mode prioritizes standards conformance,
+while GNU mode is an explicit compatibility layer.
+
 ## Quick Start
 
 Pull a published image:
