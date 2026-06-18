@@ -221,7 +221,7 @@ jpkg sign <file> --key <key> # sign a file with Ed25519
 
 ### License Enforcement
 
-jpkg enforces permissive licensing at build and install time. The allowlist includes: MIT, BSD-2-Clause, BSD-3-Clause, ISC, Apache-2.0, 0BSD, CC0, Unlicense, MirOS, OpenSSL, zlib, PSF-2.0, Artistic-2.0, Ruby, MPL-2.0, and public domain variants. SPDX compound expressions (`AND`/`OR`) are parsed recursively — `AND` requires all components permissive, `OR` requires at least one.
+jpkg enforces permissive licensing at build and install time. The allowlist includes: MIT, BSD-2-Clause, BSD-3-Clause, BSD-3-Clause-flex, ISC, Apache-2.0, 0BSD, CC0, Unlicense, MirOS, OpenSSL, zlib, PSF-2.0, Artistic-2.0, Ruby, MPL-2.0, and public domain variants. SPDX compound expressions (`AND`/`OR`) are parsed recursively — `AND` requires all components permissive, `OR` requires at least one.
 
 ### Signing
 

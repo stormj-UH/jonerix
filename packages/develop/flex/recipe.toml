@@ -1,7 +1,7 @@
 [package]
 name = "flex"
-version = "2.6.4-r4"
-license = "BSD-2-Clause"
+version = "2.6.4-r5"
+license = "BSD-3-Clause-flex"
 description = "Fast lexical analyzer generator"
 
 [source]
@@ -34,9 +34,12 @@ build = "make -j$(nproc)"
 install = """make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+[ -x "$DESTDIR/bin/flex" ] || { printf '%s\n' "flex install did not produce /bin/flex" >&2; exit 1; }
+ln -sf flex "$DESTDIR/bin/lex"
+[ -e "$DESTDIR/bin/lex" ] || { printf '%s\n' "flex install did not produce /bin/lex" >&2; exit 1; }
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
 find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "m4oxide"]
 build = ["clang", "make", "m4oxide"]

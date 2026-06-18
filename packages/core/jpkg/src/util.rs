@@ -323,6 +323,7 @@ static PERMISSIVE_LICENSES: &[&str] = &[
     "MIT",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "BSD-3-Clause-flex",
     "ISC",
     "Apache-2.0",
     "0BSD",
@@ -805,6 +806,7 @@ mod tests {
         assert!(license_is_permissive("Apache-2.0"));
         assert!(license_is_permissive("BSD-2-Clause"));
         assert!(license_is_permissive("BSD-3-Clause"));
+        assert!(license_is_permissive("BSD-3-Clause-flex"));
         assert!(license_is_permissive("ISC"));
         assert!(license_is_permissive("0BSD"));
         assert!(license_is_permissive("MirOS"));

@@ -42,6 +42,7 @@ PERMISSIVE_LICENSES="
 MIT
 BSD-2-Clause
 BSD-3-Clause
+BSD-3-Clause-flex
 BSD-2
 BSD-3
 BSD
