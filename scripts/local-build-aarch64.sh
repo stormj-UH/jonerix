@@ -34,23 +34,74 @@ BUILDER_IMAGE="${BUILDER_IMAGE:-ghcr.io/stormj-uh/jonerix:builder}"
 GITHUB_REPO="${GITHUB_REPO:-stormj-UH/jonerix}"
 RELEASE_TAG="${RELEASE_TAG:-packages}"
 JOBS="${JOBS:-2}"
+DOCKER="${DOCKER:-docker}"
+COLIMA="${COLIMA:-colima}"
+LIMACTL="${LIMACTL:-limactl}"
+COLIMA_PROFILE="${COLIMA_PROFILE:-default}"
+COLIMA_CPUS="${COLIMA_CPUS:-4}"
+COLIMA_MEMORY="${COLIMA_MEMORY:-8}"
+COLIMA_DISK="${COLIMA_DISK:-100}"
+COLIMA_MOUNT_ROOT="${COLIMA_MOUNT_ROOT:-$(dirname "$REPO_ROOT")}"
+COLIMA_LIMA_HOME="${COLIMA_LIMA_HOME:-$HOME/.colima/_lima}"
 
 mkdir -p "$JPKG_OUTPUT" "$JPKG_PUBLISHED" "$JPKG_BIN" "$SCCACHE" "$(dirname "$SCCACHE_BIN")"
 
-# Auto-fetch the static-musl sccache binary on first run.  The CI workflow
-# pulls v0.15.0 from GitHub releases; we mirror that exactly so cache keys
-# stay compatible.
-SCCACHE_VERSION="${SCCACHE_VERSION:-v0.15.0}"
-if [ ! -x "$SCCACHE_BIN" ]; then
-    echo "==> Fetching sccache $SCCACHE_VERSION (aarch64-unknown-linux-musl)"
-    tarball="${BUILD_DIR}/sccache-bin/sccache.tgz"
-    curl -fsSL -o "$tarball" \
-        "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-aarch64-unknown-linux-musl.tar.gz"
-    tar -xzf "$tarball" -C "$(dirname "$SCCACHE_BIN")" --strip-components=1 \
-        "sccache-${SCCACHE_VERSION}-aarch64-unknown-linux-musl/sccache"
-    chmod +x "$SCCACHE_BIN"
-    rm -f "$tarball"
-fi
+ensure_sccache() {
+    # Auto-fetch the static-musl sccache binary on first build. The CI
+    # workflow pulls v0.15.0 from GitHub releases; mirror that exactly so
+    # cache keys stay compatible.
+    SCCACHE_VERSION="${SCCACHE_VERSION:-v0.15.0}"
+    if [ ! -x "$SCCACHE_BIN" ]; then
+        printf '==> Fetching sccache %s (aarch64-unknown-linux-musl)\n' "$SCCACHE_VERSION"
+        tarball="${BUILD_DIR}/sccache-bin/sccache.tgz"
+        curl -fsSL -o "$tarball" \
+            "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-aarch64-unknown-linux-musl.tar.gz"
+        tar -xzf "$tarball" -C "$(dirname "$SCCACHE_BIN")" --strip-components=1 \
+            "sccache-${SCCACHE_VERSION}-aarch64-unknown-linux-musl/sccache"
+        chmod +x "$SCCACHE_BIN"
+        rm -f "$tarball"
+    fi
+}
+
+docker_ready() {
+    command -v "$DOCKER" >/dev/null 2>&1 || return 1
+    "$DOCKER" version >/dev/null 2>&1
+}
+
+docker_context_name() {
+    if [ "$COLIMA_PROFILE" = default ]; then
+        printf 'colima\n'
+    else
+        printf 'colima-%s\n' "$COLIMA_PROFILE"
+    fi
+}
+
+colima_disk_name() {
+    if [ "$COLIMA_PROFILE" = default ]; then
+        printf 'colima\n'
+    else
+        printf 'colima-%s\n' "$COLIMA_PROFILE"
+    fi
+}
+
+colima_profile_exists() {
+    "$COLIMA" list 2>/dev/null |
+        awk -v profile="$COLIMA_PROFILE" 'NR > 1 && $1 == profile { found = 1 } END { exit found ? 0 : 1 }'
+}
+
+ensure_docker_ready() {
+    if docker_ready; then
+        return 0
+    fi
+
+    printf 'ERROR: Docker daemon is not reachable through %s.\n' "$DOCKER" >&2
+    printf 'Run: %s up\n' "$0" >&2
+    if command -v "$COLIMA" >/dev/null 2>&1; then
+        printf '\nColima status:\n' >&2
+        "$COLIMA" status "$COLIMA_PROFILE" >&2 || true
+    fi
+    exit 1
+}
 
 usage() {
     cat <<EOF
@@ -59,6 +110,9 @@ local-build-aarch64.sh — local hedge builder
   build PKG [PKG...]   Build one or more packages in the colima docker VM.
   chain                Build the LLVM split: libllvm → clang → lld → llvm → llvm-extra.
   chain22              Build the parallel LLVM 22 split under /lib/llvm22.
+  up                   Start the Homebrew Colima/Docker builder backend.
+  doctor               Show Docker/Colima state for this local builder.
+  smoke                Run check-builder-toolchain in the builder image.
   upload               Upload winning .jpkg(s) from $JPKG_OUTPUT to the
                        $RELEASE_TAG release on $GITHUB_REPO, then trigger
                        regen-tag-index to bake them into a signed INDEX.
@@ -67,6 +121,11 @@ local-build-aarch64.sh — local hedge builder
 
 Env knobs:
   BUILDER_IMAGE   default $BUILDER_IMAGE
+  DOCKER          default $DOCKER
+  COLIMA          default $COLIMA
+  LIMACTL         default $LIMACTL
+  COLIMA_PROFILE  default $COLIMA_PROFILE
+  COLIMA_MOUNT_ROOT  default $COLIMA_MOUNT_ROOT
   GITHUB_REPO     default $GITHUB_REPO
   RELEASE_TAG     default $RELEASE_TAG
   JOBS            default 2   (LLVM_BUILD_JOBS / BUILD_JOBS passed to recipe)
@@ -83,8 +142,90 @@ Volumes mounted into the container:
 EOF
 }
 
+cmd_doctor() {
+    rc=0
+
+    if command -v "$DOCKER" >/dev/null 2>&1; then
+        printf 'Docker client: %s\n' "$(command -v "$DOCKER")"
+        "$DOCKER" context ls || rc=1
+        if docker_ready; then
+            printf 'OK: Docker daemon is reachable.\n'
+        else
+            printf 'ERROR: Docker daemon is not reachable.\n' >&2
+            "$DOCKER" version >&2 || true
+            rc=1
+        fi
+    else
+        printf 'ERROR: Docker client not found: %s\n' "$DOCKER" >&2
+        rc=1
+    fi
+
+    if command -v "$COLIMA" >/dev/null 2>&1; then
+        printf '\nColima client: %s\n' "$(command -v "$COLIMA")"
+        "$COLIMA" version || rc=1
+        "$COLIMA" list || rc=1
+        "$COLIMA" status "$COLIMA_PROFILE" || true
+    else
+        printf 'ERROR: Colima client not found: %s\n' "$COLIMA" >&2
+        rc=1
+    fi
+
+    return "$rc"
+}
+
+cmd_up() {
+    command -v "$COLIMA" >/dev/null 2>&1 || {
+        printf 'ERROR: Colima client not found: %s\n' "$COLIMA" >&2
+        exit 1
+    }
+    command -v "$DOCKER" >/dev/null 2>&1 || {
+        printf 'ERROR: Docker client not found: %s\n' "$DOCKER" >&2
+        exit 1
+    }
+
+    if docker_ready; then
+        printf 'OK: Docker daemon is already reachable.\n'
+        return 0
+    fi
+
+    if colima_profile_exists; then
+        printf '==> Clearing stale Colima state for profile: %s\n' "$COLIMA_PROFILE"
+        "$COLIMA" stop "$COLIMA_PROFILE" --force || true
+        if command -v "$LIMACTL" >/dev/null 2>&1; then
+            LIMA_HOME="$COLIMA_LIMA_HOME" "$LIMACTL" disk unlock "$(colima_disk_name)" || true
+        fi
+        printf '==> Starting existing Colima profile: %s\n' "$COLIMA_PROFILE"
+        "$COLIMA" start "$COLIMA_PROFILE" --runtime docker --ssh-config=false
+    else
+        printf '==> Creating Colima profile: %s\n' "$COLIMA_PROFILE"
+        "$COLIMA" start "$COLIMA_PROFILE" \
+            --runtime docker \
+            --vm-type vz \
+            --cpu "$COLIMA_CPUS" \
+            --memory "$COLIMA_MEMORY" \
+            --disk "$COLIMA_DISK" \
+            --mount "${COLIMA_MOUNT_ROOT}:w" \
+            --ssh-config=false
+    fi
+
+    "$DOCKER" context use "$(docker_context_name)" >/dev/null 2>&1 || true
+    ensure_docker_ready
+    printf 'OK: Docker daemon is reachable.\n'
+}
+
+cmd_smoke() {
+    ensure_docker_ready
+    "$DOCKER" run --rm \
+        --platform linux/arm64 \
+        --entrypoint /bin/sh \
+        "$BUILDER_IMAGE" \
+        -c 'check-builder-toolchain'
+}
+
 cmd_build() {
     [ "$#" -ge 1 ] || { usage; exit 2; }
+    ensure_docker_ready
+    ensure_sccache
 
     # Refresh the local jpkg-published cache so the in-container build script
     # (ci-build-aarch64.sh, reused unchanged) can detect already-published
@@ -96,6 +237,7 @@ cmd_build() {
             --pattern "*-aarch64.jpkg" \
             --dir "$JPKG_PUBLISHED" \
             --skip-existing 2>/dev/null || true
+        # shellcheck disable=SC2012
         echo "    cached: $(ls "$JPKG_PUBLISHED"/*.jpkg 2>/dev/null | wc -l | tr -d ' ') aarch64 jpkgs"
     fi
 
@@ -127,7 +269,8 @@ cmd_build() {
             _sign_env_args="-e JPKG_SIGN_KEY=${JPKG_SIGN_KEY}"
             echo "    signing enabled with JPKG_SIGN_KEY"
         fi
-        docker run --rm \
+        # shellcheck disable=SC2086
+        "$DOCKER" run --rm \
             --platform linux/arm64 \
             --entrypoint /bin/sh \
             -v "$REPO_ROOT:/workspace" \
@@ -191,7 +334,6 @@ cmd_upload() {
     count=0
     for pkg in "$JPKG_OUTPUT"/*-aarch64.jpkg; do
         [ -f "$pkg" ] || continue
-        name=$(basename "$pkg")
         for asset in "$pkg" "$pkg.sig"; do
             [ -f "$asset" ] || continue
             echo "==> Uploading $(basename "$asset") to $GITHUB_REPO ($RELEASE_TAG)"
@@ -218,11 +360,13 @@ cmd_status() {
         return 0
     fi
     for pkg in "$JPKG_OUTPUT"/*.jpkg; do
+        # shellcheck disable=SC2012
         size=$(ls -lh "$pkg" | awk '{print $5}')
         printf '  %s  %s\n' "$size" "$(basename "$pkg")"
     done
     echo
     printf 'Published cache (read-only): %s\n' "$JPKG_PUBLISHED"
+    # shellcheck disable=SC2012
     n=$(ls "$JPKG_PUBLISHED"/*.jpkg 2>/dev/null | wc -l | tr -d ' ')
     printf '  %s pre-fetched .jpkg(s)\n' "$n"
 }
@@ -236,6 +380,9 @@ case "${1:-}" in
     build)   shift; cmd_build "$@" ;;
     chain)   cmd_chain ;;
     chain22) cmd_chain22 ;;
+    up)      cmd_up ;;
+    doctor)  cmd_doctor ;;
+    smoke)   cmd_smoke ;;
     upload)  cmd_upload ;;
     status)  cmd_status ;;
     clean)   cmd_clean ;;

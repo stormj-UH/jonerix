@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **118 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **119 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -62,6 +62,7 @@ Generated from tracked `packages/**/recipe.toml` -- **118 recipes**. All jonerix
 | **`toybox`** | `core` | 0.8.11-r14 | 0BSD | any | `musl` | `clang`, `brash`, `jonerix-headers` | BSD-licensed coreutils replacement |
 | **`tzdata`** | `core` | 2026a | Public-Domain | any | `musl` | `clang` | IANA time zone database (zoneinfo data plus zic/zdump tools) |
 | **`unbound`** | `core` | 1.22.0-r4 | BSD-3-Clause | any | `musl`, `libressl`, `expat` | `clang`, `make`, `jonerix-headers`, `libressl`, `expat` | Validating, recursive, and caching DNS resolver |
+| **`uni7`** | `core` | 0.1.0 | 0BSD | any | `musl` | `rust`, `clang`, `python3` | Clean-room UNIX V7/SUSv4 audit tool and multicall utility set for jonerix. Installs `/bin/uni7`, `/bin/uni7-audit`, and SUS-shaped applet links for `at`, `batch`, `c99`, `compress`, `crontab`, `ed`, `ex`, `gencat`, `iconv`, `ipcrm`, `ipcs`, `join`, `locale`, `localedef`, `lp`, `mailx`, `mesg`, `pathchk`, `pr`, `tsort`, `uncompress`, `uudecode`, `uuencode`, `vi`, and `write`; this is the standards-first applet provider for the eventual Unix mode shell. |
 | **`uutils`** | `core` | 0.7.0-r2 | MIT | any | `musl` | `rust`, `jmake` | Rust rewrite of GNU coreutils (tr, sort, wc, cut, and 70+ more); takes over toybox's /bin/<cmd> symlinks for every applet uutils provides; expr stays with exproxide |
 | **`xz`** | `core` | 5.8.2-r2 | 0BSD | any | `musl` | `clang`, `cmake`, `samurai` | XZ compression utilities and liblzma (with development headers) |
 | **`zlib`** | `core` | 1.3.2-r1 | Zlib | any | `musl` | `clang`, `make` | General-purpose compression library |

@@ -14,7 +14,7 @@
 
 The current tagged distro release is
 **[v1.2.2](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.2)**.
-The tree currently tracks **116 package recipes** and builds for
+The tree currently tracks **119 package recipes** and builds for
 `x86_64` and `aarch64`.
 
 jonerix is a "bring your own kernel" distribution. The Linux kernel is not part

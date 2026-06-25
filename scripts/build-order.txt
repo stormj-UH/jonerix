@@ -164,6 +164,10 @@ stormwall
 m4oxide
 readlineoxide
 uutils
+# uni7 — clean-room UNIX V7/SUSv4 multicall surface. Build after uutils so
+# package publication has both GNU-compatible and standards-first applet
+# providers available for the eventual mode-shell split.
+uni7
 ripgrep
 jfsck
 reforger
