@@ -1,0 +1,18 @@
+# /etc/conf.d/sshd — settings for the dropbear SSH service (/etc/init.d/sshd).
+# The dropbear jpkg writes this file only when it is missing and never
+# overwrites it, so local edits survive upgrades. The pristine copy is
+# /share/dropbear/conf.d/sshd.
+#
+# Apply changes with `rc-service sshd restart` (not reload: dropbear exits
+# on SIGHUP). A restart leaves established sessions running.
+
+# Extra dropbear flags. Leaving this commented out means "-g".
+#   -g  refuse password logins for root; root keys still work (default)
+#   -s  refuse password logins for everyone (keys only)
+#   -w  refuse root logins entirely, keys included
+# DROPBEAR_OPTS="" (empty) uses upstream's defaults, which accept root
+# passwords. See dropbear(8) for the full list.
+#DROPBEAR_OPTS="-g"
+
+# [address:]port to listen on.
+#DROPBEAR_PORT="22"

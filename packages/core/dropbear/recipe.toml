@@ -1,38 +1,73 @@
 [package]
 name = "dropbear"
-version = "2024.86-r4"
-license = "MIT"
+version = "2026.94"
+license = "MIT AND BSD-2-Clause AND BSD-3-Clause AND Public-Domain"
 description = "Lightweight SSH server and client"
-# r3: republish the clean recipe after jmake 1.1.4 fixed the remaining
-# dropbear blockers: TAB-indented assignments inside conditional blocks
-# and the `$(wildcard ./src/*.h)` prefix-duplication regression. The
-# published r2 payloads were empty or failed to build because dropbear's
-# Makefiles hit those jmake bugs.
+# 2026.94: move past 2025.89 for the 2026.90 and 2026.92 security fixes
+# (authorized_keys long-line restriction bypass, post-auth memory growth,
+# out-of-bounds fd close) and the scp fixes (CVE-2019-6111 remainder,
+# CVE-2026-35385 setuid bits on received files). 2026.90 contains the
+# Ed25519 S < L check that 2025.89-r2 carried as a backported patch, and
+# the post-quantum key exchanges (sntrup761x25519-sha512,
+# mlkem768x25519-sha256) are still built by default.
 #
-# r2: restored the clean recipe after jmake 1.1.1 landed.
-# The 2024.86-r1 recipe carried three stacked workarounds for jmake bugs
-# that are now fixed upstream:
-#   * `$(wildcard ./dir/*.ext)` no longer doubles the prefix
-#   * TAB-indented `VAR=…` inside `ifndef`/`ifeq` blocks is no
-#     longer mis-classified as a recipe line
-# Builds produce dropbear (271 KB) + dbclient (253 KB) + the
-# usual dropbearkey/dropbearconvert/scp set with plain `make`.
+# The package now also ships:
+#   * /etc/init.d/sshd, the OpenRC service. It keeps the service name,
+#     pidfile and /etc/dropbear host-key paths of the script the Pi 5
+#     images used to hand-install, so it replaces that file in place. It
+#     defaults DROPBEAR_OPTS to "-g" (no root password logins, root keys
+#     still work) and has no reload, because dropbear exits on SIGHUP.
+#   * /etc/conf.d/sshd, seeded by post_install from
+#     /share/dropbear/conf.d/sshd only when it is missing. jpkg has no
+#     conffile protection, so shipping it directly would wipe local edits
+#     on every upgrade.
+#   * /bin/scp, dropbear's scp. Upstream's default PROGRAMS list leaves it
+#     out, so plain `make` never built it; it is needed for `scp -O` and
+#     for remote `scp -t` when clients use the legacy protocol. The scp
+#     sources carry BSD-3-Clause (UC Regents) notices, hence the license.
+# SFTP (the default for OpenSSH 9+ scp and sftp) runs
+# /usr/libexec/sftp-server, which merged /usr resolves to the
+# /libexec/sftp-server shipped by openssh-sftp-server.
 
 [source]
-url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.86.tar.bz2"
-sha256 = "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e"
+url = "https://matt.ucc.asn.au/dropbear/releases/dropbear-2026.94.tar.bz2"
+sha256 = "e098034a843699200c8c977a991fff73159735bf795d5f72ef672c41a6b1ae81"
 
 [build]
 system = "autoconf"
 configure = "CFLAGS=\"-O2 -fomit-frame-pointer\" ./configure --prefix=/ --bindir=/bin --disable-zlib CC=clang"
-build = "make -j$(nproc)"
-install = """make DESTDIR=$DESTDIR install
+build = """make -j$(nproc)
+make scp"""
+install = """make DESTDIR="$DESTDIR" install
+install -m 0755 scp "$DESTDIR/bin/scp"
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+install -Dm755 "$RECIPE_DIR/init.d/sshd" "$DESTDIR/etc/init.d/sshd"
+install -Dm644 "$RECIPE_DIR/conf.d/sshd" "$DESTDIR/share/dropbear/conf.d/sshd"
+install -Dm644 LICENSE "$DESTDIR/share/licenses/dropbear/LICENSE"
+for f in dropbear dbclient dropbearkey dropbearconvert scp; do
+    [ -x "$DESTDIR/bin/$f" ] || { echo "dropbear: $f was not installed" >&2; exit 1; }
+    llvm-strip --strip-all "$DESTDIR/bin/$f" 2>/dev/null || true
+done"""
+
+[hooks]
+# Seed /etc/conf.d/sshd once. An existing file (or symlink) is the
+# operator's and is never touched. `jpkg --root` exports JPKG_ROOT, and
+# the chrooted hook inherits it, so only prefix it when this package's
+# files are visible under it (the unchrooted case).
+post_install = """_root=
+if [ -n "${JPKG_ROOT:-}" ] && [ -f "$JPKG_ROOT/share/dropbear/conf.d/sshd" ]; then
+    _root=${JPKG_ROOT%/}
+fi
+if [ ! -e "$_root/etc/conf.d/sshd" ] && [ ! -L "$_root/etc/conf.d/sshd" ] &&
+   [ -f "$_root/share/dropbear/conf.d/sshd" ]; then
+    mkdir -p "$_root/etc/conf.d"
+    cp "$_root/share/dropbear/conf.d/sshd" "$_root/etc/conf.d/sshd"
+    chmod 644 "$_root/etc/conf.d/sshd"
+fi
+"""
 
 [depends]
-runtime = ["musl", "libressl"]
+runtime = ["musl", "libressl", "openssh-sftp-server"]
 build = ["clang", "make", "jonerix-headers"]
