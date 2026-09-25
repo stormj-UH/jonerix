@@ -1,8 +1,19 @@
 [package]
 name = "ca-certificates"
-version = "20260211-r2"
+version = "20260211-r3"
 license = "MPL-2.0"
 description = "Mozilla CA certificate bundle for TLS verification (sourced from curl.se)"
+# r3: single owner for /etc/ssl/cert.pem. libressl installs its own
+# bundled cert.pem at that path and this package installs a symlink to
+# the Mozilla bundle there; with both installed each manifest listed the
+# path and whichever package installed last won. `replaces` makes jpkg
+# hand the path to this package when it installs, so hosts with
+# ca-certificates get the jpkg-updated Mozilla bundle through
+# LibreSSL's default CA file too. Hosts without it keep libressl's copy.
+# Limitation: jpkg 2.2.9 lets a later libressl reinstall write its file
+# back over the symlink; reinstalling ca-certificates restores it.
+# Also r3: the build no longer calls awk, which the builder image lacks.
+replaces = ["libressl"]
 # Vital for every TLS client on jonerix (curl, openntpd-http-date,
 # headscale, wpa_supplicant EAP-TLS, …). The Mozilla NSS CA store
 # itself is MPL-2.0; curl.se just repackages it as a single PEM.
@@ -50,10 +61,11 @@ PEM_SRC=$(find_vendored_file cacert.pem) || {
     exit 1
 }
 cp "$PEM_SRC" cacert.pem
+# No awk here: the jonerix builder image does not ship one.
 if command -v sha256sum >/dev/null 2>&1; then
-    GOT=$(sha256sum cacert.pem | awk '{print $1}')
+    GOT=$(sha256sum cacert.pem | cut -d' ' -f1)
 else
-    GOT=$(openssl dgst -sha256 cacert.pem | awk '{print $NF}')
+    GOT=$(openssl dgst -sha256 cacert.pem | sed 's/.* //')
 fi
 if [ "$GOT" != "$PEM_SHA256" ]; then
     echo "ca-certificates: sha256 mismatch" >&2
