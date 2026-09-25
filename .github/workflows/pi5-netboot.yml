@@ -14,9 +14,18 @@ on:
       - 'pi5-netboot-v*'
     paths:
       - 'image/pi5/network-boot.py'
+      # The live-installer rootfs: its builder and the two scripts it
+      # embeds. Without these, package-list changes went unbuilt.
+      - 'image/pi5/build-netboot-rootfs.py'
+      - 'image/pi5/netboot-menu.sh'
+      - 'install/pi5-install.sh'
       - '.github/workflows/pi5-netboot.yml'
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: 'Package release tag for the live rootfs (packages = rolling, or e.g. v1.2.2)'
+        required: false
+        default: 'packages'
       serial:
         description: 'Pi 5 board serial (16 hex, lower-case) or "any"'
         required: false
@@ -58,13 +67,16 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
-      - name: Syntax-check network-boot.py
+      - name: Syntax-check netboot scripts
         run: |
           python3 -c "import py_compile; py_compile.compile('image/pi5/network-boot.py', doraise=True)"
+          python3 -c "import py_compile; py_compile.compile('image/pi5/build-netboot-rootfs.py', doraise=True)"
+          sh -n image/pi5/netboot-menu.sh
+          sh -n install/pi5-install.sh
 
       - name: Build netboot payload
         env:
@@ -73,17 +85,14 @@ jobs:
           NFS_SERVER: ${{ inputs.nfs_server || '' }}
           NFS_PATH: ${{ inputs.nfs_path || '' }}
           FIRMWARE_TAG: ${{ inputs.firmware_tag || 'stable' }}
+          # Same tag the live rootfs below installs from, so the payload's
+          # build-info.json names the package set that is really in it.
+          RELEASE_TAG: ${{ inputs.release_tag || 'packages' }}
         run: |
           set -eu
-          # Pin to the source tree's VERSION_ID so the netboot payload's
-          # build-info.json records exactly the jonerix release this
-          # tree corresponds to. Downstream tooling (jonerix-pi5-netboot.sh)
-          # uses this to decide which `jpkg conform <ver>` post-boot
-          # makes the netbooted Pi a deterministic match for the v1.1.7
-          # package set.
-          VER=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' \
-                config/defaults/etc/os-release)
-          RELEASE_TAG="v${VER}"
+          case "${RELEASE_TAG}" in
+            ''|*[!A-Za-z0-9._-]*) echo "bad release_tag: ${RELEASE_TAG}" >&2; exit 1 ;;
+          esac
           ARGS="--output out/tftp --serial ${SERIAL} --firmware-tag ${FIRMWARE_TAG} --root-source ${ROOT_SOURCE} --release-tag ${RELEASE_TAG} --yes"
           if [ "${ROOT_SOURCE}" = "nfs" ]; then
             ARGS="${ARGS} --nfs-server ${NFS_SERVER} --nfs-path ${NFS_PATH}"
@@ -111,6 +120,11 @@ jobs:
         env:
           BUILDER_IMAGE: ghcr.io/stormj-uh/jonerix:builder-arm64
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Rolling `packages` by default, like publish-pi5-image.yml. A
+          # frozen v$VERSION_ID snapshot goes stale against main's package
+          # list (v1.2.2 has no reforger), which failed every run since
+          # 2026-05-08. Dispatch with release_tag=vX.Y.Z to pin.
+          REL_TAG: ${{ inputs.release_tag || 'packages' }}
         run: |
           set -eu
           # ubuntu-24.04-arm runner is native arm64; no --platform flag
@@ -120,20 +134,10 @@ jobs:
           # shell, which tries to execute the first arg as a script
           # file. Override to /bin/sh -c so the python3 invocation
           # survives the shell.
-          # Probe whether the source-tree's v$VERSION_ID release has a
-          # signed INDEX.zst; if not, fall back to the rolling
-          # `packages` mirror so the rootfs build doesn't 404. This
-          # matters during dev/iteration where the version was bumped
-          # but no full package set has been re-released yet.
-          VER=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' \
-                config/defaults/etc/os-release)
-          REL_TAG="v${VER}"
-          if ! curl -fsSL --head -o /dev/null \
-                "https://github.com/stormj-UH/jonerix/releases/download/${REL_TAG}/INDEX.zst" \
-                2>/dev/null; then
-            echo "release ${REL_TAG} has no packages — falling back to rolling 'packages'"
-            REL_TAG="packages"
-          fi
+          case "${REL_TAG}" in
+            ''|*[!A-Za-z0-9._-]*) echo "bad release_tag: ${REL_TAG}" >&2; exit 1 ;;
+          esac
+          echo "live rootfs package release: ${REL_TAG}"
           docker run --rm --privileged \
             --entrypoint /bin/sh \
             -v "$PWD:/workspace" \
@@ -181,11 +185,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          REL_TAG: ${{ inputs.release_tag || 'packages' }}
         run: |
           set -eu
           VER=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' \
                 config/defaults/etc/os-release)
           TAG="v${VER}"
+          # Only a payload built from that release's own package set
+          # belongs on it; the default rolling build does not.
+          if [ "${REL_TAG}" != "${TAG}" ]; then
+            echo "payload built from '${REL_TAG}', not ${TAG} — skipping versioned attach"
+            exit 0
+          fi
           if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
             gh release upload "$TAG" --repo "$GH_REPO" --clobber \
               out/jonerix-pi5-netboot.tar.gz \
