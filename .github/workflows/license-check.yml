@@ -6,13 +6,21 @@ on:
     paths:
       - 'packages/**'
       - 'config/**'
+      - 'image/**'
+      - 'install/**'
       - 'scripts/license-audit.sh'
+      - 'scripts/check-init-shebangs.sh'
+      - '.github/workflows/license-check.yml'
   pull_request:
     branches: [main]
     paths:
       - 'packages/**'
       - 'config/**'
+      - 'image/**'
+      - 'install/**'
       - 'scripts/license-audit.sh'
+      - 'scripts/check-init-shebangs.sh'
+      - '.github/workflows/license-check.yml'
 
 # Cancel in-progress runs for the same branch/PR
 concurrency:
@@ -104,3 +112,12 @@ jobs:
           done
 
           echo "Config defaults check complete."
+
+      - name: Check OpenRC init script shebangs
+        # Runs even when an earlier step failed, so both results show.
+        if: ${{ !cancelled() }}
+        run: |
+          # Every init script the repo ships or generates (init.d/ files,
+          # recipe heredocs into init.d/, image builders) must start with
+          # exactly #!/bin/openrc-run; see the header of the script.
+          sh scripts/check-init-shebangs.sh .
