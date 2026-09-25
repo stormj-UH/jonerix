@@ -1,6 +1,6 @@
 # jpkg — jonerix package manager
 
-**Version 2.2.1** — Rust from-scratch port of the C jpkg 1.1.5.
+**Version 2.2.10** — Rust from-scratch port of the C jpkg 1.1.5.
 
 jpkg is the system package manager for jonerix.  It handles package creation,
 installation, removal, dependency resolution, Ed25519 signature verification,
@@ -30,6 +30,8 @@ src/
 │   ├── update.rs    INDEX refresh
 │   ├── search.rs    Package search
 │   ├── info.rs      Package info query
+│   ├── list.rs      Installed-package listing
+│   ├── owns.rs      Path → owning package lookup, file-conflict report
 │   ├── sign.rs      Sign a .jpkg in place
 │   ├── verify.rs    Verify a .jpkg signature
 │   ├── resign.rs    Bulk re-sign packages
@@ -51,7 +53,22 @@ src/
 ```
 
 Byte-compatible with C jpkg 1.1.5.  Existing installed-package databases
-(`/var/db/jpkg/installed/`) are read without migration.
+(`/var/db/jpkg/installed/`) are read as-is; manifests C jpkg wrote with
+absolute paths (`/bin/x`) are rewritten to the relative form (`bin/x`) the
+first time a mutating verb takes the database lock.
+
+## File modes and ownership (2.2.10)
+
+- setuid, setgid and sticky bits survive packaging, extraction and install.
+  Directories get the packaged mode only when jpkg creates them; existing
+  directories such as `/tmp` and `/root` are never re-moded.
+- Installing a package never overwrites a path owned by an installed package
+  that declares `replaces = ["<that package>"]`.
+- Overwriting a path another package owns (with no `replaces` relationship)
+  is reported as a file conflict; upgrade-clean and `jpkg remove` leave paths
+  that another installed package still lists.
+- `jpkg owns <path>` names the owning package(s); `jpkg owns --conflicts`
+  lists every file more than one package claims.
 
 ## Security
 

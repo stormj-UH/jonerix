@@ -218,12 +218,13 @@ jpkg update
 jpkg search fastfetch
 jpkg install fastfetch
 jpkg list
+jpkg owns /bin/ping
 jpkg local install ./pkg.jpkg
 jpkg local build ./packages/core/jpkg
 jpkg conform 1.2.2
 ```
 
-The current source tree packages `jpkg` **2.2.9**. The Rust implementation
+The current source tree packages `jpkg` **2.2.10**. The Rust implementation
 keeps the C jpkg wire formats compatible and keeps the crate itself
 `unsafe`-free.
 
@@ -266,7 +267,7 @@ that traditional Linux systems usually take for granted.
 | libnl | `nloxide` | 1.2.3 | Netlink and Generic Netlink for hostapd/wpa_supplicant. |
 | expr | `exproxide` | 0.1.1-r0 | POSIX `expr(1)` for configure scripts. |
 | util-linux subset | `jonerix-util` | see PACKAGES.md | Small replacements for the util-linux commands jonerix actually needs. |
-| jpkg C implementation | `jpkg` | 2.2.9 | Rust package manager retaining the historical jpkg file formats. |
+| jpkg C implementation | `jpkg` | 2.2.10 | Rust package manager retaining the historical jpkg file formats. |
 
 Third-party permissive replacements include `uutils` for a larger coreutils
 surface and `ripgrep` for recursive search.

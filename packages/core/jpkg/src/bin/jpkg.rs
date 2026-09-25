@@ -6,8 +6,8 @@
 //!
 //! Mirrors `packages/jpkg/src/main.c` exit-code and dispatch semantics:
 //! - `update`, `install`/`add`, `remove`/`del`, `upgrade`, `search`, `info`,
-//!   `verify`, `license-audit`, `keygen`, `sign`, `build`, `build-world` are
-//!   built-in.
+//!   `list`, `owns`, `verify`, `license-audit`, `keygen`, `sign`, `build`,
+//!   `build-world` are built-in.
 //! - Unknown subcommands fall through to a PATH lookup of `jpkg-<verb>` and
 //!   `execvp`, so external sub-commands (`jpkg-conform`, `jpkg-local`, etc.)
 //!   continue to work transparently.
@@ -38,6 +38,9 @@ BUILT-IN COMMANDS:
     -uu                   Run `update` then `upgrade` (stop on update failure)
     search  <query>       Search the index by name and description
     info    <pkg>         Show package metadata
+    list    [-q] [<str>]  List installed packages (name and version)
+    owns    <path>...     Show which installed package owns each path
+    owns    --conflicts   List files claimed by more than one package
     verify  [<pkg>...]    Verify installed files against their manifests
     license-audit         Show installed-package licenses
     keygen  [<dir>]       Generate an Ed25519 keypair (default: /etc/jpkg/keys)
@@ -133,6 +136,8 @@ fn main() -> ExitCode {
         "-uu" => cmd::update_upgrade::run(&verb_args),
         "search" => cmd::search::run(&verb_args),
         "info" => cmd::info::run(&verb_args),
+        "list" => cmd::list::run(&verb_args),
+        "owns" => cmd::owns::run(&verb_args),
         "verify" => cmd::verify::run(&verb_args),
         "license-audit" => cmd::license_audit::run(&verb_args),
         "keygen" => cmd::keygen::run(&verb_args),

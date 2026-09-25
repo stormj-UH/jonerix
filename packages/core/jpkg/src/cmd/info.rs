@@ -67,18 +67,21 @@ pub fn run(args: &[String]) -> i32 {
     let db = InstalledDb::open(rootfs).ok();
     let installed = db.as_ref().and_then(|d| d.get(pkg_name).ok()).flatten();
 
-    // Try the repository INDEX (cached preferred).
-    let index = Repo::from_rootfs(rootfs, &arch).ok().and_then(|repo| {
-        repo.load_cached_index()
-            .ok()
-            .flatten()
-            .or_else(|| repo.fetch_index().ok())
-    });
+    // Try the repository INDEX (cached preferred; a fresh fetch may skip
+    // writing the cache when we are not allowed to).
+    let index = Repo::from_rootfs(rootfs, &arch).and_then(|repo| repo.load_index_for_query());
 
-    let index_entry = index.as_ref().and_then(|idx| idx.get(pkg_name, &arch));
+    let index_entry = index.as_ref().ok().and_then(|idx| idx.get(pkg_name, &arch));
 
     if index_entry.is_none() && installed.is_none() {
-        eprintln!("error: package '{pkg_name}' not found");
+        match &index {
+            // Only claim "not found" when we actually had an index to search.
+            Ok(_) => eprintln!("error: package '{pkg_name}' not found"),
+            Err(e) => eprintln!(
+                "error: package '{pkg_name}' is not installed and the package index \
+                 could not be loaded: {e}"
+            ),
+        }
         return 1;
     }
 

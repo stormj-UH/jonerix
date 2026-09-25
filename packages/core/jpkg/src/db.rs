@@ -18,7 +18,8 @@
 //!    [`atomic_write`], which writes to a sibling `.tmp` file and renames it
 //!    into place.  Callers must not write to `metadata.toml` or `files`
 //!    directly; doing so can leave a partially written record that looks valid
-//!    to a concurrent reader.
+//!    to a concurrent reader.  Records are always mode 0644 so unprivileged
+//!    queries (`jpkg list`, `jpkg owns`, `jpkg info`) work under any umask.
 //!
 //! 3. **Lock semantics**: [`InstalledDb::lock`] acquires an `fcntl` write-lock
 //!    (non-blocking, `F_SETLK`) on `db_dir/lock`.  Only one process may hold
@@ -30,9 +31,12 @@
 //!
 //! 4. **Path format**: all paths stored in `FileEntry.path` are relative to the
 //!    rootfs with no leading slash (e.g. `"bin/foo"`, not `"/bin/foo"`).
-//!    The C code stores them with a leading `/`; the Rust port strips it during
-//!    parse and re-adds it during serialisation.  Callers that compare path
-//!    strings must use the no-leading-slash form.
+//!    C jpkg 1.1.5 wrote absolute paths (`/bin/foo`) with bare permission
+//!    bits (`000777`); [`parse_files`] strips the leading `/` so both forms
+//!    compare equal, and [`serialize_files`] always writes the relative form.
+//!    [`InstalledDb::lock`] rewrites any legacy absolute-path manifest in the
+//!    relative form so shell hooks that read `files` directly see one format.
+//!    Callers that compare path strings must use the no-leading-slash form.
 //!
 //! 5. **No size field**: the `files` manifest does not store file size.
 //!    `FileEntry.size` is always 0 after a round-trip through the database; it
@@ -76,6 +80,7 @@
 //! upgrade from C jpkg to jpkg-rs 2.0.0 without re-installing packages.
 
 use crate::recipe::Metadata;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -273,18 +278,24 @@ fn parse_files(text: &str) -> Result<Vec<FileEntry>, DbError> {
         // Field 3: path (and optional " -> target") (db.c:118-144).
         // Check for symlink arrow " -> " (db.c:130-136).
         let is_symlink = sha256 == SYMLINK_SHA256;
+        //
+        // C jpkg 1.1.5 wrote absolute paths ("/bin/sort"); everything since
+        // writes them relative ("bin/sort").  Normalise to the relative form
+        // here so ownership checks, upgrade-clean and `rootfs.join(path)`
+        // treat both identically (an absolute path would make `join` escape
+        // an alternate `--root`).
         let (path, symlink_target) = if is_symlink {
             // Find " -> " in path_and_rest.
             if let Some(arrow_pos) = find_arrow(path_and_rest) {
                 let path = &path_and_rest[..arrow_pos];
                 let target = &path_and_rest[arrow_pos + 4..]; // skip " -> "
-                (path.to_string(), Some(target.to_string()))
+                (normalize_manifest_path(path), Some(target.to_string()))
             } else {
                 // Symlink sentinel but no arrow — treat path as-is.
-                (path_and_rest.to_string(), None)
+                (normalize_manifest_path(path_and_rest), None)
             }
         } else {
-            (path_and_rest.to_string(), None)
+            (normalize_manifest_path(path_and_rest), None)
         };
 
         // Infer is_dir from mode bits (S_IFDIR = 0o040000).
@@ -307,6 +318,22 @@ fn parse_files(text: &str) -> Result<Vec<FileEntry>, DbError> {
     Ok(entries)
 }
 
+/// Strip the leading `/` that C jpkg 1.1.5 put on every manifest path.
+fn normalize_manifest_path(path: &str) -> String {
+    path.trim_start_matches('/').to_string()
+}
+
+/// True when any line of a `files` manifest carries an absolute path, i.e.
+/// the manifest was written by C jpkg 1.1.5 and has not been migrated yet.
+fn manifest_has_absolute_paths(text: &str) -> bool {
+    text.lines().any(|line| {
+        let mut fields = line.splitn(3, ' ');
+        let _sha = fields.next();
+        let _mode = fields.next();
+        fields.next().is_some_and(|p| p.starts_with('/'))
+    })
+}
+
 /// Find the first occurrence of `" -> "` in `s`, mirroring db.c lines 130-136.
 fn find_arrow(s: &str) -> Option<usize> {
     let bytes = s.as_bytes();
@@ -322,15 +349,64 @@ fn find_arrow(s: &str) -> Option<usize> {
 // ─── Atomic write helper ─────────────────────────────────────────────────────
 
 /// Write `data` to `path` atomically: write to `<path>.tmp`, then rename.
+///
+/// The record is chmod'ed to 0644 explicitly (not left to the umask) so
+/// unprivileged readers can always query the database.
 fn atomic_write(path: &Path, data: &[u8]) -> io::Result<()> {
     let tmp_path = path.with_extension("tmp");
     {
         let mut f = File::create(&tmp_path)?;
         f.write_all(data)?;
         f.flush()?;
+        f.set_permissions(fs::Permissions::from_mode(0o644))?;
     }
     fs::rename(&tmp_path, path)?;
     Ok(())
+}
+
+// ─── Ownership index ─────────────────────────────────────────────────────────
+
+/// One installed package's claim on a path, as recorded in its manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathClaim {
+    /// Name of the installed package whose manifest lists the path.
+    pub owner: String,
+    /// True when that manifest records the path as a directory.
+    pub is_dir: bool,
+}
+
+/// Which installed packages claim which paths.
+///
+/// Built by [`InstalledDb::path_owners`].  Used to keep one package from
+/// deleting or overwriting files another package still owns, and by
+/// `jpkg owns`.
+#[derive(Debug, Default)]
+pub struct Ownership {
+    /// Path (relative, no leading slash) → claims, in package-name order.
+    pub claims: BTreeMap<String, Vec<PathClaim>>,
+    /// Package name → its `replaces = [...]` list, for every scanned package.
+    pub replaces: HashMap<String, Vec<String>>,
+    /// Package name → installed version, for every scanned package.
+    pub versions: HashMap<String, String>,
+}
+
+impl Ownership {
+    /// The claims recorded for `path` (empty when nobody claims it).
+    pub fn owners_of(&self, path: &str) -> &[PathClaim] {
+        self.claims.get(path).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// True when any scanned package claims `path`.
+    pub fn is_claimed(&self, path: &str) -> bool {
+        !self.owners_of(path).is_empty()
+    }
+
+    /// True when installed package `owner` declares `replaces = [.., target, ..]`.
+    pub fn owner_replaces(&self, owner: &str, target: &str) -> bool {
+        self.replaces
+            .get(owner)
+            .is_some_and(|r| r.iter().any(|n| n == target))
+    }
 }
 
 // ─── InstalledDb implementation ──────────────────────────────────────────────
@@ -390,10 +466,21 @@ impl InstalledDb {
                 locked_file.seek(io::SeekFrom::Start(0))?;
                 locked_file.write_all(pid_str.as_bytes())?;
 
-                Ok(DbLock {
+                let guard = DbLock {
                     _flock: locked_file,
                     path: lock_path,
-                })
+                };
+
+                // Every mutating verb takes the lock first, so this is the
+                // one place that migrates C-jpkg-era manifests.  Best effort:
+                // a record we cannot rewrite is still parsed correctly.
+                match self.normalize_legacy_manifests() {
+                    Ok(0) => {}
+                    Ok(n) => log::info!("jpkg: migrated {n} legacy absolute-path manifest(s)"),
+                    Err(e) => log::warn!("jpkg: could not migrate legacy manifests: {e}"),
+                }
+
+                Ok(guard)
             }
             Err((file, nix::errno::Errno::EWOULDBLOCK))
             | Err((file, nix::errno::Errno::EACCES)) => {
@@ -552,6 +639,86 @@ impl InstalledDb {
         }
 
         Ok(())
+    }
+
+    /// Rewrite every `files` manifest that still uses C jpkg 1.1.5's
+    /// absolute paths (`/bin/sort`) into the relative form (`bin/sort`).
+    ///
+    /// Only the leading `/` changes; hashes, modes and link targets are kept
+    /// byte-for-byte.  Returns the number of manifests rewritten.  A manifest
+    /// that fails to parse is left untouched (and logged).  Callers must hold
+    /// the [`DbLock`]; [`InstalledDb::lock`] calls this itself.
+    pub fn normalize_legacy_manifests(&self) -> Result<usize, DbError> {
+        let mut rewritten = 0usize;
+        for name in self.list()? {
+            let files_path = self.installed_dir.join(&name).join("files");
+            let text = match fs::read_to_string(&files_path) {
+                Ok(t) => t,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+                Err(e) => {
+                    log::warn!("jpkg: cannot read {}: {e}", files_path.display());
+                    continue;
+                }
+            };
+            if !manifest_has_absolute_paths(&text) {
+                continue;
+            }
+            match parse_files(&text) {
+                Ok(entries) => {
+                    atomic_write(&files_path, serialize_files(&entries).as_bytes())?;
+                    log::debug!("jpkg: {name}: rewrote legacy manifest with relative paths");
+                    rewritten += 1;
+                }
+                Err(e) => log::warn!("jpkg: {name}: legacy manifest not migrated: {e}"),
+            }
+        }
+        Ok(rewritten)
+    }
+
+    /// Scan installed manifests and record which packages claim which paths.
+    ///
+    /// * `wanted` — only record these paths (`None` records every path).
+    /// * `exclude` — skip this package (typically the one being installed or
+    ///   removed, so the result lists only *other* owners).
+    ///
+    /// A package whose record cannot be read is skipped with a warning rather
+    /// than failing the caller: ownership checks are a safety net, and one
+    /// damaged record must not block installing or removing everything else.
+    pub fn path_owners(
+        &self,
+        wanted: Option<&HashSet<&str>>,
+        exclude: Option<&str>,
+    ) -> Result<Ownership, DbError> {
+        let mut own = Ownership::default();
+        for name in self.list()? {
+            if exclude == Some(name.as_str()) {
+                continue;
+            }
+            let pkg = match self.get(&name) {
+                Ok(Some(p)) => p,
+                Ok(None) => continue,
+                Err(e) => {
+                    log::warn!("jpkg: skipping unreadable record for {name}: {e}");
+                    continue;
+                }
+            };
+            own.replaces
+                .insert(name.clone(), pkg.metadata.package.replaces.clone());
+            own.versions.insert(
+                name.clone(),
+                pkg.metadata.package.version.clone().unwrap_or_default(),
+            );
+            for e in pkg.files {
+                if wanted.is_some_and(|w| !w.contains(e.path.as_str())) {
+                    continue;
+                }
+                own.claims.entry(e.path).or_default().push(PathClaim {
+                    owner: name.clone(),
+                    is_dir: e.is_dir,
+                });
+            }
+        }
+        Ok(own)
     }
 }
 
@@ -857,68 +1024,195 @@ mod tests {
         );
     }
 
-    // ── 9. Forward-compat: hand-crafted C jpkg 1.1.5 files format ───────────
+    // ── 9. Forward-compat: real C jpkg 1.1.5 `files` manifests ──────────────
     //
-    // This fixture is the EXACT bytes C jpkg 1.1.5 writes, taken from
-    // db.c:serialize_files_list (lines 165-174) and rewrite_files_manifest
-    // (lines 744-750). Format strings:
-    //   Regular: "%s %06o %s\n" (sha256, mode, path)
-    //   Symlink: "%s %06o %s -> %s\n" (SYMLINK_SHA256, mode, path, link_target)
+    // These lines are copied from a host whose uutils and jq were installed
+    // by C jpkg 1.1.5 (tormenta, /var/db/jpkg/installed/{uutils,jq}/files).
+    // C jpkg wrote ABSOLUTE paths and bare permission bits (no S_IFMT):
+    //   Regular: "%s %06o %s\n"        e.g. "<sha> 000755 /bin/jq"
+    //   Symlink: "%s %06o %s -> %s\n"  e.g. "0000… 000777 /bin/sort -> uutils"
+
+    const C115_JQ_SHA: &str = "1cb3b75e6bde37753bb2e4d888c5ba079ede3a74428b092cc17493718bfe7746";
+
+    fn c115_manifest() -> String {
+        format!(
+            "{SYMLINK_SHA256} 000777 /bin/sort -> uutils\n\
+             {SYMLINK_SHA256} 000777 /bin/[ -> uutils\n\
+             {C115_JQ_SHA} 000755 /bin/jq\n"
+        )
+    }
+
+    fn write_raw_pkg(rootfs: &Path, name: &str, files: &str) -> PathBuf {
+        let pkg_dir = rootfs.join("var/db/jpkg/installed").join(name);
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(
+            pkg_dir.join("metadata.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nlicense = \"MIT\"\n"),
+        )
+        .unwrap();
+        fs::write(pkg_dir.join("files"), files).unwrap();
+        pkg_dir.join("files")
+    }
 
     #[test]
     fn test_forward_compat_c_jpkg_format() {
-        // Exactly what C jpkg 1.1.5 would write for a two-file package:
-        //   1. regular file: bin/sh, mode 0100755, sha256 = "ab"*32
-        //   2. symlink: usr/bin/sh -> ../../bin/sh, mode 0120777
-        let ab32 = "ab".repeat(32); // 64 chars
-        let c_format = format!(
-            "{ab32} {mode_file:06o} bin/sh\n\
-             {zeros} {mode_link:06o} usr/bin/sh -> ../../bin/sh\n",
-            ab32 = ab32,
-            mode_file = 0o100755u32,
-            zeros = SYMLINK_SHA256,
-            mode_link = 0o120777u32,
-        );
-
-        // Write it into a temp rootfs as if C jpkg had installed a package.
         let tmp = TempDir::new().unwrap();
-        let pkg_dir = tmp.path().join("var/db/jpkg/installed/compat-pkg");
-        fs::create_dir_all(&pkg_dir).unwrap();
+        write_raw_pkg(tmp.path(), "compat-pkg", &c115_manifest());
 
-        // Write a minimal metadata.toml.
-        let meta_toml = r#"[package]
-name = "compat-pkg"
-version = "1.0.0"
-license = "MIT"
-"#;
-        fs::write(pkg_dir.join("metadata.toml"), meta_toml).unwrap();
-        fs::write(pkg_dir.join("files"), c_format.as_bytes()).unwrap();
-
-        // Parse via the Rust implementation.
         let db = InstalledDb::open(tmp.path()).unwrap();
         let pkg = db
             .get("compat-pkg")
             .unwrap()
             .expect("compat-pkg should be found");
+        assert_eq!(pkg.files.len(), 3, "should parse 3 entries");
 
-        assert_eq!(pkg.files.len(), 2, "should parse 2 entries");
-
-        let regular = pkg
+        // Leading '/' is stripped so C-era and Rust-era paths compare equal.
+        let sort = pkg
             .files
             .iter()
-            .find(|e| e.path == "bin/sh")
-            .expect("bin/sh not found");
-        assert_eq!(regular.sha256, ab32);
-        assert_eq!(regular.mode, 0o100755);
-        assert!(regular.symlink_target.is_none());
+            .find(|e| e.path == "bin/sort")
+            .expect("bin/sort not found (leading slash not normalised?)");
+        assert_eq!(sort.symlink_target.as_deref(), Some("uutils"));
+        assert_eq!(sort.mode, 0o777);
+        assert_eq!(sort.sha256, "");
 
-        let symlink = pkg
-            .files
+        let bracket = pkg.files.iter().find(|e| e.path == "bin/[").unwrap();
+        assert_eq!(bracket.symlink_target.as_deref(), Some("uutils"));
+
+        let jq = pkg.files.iter().find(|e| e.path == "bin/jq").unwrap();
+        assert_eq!(jq.sha256, C115_JQ_SHA);
+        assert_eq!(jq.mode, 0o755);
+        assert!(jq.symlink_target.is_none());
+        assert!(!jq.is_dir);
+
+        assert!(
+            pkg.files.iter().all(|e| !e.path.starts_with('/')),
+            "no parsed path may keep a leading slash"
+        );
+    }
+
+    #[test]
+    fn test_rust_written_relative_manifest_still_parses() {
+        // The Rust port's own format: relative paths, full S_IFMT bits.
+        let ab32 = "ab".repeat(32);
+        let text = format!(
+            "{ab32} {:06o} bin/sh\n{SYMLINK_SHA256} {:06o} bin/ash -> sh\n",
+            0o100755u32, 0o120777u32
+        );
+        let files = parse_files(&text).unwrap();
+        assert_eq!(files[0].path, "bin/sh");
+        assert_eq!(files[0].mode, 0o100755);
+        assert_eq!(files[1].path, "bin/ash");
+        assert_eq!(files[1].symlink_target.as_deref(), Some("sh"));
+    }
+
+    #[test]
+    fn test_lock_migrates_legacy_manifest_in_place() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = write_raw_pkg(tmp.path(), "uutils", &c115_manifest());
+        let modern_text = format!("{C115_JQ_SHA} {:06o} bin/modern\n", 0o100755u32);
+        let modern = write_raw_pkg(tmp.path(), "modern", &modern_text);
+
+        let db = InstalledDb::open(tmp.path()).unwrap();
+        {
+            let _lock = db.lock().unwrap();
+        }
+
+        let migrated = fs::read_to_string(&legacy).unwrap();
+        assert_eq!(
+            migrated,
+            format!(
+                "{SYMLINK_SHA256} 000777 bin/sort -> uutils\n\
+                 {SYMLINK_SHA256} 000777 bin/[ -> uutils\n\
+                 {C115_JQ_SHA} 000755 bin/jq\n"
+            ),
+            "only the leading slash may change"
+        );
+        // Records written by the Rust port are left byte-identical.
+        assert_eq!(fs::read_to_string(&modern).unwrap(), modern_text);
+        // A second pass has nothing left to do.
+        assert_eq!(db.normalize_legacy_manifests().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_manifest_records_are_world_readable() {
+        let tmp = TempDir::new().unwrap();
+        let db = InstalledDb::open(tmp.path()).unwrap();
+        db.insert(&InstalledPkg {
+            metadata: make_metadata("perm", "1.0"),
+            files: make_three_files(),
+        })
+        .unwrap();
+        for f in ["metadata.toml", "files"] {
+            let p = tmp.path().join("var/db/jpkg/installed/perm").join(f);
+            let mode = fs::metadata(&p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o644, "{f} should be 0644");
+        }
+    }
+
+    #[test]
+    fn test_path_owners_reports_every_claim() {
+        let tmp = TempDir::new().unwrap();
+        let db = InstalledDb::open(tmp.path()).unwrap();
+        let entry = |p: &str| FileEntry {
+            path: p.to_string(),
+            sha256: "a".repeat(64),
+            size: 0,
+            mode: 0o100755,
+            symlink_target: None,
+            is_dir: false,
+        };
+        let dir = |p: &str| FileEntry {
+            path: p.to_string(),
+            sha256: "0".repeat(64),
+            size: 0,
+            mode: 0o040755,
+            symlink_target: None,
+            is_dir: true,
+        };
+        let mut openrc = make_metadata("openrc", "0.54");
+        openrc.package.replaces.clear();
+        db.insert(&InstalledPkg {
+            metadata: openrc,
+            files: vec![dir("etc"), entry("etc/init.d/hwclock")],
+        })
+        .unwrap();
+        let mut fixups = make_metadata("fixups", "1.6");
+        fixups.package.replaces = vec!["toybox".to_string()];
+        db.insert(&InstalledPkg {
+            metadata: fixups,
+            files: vec![dir("etc"), entry("etc/init.d/hwclock"), entry("bin/pi5")],
+        })
+        .unwrap();
+        // Legacy owner: absolute paths must be matched too.
+        write_raw_pkg(
+            tmp.path(),
+            "legacy",
+            &format!("{C115_JQ_SHA} 000755 /etc/init.d/hwclock\n"),
+        );
+
+        let all = db.path_owners(None, None).unwrap();
+        let owners: Vec<&str> = all
+            .owners_of("etc/init.d/hwclock")
             .iter()
-            .find(|e| e.path == "usr/bin/sh")
-            .expect("usr/bin/sh not found");
-        assert_eq!(symlink.symlink_target.as_deref(), Some("../../bin/sh"));
-        assert_eq!(symlink.mode, 0o120777);
-        assert_eq!(symlink.sha256, ""); // empty for symlinks in our repr
+            .map(|c| c.owner.as_str())
+            .collect();
+        assert_eq!(owners, vec!["fixups", "legacy", "openrc"]);
+        assert!(all.owners_of("etc").iter().all(|c| c.is_dir));
+        assert!(all.owner_replaces("fixups", "toybox"));
+        assert!(!all.owner_replaces("openrc", "toybox"));
+        assert_eq!(all.versions.get("openrc").map(String::as_str), Some("0.54"));
+
+        // `exclude` drops the named package; `wanted` narrows the paths.
+        let wanted: HashSet<&str> = ["etc/init.d/hwclock"].into_iter().collect();
+        let others = db.path_owners(Some(&wanted), Some("fixups")).unwrap();
+        let owners: Vec<&str> = others
+            .owners_of("etc/init.d/hwclock")
+            .iter()
+            .map(|c| c.owner.as_str())
+            .collect();
+        assert_eq!(owners, vec!["legacy", "openrc"]);
+        assert!(!others.is_claimed("bin/pi5"));
+        assert!(!others.is_claimed("etc"));
     }
 }

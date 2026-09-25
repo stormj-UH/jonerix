@@ -25,7 +25,14 @@
 //! 5. **Atomic writes**: output archives are written to a randomly-named temp
 //!    file in the same directory as `out_path`, then renamed into place.  This
 //!    prevents both torn-write exposure and symlink-based temp-file hijacking
-//!    by local attackers (the old `{out_path}.tmp` was predictable).
+//!    by local attackers (the old `{out_path}.tmp` was predictable).  The
+//!    temp file is created 0600, so it is chmod'ed to 0644 before the rename:
+//!    a `.jpkg` is public, signed data.
+//!
+//! 7. **Mode fidelity**: extraction keeps setuid/setgid/sticky bits
+//!    (`set_preserve_permissions(true)`); the tar crate otherwise masks
+//!    modes with `0o777`.  Ownership is NOT taken from the archive: headers
+//!    carry the build host's uid/gid, and installs run as root anyway.
 //!
 //! 6. **Deterministic payload order**: [`build_compressed_tar`] sorts entries
 //!    by path before adding them to the tar stream.
@@ -41,6 +48,7 @@
 
 use std::fs::{self};
 use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
@@ -236,6 +244,7 @@ where
         f.write_all(meta_bytes)?;
         f.write_all(&compressed_payload)?;
         f.flush()?;
+        f.set_permissions(fs::Permissions::from_mode(0o644))?;
     }
 
     tmp_file
@@ -300,6 +309,10 @@ fn build_compressed_tar(root: &Path) -> Result<Vec<u8>, ArchiveError> {
 fn extract_zstd_tar(zstd_tar_bytes: &[u8], dest: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
     let decoder = zstd::stream::Decoder::new(zstd_tar_bytes).map_err(ArchiveError::Zstd)?;
     let mut archive = tar::Archive::new(decoder);
+    // Keep setuid/setgid/sticky (sudo, passwd, toybox's suid applets, /tmp
+    // in rootfs packages).  Without this the tar crate applies `mode & 0o777`.
+    // Deliberately no set_preserve_ownerships: see invariant 7.
+    archive.set_preserve_permissions(true);
 
     let mut created: Vec<PathBuf> = Vec::new();
 
@@ -947,5 +960,54 @@ mod tests {
         assert!(validate_symlink_target(parent, Path::new("../bin/sh"), dest).is_ok());
         // ../ alone reaches dest itself, which is within dest (depth >= 0)
         assert!(validate_symlink_target(parent, Path::new("../"), dest).is_ok());
+    }
+
+    // ── Mode fidelity (2.2.10) ──────────────────────────────────────────────
+
+    #[test]
+    fn setuid_setgid_sticky_modes_survive_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        let destdir = tmp.path().join("suid_destdir");
+        fs::create_dir_all(destdir.join("bin")).unwrap();
+        fs::create_dir_all(destdir.join("var/spool")).unwrap();
+        fs::write(destdir.join("bin/sudo"), b"sudo stub").unwrap();
+        fs::write(destdir.join("bin/wall"), b"wall stub").unwrap();
+        let want = [
+            ("bin/sudo", 0o4755u32),
+            ("bin/wall", 0o2755),
+            ("var/spool", 0o1777),
+        ];
+        for (p, m) in want {
+            fs::set_permissions(destdir.join(p), fs::Permissions::from_mode(m)).unwrap();
+        }
+
+        let out = tmp.path().join("suid-test.jpkg");
+        create(&out, SYNTHETIC_TOML, &destdir).expect("create() failed");
+        let arch = JpkgArchive::open(&out).expect("open() failed");
+        let extract_dir = tmp.path().join("suid_extract");
+        arch.extract(&extract_dir).expect("extract() failed");
+
+        for (p, m) in want {
+            let got = extract_dir
+                .join(p)
+                .symlink_metadata()
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777;
+            assert_eq!(got, m, "{p}: mode {got:o} after extract, want {m:o}");
+        }
+    }
+
+    #[test]
+    fn created_archive_is_world_readable() {
+        let tmp = TempDir::new().unwrap();
+        let destdir = tmp.path().join("perm_destdir");
+        fs::create_dir_all(destdir.join("bin")).unwrap();
+        fs::write(destdir.join("bin/x"), b"x").unwrap();
+        let out = tmp.path().join("perm.jpkg");
+        create(&out, SYNTHETIC_TOML, &destdir).unwrap();
+        let mode = fs::metadata(&out).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "built .jpkg should be 0644, got {mode:o}");
     }
 }

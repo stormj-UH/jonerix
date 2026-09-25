@@ -2,17 +2,18 @@
 // doing business as LAVA GOAT SOFTWARE. All rights reserved.
 // SPDX-License-Identifier: MIT
 
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use walkdir::WalkDir;
 
 use crate::archive::{ArchiveError, JpkgArchive};
-use crate::db::{DbError, FileEntry, InstalledDb, InstalledPkg};
+use crate::db::{DbError, FileEntry, InstalledDb, InstalledPkg, Ownership};
 use crate::recipe::{Metadata, RecipeError};
 use crate::util::sha256_file;
 
@@ -431,6 +432,16 @@ fn wrap_io<T>(result: io::Result<T>, path: &Path, op: &'static str) -> Result<T,
 /// are overwritten.  This mirrors `tar -x` semantics: a destination symlink is
 /// replaced by the new file, not followed.
 ///
+/// # Modes (2.2.10)
+///
+/// Regular files get the staged mode **including** setuid/setgid/sticky
+/// (`mode & 0o7777`), applied after the data is written: `fs::copy` sets the
+/// mode before writing, and the kernel clears S_ISUID/S_ISGID on that write
+/// unless the writer holds CAP_FSETID.  Directories get the staged mode only
+/// when this install creates them; an existing directory keeps its mode, so a
+/// package that ships `tmp/` or `root/` at 0755 cannot re-mode `/tmp` (1777)
+/// or `/root` (0700).
+///
 /// # Errors
 ///
 /// Returns [`InstallError::FileOp`] with the offending path on any filesystem
@@ -490,7 +501,15 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
                 "create symlink",
             )?;
         } else if m.is_dir() {
+            let existed = dest.symlink_metadata().is_ok();
             wrap_io(fs::create_dir_all(&dest), &dest, "create directory")?;
+            if !existed {
+                wrap_io(
+                    fs::set_permissions(&dest, fs::Permissions::from_mode(m.mode() & 0o7777)),
+                    &dest,
+                    "set directory mode",
+                )?;
+            }
         } else {
             // Regular file — remove any existing symlink/file at dest first so
             // we do not inadvertently write through a symlink.  Tolerate
@@ -509,9 +528,76 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
                 wrap_io(fs::create_dir_all(p), p, "create parent directory")?;
             }
             wrap_io(fs::copy(abs, &dest), &dest, "copy file")?;
+            wrap_io(
+                fs::set_permissions(&dest, fs::Permissions::from_mode(m.mode() & 0o7777)),
+                &dest,
+                "set file mode",
+            )?;
         }
     }
     Ok(())
+}
+
+// ─── cross-package ownership ─────────────────────────────────────────────────
+
+/// How the package being installed relates to other packages' claims on the
+/// non-directory paths it ships.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ClaimPlan {
+    /// `(path, owner)`: `owner` declares `replaces = [<us>]` and still owns
+    /// `path`, so we leave the path alone and do not claim it.
+    yield_to: Vec<(String, String)>,
+    /// `(path, owner)`: `owner` also owns `path` and neither package replaces
+    /// the other.  We still install the path (last install wins, as before)
+    /// but report the conflict.
+    conflicts: Vec<(String, String)>,
+}
+
+/// Decide, for every non-directory path in `files`, whether another installed
+/// package owns it and what to do about that.
+///
+/// * The other package replaces us (and we do not replace it) → yield.
+/// * We replace the other package → no action here; `transfer_ownership`
+///   moves the path to us after install.
+/// * Anything else → conflict.
+fn plan_claims(
+    pkg_name: &str,
+    our_replaces: &[String],
+    files: &[FileEntry],
+    others: &Ownership,
+) -> ClaimPlan {
+    let mut plan = ClaimPlan::default();
+    for e in files.iter().filter(|e| !e.is_dir) {
+        let claims = others.owners_of(&e.path);
+        if claims.is_empty() {
+            continue;
+        }
+        let we_replace = |owner: &str| our_replaces.iter().any(|r| r == owner);
+        if let Some(c) = claims
+            .iter()
+            .find(|c| others.owner_replaces(&c.owner, pkg_name) && !we_replace(&c.owner))
+        {
+            plan.yield_to.push((e.path.clone(), c.owner.clone()));
+            continue;
+        }
+        for c in claims.iter().filter(|c| !we_replace(&c.owner)) {
+            plan.conflicts.push((e.path.clone(), c.owner.clone()));
+        }
+    }
+    plan
+}
+
+/// Summarise `(path, owner)` pairs as `owner (n)` in owner-name order.
+fn count_by_owner(pairs: &[(String, String)]) -> String {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for (_, owner) in pairs {
+        *counts.entry(owner.as_str()).or_default() += 1;
+    }
+    counts
+        .iter()
+        .map(|(o, n)| format!("{o} ({n})"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ─── upgrade-clean ────────────────────────────────────────────────────────────
@@ -531,7 +617,8 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
 ///
 /// 1. Read the OLD installed pkg from the db (caller guarantees same name).
 /// 2. Build a set of paths in the NEW manifest (`new_paths`).
-/// 3. For each entry in `old_files - new_files`, delete it from rootfs:
+/// 3. For each entry in `old_files - new_files` that no OTHER installed
+///    package still lists (`others`), delete it from rootfs:
 ///    - Regular file or symlink → `remove_file`
 ///    - Directory → defer (we collect them and rmdir at the end in reverse
 ///      sorted order so leaves come before parents).
@@ -556,6 +643,7 @@ fn clean_old_files_for_upgrade(
     new_files: &[FileEntry],
     new_pkg_name: &str,
     new_pkg_version: &str,
+    others: &Ownership,
 ) -> Result<(), InstallError> {
     use std::collections::HashMap;
 
@@ -671,6 +759,22 @@ fn clean_old_files_for_upgrade(
             // where the rootfs is missing the file.
             continue;
         }
+        if others.is_claimed(&old.path) {
+            // Another installed package still lists this path (a shared
+            // init script, a link a `replaces` package took over, …).  It
+            // is theirs now; deleting it would break them.
+            log::debug!(
+                "jpkg: upgrade-clean: keeping {} (still owned by {})",
+                old.path,
+                others
+                    .owners_of(&old.path)
+                    .iter()
+                    .map(|c| c.owner.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            continue;
+        }
         let on_disk = rootfs.join(&old.path);
         if old.is_dir {
             // Defer; remove after all child files are unlinked.
@@ -736,9 +840,12 @@ fn clean_old_files_for_upgrade(
 /// 3. `archive.extract(stage)` — decompresses the zstd(tar) payload.
 /// 4. `flatten_merged_usr(stage)` — jonerix merged-usr layout.
 /// 5. Build the NEW file manifest from the staged tree (needed before step 6).
+///    5b. Cross-package ownership (2.2.10): drop staged paths still owned by
+///    a package that declares `replaces = [<this package>]`, and warn about
+///    paths another package owns without any `replaces` relationship.
 /// 6. Upgrade-clean: if `db.get(name)?` returns Some(old), remove old-manifest
-///    files that aren't in the new manifest, and resolve dir→symlink layout
-///    flips owned by the same package.
+///    files that aren't in the new manifest and that no other package owns,
+///    and resolve dir→symlink layout flips owned by the same package.
 /// 7. `install_files(stage, rootfs)` — copy to final destination.
 /// 8. `db.insert(InstalledPkg { metadata, files })`.
 /// 9. For each name in `metadata.package.replaces`:
@@ -801,20 +908,77 @@ pub fn extract_and_register(
     // ── 5. Build the new manifest now (before install) so upgrade-clean can
     //       diff it against the old manifest.  Built from the staging dir so
     //       sha256s etc. are computed exactly once.
-    let files = build_manifest(&stage_dir)?;
+    let mut files = build_manifest(&stage_dir)?;
+
+    // ── 5b. Cross-package ownership.  Look up which OTHER installed packages
+    //        list any path we ship (or used to ship).
+    let old_pkg = db.get(&pkg_name)?;
+    let others = {
+        let mut wanted: HashSet<&str> = files.iter().map(|e| e.path.as_str()).collect();
+        if let Some(old) = &old_pkg {
+            wanted.extend(old.files.iter().map(|e| e.path.as_str()));
+        }
+        db.path_owners(Some(&wanted), Some(&pkg_name))?
+    };
+    let plan = plan_claims(&pkg_name, &metadata.package.replaces, &files, &others);
+
+    // Yield: a package that declares `replaces = [<us>]` owns these paths.
+    // Drop them from the staging tree and from our manifest so installing
+    // (or reinstalling) us cannot clobber them — e.g. toybox must not lay
+    // its /bin/<applet> links over uutils', bsdtar's or ncurses'.
+    if !plan.yield_to.is_empty() {
+        for (path, owner) in &plan.yield_to {
+            log::debug!("jpkg: {pkg_name}: leaving {path} to {owner}");
+            let staged = stage_dir.join(path);
+            wrap_io(fs::remove_file(&staged), &staged, "drop yielded path")?;
+        }
+        let yielded: HashSet<&str> = plan.yield_to.iter().map(|(p, _)| p.as_str()).collect();
+        files.retain(|e| !yielded.contains(e.path.as_str()));
+        log::info!(
+            "jpkg: {pkg_name}: left {} path(s) to packages that replace it: {}",
+            plan.yield_to.len(),
+            count_by_owner(&plan.yield_to)
+        );
+    }
+
+    // Conflict: someone else owns a path we are about to overwrite, and
+    // neither package replaces the other.  Keep the historical behaviour
+    // (install it; last install wins) but say so, naming the paths.
+    if !plan.conflicts.is_empty() {
+        const SHOW: usize = 8;
+        let shown: Vec<String> = plan
+            .conflicts
+            .iter()
+            .take(SHOW)
+            .map(|(p, o)| format!("/{p} ({o})"))
+            .collect();
+        let more = plan.conflicts.len().saturating_sub(SHOW);
+        log::warn!(
+            "jpkg: file conflict: {pkg_name}-{pkg_version} overwrites {} path(s) also owned by \
+             other packages: {}{}; see `jpkg owns --conflicts`",
+            plan.conflicts.len(),
+            shown.join(", "),
+            if more > 0 {
+                format!(" (+{more} more)")
+            } else {
+                String::new()
+            }
+        );
+    }
 
     // ── 6. Upgrade-clean — only when an older version of this package is
     //       already in the db.  We do this BEFORE install_files so the
     //       populated-dir-to-symlink case (the ncurses bug) doesn't trip the
-    //       symlink call's `EEXIST`.
-    if let Some(old_pkg) = db.get(&pkg_name)? {
+    //       symlink call's `EEXIST`.  Paths another package still owns are
+    //       never removed.
+    if let Some(old_pkg) = &old_pkg {
         log::debug!(
             "jpkg: upgrade-clean: {} {} -> {}",
             pkg_name,
             old_pkg.metadata.package.version.as_deref().unwrap_or("?"),
             pkg_version,
         );
-        clean_old_files_for_upgrade(rootfs, &old_pkg, &files, &pkg_name, &pkg_version)?;
+        clean_old_files_for_upgrade(rootfs, old_pkg, &files, &pkg_name, &pkg_version, &others)?;
     }
 
     // ── 7. Install files into rootfs ──────────────────────────────────────
@@ -1635,5 +1799,399 @@ pub(crate) mod tests {
             rootfs.join("lib/bar").exists(),
             "lib/bar should still exist"
         );
+    }
+
+    // ── 11. 2.2.10: modes, cross-package ownership, legacy manifests ─────────
+
+    /// One entry of a synthetic package tree.
+    pub(crate) enum Node<'a> {
+        File(&'a [u8], u32),
+        Link(&'a str),
+        Dir(u32),
+    }
+
+    /// Build a .jpkg whose payload is exactly `nodes` (parents are created
+    /// 0755 as needed; listed directories get the given mode).
+    pub(crate) fn build_jpkg_tree(
+        tmp: &Path,
+        name: &str,
+        version: &str,
+        replaces: &[&str],
+        nodes: &[(&str, Node<'_>)],
+    ) -> PathBuf {
+        let destdir = tmp.join(format!("tree-{name}-{version}"));
+        fs::create_dir_all(&destdir).unwrap();
+        for (path, node) in nodes {
+            let p = destdir.join(path);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            match node {
+                Node::File(data, mode) => {
+                    fs::write(&p, data).unwrap();
+                    fs::set_permissions(&p, fs::Permissions::from_mode(*mode)).unwrap();
+                }
+                Node::Link(target) => symlink(target, &p).unwrap(),
+                Node::Dir(mode) => {
+                    fs::create_dir_all(&p).unwrap();
+                    fs::set_permissions(&p, fs::Permissions::from_mode(*mode)).unwrap();
+                }
+            }
+        }
+        let meta = make_metadata_with_replaces(
+            name,
+            version,
+            replaces.iter().map(|r| r.to_string()).collect(),
+        );
+        let out = tmp.join(format!("{name}-{version}-x86_64.jpkg"));
+        archive::create(&out, &meta.to_string().unwrap(), &destdir).unwrap();
+        out
+    }
+
+    fn install(rootfs: &Path, db: &InstalledDb, jpkg: &Path) -> InstalledPkg {
+        let arc = JpkgArchive::open(jpkg).unwrap();
+        extract_and_register(&arc, rootfs, db).unwrap()
+    }
+
+    fn mode_of(p: &Path) -> u32 {
+        p.symlink_metadata().unwrap().permissions().mode() & 0o7777
+    }
+
+    fn manifest_has(db: &InstalledDb, pkg: &str, path: &str) -> bool {
+        db.get(pkg)
+            .unwrap()
+            .unwrap()
+            .files
+            .iter()
+            .any(|e| e.path == path)
+    }
+
+    #[test]
+    fn install_preserves_setuid_setgid_modes_on_disk_and_in_manifest() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(&rootfs).unwrap();
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        let pkg = build_jpkg_tree(
+            tmp.path(),
+            "suidpkg",
+            "1.0.0",
+            &[],
+            &[
+                ("bin/sudo", Node::File(b"sudo stub", 0o4755)),
+                ("bin/wall", Node::File(b"wall stub", 0o2755)),
+                ("bin/plain", Node::File(b"plain", 0o755)),
+            ],
+        );
+        let got = install(&rootfs, &db, &pkg);
+
+        assert_eq!(mode_of(&rootfs.join("bin/sudo")), 0o4755);
+        assert_eq!(mode_of(&rootfs.join("bin/wall")), 0o2755);
+        assert_eq!(mode_of(&rootfs.join("bin/plain")), 0o755);
+        let m = |p: &str| got.files.iter().find(|e| e.path == p).unwrap().mode & 0o7777;
+        assert_eq!(m("bin/sudo"), 0o4755, "manifest must record the setuid bit");
+        assert_eq!(m("bin/wall"), 0o2755);
+
+        // Reinstall over the existing file keeps the bits too.
+        install(&rootfs, &db, &pkg);
+        assert_eq!(mode_of(&rootfs.join("bin/sudo")), 0o4755);
+    }
+
+    #[test]
+    fn install_never_remodes_existing_directories() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(rootfs.join("tmp")).unwrap();
+        fs::create_dir_all(rootfs.join("root")).unwrap();
+        fs::set_permissions(rootfs.join("tmp"), fs::Permissions::from_mode(0o1777)).unwrap();
+        fs::set_permissions(rootfs.join("root"), fs::Permissions::from_mode(0o700)).unwrap();
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        // Ships tmp/ and root/ at 0755, like zig and rust do.
+        let pkg = build_jpkg_tree(
+            tmp.path(),
+            "dirpkg",
+            "1.0.0",
+            &[],
+            &[
+                ("tmp", Node::Dir(0o755)),
+                ("tmp/junk", Node::Dir(0o755)),
+                ("root", Node::Dir(0o755)),
+                ("root/.cargo/config.toml", Node::File(b"x", 0o644)),
+                ("var/spool/mail", Node::Dir(0o1777)),
+                ("etc/secret", Node::Dir(0o700)),
+            ],
+        );
+        install(&rootfs, &db, &pkg);
+
+        assert_eq!(mode_of(&rootfs.join("tmp")), 0o1777, "/tmp must stay 1777");
+        assert_eq!(mode_of(&rootfs.join("root")), 0o700, "/root must stay 0700");
+        // Directories this install created get the packaged mode.
+        assert_eq!(mode_of(&rootfs.join("tmp/junk")), 0o755);
+        assert_eq!(mode_of(&rootfs.join("var/spool/mail")), 0o1777);
+        assert_eq!(mode_of(&rootfs.join("etc/secret")), 0o700);
+    }
+
+    #[test]
+    fn plan_claims_classifies_yield_conflict_and_takeover() {
+        let tmp = TempDir::new().unwrap();
+        let db = InstalledDb::open(tmp.path()).unwrap();
+        let entry = |p: &str| FileEntry {
+            path: p.to_string(),
+            sha256: "a".repeat(64),
+            size: 0,
+            mode: 0o100755,
+            symlink_target: None,
+            is_dir: false,
+        };
+        let add = |name: &str, replaces: &[&str], paths: &[&str]| {
+            db.insert(&InstalledPkg {
+                metadata: make_metadata_with_replaces(
+                    name,
+                    "1",
+                    replaces.iter().map(|r| r.to_string()).collect(),
+                ),
+                files: paths.iter().map(|p| entry(p)).collect(),
+            })
+            .unwrap();
+        };
+        add("uutils", &["toybox"], &["bin/sort"]);
+        add("openrc", &[], &["bin/rc"]);
+        add("oldbox", &[], &["bin/old"]);
+
+        let ours = vec![
+            entry("bin/sort"),
+            entry("bin/rc"),
+            entry("bin/old"),
+            entry("bin/mine"),
+        ];
+        let others = db.path_owners(None, Some("toybox")).unwrap();
+        let plan = plan_claims("toybox", &["oldbox".to_string()], &ours, &others);
+        assert_eq!(
+            plan,
+            ClaimPlan {
+                yield_to: vec![("bin/sort".into(), "uutils".into())],
+                conflicts: vec![("bin/rc".into(), "openrc".into())],
+            }
+        );
+    }
+
+    /// The tormenta bug: installing toybox after uutils/bsdtar/jonerix-util
+    /// (all `replaces = ["toybox"]`) laid toybox's links over theirs.
+    #[test]
+    fn installing_replaced_package_does_not_clobber_replacers() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(&rootfs).unwrap();
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        let toybox_nodes = [
+            ("bin/toybox", Node::File(b"toybox", 0o755)),
+            ("bin/sort", Node::Link("toybox")),
+            ("bin/tar", Node::Link("toybox")),
+            ("bin/hwclock", Node::Link("toybox")),
+            ("bin/ping", Node::Link("toybox")),
+        ];
+        let tb1 = build_jpkg_tree(tmp.path(), "toybox", "0.8.11-r14", &[], &toybox_nodes);
+        install(&rootfs, &db, &tb1);
+
+        let uu = build_jpkg_tree(
+            tmp.path(),
+            "uutils",
+            "0.7.0-r2",
+            &["toybox"],
+            &[
+                ("bin/uutils", Node::File(b"uutils", 0o755)),
+                ("bin/sort", Node::Link("uutils")),
+            ],
+        );
+        install(&rootfs, &db, &uu);
+        let bt = build_jpkg_tree(
+            tmp.path(),
+            "bsdtar",
+            "3.8",
+            &["toybox"],
+            &[
+                ("bin/bsdtar", Node::File(b"bsdtar", 0o755)),
+                ("bin/tar", Node::Link("bsdtar")),
+            ],
+        );
+        install(&rootfs, &db, &bt);
+        let ju = build_jpkg_tree(
+            tmp.path(),
+            "jonerix-util",
+            "0.1.1",
+            &["toybox"],
+            &[("bin/hwclock", Node::File(b"real hwclock", 0o755))],
+        );
+        install(&rootfs, &db, &ju);
+        assert!(
+            !manifest_has(&db, "toybox", "bin/sort"),
+            "replaces took it over"
+        );
+
+        // Reinstall and upgrade toybox: nothing of the replacers may move.
+        install(&rootfs, &db, &tb1);
+        let tb2 = build_jpkg_tree(tmp.path(), "toybox", "0.8.11-r15", &[], &toybox_nodes);
+        install(&rootfs, &db, &tb2);
+
+        assert_eq!(
+            fs::read_link(rootfs.join("bin/sort")).unwrap(),
+            Path::new("uutils")
+        );
+        assert_eq!(
+            fs::read_link(rootfs.join("bin/tar")).unwrap(),
+            Path::new("bsdtar")
+        );
+        assert_eq!(
+            fs::read(rootfs.join("bin/hwclock")).unwrap(),
+            b"real hwclock"
+        );
+        assert_eq!(
+            fs::read_link(rootfs.join("bin/ping")).unwrap(),
+            Path::new("toybox")
+        );
+        for p in ["bin/sort", "bin/tar", "bin/hwclock"] {
+            assert!(
+                !manifest_has(&db, "toybox", p),
+                "toybox must not re-claim {p}"
+            );
+        }
+        assert!(manifest_has(&db, "toybox", "bin/ping"));
+        assert!(manifest_has(&db, "uutils", "bin/sort"));
+        assert!(manifest_has(&db, "bsdtar", "bin/tar"));
+        assert!(manifest_has(&db, "jonerix-util", "bin/hwclock"));
+    }
+
+    /// A host where the replaced package's manifest still claims the shared
+    /// path (it was installed last under jpkg <= 2.2.9).  Upgrading it must
+    /// neither overwrite nor delete the replacer's file.
+    #[test]
+    fn upgrade_clean_keeps_paths_owned_by_other_packages() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(rootfs.join("bin")).unwrap();
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+
+        // jonerix-util owns bin/hwclock and replaces toybox …
+        let ju = build_jpkg_tree(
+            tmp.path(),
+            "jonerix-util",
+            "0.1.1",
+            &["toybox"],
+            &[("bin/hwclock", Node::File(b"real hwclock", 0o755))],
+        );
+        install(&rootfs, &db, &ju);
+        // … but toybox's old record also lists it (both-claim state).
+        let link = |p: &str| FileEntry {
+            path: p.to_string(),
+            sha256: String::new(),
+            size: 0,
+            mode: 0o120777,
+            symlink_target: Some("toybox".to_string()),
+            is_dir: false,
+        };
+        db.insert(&InstalledPkg {
+            metadata: make_metadata("toybox", "0.8.11-r12"),
+            files: vec![link("bin/hwclock"), link("bin/ping")],
+        })
+        .unwrap();
+        // … and openrc/fixups share an init script with no replaces at all.
+        let rc = build_jpkg_tree(
+            tmp.path(),
+            "openrc",
+            "0.54-r7",
+            &[],
+            &[("etc/init.d/hwclock", Node::File(b"stock", 0o755))],
+        );
+        install(&rootfs, &db, &rc);
+        let fx = build_jpkg_tree(
+            tmp.path(),
+            "fixups",
+            "1.6.32",
+            &[],
+            &[
+                ("etc/init.d/hwclock", Node::File(b"pi5", 0o755)),
+                ("bin/pi5", Node::File(b"x", 0o755)),
+            ],
+        );
+        install(&rootfs, &db, &fx);
+
+        // toybox r15 no longer ships hwclock at all; fixups 1.6.33 drops its copy.
+        let tb = build_jpkg_tree(
+            tmp.path(),
+            "toybox",
+            "0.8.11-r15",
+            &[],
+            &[
+                ("bin/toybox", Node::File(b"toybox", 0o755)),
+                ("bin/ping", Node::Link("toybox")),
+            ],
+        );
+        install(&rootfs, &db, &tb);
+        let fx2 = build_jpkg_tree(
+            tmp.path(),
+            "fixups",
+            "1.6.33",
+            &[],
+            &[("bin/pi5", Node::File(b"x", 0o755))],
+        );
+        install(&rootfs, &db, &fx2);
+
+        assert_eq!(
+            fs::read(rootfs.join("bin/hwclock")).unwrap(),
+            b"real hwclock"
+        );
+        assert!(
+            rootfs.join("etc/init.d/hwclock").exists(),
+            "openrc still owns etc/init.d/hwclock"
+        );
+        assert!(!manifest_has(&db, "toybox", "bin/hwclock"));
+    }
+
+    /// C jpkg 1.1.5 manifests store absolute paths.  Under an alternate root,
+    /// `rootfs.join("/share/dropme")` used to resolve to the HOST path, so
+    /// upgrade-clean missed the file in the target root.
+    #[test]
+    fn upgrade_clean_of_legacy_manifest_stays_inside_alternate_root() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(rootfs.join("share")).unwrap();
+        fs::create_dir_all(rootfs.join("bin")).unwrap();
+        fs::write(rootfs.join("share/dropme"), b"old").unwrap();
+        fs::write(rootfs.join("bin/foo"), b"old").unwrap();
+        let pkg_dir = rootfs.join("var/db/jpkg/installed/droptest");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(
+            pkg_dir.join("metadata.toml"),
+            "[package]\nname = \"droptest\"\nversion = \"1.0.0\"\nlicense = \"MIT\"\n",
+        )
+        .unwrap();
+        let sha = "ab".repeat(32);
+        fs::write(
+            pkg_dir.join("files"),
+            format!("{sha} 000644 /share/dropme\n{sha} 000755 /bin/foo\n"),
+        )
+        .unwrap();
+
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+        assert!(
+            !fs::read_to_string(pkg_dir.join("files"))
+                .unwrap()
+                .contains(" /"),
+            "taking the lock migrates the legacy manifest"
+        );
+        let v2 = build_test_jpkg(tmp.path(), "droptest", "2.0.0");
+        install(&rootfs, &db, &v2);
+
+        assert!(
+            !rootfs.join("share/dropme").exists(),
+            "stale legacy path must be removed inside the target root"
+        );
+        assert_eq!(fs::read(rootfs.join("bin/foo")).unwrap(), b"foo content\n");
     }
 }

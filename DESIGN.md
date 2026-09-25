@@ -214,6 +214,7 @@ jpkg upgrade                 # upgrade all installed packages
 jpkg search <query>          # search package names/descriptions
 jpkg info <pkg>              # show package metadata
 jpkg list                    # list installed packages
+jpkg owns <path>             # show which installed package owns a file
 jpkg build <recipe-dir>      # build package from source recipe
 jpkg audit                   # verify all installed packages are permissive
 jpkg sign <file> --key <key> # sign a file with Ed25519

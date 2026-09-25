@@ -1,8 +1,28 @@
 [package]
 name = "jpkg"
-version = "2.2.9"
+version = "2.2.10"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.10 — file modes and cross-package ownership.
+#   * Keep setuid/setgid/sticky bits: extraction enables tar's
+#     preserve_permissions and install_files re-applies `mode & 0o7777`
+#     after copying (the copy's own write clears S_ISUID without
+#     CAP_FSETID).  Directories get the packaged mode only when jpkg
+#     creates them, so a package shipping tmp/ at 0755 never re-modes
+#     /tmp (1777) or /root (0700).
+#   * Legacy C jpkg 1.1.5 manifests (absolute "/bin/x" paths) are parsed
+#     as relative paths and rewritten in place when the db lock is taken,
+#     so ownership checks, upgrade-clean and --root see one format.
+#   * Installing A never overwrites a path owned by a package that
+#     declares replaces = ["A"] (toybox no longer clobbers uutils, bsdtar,
+#     ncurses or jonerix-util links); install warns when it overwrites a
+#     path another package owns; upgrade-clean and remove keep paths
+#     another installed package still lists.
+#   * INDEX cache and built .jpkg files are written 0644, and read-only
+#     verbs (search, info, license-audit) keep a verified index even when
+#     they cannot write the cache, so `jpkg search` works as non-root.
+#   * New verbs: `jpkg list` and `jpkg owns <path>...|--conflicts`.
+#
 # 2.2.9 — retry transient INDEX.zst/INDEX.zst.sig signature mismatches during
 # `jpkg update`. GitHub release assets are uploaded as separate files, so a
 # client can briefly observe a fresh INDEX with the previous signature (or the

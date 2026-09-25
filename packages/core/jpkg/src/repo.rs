@@ -27,7 +27,11 @@
 //!    to `cache_dir/INDEX` via a temporary file that is renamed into place.
 //!    Concurrent readers therefore never observe a partially written cache file.
 //!    A failed fetch leaves the previous cache file intact, which
-//!    [`Repo::load_cached_index`] can still serve.
+//!    [`Repo::load_cached_index`] can still serve.  The cache file is always
+//!    mode 0644 (the INDEX is public, signed data) so unprivileged read-only
+//!    verbs can use it; read-only verbs go through
+//!    [`Repo::load_index_for_query`], which treats a failed cache write as a
+//!    warning instead of discarding a verified index.
 //!
 //! 4. **TLS guarantees**: all HTTPS fetches use the `ureq` + `rustls` stack
 //!    with the `webpki-roots` CA bundle compiled in.  No system CA bundle is
@@ -301,9 +305,34 @@ impl Repo {
 
     // ── Index operations ───────────────────────────────────────────────────
 
+    /// Fetch, verify, parse and cache the INDEX.  A cache write failure is an
+    /// error: this is what `jpkg update` and the mutating verbs use.
     pub fn fetch_index(&self) -> Result<Index, RepoError> {
+        self.fetch_index_with(CacheWrite::Required)
+    }
+
+    /// Like [`Repo::fetch_index`], but failing to write `cache_dir/INDEX`
+    /// (typically: a non-root user and a root-owned `/var/cache/jpkg`) is
+    /// only logged.  The downloaded, signature-checked index is still
+    /// returned.  For read-only verbs such as `search` and `info`.
+    pub fn fetch_index_uncached_ok(&self) -> Result<Index, RepoError> {
+        self.fetch_index_with(CacheWrite::BestEffort)
+    }
+
+    /// Index for read-only verbs: the cached INDEX when it is readable,
+    /// otherwise a fresh fetch whose cache write is best-effort.
+    pub fn load_index_for_query(&self) -> Result<Index, RepoError> {
+        match self.load_cached_index() {
+            Ok(Some(idx)) => return Ok(idx),
+            Ok(None) => log::info!("no cached INDEX; fetching"),
+            Err(e) => log::warn!("cache read failed ({e}); fetching"),
+        }
+        self.fetch_index_uncached_ok()
+    }
+
+    fn fetch_index_with(&self, cache: CacheWrite) -> Result<Index, RepoError> {
         for attempt in 0..=INDEX_SIGNATURE_RETRY_DELAYS_MS.len() {
-            match self.fetch_index_once() {
+            match self.fetch_index_once(cache) {
                 Ok(index) => return Ok(index),
                 Err(RepoError::SignatureRejected)
                     if attempt < INDEX_SIGNATURE_RETRY_DELAYS_MS.len() =>
@@ -330,12 +359,17 @@ impl Repo {
     /// when `keys.is_empty()` per audit § 3), decompress with `zstd::decode_all`,
     /// parse TOML.  Caches the decompressed plaintext to `cache_dir/INDEX`
     /// atomically (write to a tempfile, then rename).
-    fn fetch_index_once(&self) -> Result<Index, RepoError> {
+    fn fetch_index_once(&self, cache: CacheWrite) -> Result<Index, RepoError> {
         if self.mirrors.is_empty() {
             return Err(RepoError::NoMirrors);
         }
 
-        std::fs::create_dir_all(&self.cache_dir)?;
+        if let Err(e) = std::fs::create_dir_all(&self.cache_dir) {
+            if cache == CacheWrite::Required {
+                return Err(e.into());
+            }
+            log::debug!("cannot create {}: {e}", self.cache_dir.display());
+        }
 
         // --- fetch INDEX.zst -----------------------------------------------
         log::info!("fetching INDEX.zst from mirrors");
@@ -378,8 +412,16 @@ impl Repo {
 
         // --- atomic cache write -------------------------------------------
         let index_path = self.cache_dir.join("INDEX");
-        atomic_write(&index_path, &plain)?;
-        log::info!("INDEX cached to {}", index_path.display());
+        match atomic_write(&index_path, &plain) {
+            Ok(()) => log::info!("INDEX cached to {}", index_path.display()),
+            Err(e) if cache == CacheWrite::BestEffort => {
+                log::warn!(
+                    "cannot cache INDEX at {} ({e}); using the fetched copy without caching",
+                    index_path.display()
+                );
+            }
+            Err(e) => return Err(e.into()),
+        }
 
         // --- parse TOML ----------------------------------------------------
         let text = std::str::from_utf8(&plain)
@@ -532,13 +574,29 @@ fn zstd_decompress(data: &[u8]) -> Result<Vec<u8>, RepoError> {
     }
 }
 
+/// Whether a failed INDEX cache write aborts the fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CacheWrite {
+    /// `jpkg update` and the mutating verbs: the cache must be written.
+    Required,
+    /// Read-only verbs: log the failure and keep the in-memory index.
+    BestEffort,
+}
+
 /// Write `data` to `path` atomically: write to a sibling tempfile then rename.
+///
+/// tempfile creates the file 0600; the INDEX is public, signed data, so it is
+/// chmod'ed to 0644 before the rename (otherwise non-root `jpkg search`
+/// cannot read the cache root wrote).
 fn atomic_write(path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
+    use std::os::unix::fs::PermissionsExt;
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let tmp = tempfile::Builder::new()
         .prefix(".INDEX.tmp")
         .tempfile_in(parent)?;
     std::fs::write(tmp.path(), data)?;
+    tmp.as_file()
+        .set_permissions(std::fs::Permissions::from_mode(0o644))?;
     tmp.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
@@ -1103,5 +1161,63 @@ url = "https://github.com/stormj-UH/jonerix/releases/download/v1.2.2"
         );
         let idx = result.unwrap();
         assert!(idx.get("mksh", "x86_64").is_some());
+    }
+
+    // ── 2.2.10: INDEX cache permissions and read-only fetches ─────────────────
+
+    fn serve_unsigned_index() -> FakeServer {
+        let index = minimal_index("toybox", "x86_64", "0.8.11");
+        let index_toml = index.to_string().expect("serialise index");
+        let compressed = zstd::encode_all(index_toml.as_bytes(), 3).expect("zstd encode");
+        let mut routes: std::collections::HashMap<String, (u16, Vec<u8>)> =
+            std::collections::HashMap::new();
+        routes.insert("/INDEX.zst".to_owned(), (200, compressed));
+        fake_http_server(Arc::new(routes))
+    }
+
+    fn repo_for(srv: &FakeServer, cache_dir: PathBuf) -> Repo {
+        let keys_dir = TempDir::new().expect("tempdir");
+        let keys = PublicKeySet::load_dir(keys_dir.path()).expect("load_dir empty");
+        Repo::new(
+            vec![format!("http://127.0.0.1:{}", srv.addr.port())],
+            keys,
+            cache_dir,
+            "x86_64".to_owned(),
+        )
+    }
+
+    #[test]
+    fn test_fetch_index_cache_is_world_readable() {
+        use std::os::unix::fs::PermissionsExt;
+        let srv = serve_unsigned_index();
+        let cache_dir = TempDir::new().expect("tempdir");
+        let repo = repo_for(&srv, cache_dir.path().to_path_buf());
+        repo.fetch_index().expect("fetch_index");
+        let mode = std::fs::metadata(cache_dir.path().join("INDEX"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o644, "cached INDEX must be 0644, got {mode:o}");
+    }
+
+    #[test]
+    fn test_query_fetch_survives_unwritable_cache() {
+        // A cache dir that can never be created (its parent is a regular
+        // file) stands in for a root-owned /var/cache/jpkg seen by a normal
+        // user; unlike chmod tricks this also holds when tests run as root.
+        let srv = serve_unsigned_index();
+        let tmp = TempDir::new().expect("tempdir");
+        std::fs::write(tmp.path().join("not-a-dir"), b"x").unwrap();
+        let repo = repo_for(&srv, tmp.path().join("not-a-dir/cache"));
+
+        assert!(
+            repo.fetch_index().is_err(),
+            "jpkg update semantics: an unwritable cache is an error"
+        );
+        let idx = repo
+            .load_index_for_query()
+            .expect("read-only verbs must still get the verified index");
+        assert!(idx.get("toybox", "x86_64").is_some());
     }
 }

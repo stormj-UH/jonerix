@@ -123,14 +123,11 @@ pub fn run(args: &[String]) -> i32 {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-/// Try cache first; fall back to network fetch.
+/// Try cache first; fall back to a network fetch whose cache write is
+/// best-effort, so an unprivileged user can search without root having to
+/// re-run `jpkg update`.
 fn load_index(repo: &Repo) -> Option<Index> {
-    match repo.load_cached_index() {
-        Ok(Some(idx)) => return Some(idx),
-        Ok(None) => log::info!("no cached INDEX; fetching"),
-        Err(e) => log::warn!("cache read failed ({e}); fetching"),
-    }
-    match repo.fetch_index() {
+    match repo.load_index_for_query() {
         Ok(idx) => Some(idx),
         Err(e) => {
             log::error!("fetch_index failed: {e}");

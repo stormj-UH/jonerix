@@ -2,10 +2,12 @@
 // doing business as LAVA GOAT SOFTWARE. All rights reserved.
 // SPDX-License-Identifier: MIT
 
+use std::collections::HashSet;
 use std::fs;
+use std::path::Path;
 
 use crate::cmd::common::{resolve_rootfs, run_hook};
-use crate::db::InstalledDb;
+use crate::db::{InstalledDb, InstalledPkg, Ownership};
 use crate::deps::resolve_remove;
 use crate::types::OrphanMode;
 
@@ -142,39 +144,33 @@ pub fn run(args: &[String]) -> i32 {
         // Save post_remove hook body before we drop the record.
         let post_hook = pkg.metadata.hooks.post_remove.clone();
 
-        // Remove files in reverse order: longer paths (files) before shorter
-        // ones (their parent directories).  This ensures we can rmdir
-        // directories only after all their children are gone.
-        let mut files = pkg.files.clone();
-        files.sort_by(|a, b| b.path.cmp(&a.path));
-
-        let mut file_errors = 0usize;
-        for entry in &files {
-            let full = rootfs.join(&entry.path);
-
-            match full.symlink_metadata() {
-                Err(_) => {
-                    log::debug!("jpkg: file already absent: {}", entry.path);
+        // Paths another installed package still lists stay on disk: they are
+        // shared (e.g. an init script two packages ship) or were taken over
+        // by a `replaces` package.  Deleting them would break that package.
+        let others = {
+            let wanted: HashSet<&str> = pkg.files.iter().map(|e| e.path.as_str()).collect();
+            match db.path_owners(Some(&wanted), Some(pkg_name)) {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("jpkg: cannot check shared ownership for {pkg_name}: {e}");
+                    failures += 1;
                     continue;
                 }
-                Ok(m) => {
-                    if m.is_dir() && !m.file_type().is_symlink() {
-                        // Only remove directory if empty (mirrors C rmdir call).
-                        if let Err(e) = fs::remove_dir(&full) {
-                            log::debug!("jpkg: leaving non-empty dir {}: {e}", entry.path);
-                        }
-                    } else {
-                        if let Err(e) = fs::remove_file(&full) {
-                            log::warn!("jpkg: failed to remove {}: {e}", entry.path);
-                            file_errors += 1;
-                        }
-                    }
-                }
             }
-        }
+        };
 
-        if file_errors > 0 {
-            log::warn!("jpkg: {file_errors} file(s) could not be removed from {pkg_name}");
+        let stats = remove_package_files(&rootfs, &pkg, &others);
+        if stats.errors > 0 {
+            log::warn!(
+                "jpkg: {} file(s) could not be removed from {pkg_name}",
+                stats.errors
+            );
+        }
+        if stats.kept > 0 {
+            log::info!(
+                "jpkg: kept {} path(s) of {pkg_name} that other packages still own",
+                stats.kept
+            );
         }
 
         // Remove DB record.
@@ -216,6 +212,75 @@ pub fn run(args: &[String]) -> i32 {
     0
 }
 
+// ─── remove_package_files ────────────────────────────────────────────────────
+
+/// Outcome of [`remove_package_files`].
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct RemoveStats {
+    /// Files/symlinks unlinked.
+    pub removed: usize,
+    /// Non-directory paths left in place because another package owns them.
+    pub kept: usize,
+    /// Unlink failures other than "already absent".
+    pub errors: usize,
+}
+
+/// Delete `pkg`'s files from `rootfs`, skipping every path that `others`
+/// (the ownership index of all OTHER installed packages) still claims.
+///
+/// Files go in reverse path order (children before parents) so a directory
+/// is only `rmdir`ed once everything under it is gone; populated directories
+/// are left in place, mirroring the C `rmdir` call.
+pub(crate) fn remove_package_files(
+    rootfs: &Path,
+    pkg: &InstalledPkg,
+    others: &Ownership,
+) -> RemoveStats {
+    let mut stats = RemoveStats::default();
+    let mut files = pkg.files.clone();
+    files.sort_by(|a, b| b.path.cmp(&a.path));
+
+    for entry in &files {
+        if others.is_claimed(&entry.path) {
+            if !entry.is_dir {
+                log::debug!(
+                    "jpkg: keeping /{} (still owned by {})",
+                    entry.path,
+                    others
+                        .owners_of(&entry.path)
+                        .iter()
+                        .map(|c| c.owner.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                stats.kept += 1;
+            }
+            continue;
+        }
+        let full = rootfs.join(&entry.path);
+
+        match full.symlink_metadata() {
+            Err(_) => {
+                log::debug!("jpkg: file already absent: {}", entry.path);
+            }
+            Ok(m) => {
+                if m.is_dir() && !m.file_type().is_symlink() {
+                    // Only remove directory if empty (mirrors C rmdir call).
+                    if let Err(e) = fs::remove_dir(&full) {
+                        log::debug!("jpkg: leaving non-empty dir {}: {e}", entry.path);
+                    }
+                } else if let Err(e) = fs::remove_file(&full) {
+                    log::warn!("jpkg: failed to remove {}: {e}", entry.path);
+                    stats.errors += 1;
+                } else {
+                    stats.removed += 1;
+                }
+            }
+        }
+    }
+    stats
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -255,19 +320,10 @@ mod tests {
 
         // Remove via the helper directly (bypasses run() to avoid process::exit).
         let pkg = db.get("rmpkg").unwrap().unwrap();
-        let mut files = pkg.files.clone();
-        files.sort_by(|a, b| b.path.cmp(&a.path));
-
-        for entry in &files {
-            let full = rootfs.join(&entry.path);
-            if let Ok(m) = full.symlink_metadata() {
-                if m.is_dir() && !m.file_type().is_symlink() {
-                    let _ = fs::remove_dir(&full);
-                } else {
-                    let _ = fs::remove_file(&full);
-                }
-            }
-        }
+        let others = db.path_owners(None, Some("rmpkg")).unwrap();
+        let stats = remove_package_files(&rootfs, &pkg, &others);
+        assert_eq!(stats.kept, 0);
+        assert_eq!(stats.errors, 0);
         db.remove("rmpkg").unwrap();
 
         // Verify.
@@ -341,6 +397,71 @@ mod tests {
         assert!(
             rootfs.join("pre_remove_ran").exists(),
             "pre_remove hook should have created pre_remove_ran"
+        );
+    }
+
+    // ── 3. Shared paths survive removal of one owner ──────────────────────────
+    //
+    // jonerix-raspi5-fixups and openrc both ship etc/init.d/hwclock.  Removing
+    // fixups must not delete the file openrc still owns.
+
+    #[test]
+    fn remove_keeps_paths_another_package_owns() {
+        use crate::db::FileEntry;
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(rootfs.join("etc/init.d")).unwrap();
+        fs::create_dir_all(rootfs.join("bin")).unwrap();
+        fs::write(rootfs.join("etc/init.d/hwclock"), b"#!/bin/openrc-run\n").unwrap();
+        fs::write(rootfs.join("bin/pi5-only"), b"x").unwrap();
+
+        let file = |p: &str| FileEntry {
+            path: p.to_string(),
+            sha256: "a".repeat(64),
+            size: 0,
+            mode: 0o100755,
+            symlink_target: None,
+            is_dir: false,
+        };
+        let dir = |p: &str| FileEntry {
+            path: p.to_string(),
+            sha256: "0".repeat(64),
+            size: 0,
+            mode: 0o040755,
+            symlink_target: None,
+            is_dir: true,
+        };
+        let db = InstalledDb::open(&rootfs).unwrap();
+        let _lock = db.lock().unwrap();
+        db.insert(&InstalledPkg {
+            metadata: common_tests::make_metadata("openrc", "0.54"),
+            files: vec![dir("etc"), dir("etc/init.d"), file("etc/init.d/hwclock")],
+        })
+        .unwrap();
+        db.insert(&InstalledPkg {
+            metadata: common_tests::make_metadata("fixups", "1.6"),
+            files: vec![
+                dir("bin"),
+                file("bin/pi5-only"),
+                dir("etc"),
+                dir("etc/init.d"),
+                file("etc/init.d/hwclock"),
+            ],
+        })
+        .unwrap();
+
+        let pkg = db.get("fixups").unwrap().unwrap();
+        let others = db.path_owners(None, Some("fixups")).unwrap();
+        let stats = remove_package_files(&rootfs, &pkg, &others);
+
+        assert_eq!(stats.kept, 1, "hwclock is shared with openrc");
+        assert_eq!(stats.removed, 1, "only bin/pi5-only is fixups-only");
+        assert!(rootfs.join("etc/init.d/hwclock").exists());
+        assert!(rootfs.join("etc/init.d").is_dir());
+        assert!(!rootfs.join("bin/pi5-only").exists());
+        assert!(
+            !rootfs.join("bin").exists(),
+            "empty unshared dir is removed"
         );
     }
 }

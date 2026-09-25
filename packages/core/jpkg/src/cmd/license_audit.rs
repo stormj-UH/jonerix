@@ -157,15 +157,10 @@ fn audit_repo(rootfs: &Path, verbose: bool) -> i32 {
         }
     };
 
-    let index = match repo
-        .load_cached_index()
-        .ok()
-        .flatten()
-        .or_else(|| repo.fetch_index().ok())
-    {
-        Some(idx) => idx,
-        None => {
-            eprintln!("error: no package index. Run 'jpkg update' first.");
+    let index = match repo.load_index_for_query() {
+        Ok(idx) => idx,
+        Err(e) => {
+            eprintln!("error: no package index ({e}). Run 'jpkg update' first.");
             return 1;
         }
     };
