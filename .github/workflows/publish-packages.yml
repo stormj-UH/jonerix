@@ -52,9 +52,29 @@ env:
   LLVM_BUILD_JOBS_X86_64: 2
 
 jobs:
+  # ------ Publish from main only ----------------------------------------------
+  # The rolling `packages` release feeds every jonerix host. A dispatch from
+  # a feature branch once published dhcpcd, dropbear and sudo builds that
+  # main could not reproduce, and gen-index then paired those payloads with
+  # main's recipe metadata. Every other job hangs off this one.
+  require-main:
+    name: Require main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse to publish from a non-main ref
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::publish-packages writes the shared packages release and only runs from refs/heads/main (this run: $REF). Merge the recipe change to main first."
+            exit 1
+          fi
+          echo "Publishing from $REF."
+
   # ------ Create the packages release once ------------------------------------------------------------------------------------------------------------------
   create-release:
     name: Create packages release
+    needs: require-main
     runs-on: ubuntu-latest
     permissions:
       contents: write

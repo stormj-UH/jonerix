@@ -15,6 +15,19 @@
 # jmake, and python3. Duplicates are always a bug — per jonerix's package
 # model, if you need two versions, use distinct package names.
 #
+# Recipe cross-checks (RECIPES_ROOT is the checked-out tree, main in CI):
+#   - A package whose recipe is gone is an orphan and is flagged stale.
+#   - A package built for an arch its recipe excludes (`arch = "..."`) is
+#     flagged stale instead of indexed.
+#   - A winner whose version is NEWER than its recipe was built from a tree
+#     that is not the checked-out one (for example an unmerged branch). That
+#     is an error: the script still writes the INDEX, then exits 1 so the
+#     publish job stops before signing and uploading it. Set
+#     ALLOW_INDEX_AHEAD_OF_RECIPE=1 to downgrade it to a warning.
+#   - Runtime depends come from the recipe only when the recipe version
+#     matches the indexed one; otherwise they come from the .jpkg's own
+#     metadata, which describes the payload actually being served.
+#
 # Usage:
 #   PKG_DIR=/var/cache/jpkg OUT_INDEX=/var/cache/jpkg/INDEX \
 #   RECIPES_ROOT=/workspace/packages STALE_LIST=/tmp/stale.txt \
@@ -26,6 +39,7 @@ PKG_DIR="${PKG_DIR:-/var/cache/jpkg}"
 OUT_INDEX="${OUT_INDEX:-$PKG_DIR/INDEX}"
 RECIPES_ROOT="${RECIPES_ROOT:-${GITHUB_WORKSPACE:-$PWD}/packages}"
 STALE_LIST="${STALE_LIST:-$PKG_DIR/.stale-assets}"
+ALLOW_INDEX_AHEAD_OF_RECIPE="${ALLOW_INDEX_AHEAD_OF_RECIPE:-0}"
 
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"' EXIT INT TERM
@@ -58,6 +72,33 @@ version_sort_key() {
         *-r[0-9]*) printf '%s\n' "$1" ;;
         *)         printf '%s-r0\n' "$1" ;;
     esac
+}
+
+# version_newer A B: succeed when version A sorts strictly above version B.
+version_newer() {
+    _vn_a="$(version_sort_key "$1")"
+    _vn_b="$(version_sort_key "$2")"
+    [ "$_vn_a" != "$_vn_b" ] || return 1
+    [ "$(printf '%s\n%s\n' "$_vn_a" "$_vn_b" | sort -V | tail -n 1)" = "$_vn_a" ]
+}
+
+# recipe_field FILE KEY: first `KEY = "value"` line of a recipe (the recipes
+# are not strict TOML, so no TOML parser; same extraction as ci-build-*.sh).
+recipe_field() {
+    grep "^$2[[:space:]]*=" "$1" | head -n 1 | sed 's/.*= *"\(.*\)".*/\1/'
+}
+
+# meta_runtime_depends META: the `runtime = [...]` array from the [depends]
+# table of a .jpkg's own metadata, verbatim. sed only: the sparse builder
+# image that also runs this script has no awk.
+meta_runtime_depends() {
+    printf '%s\n' "$1" | sed -n '/^\[depends\]$/,/^\[/{
+/^runtime[[:space:]]*=/{
+s/^runtime[[:space:]]*=[[:space:]]*//
+p
+q
+}
+}'
 }
 
 # --- Pass 1: collect (version, path) grouped by (name, arch) ---------------
@@ -117,6 +158,7 @@ fi
 } > "$OUT_INDEX"
 
 emitted=0
+ahead=0
 while read -r pkg; do
     [ -n "$pkg" ] || continue
     pkg_base="$(basename "$pkg")"
@@ -128,9 +170,8 @@ while read -r pkg; do
     license="$(meta_field "$meta" license)"
     desc="$(meta_field "$meta" description)"
     arch="$(meta_field "$meta" arch)"
+    [ -n "$arch" ] || arch="x86_64"
 
-    # Prefer recipe.toml for runtime-depends (source of truth) — the .jpkg
-    # metadata may have been written by an older jpkg that didn't record them.
     recipe_file=""
     for _pkgdir in core develop extra; do
         _candidate="$RECIPES_ROOT/$_pkgdir/$name/recipe.toml"
@@ -139,14 +180,42 @@ while read -r pkg; do
             break
         fi
     done
-    if [ -n "$recipe_file" ]; then
-        depends_arr="$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')"
-    else
+    if [ -z "$recipe_file" ]; then
         # No recipe means the package was removed from the repo.
         # Flag the orphan .jpkg for deletion instead of indexing it.
         echo "orphan: no recipe for $name — flagging $pkg_base for removal" >&2
         printf '%s\n' "$pkg_base" >> "$STALE_LIST"
         continue
+    fi
+
+    # A recipe pinned to one arch never publishes the other; an asset for the
+    # excluded arch predates the pin and must not stay in the INDEX.
+    recipe_arch="$(recipe_field "$recipe_file" arch)"
+    if [ -n "$recipe_arch" ] && [ "$recipe_arch" != "$arch" ]; then
+        echo "arch-excluded: $name is arch=$recipe_arch — flagging $pkg_base for removal" >&2
+        printf '%s\n' "$pkg_base" >> "$STALE_LIST"
+        continue
+    fi
+
+    # Prefer recipe.toml for runtime-depends (source of truth) — the .jpkg
+    # metadata may have been written by an older jpkg that didn't record them.
+    # That only holds while the recipe describes this exact build; when the
+    # versions differ, the .jpkg's own [depends] describes the payload.
+    recipe_version="$(recipe_field "$recipe_file" version)"
+    if [ -z "$recipe_version" ] || [ "$(version_sort_key "$recipe_version")" = "$(version_sort_key "${version:-0}")" ]; then
+        depends_arr="$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')"
+    else
+        if version_newer "${version:-0}" "$recipe_version"; then
+            ahead=$((ahead + 1))
+            if [ "$ALLOW_INDEX_AHEAD_OF_RECIPE" = "1" ]; then
+                echo "::warning::$name ($arch): indexed $version is newer than recipe $recipe_version ($recipe_file); it was built from a different tree"
+            else
+                echo "::error::$name ($arch): indexed $version is newer than recipe $recipe_version ($recipe_file); it was built from a different tree (land that recipe first, or set ALLOW_INDEX_AHEAD_OF_RECIPE=1)"
+            fi
+        else
+            echo "note: $name ($arch): recipe $recipe_version is not published yet; indexing $version"
+        fi
+        depends_arr="$(meta_runtime_depends "$meta")"
     fi
     [ "$depends_arr" = "[]" ] && depends_arr=""
 
@@ -155,7 +224,6 @@ while read -r pkg; do
 
     [ -n "$name" ]    || name="$(echo "$pkg_base" | sed 's/-[^-]*-[^-]*\.jpkg$//')"
     [ -n "$version" ] || version="0"
-    [ -n "$arch" ]    || arch="x86_64"
 
     # Section key is "name-arch" so x86_64 and aarch64 coexist.
     # jpkg's repo_find_package() tries "name-arch" before falling back to "name".
@@ -177,3 +245,12 @@ while read -r pkg; do
 done < "$WINNERS"
 
 echo "INDEX generation done: $emitted package(s)."
+
+if [ "$ahead" -gt 0 ]; then
+    if [ "$ALLOW_INDEX_AHEAD_OF_RECIPE" = "1" ]; then
+        echo "::warning::$ahead indexed package(s) are newer than their recipes (allowed by ALLOW_INDEX_AHEAD_OF_RECIPE=1)"
+    else
+        echo "::error::$ahead indexed package(s) are newer than their recipes in $RECIPES_ROOT; refusing to bless this INDEX"
+        exit 1
+    fi
+fi
