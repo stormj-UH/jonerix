@@ -340,20 +340,27 @@ audit_installed() {
 
     local had_failure=0
 
+    # jpkg 2.x keeps one directory per package under installed/, holding
+    # metadata.toml; older layouts kept <pkg>/metadata or <pkg>/PKG directly
+    # under the DB root.
+    local pkg_root="$db_path"
+    [ -d "$db_path/installed" ] && pkg_root="$db_path/installed"
+
     # Each installed package has a metadata file in the DB
-    for pkg_dir in "$db_path"/*/; do
+    for pkg_dir in "$pkg_root"/*/; do
         [ -d "$pkg_dir" ] || continue
         local pkg_name
         pkg_name="$(basename "$pkg_dir")"
 
         local license=""
 
-        # Try to read license from package metadata (TOML-like)
-        if [ -f "$pkg_dir/metadata" ]; then
-            license="$(grep -i '^license' "$pkg_dir/metadata" | head -1 | sed 's/^[^=]*=[[:space:]]*//' | tr -d '"'"'")"
-        elif [ -f "$pkg_dir/PKG" ]; then
-            license="$(grep -i '^license' "$pkg_dir/PKG" | head -1 | sed 's/^[^=]*=[[:space:]]*//' | tr -d '"'"'")"
-        fi
+        # Read the license from the package metadata (TOML-like)
+        for meta_file in metadata.toml metadata PKG; do
+            if [ -f "$pkg_dir/$meta_file" ]; then
+                license="$(grep -i '^license' "$pkg_dir/$meta_file" | head -1 | sed 's/^[^=]*=[[:space:]]*//' | tr -d '"'"'")"
+                break
+            fi
+        done
 
         if [ -z "$license" ]; then
             license="UNKNOWN"
