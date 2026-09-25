@@ -33,8 +33,8 @@ jobs:
           echo "=== jonerix License Audit ==="
           echo ""
           echo "Policy: Every runtime component must be permissively licensed."
-          echo "Allowed: MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, Zlib, public domain, Artistic-2.0, PSF-2.0, MPL-2.0, BSD-2-Clause AND Ruby, MIT OR Apache-2.0"
-          echo "Forbidden: GPL, LGPL, AGPL (except Linux kernel)"
+          echo "Allowed: jpkg's PERMISSIVE_LICENSES (MIT, BSD, ISC, Apache-2.0, 0BSD, CC0, Zlib, public domain, PSF-2.0, Artistic, ...); SPDX AND/OR evaluated"
+          echo "Forbidden: GPL, LGPL, AGPL, MPL (except Linux kernel; MPL-2.0 only for ca-certificates)"
           echo ""
 
           # Run the license audit against package recipes
