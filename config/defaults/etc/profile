@@ -43,7 +43,21 @@ export LC_ALL="en_US.UTF-8"
 # --- Editor ---
 export EDITOR="pico"
 export VISUAL="pico"
-export PAGER="less"
+
+# --- Pager ---
+# jonerix ships no less(1); more(1) comes from uutils when installed.
+# Only name a pager that exists: man(1) cannot show a page through a
+# missing one (it falls back to cat when there is no pager at all).
+if [ -z "${PAGER:-}" ]; then
+    if command -v less >/dev/null 2>&1; then
+        export PAGER="less"
+    elif command -v more >/dev/null 2>&1; then
+        export PAGER="more"
+    fi
+fi
+if [ -z "${MANPAGER:-}" ] && [ "${PAGER:-}" = more ]; then
+    export MANPAGER="more -s"
+fi
 
 # --- Aliases ---
 alias ls='ls --color=auto'
@@ -54,6 +68,20 @@ alias grep='grep --color=auto'
 alias ..='cd ..'
 alias ...='cd ../..'
 
+# toybox ps takes only POSIX options, so the BSD habit `ps aux` fails
+# with "bad aux". Map it to the same columns in POSIX -o form.
+ps() {
+    case "${1:-}" in
+        aux|auxw|auxww|-aux)
+            shift
+            command ps -A -o user,pid,%cpu,%mem,vsz,rss,tty,stat,stime,time,args "$@"
+            ;;
+        *)
+            command ps "$@"
+            ;;
+    esac
+}
+
 # --- History ---
 export HISTSIZE=1000
 export HISTFILE="$HOME/.sh_history"
@@ -61,6 +89,16 @@ export HISTFILE="$HOME/.sh_history"
 # --- Misc ---
 # Prevent core dumps by default
 ulimit -c 0
+
+# --- /etc/profile.d ---
+# Packages drop environment fragments here (mandoc, rust, rustup, ...).
+# Read them before ~/.profile so per-user settings win.
+if [ -d /etc/profile.d ]; then
+    for f in /etc/profile.d/*.sh; do
+        [ -r "$f" ] && . "$f"
+    done
+    unset f
+fi
 
 # Source user-specific profile if present
 if [ -f "$HOME/.profile" ]; then

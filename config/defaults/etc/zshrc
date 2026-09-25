@@ -22,3 +22,17 @@ setopt HIST_IGNORE_SPACE
 setopt INTERACTIVE_COMMENTS
 
 PROMPT='%F{19}[%F{250}%m%F{19} %F{250}%D{%H:%M:%S}%F{19} %F{250}%/%F{19}]%f %(!.#.$) '
+
+# toybox ps takes only POSIX options, so the BSD habit `ps aux` fails
+# with "bad aux". Map it to the same columns in POSIX -o form.
+ps() {
+    case "${1:-}" in
+        aux|auxw|auxww|-aux)
+            shift
+            command ps -A -o user,pid,%cpu,%mem,vsz,rss,tty,stat,stime,time,args "$@"
+            ;;
+        *)
+            command ps "$@"
+            ;;
+    esac
+}
