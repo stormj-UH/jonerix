@@ -1,0 +1,70 @@
+# HarfBuzz — OpenType text shaping.  Old-MIT licensed; permissive
+# under jpkg's MIT entry.  We build with FreeType + ICU integration
+# but DELIBERATELY WITHOUT graphite2 — graphite2 is LGPL and jonerix
+# rejects copyleft licences.  See the comment under -Dgraphite=disabled
+# below for the consequences (Graphite-shaped fonts won't shape, but
+# OpenType — the 99.9% case — works).
+
+[package]
+name = "harfbuzz"
+version = "11.2.0"
+license = "MIT"
+description = "OpenType text shaping engine (libharfbuzz, libharfbuzz-subset, hb-shape, hb-view, hb-subset)"
+
+[source]
+url = "https://github.com/harfbuzz/harfbuzz/releases/download/11.2.0/harfbuzz-11.2.0.tar.xz"
+sha256 = "50f7d0a208367e606dbf6eecc5cfbecc01a47be6ee837ae7aff2787e24b09b45"
+
+[build]
+# Meson + samurai, matching the rest of the typography stack.
+#
+# Build matrix:
+#   freetype    enabled  — required by Tectonic + typst
+#   icu         enabled  — Unicode normalisation / line-break tables
+#   cairo       disabled — no cairo in jonerix
+#   chafa       disabled — terminal preview, not needed
+#   glib        disabled — no glib in jonerix
+#   gobject     disabled — implied by glib disabled
+#   graphite    disabled — LGPL, rejected by jpkg's licence gate
+#   tests       disabled — keep build time down
+#   docs        disabled — no GTK-doc on jonerix
+#   introspection disabled — no gobject-introspection
+system = "custom"
+configure = """
+set -e
+# Same meson `cc.has_type` workaround as fontconfig — strip the
+# linker-only flags from CFLAGS so compile-only probes under
+# `-Werror=unused-command-line-argument` don't false-negative.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dfreetype=enabled \
+  -Dicu=enabled \
+  -Dcairo=disabled \
+  -Dchafa=disabled \
+  -Dglib=disabled \
+  -Dgobject=disabled \
+  -Dgraphite=disabled \
+  -Dgraphite2=disabled \
+  -Dtests=disabled \
+  -Ddocs=disabled \
+  -Dintrospection=disabled \
+  -Dutilities=enabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libharfbuzz*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "libcxx", "freetype", "icu"]
+build = ["clang", "meson", "samurai", "pkgconf", "libcxx", "freetype", "icu"]

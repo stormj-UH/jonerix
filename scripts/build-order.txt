@@ -197,3 +197,39 @@ toybox
 # the full jmake + jpkg + nloxide combination on every run.
 hostapd
 wpa_supplicant
+# Tier 13: Wayland desktop stack (Pi 5 kiosk/terminal session). Every
+# entry is permissive (MIT unless noted); cairo, pango, GTK, udev and
+# hwdata stay out of the graph. Listed in dependency order so each
+# package's build-deps are already in /out/jpkgs when it builds.
+#   text: libpng (libpng-2.0) -> freetype (FTL) -> icu (Unicode-3.0)
+#         -> harfbuzz -> fontconfig (HPND); pixman needs libpng
+#   core: wayland -> wayland-protocols; xkeyboard-config -> libxkbcommon
+#   input/KMS: libdrm, libevdev, mtdev, libudev-zero (ISC) -> libinput;
+#         seatd; hwdata-stub (0BSD) -> libdisplay-info
+#   GL: mesa (needs libllvm, libdrm, wayland, libxkbcommon)
+#   compositors: wlroots -> tinywl (CC0), cage
+#   terminal: fcft -> foot
+libpng
+freetype
+icu
+harfbuzz
+fontconfig
+pixman
+wayland
+wayland-protocols
+xkeyboard-config
+libxkbcommon
+libdrm
+libevdev
+mtdev
+libudev-zero
+libinput
+seatd
+hwdata-stub
+libdisplay-info
+mesa
+wlroots
+tinywl
+cage
+fcft
+foot

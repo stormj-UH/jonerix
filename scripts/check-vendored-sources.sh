@@ -153,6 +153,11 @@ check_cached_file rust rust-1.95.0-aarch64-jonerix-linux-musl.tar.gz 800cb1c2a0f
 check_cached_file rust rust-1.95.0-x86_64-jonerix-linux-musl.tar.gz 111b75d1a0bb41a30abcc45a44e38dfa577c27f12c91361f16a40246a437f2fe
 check_cached_file rustup rustup-init-1.29.0-aarch64-unknown-linux-musl 88761caacddb92cd79b0b1f939f3990ba1997d701a38b3e8dd6746a562f2a759
 check_cached_file rustup rustup-init-1.29.0-x86_64-unknown-linux-musl 9cd3fda5fd293890e36ab271af6a786ee22084b5f6c2b83fd8323cec6f0992c1
+# Pure-Python modules mesa's codegen imports at build time.
+check_cached_file mesa mako-1.4.3.tar.gz cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a
+check_cached_file mesa markupsafe-3.0.3.tar.gz 722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698
+check_cached_file mesa pyyaml-6.0.3.tar.gz d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
+check_cached_file mesa packaging-26.3.tar.gz 94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79
 
 if [ "$failures" -ne 0 ]; then
     printf 'vendored source check failed: %s issue(s)\n' "$failures" >&2

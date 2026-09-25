@@ -1,0 +1,56 @@
+# tinywl — the wlroots reference compositor, ~1100 LOC of C.  CC0
+# (public domain).  Stacking compositor with the bare minimum: multiple
+# xdg-shell clients, click-to-focus, Alt+drag to move, Alt+right-drag
+# to resize, Alt+F1 to cycle focus, Alt+Escape to exit.  No title bars
+# (clients use CSD or look like floating textareas), no status bar, no
+# menu — exactly the cairo+pango-free design that fits jonerix's
+# strict-permissive Wayland story.
+#
+# Source is the `tinywl/` subdirectory of the wlroots-0.20.0 release
+# tarball.  Reuses the same upstream tarball we already fetch for the
+# `wlroots` package — no separate download.
+
+[package]
+name = "tinywl"
+version = "0.20.0"
+license = "CC0"
+description = "wlroots reference compositor — stacking, no built-in chrome (CSD only).  Alt+drag to move, Alt+right-drag to resize, Alt+F1 cycle focus, Alt+Esc exit.  Run with -s <cmd> to launch a startup client (typically foot)."
+
+[source]
+# Same tarball wlroots uses — we just build a different subdir.
+url = "https://gitlab.freedesktop.org/wlroots/wlroots/-/releases/0.20.0/downloads/wlroots-0.20.0.tar.gz"
+sha256 = "33f52414e1b280839aeb70786f0ae2c9f54e27ad4873108d86270a2f89c4934b"
+
+[build]
+# Plain Makefile in tinywl/.  No configure step; build runs make
+# directly with pkg-config-derived flags.
+system = "custom"
+build = """set -e
+cd tinywl
+# Bypass the upstream BSD-make-style Makefile (uses `!=` shell-out
+# syntax that jmake doesn't honour the same way) and just compile
+# tinywl.c directly with pkg-config-derived flags.
+CFLAGS_PKG="$(pkg-config --cflags wlroots-0.20 wayland-server xkbcommon)"
+LIBS_PKG="$(pkg-config --libs wlroots-0.20 wayland-server xkbcommon)"
+clang -Os -fPIE -fstack-protector-strong -DWLR_USE_UNSTABLE -Wno-error \
+  -I. $CFLAGS_PKG -c tinywl.c -o tinywl.o
+clang tinywl.o $LIBS_PKG -Wl,-z,relro,-z,now -pie --rtlib=compiler-rt \
+  --unwindlib=libunwind -fuse-ld=lld -o tinywl
+"""
+install = """set -e
+cd tinywl
+install -Dm755 tinywl "$DESTDIR/bin/tinywl"
+install -Dm644 LICENSE "$DESTDIR/share/licenses/tinywl/LICENSE"
+install -Dm644 README.md "$DESTDIR/share/doc/tinywl/README.md"
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+llvm-strip --strip-all "$DESTDIR/bin/tinywl" 2>/dev/null || true
+"""
+
+[depends]
+# Runtime mirrors what wlroots itself needs — tinywl is a thin shell
+# over wlroots, so anything wlroots loads at runtime, tinywl loads too.
+runtime = ["musl", "wlroots", "wayland", "libxkbcommon", "libinput", "pixman", "mesa", "libdrm", "libudev-zero", "seatd", "hwdata-stub", "libdisplay-info", "libcxx"]
+# Build adds make (no meson here) and the wlroots-Requires.private chain
+# so pkg-config can resolve every header path on a fresh extract.
+build = ["clang", "make", "pkgconf", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "libinput", "pixman", "mesa", "libdrm", "libudev-zero", "seatd", "hwdata-stub", "libdisplay-info", "libcxx", "jonerix-headers"]

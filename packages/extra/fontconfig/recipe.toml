@@ -1,0 +1,77 @@
+# Fontconfig — system font discovery + matching.  Built on top of
+# freetype + expat.  Required at runtime by every typesetter that
+# wants to find user-installed fonts (typst's `fontdb`, Tectonic's
+# xetex_layout when reaching out for system fonts).
+
+[package]
+name = "fontconfig"
+version = "2.16.0"
+license = "HPND"
+description = "Font discovery and matching library (libfontconfig + fc-cache + fc-list + fc-match)"
+
+[source]
+# Canonical home: freedesktop.org GitLab project 890.
+url = "https://gitlab.freedesktop.org/api/v4/projects/890/packages/generic/fontconfig/2.16.0/fontconfig-2.16.0.tar.xz"
+sha256 = "6a33dc555cc9ba8b10caf7695878ef134eeb36d0af366041f639b1da9b6ed220"
+
+[build]
+# Fontconfig 2.16 prefers meson.  We point it at /etc/fonts as the
+# default config dir (matches every Linux distribution) and disable
+# the .uuid-based cache invalidation — jonerix systems don't move
+# cache files around between hosts in ways that would benefit from
+# UUID tagging.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's default --rtlib/--unwindlib from CFLAGS for the meson
+# probe phase.  meson's `cc.has_type` runs compile-only checks with
+# `-Werror=unused-command-line-argument`, and clang flags those
+# linker-only options as unused under `-c`, which makes every type
+# probe (including the uint64_t sanity check at fontconfig
+# meson.build:467) return NO — even though the type IS available.
+# Re-add the unwindlib bits to LDFLAGS so the final link is unchanged.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --sysconfdir=/etc \
+  --localstatedir=/var \
+  --buildtype=release \
+  --default-library=both \
+  -Ddoc=disabled \
+  -Dtests=disabled \
+  -Dtools=enabled \
+  -Dnls=disabled \
+  -Dcache-build=disabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# /var/cache/fontconfig stays empty in the package — fc-cache runs
+# at first use to populate it.  Make sure the dir exists so neither
+# fc-cache nor fc-match warns about a missing cache directory on
+# first launch.
+mkdir -p "$DESTDIR/var/cache/fontconfig"
+find "$DESTDIR/lib" -name 'libfontconfig*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[hooks]
+# Build the fontconfig cache after install so the first `fc-list`
+# call doesn't spend 5+ seconds scanning /usr/share/fonts at the user's
+# expense.  Tolerate failure for chroot/altroot installs where the
+# binary may not be executable on the host architecture.
+post_install = """set -e
+root=${JPKG_ROOT:-/}
+if [ -x "${root%/}/bin/fc-cache" ] && [ -z "$JPKG_ROOT" ]; then
+    "${root%/}/bin/fc-cache" -s >/dev/null 2>&1 || true
+fi
+"""
+
+[depends]
+runtime = ["musl", "freetype", "expat"]
+build = ["clang", "meson", "samurai", "pkgconf", "freetype", "expat"]

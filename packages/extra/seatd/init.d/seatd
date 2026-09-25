@@ -1,0 +1,93 @@
+#!/bin/openrc-run
+# SPDX-License-Identifier: 0BSD
+# seatd — seat management daemon for unprivileged Wayland compositors.
+#
+# seatd runs as root, listens on /run/seatd.sock and hands DRM and
+# evdev file descriptors to compositors (cage, tinywl, anything that
+# links libseat) over SCM_RIGHTS.  It creates the socket root:<group>
+# mode 0770, so only members of that group can start a compositor.
+# seatd does not daemonize; supervise-daemon keeps it running.
+#
+# Group: `seat` by default, the same group Alpine's seatd service uses.
+# The seatd package creates it on install; add each compositor user to
+# it with `usermod -aG seat <user>`.  To use a different group (wheel,
+# for example), set SEATD_GROUP in /etc/conf.d/seatd.  The package does
+# not ship that file, so a local setting survives upgrades.  Extra
+# seatd flags (such as `-l info`) go in SEATD_OPTS there.
+#
+# Runtime dirs: jonerix has no logind or pam_systemd, so nothing else
+# creates /run/user/<uid>.  start_post creates it (mode 0700, owned by
+# the user) for every member of the seat group, which is exactly the
+# set of users allowed to run a compositor.  They can then export
+# XDG_RUNTIME_DIR=/run/user/$(id -u) without root.
+#
+# On a Raspberry Pi 5, `want pi5-drm-modules` loads i2c_brcmstb, vc4
+# and v3d, in that order, before seatd starts, so /dev/dri exists.  That
+# service ships in jonerix-raspi5-fixups; on other hosts it does not
+# exist and OpenRC ignores a want on a missing service.
+
+description="Seat management daemon for unprivileged Wayland compositors"
+
+supervisor="supervise-daemon"
+command="/bin/seatd"
+command_args="-g ${SEATD_GROUP:-seat} ${SEATD_OPTS:-}"
+respawn_delay=1
+respawn_max=0
+error_log="/var/log/seatd.log"
+
+depend() {
+	need localmount
+	want pi5-drm-modules
+	after pi5-drm-modules
+	keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+start_pre() {
+	if ! grep -q "^${SEATD_GROUP:-seat}:" /etc/group 2>/dev/null; then
+		eerror "group '${SEATD_GROUP:-seat}' does not exist"
+		eerror "create it with: groupadd -r ${SEATD_GROUP:-seat}"
+		return 1
+	fi
+	return 0
+}
+
+# Print "user:uid:gid" for every account that belongs to group $1,
+# either as a listed member or through its primary gid.  Plain sh, no
+# awk: the minimal jonerix images do not ship one.
+_seat_members() {
+	gid=
+	members=
+	while IFS=: read -r name pw id list || [ -n "$name" ]; do
+		if [ "$name" = "$1" ]; then
+			gid=$id
+			members=$list
+			break
+		fi
+	done < /etc/group
+	[ -n "$gid" ] || return 0
+	while IFS=: read -r user pw uid ugid rest || [ -n "$user" ]; do
+		case ",$members," in
+		*",$user,"*) echo "$user:$uid:$ugid" ;;
+		*) [ "$ugid" != "$gid" ] || echo "$user:$uid:$ugid" ;;
+		esac
+	done < /etc/passwd
+}
+
+start_post() {
+	[ -d /run/user ] || mkdir -m 0755 /run/user 2>/dev/null || return 0
+	_seat_members "${SEATD_GROUP:-seat}" | while IFS=: read -r user uid gid; do
+		case "$uid" in
+		'' | *[!0-9]*) continue ;;
+		esac
+		[ "$uid" -ne 0 ] || continue
+		dir="/run/user/$uid"
+		[ -d "$dir" ] && continue
+		if mkdir -m 0700 "$dir" 2>/dev/null; then
+			chown "$uid:$gid" "$dir" 2>/dev/null ||
+				ewarn "could not chown $dir to $user"
+		else
+			ewarn "could not create $dir for $user"
+		fi
+	done
+	return 0
+}

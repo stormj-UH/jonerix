@@ -1,0 +1,79 @@
+# xkeyboard-config — keyboard layout, model, variant, and option data.
+# Pure data: XKB files under /share/X11/xkb describing US, GB, DE,
+# Dvorak, Colemak, plus thousands of national/regional layouts.
+# libxkbcommon reads these at runtime to translate keycodes to symbols.
+#
+# Originally part of the X.Org project — still hosted on x.org's
+# release server even though Wayland is now the primary consumer.
+#
+# MIT-licensed (the COPYING file lists MIT-style attribution notices
+# from many contributors; jpkg's MIT entry covers the whole bundle).
+
+[package]
+name = "xkeyboard-config"
+version = "2.47"
+license = "MIT"
+description = "Keyboard layout database for libxkbcommon (XKB rules, models, variants, options)"
+
+[source]
+url = "https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-config-2.47.tar.xz"
+sha256 = "e59984416a72d58b46a52bfec1b1361aa7d84354628227ee2783626c7a6db6b6"
+
+[build]
+# Meson + samurai.  Pure data package — the build runs python3 scripts
+# to merge the per-layout `symbols/*` files into the consolidated rules
+# (`rules/evdev`, `rules/base`, etc.) consumed at runtime.  No C
+# compilation happens.
+#
+# Build matrix:
+#   tests        disabled — pulls in libxkbcommon and runs end-to-end
+#                           checks; circular dep risk (libxkbcommon
+#                           build-depends on us via -Dxkb-config-root).
+#   xkb-base     /share/X11/xkb — matches libxkbcommon's
+#                          -Dxkb-config-root and the universal X11
+#                          convention.
+system = "custom"
+configure = """
+set -e
+# Same meson probe workaround as wayland/freetype — see those recipes
+# for the full explanation.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --datadir=/share \
+  --buildtype=release \
+  -Dnls=false
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# Pure data — nothing to strip.  xkeyboard-config 2.47 installs the
+# rules under /share/xkeyboard-config-2/ and ships /share/X11/xkb as
+# an absolute-target symlink → /share/xkeyboard-config-2.  Verify
+# both the real files AND the symlink are in the package payload
+# (the symlink uses an absolute target so we can't follow it inside
+# DESTDIR — check existence via -L).
+if [ ! -f "$DESTDIR/share/xkeyboard-config-2/rules/evdev" ]; then
+    echo "xkeyboard-config: rules/evdev missing from install" >&2
+    find "$DESTDIR" -maxdepth 5 -name evdev -type f >&2 || true
+    exit 1
+fi
+if [ ! -L "$DESTDIR/share/X11/xkb" ]; then
+    echo "xkeyboard-config: /share/X11/xkb compatibility symlink missing" >&2
+    exit 1
+fi
+"""
+
+[depends]
+# Runtime: none beyond a consumer.  These files are inert without
+# libxkbcommon (or an X server) to read them.
+runtime = []
+# Build:
+#   python3   — meson invokes python3 to merge symbols/* into rules/*
+#               (the "evdev" rules file is generated, not shipped).
+build = ["clang", "meson", "samurai", "pkgconf", "python3"]

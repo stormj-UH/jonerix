@@ -1,0 +1,83 @@
+# wayland — core display-server protocol library + wayland-scanner code
+# generator.  The foundation of the modern Linux graphics stack: every
+# Wayland compositor (sway, hyprland, mutter, kwin_wayland) links
+# libwayland-server, and every Wayland client (Firefox, Foot, fcft-using
+# tools) links libwayland-client.  Without this package, nothing in the
+# Wayland userland builds or runs.
+#
+# We ship both libraries plus wayland-scanner (the build-time code
+# generator that emits C bindings from XML protocol definitions).
+# Compositors and clients consume wayland-protocols on top of this
+# (separate package — pure XML data, no code).
+#
+# MIT-licensed end-to-end; permissive under jpkg's MIT entry.
+
+[package]
+name = "wayland"
+version = "1.25.0"
+license = "MIT"
+description = "Core Wayland display-server protocol library (libwayland-client, libwayland-server, libwayland-cursor, libwayland-egl) + wayland-scanner code generator"
+
+[source]
+url = "https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.25.0/downloads/wayland-1.25.0.tar.xz"
+sha256 = "c065f040afdff3177680600f249727e41a1afc22fccf27222f15f5306faa1f03"
+
+[build]
+# Meson + samurai, matching the rest of the freedesktop stack.
+#
+# Build matrix:
+#   libraries     enabled  — the C client + server libs (default).
+#   scanner       enabled  — wayland-scanner.  Compositors and clients
+#                            need this at build time, so we always
+#                            ship the binary; downstream meson builds
+#                            pick it up via pkg-config.
+#   documentation disabled — needs xmlto + doxygen + graphviz, none of
+#                            which jonerix ships.
+#   tests         disabled — keep build time down; tests pull in pthread
+#                            stress harnesses we don't run in CI.
+#   dtd-validation disabled — would need libxml2 to validate the .dtd
+#                            files at build; the released tarball ships
+#                            with pre-validated XML so this is safe.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's default --rtlib/--unwindlib from CFLAGS for the meson
+# probe phase — same pattern as fontconfig/harfbuzz.  meson's
+# cc.has_* runs compile-only checks with -Werror=unused-command-line-
+# argument, and clang flags linker-only options as unused under -c,
+# which makes the probes spuriously fail.  Re-add to LDFLAGS so the
+# final link is unchanged.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dlibraries=true \
+  -Dscanner=true \
+  -Ddocumentation=false \
+  -Dtests=false \
+  -Ddtd_validation=false
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libwayland*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+# Runtime:
+#   musl      — libc
+#   expat     — libwayland-server uses expat to parse protocol XML
+#               at runtime (wl_display::add_protocol_logger and the
+#               scanner's runtime fallback paths).
+#   libffi    — libwayland-client/server use libffi for the dynamic
+#               request/event dispatch (the whole wire protocol is
+#               function pointers resolved at run time).
+runtime = ["musl", "expat", "libffi"]
+build = ["clang", "meson", "samurai", "pkgconf", "expat", "libffi"]

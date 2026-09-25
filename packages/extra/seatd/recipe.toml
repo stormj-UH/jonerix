@@ -1,0 +1,161 @@
+# seatd — minimal seat management daemon + libseat client library.
+# In a no-systemd world (jonerix runs OpenRC), seatd is the canonical
+# way for unprivileged Wayland compositors to acquire the DRM master
+# handle on /dev/dri/card* and the input event device FDs on
+# /dev/input/event*.  Sway, hyprland, river, and wlroots-based
+# compositors all link libseat and talk to seatd over a Unix socket.
+#
+# Three libseat backends matter here:
+#   - logind   DISABLED — pulls in systemd-logind which we don't ship.
+#   - seatd    ENABLED  — the daemon path; standard for OpenRC systems.
+#   - builtin  ENABLED  — fallback that runs seatd-style logic inside
+#                         the compositor's process when launched as
+#                         root (e.g. for diagnostic SSH-driven sway).
+#
+# The seatd binary is the server component; libseat is what
+# compositors link.  We ship both plus an OpenRC service that runs
+# `seatd -g seat` under supervise-daemon, so /run/seatd.sock is
+# root:seat mode 0770 and members of the `seat` group can launch a
+# compositor without sudo.  That matches Alpine and the hand-made
+# service tormenta has run since May 2026.  post_install creates the
+# group and enables the service in the default runlevel; users still
+# have to be added to the group (`usermod -aG seat <user>`).  Set
+# SEATD_GROUP in /etc/conf.d/seatd to use another group.  See
+# init.d/seatd for the /run/user/<uid> provisioning it also does.
+#
+# MIT-licensed.
+
+[package]
+name = "seatd"
+version = "0.9.3-r1"
+license = "MIT"
+# 0.9.3-r1: ship /etc/init.d/seatd (supervise-daemon, `-g seat`, default
+# runlevel) and create the seat group on install.  r0 shipped no service,
+# so hosts ran a hand-written one.
+description = "Minimal seat-management daemon + libseat client library for unprivileged Wayland compositors on non-systemd systems (builtin + seatd backends)"
+
+[source]
+# sourcehut archive tarball.  Extracts as `seatd-0.9.3/` (sourcehut's
+# default), so no extraction-path workaround.
+url = "https://git.sr.ht/~kennylevinsen/seatd/archive/0.9.3.tar.gz"
+sha256 = "302564d54d8e28191fadfd734f2675ecb0c9e0615a58011b89ef15dfa4dbaa96"
+
+[build]
+# Meson + samurai.
+#
+# Build matrix:
+#   libseat-builtin  enabled  — in-process fallback for root launches.
+#   libseat-logind   disabled — no systemd-logind on jonerix.
+#   libseat-seatd    enabled  — primary backend; talks to the seatd
+#                               daemon over /run/seatd.sock.
+#   server           enabled  — builds the seatd binary itself.
+#   man-pages        disabled — needs scdoc.
+#   examples         disabled — small but unnecessary in production.
+#   defaultpath      /run/seatd.sock — kept as default; called out
+#                                      here so the OpenRC service
+#                                      writer downstream knows where
+#                                      to look.
+system = "custom"
+configure = """
+set -e
+# Strip jpkg's --rtlib/--unwindlib from CFLAGS for the meson probe
+# phase — see fontconfig recipe.
+# seatd's source triggers a `[-Wsign-compare]` in musl's CMSG_NXTHDR
+# macro under clang — `__CMSG_LEN(cmsg) + sizeof(struct cmsghdr) >=
+# __MHDR_END(mhdr) - (unsigned char *)(cmsg)` compares an unsigned
+# sum with a signed ptrdiff_t.  Suppress at the project level so
+# seatd's strict -Werror doesn't escalate it.
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 -Wno-error=sign-compare"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dlibseat-builtin=enabled \
+  -Dlibseat-logind=disabled \
+  -Dlibseat-seatd=enabled \
+  -Dserver=enabled \
+  -Dman-pages=disabled \
+  -Dexamples=disabled \
+  -Dwerror=false
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libseat*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+
+# OpenRC service.  See the init.d/seatd header for the group model.
+# post_install below enables it in the default runlevel.
+install -Dm755 "$RECIPE_DIR/init.d/seatd" "$DESTDIR/etc/init.d/seatd"
+"""
+
+[hooks]
+# Create the seat group, enable the service in the default runlevel and
+# start it on a live OpenRC host.  Every step is idempotent, and an
+# upgrade never restarts a running seatd: that would drop the DRM and
+# input fds of any compositor session in progress.
+#
+# The runlevel link is only added once per host (marker file
+# /etc/jpkg/seatd/enabled), and only when seatd is in no runlevel yet,
+# so an admin who later runs `rc-update del seatd` is not overridden by
+# the next upgrade.  jpkg upgrades run post_install but not the remove
+# hooks.
+#
+# groupadd comes from shadow and rewrites /etc/group atomically.  The
+# echo fallback covers a first-boot image without shadow (or a groupadd
+# that failed); 122 is the gid tormenta's seat group already has.  It
+# uses plain echo because jpkg passes backslashes in triple-quoted hook
+# strings through verbatim, so a doubled backslash-n given to printf
+# lands in /etc/group as literal text.  toybox addgroup is never used
+# because it can truncate /etc/group.
+post_install = """if ! grep -q "^seat:" /etc/group 2>/dev/null; then
+    if command -v groupadd >/dev/null 2>&1; then
+        groupadd -r seat 2>/dev/null || true
+    fi
+fi
+if ! grep -q "^seat:" /etc/group 2>/dev/null; then
+    if [ -s /etc/group ] && [ -n "$(tail -c 1 /etc/group)" ]; then
+        echo >> /etc/group
+    fi
+    echo 'seat:x:122:' >> /etc/group
+fi
+if [ ! -e /etc/jpkg/seatd/enabled ]; then
+    in_runlevel=no
+    for rl in /etc/runlevels/*; do
+        [ -e "$rl/seatd" ] && in_runlevel=yes
+    done
+    if [ "$in_runlevel" = no ] && command -v rc-update >/dev/null 2>&1; then
+        (cd / && rc-update add seatd default) >/dev/null 2>&1 || true
+    fi
+    mkdir -p /etc/jpkg/seatd && : > /etc/jpkg/seatd/enabled
+fi
+if [ -f /run/openrc/softlevel ] && command -v rc-service >/dev/null 2>&1; then
+    rc-service seatd status >/dev/null 2>&1 || rc-service seatd start >/dev/null 2>&1 || true
+fi
+echo "seatd: add compositor users to the seat group: usermod -aG seat <user>"
+exit 0"""
+
+# Stop the service and drop its runlevel links while the init script
+# still exists.  jpkg removes the manifest-owned files itself.  The seat
+# group stays: other files may still be owned by it.
+pre_remove = """if [ -f /run/openrc/softlevel ] && command -v rc-service >/dev/null 2>&1; then
+    rc-service seatd stop >/dev/null 2>&1 || true
+fi
+for rl in /etc/runlevels/*; do
+    [ -L "$rl/seatd" ] && rm -f "$rl/seatd"
+done
+rm -rf /etc/jpkg/seatd
+exit 0"""
+
+[depends]
+runtime = ["musl"]
+# Build:
+#   jonerix-headers  — seatd uses <linux/major.h> + <linux/vt.h> from
+#                      the kernel UAPI headers for the TTY-multiplexing
+#                      ioctls (VT_GETMODE etc.).
+build = ["clang", "meson", "samurai", "pkgconf", "jonerix-headers"]
