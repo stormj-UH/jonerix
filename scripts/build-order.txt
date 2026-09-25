@@ -40,6 +40,9 @@ ncurses
 # Tier 1: depends on musl only (tiny)
 # byacc must precede jq (which uses yacc)
 byacc
+# jonerix-logrotate: POSIX-sh /var/log rotator + cron.d entry, no build
+# deps; snooze lists it as a runtime dep (its job logs are rotated).
+jonerix-logrotate
 snooze
 pigz
 lz4

@@ -1,0 +1,189 @@
+#!/bin/mksh
+# jonerix-logrotate -- size-capped copytruncate rotation for /var/log.
+#
+# POSIX sh, pinned to mksh like snooze-crond and OpenRC's scripts: /bin/sh
+# can be the toybox applet on hosts where a toybox reinstall re-claimed
+# the link, and toybox sh 0.8.11 has no getopts and mis-matches bracket
+# expressions in case patterns.
+#
+# Usage: jonerix-logrotate [-n] [-v]
+#   -n  dry run: print what would be rotated, change nothing
+#   -v  also report files that are below the size cap
+#
+# Run hourly by snooze-crond from /etc/cron.d/jonerix-logrotate.
+#
+# Why copytruncate: every long-running writer jonerix ships holds its log
+# open with O_APPEND -- OpenRC output_log/error_log (start-stop-daemon and
+# supervise-daemon both open them O_WRONLY|O_CREAT|O_APPEND), snooze-crond's
+# `>>` job logs, sudo's logfile.  Truncating such a file in place is safe:
+# the writer's next write lands at the new end of file, with no sparse
+# hole.  Renaming is NOT safe: the writer would keep appending to the
+# renamed file.  The cost is that lines written between the copy and the
+# truncate (a few milliseconds) are lost.
+#
+# When a file reaches LOGROTATE_MAX_KB, FILE.(n-1).gz moves to FILE.n.gz,
+# the current content is copied to FILE.1 and compressed to FILE.1.gz,
+# and FILE is truncated.  LOGROTATE_KEEP generations are kept.  The copy
+# holds at most the last 2 x LOGROTATE_MAX_KB of the file, so a runaway
+# log (a 1.3 GB tailscaled.log) rotates without 1.3 GB of free space.
+#
+# Files are skipped (with a message) when they are symlinks, have more
+# than one hard link, or live in a directory that is not owned by root or
+# is writable by group/other -- rotating as root in such a directory
+# would let its owner redirect our writes.
+#
+# /var/log/messages is not covered by the default globs: toybox syslogd
+# rotates it itself (SYSLOGD_OPTS -s/-b in /etc/conf.d/syslogd).
+#
+# Configuration: /etc/jonerix-logrotate.conf, optional, shell syntax.  The
+# package does not ship it, so local edits survive upgrades.
+#   LOGROTATE_MAX_KB=10240         rotate at this size (KiB)
+#   LOGROTATE_KEEP=3               compressed generations to keep
+#   LOGROTATE_FILES="/var/log/*.log /var/log/*/*.log"   globs to check
+#   LOGROTATE_EXCLUDE=""           space-separated paths to leave alone
+#
+# SPDX-License-Identifier: MIT
+# Part of jonerix.
+
+PATH=/bin:/usr/bin
+export PATH
+
+conf=${LOGROTATE_CONF:-/etc/jonerix-logrotate.conf}
+if [ -r "$conf" ]; then
+    . "$conf"
+fi
+max_kb=${LOGROTATE_MAX_KB:-10240}
+keep=${LOGROTATE_KEEP:-3}
+files=${LOGROTATE_FILES:-/var/log/*.log /var/log/*/*.log}
+exclude=${LOGROTATE_EXCLUDE:-}
+lockdir=${LOGROTATE_LOCK:-/run/jonerix-logrotate.lock}
+
+dry=0
+verbose=0
+while getopts nv opt; do
+    case "$opt" in
+        n) dry=1 ;;
+        v) verbose=1 ;;
+        *) printf 'usage: jonerix-logrotate [-n] [-v]\n' >&2; exit 2 ;;
+    esac
+done
+
+say() {
+    printf 'jonerix-logrotate: %s\n' "$*"
+}
+
+case "$max_kb" in
+    ''|*[!0-9]*) say "LOGROTATE_MAX_KB must be a number: $max_kb" >&2; exit 2 ;;
+esac
+case "$keep" in
+    ''|*[!0-9]*) say "LOGROTATE_KEEP must be a number: $keep" >&2; exit 2 ;;
+esac
+[ "$max_kb" -ge 1 ] || { say "LOGROTATE_MAX_KB must be at least 1" >&2; exit 2; }
+[ "$keep" -ge 1 ] || { say "LOGROTATE_KEEP must be at least 1" >&2; exit 2; }
+max=$((max_kb * 1024))
+cap=$((max * 2))
+
+# One run at a time.  /run is tmpfs, so a lock left by a crash is gone
+# after reboot; a lock whose owner is dead is taken over.
+if [ "$dry" = 0 ]; then
+    if ! mkdir "$lockdir" 2>/dev/null; then
+        opid=$(cat "$lockdir/pid" 2>/dev/null)
+        case "$opid" in
+            ''|*[!0-9]*) opid= ;;
+        esac
+        if [ -n "$opid" ] && kill -0 "$opid" 2>/dev/null; then
+            say "another run (pid $opid) holds $lockdir"
+            exit 0
+        fi
+        rm -rf "$lockdir"
+        mkdir "$lockdir" || exit 1
+    fi
+    printf '%s\n' "$$" > "$lockdir/pid"
+    trap 'rm -rf "$lockdir"' EXIT
+    trap 'exit 1' INT TERM HUP
+fi
+
+umask 027
+have_gzip=0
+command -v gzip >/dev/null 2>&1 && have_gzip=1
+
+# Directory must be owned by root and not writable by group or other.
+safe_dir() {
+    set -- $(stat -c '%u %a' "$1" 2>/dev/null)
+    [ "${1:-x}" = 0 ] || return 1
+    _m=${2:-7}
+    _o=${_m#"${_m%?}"}
+    _g=${_m%?}
+    _g=${_g#"${_g%?}"}
+    case "$_g$_o" in
+        *[2367]*) return 1 ;;
+    esac
+    return 0
+}
+
+rotate() {
+    _f=$1
+    _size=$2
+    _i=$keep
+    rm -f "$_f.$_i.gz" "$_f.$_i"
+    while [ "$_i" -gt 1 ]; do
+        _p=$((_i - 1))
+        if [ -f "$_f.$_p.gz" ]; then
+            mv -f "$_f.$_p.gz" "$_f.$_i.gz"
+        fi
+        if [ -f "$_f.$_p" ]; then
+            mv -f "$_f.$_p" "$_f.$_i"
+        fi
+        _i=$_p
+    done
+    rm -f "$_f.1" "$_f.1.gz"
+    if [ "$_size" -gt "$cap" ]; then
+        tail -c "$cap" "$_f" > "$_f.1" || return 1
+    else
+        cat "$_f" > "$_f.1" || return 1
+    fi
+    : > "$_f"
+    if [ "$have_gzip" = 1 ]; then
+        gzip -f "$_f.1" || say "gzip failed for $_f.1; kept it uncompressed"
+    fi
+    if [ "$_size" -gt "$cap" ]; then
+        say "rotated $_f ($_size bytes; kept the last $cap)"
+    else
+        say "rotated $_f ($_size bytes)"
+    fi
+}
+
+rc=0
+for f in $files; do
+    [ -f "$f" ] || continue
+    if [ -L "$f" ]; then
+        [ "$verbose" = 1 ] && say "skip $f: symlink"
+        continue
+    fi
+    case " $exclude " in
+        *" $f "*) continue ;;
+    esac
+    dir=${f%/*}
+    [ -n "$dir" ] || dir=/
+    if ! safe_dir "$dir"; then
+        say "skip $f: $dir is not root-owned or is group/other-writable"
+        continue
+    fi
+    set -- $(stat -c '%s %h' "$f" 2>/dev/null)
+    size=${1:-0}
+    links=${2:-1}
+    if [ "$links" != 1 ]; then
+        say "skip $f: $links hard links"
+        continue
+    fi
+    if [ "$size" -lt "$max" ]; then
+        [ "$verbose" = 1 ] && say "keep $f ($size bytes < $max)"
+        continue
+    fi
+    if [ "$dry" = 1 ]; then
+        say "would rotate $f ($size bytes)"
+        continue
+    fi
+    rotate "$f" "$size" || { say "failed to rotate $f"; rc=1; }
+done
+exit $rc

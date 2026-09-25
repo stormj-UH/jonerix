@@ -1,0 +1,10 @@
+# Hourly size-capped rotation of /var/log (jonerix-logrotate package).
+#
+# Checks /var/log/*.log and /var/log/*/*.log at :17 every hour and
+# copytruncates any file over 10 MiB, keeping 3 gzip generations.
+# Tune with /etc/jonerix-logrotate.conf (see /bin/jonerix-logrotate).
+#
+# snooze timespec: /N means every Nth unit.  Without -H, snooze would
+# default to hour 0 (once a day at 00:17).
+SNOOZE_ARGS="-H /1 -M 17 -S 0"
+COMMAND="/bin/jonerix-logrotate"

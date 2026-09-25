@@ -1,0 +1,64 @@
+[package]
+name = "jonerix-logrotate"
+version = "1.0.0"
+license = "MIT"
+description = "Hourly size-capped copytruncate rotation of /var/log/*.log (POSIX sh + snooze cron.d job)"
+
+# WHY
+# ---
+# jonerix had no log rotation at all.  Every long-running service that
+# jonerix ships or documents appends to a file forever: OpenRC
+# output_log/error_log for tailscaled, containerd, docker, ntpd and the
+# snooze dispatcher, plus snooze-crond's per-job logs under
+# /var/log/cron.  On jonerix-tormenta /var/log/tailscaled.log reached
+# 1.37 GB (May-Sep 2026) and /var/log/cron/disable-eee-watchdog.log
+# 4.5 MB.  toybox syslogd rotates /var/log/messages on its own, so that
+# file is left to it.
+#
+# /bin/jonerix-logrotate copytruncates any /var/log/*.log or
+# /var/log/*/*.log over 10 MiB (3 gzip generations); snooze-crond runs
+# it hourly from /etc/cron.d/jonerix-logrotate.  Limits are tunable in
+# /etc/jonerix-logrotate.conf, which this package deliberately does not
+# ship (jpkg overwrites package-owned files on upgrade).
+#
+# snooze 0.5-r2 depends on this package and rescans /etc/cron.d, so the
+# job is picked up within a minute of install with no service restart.
+
+# No [source] -- local-only build from $RECIPE_DIR.
+
+[build]
+system = "custom"
+build = """set -e
+cd "$RECIPE_DIR"
+head -n 1 jonerix-logrotate | grep -qx '#!/bin/mksh'
+mksh -n jonerix-logrotate
+# The cron entry is sourced by snooze-crond: it must parse and set both
+# variables, with the /N timespec (never cron's */N).
+( . cron.d/jonerix-logrotate
+  [ "$COMMAND" = /bin/jonerix-logrotate ]
+  case "$SNOOZE_ARGS" in *'*/'*) exit 1 ;; esac
+  [ -n "$SNOOZE_ARGS" ] )
+install -Dm755 jonerix-logrotate "$DESTDIR/bin/jonerix-logrotate"
+install -Dm644 cron.d/jonerix-logrotate "$DESTDIR/etc/cron.d/jonerix-logrotate"
+"""
+install = ""
+
+[hooks]
+# Nothing to start: snooze-crond (>= snooze 0.5-r2) notices the new
+# /etc/cron.d file on its next rescan.  An older dispatcher only reads
+# /etc/cron.d at start-up, so say so when one is running.
+post_install = '''case "${JPKG_ROOT:-/}" in
+    /) ;;
+    *) exit 0 ;;
+esac
+[ -e /run/openrc/softlevel ] || exit 0
+if [ -f /bin/snooze-crond ] && ! grep -q SNOOZE_RESCAN /bin/snooze-crond; then
+    echo "jonerix-logrotate: this snooze-crond does not rescan /etc/cron.d; upgrade snooze (0.5-r2 or later) or restart snooze-crond to schedule the hourly rotation"
+fi
+exit 0'''
+
+[depends]
+# The script runs under mksh; stat, tail, cat, mv, rm and mkdir come from
+# toybox; gzip from pigz (without gzip, rotated copies stay uncompressed).
+runtime = ["mksh", "toybox", "pigz"]
+build = ["mksh"]
