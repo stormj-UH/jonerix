@@ -59,7 +59,7 @@ jobs:
             github-cli
 
       - name: Restore jpkg binary cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         id: jpkg-cache
         with:
           path: /tmp/jpkg-bin-x86_64
@@ -157,14 +157,14 @@ jobs:
           lfs: false
 
       - name: Restore apk cache (aarch64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/apk-cache-aarch64
           key: apk-wsl-aarch64-${{ hashFiles('.github/workflows/wsl-rootfs.yml', 'install/wsl/build-rootfs.sh') }}
           restore-keys: apk-wsl-aarch64-
 
       - name: Restore jpkg binary cache (aarch64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         id: jpkg-cache-aarch64
         with:
           path: /tmp/jpkg-bin-aarch64
