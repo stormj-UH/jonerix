@@ -1,8 +1,29 @@
 [package]
 name = "mandoc"
-version = "1.14.6"
+version = "1.14.6-r1"
 license = "ISC"
 description = "UNIX manpage compiler and viewer"
+# r1:
+# - mandoc's ./configure ignores command-line VAR=value arguments and
+#   reads configure.local instead, so r0's `./configure PREFIX=/ ...`
+#   built for the upstream default /usr/local: man, apropos and whatis
+#   landed in /local/bin (not on PATH), pages in /local/man, and
+#   makewhatis went missing. Write configure.local so everything lands
+#   in /bin and /share/man, with /share/man as the default manpath.
+# - Link man/apropos/whatis/makewhatis to mandoc with relative symlinks
+#   rather than hard links, which jpkg archives as four full copies.
+# - Build with jpkg's hardening CFLAGS/LDFLAGS and UTF-8 support
+#   (configure finds no UTF-8 locale on its own: there is no locale -a).
+# - patches/0001: when $MANPAGER/$PAGER names a pager that is not
+#   installed (PAGER=less is a common default; jonerix ships no less),
+#   fall back to more(1) and then cat(1) instead of showing nothing.
+# - /etc/profile.d/mandoc.sh points man at `more -s` when $PAGER names
+#   a missing program, for shells that read /etc/profile.d.
+# - post_install builds /share/man/mandoc.db, so apropos/whatis/man -k
+#   work and man stops warning "outdated mandoc.db". jpkg has no
+#   post-transaction trigger yet, so pages added by packages installed
+#   later are found by man's directory search, with that warning, until
+#   `makewhatis /share/man` is run again (or mandoc is reinstalled).
 
 [source]
 url = "https://mandoc.bsd.lv/snapshots/mandoc-1.14.6.tar.gz"
@@ -10,14 +31,75 @@ sha256 = "8bf0d570f01e70a6e124884088870cbed7537f36328d512909eb10cd53179d9c"
 
 [build]
 system = "custom"
-build = """./configure PREFIX=/ BINDIR=/bin MANDIR=/share/man
+build = """set -e
+cat > configure.local <<EOF
+CC="${CC:-clang}"
+CFLAGS="${CFLAGS:-}"
+LDFLAGS="${LDFLAGS:-}"
+PREFIX=/
+BINDIR=/bin
+SBINDIR=/bin
+BIN_FROM_SBIN=.
+MANDIR=/share/man
+MANPATH_BASE=/share/man
+MANPATH_DEFAULT=/share/man
+BINM_PAGER=more
+HAVE_LESS_T=0
+UTF8_LOCALE=C.UTF-8
+LN="ln -sf"
+EOF
+./configure
 make -j$(nproc)"""
-install = """make DESTDIR=$DESTDIR install
+install = """set -e
+make DESTDIR=$DESTDIR install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+for f in man apropos whatis makewhatis mandoc soelim demandoc; do
+    [ -x "$DESTDIR/bin/$f" ] || { echo "mandoc: missing /bin/$f" >&2; exit 1; }
+done
+[ -f "$DESTDIR/share/man/man1/man.1" ] || { echo "mandoc: pages not in /share/man" >&2; exit 1; }
+[ ! -e "$DESTDIR/local" ] || { echo "mandoc: stray /local tree" >&2; exit 1; }
+install -d "$DESTDIR/etc/profile.d"
+cat > "$DESTDIR/etc/profile.d/mandoc.sh" <<'PROF'
+# /etc/profile.d/mandoc.sh - shipped by the mandoc jpkg.
+#
+# man(1) pages its output through $MANPAGER, else $PAGER, else more(1).
+# jonerix ships no less(1), yet PAGER=less is a common default, so when
+# the configured pager is not installed, point man at more(1). (man also
+# falls back to more and then cat on its own; this only picks -s.)
+if [ -z "${MANPAGER:-}" ] && command -v more >/dev/null 2>&1; then
+    _mandoc_pager=${PAGER:-more}
+    if ! command -v "${_mandoc_pager%% *}" >/dev/null 2>&1; then
+        MANPAGER="more -s"
+        export MANPAGER
+    fi
+    unset _mandoc_pager
+fi
+PROF
+chmod 0644 "$DESTDIR/etc/profile.d/mandoc.sh"
+sh -n "$DESTDIR/etc/profile.d/mandoc.sh"
+"""
+
+[hooks]
+# Build the man page database for the live root. Skipped for
+# alternate-root installs that run on the host (JPKG_ROOT set to
+# something other than /): the target's makewhatis may not run here.
+# Chrooted hook runs see the target as / and build it normally.
+post_install = """_root=${JPKG_ROOT:-}
+case "$_root" in /) _root= ;; esac
+if [ -z "$_root" ] && [ -x /bin/makewhatis ] && [ -d /share/man ]; then
+    /bin/makewhatis /share/man || true
+fi
+exit 0"""
+
+post_remove = """_root=${JPKG_ROOT:-}
+case "$_root" in /) _root= ;; esac
+rm -f "$_root/share/man/mandoc.db"
+exit 0"""
 
 [depends]
-runtime = ["musl"]
+# mandoc reads gzipped pages through zlib; r1 links it dynamically.
+runtime = ["musl", "zlib"]
 build = ["clang", "make"]
