@@ -24,7 +24,6 @@ config/
 │   ├── shells, nanorc, protocols
 │   ├── dhcpcd.conf, conf.d/{hostname,net}
 │   ├── security/limits.conf
-│   ├── sysctl.d/jonerix.conf     global sysctl tuning
 │   ├── local.d/README            doc for OpenRC drop-ins
 │   ├── skel/                     ~/.profile, .brashrc, .brash_profile, .zshrc
 │   ├── jpkg/keys/jonerix.pub     package signing key
@@ -59,13 +58,40 @@ files in `defaults/etc/...` with the same relative path.
 
 Within a profile, conventions:
 
-- `etc/sysctl.d/<profile>.conf` overrides values in
-  `defaults/etc/sysctl.d/jonerix.conf` (last `sysctl -p` wins)
+- `etc/sysctl.d/60-<profile>*.conf` — see "sysctl ordering" below
 - `etc/security/limits.d/<profile>.conf` adds rules on top of
   `defaults/etc/security/limits.conf`
 - Service config files (dnsmasq.conf, hostapd.conf, …) live in their
   natural `/etc/<service>/` location; the image-builder copies them
   verbatim
+
+## sysctl ordering
+
+The OpenRC `sysctl` service applies `/etc/sysctl.d/*.conf` in lexical
+order and the last write of a key wins, so the numeric prefix sets
+precedence:
+
+| Prefix | Owner | Examples |
+|--------|-------|----------|
+| `10-`  | distro baseline, shipped by a package | openrc: `10-jonerix-fs-protected.conf`, `10-jonerix-kptr-restrict.conf`, `10-jonerix-net-redirects.conf`, `10-jonerix-rp-filter.conf` |
+| `40-`  | profile workload tuning | builder: `40-workload.conf` |
+| `50-`  | package feature defaults | toybox: ping group range; jonerix-raspi5-fixups: Pi 5 dual-homing |
+| `60-`  | image profile | `60-builder*.conf`, `60-minimal*.conf`, `60-router*.conf` |
+| `90-`  | local administrator | anything you add by hand |
+
+Package-owned files are replaced on upgrade (jpkg has no conffile
+handling), so override a value in a later-sorting file of your own
+instead of editing theirs.
+
+Two toybox `sysctl -p` rules shape the files: comments go on their own
+line (an inline `# ...` is written as part of the value), and a key the
+kernel may reject (needs a module or `CAP_SYS_ADMIN`, or is a one-way
+latch) gets its own file, because toybox stops reading a file at the
+first rejected write.
+
+`defaults/` ships no sysctl file: the baseline lives in packages, and
+container-host tuning (overcommit, swappiness, TCP buffers) belongs to
+the builder profile, not to Pi or desktop images.
 
 ## Image builder contract
 
