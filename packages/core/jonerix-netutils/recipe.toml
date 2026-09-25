@@ -22,16 +22,43 @@
 #     /bin/tunctl   — persistent TUN/TAP create / destroy via
 #                     /dev/net/tun ioctls
 #     /bin/ss       — TCP / UDP / UNIX socket dump via sock_diag
-#                     netlink
+#                     netlink, /proc/net fallback, -p process names
 #     /bin/ethtool  — SIOCETHTOOL via safchain/ethtool: driver info,
 #                     features, stats, perm-addr, channels, coalesce
 #
 # All 11 commands build from the same curated u-root module tree
 # (see source-jonerix-netutils-v0.2.0 GH release for the source
 # tarball — 1.9 MB compressed). Pure-Go, static, CGO_ENABLED=0.
+#
+# r2 PATCHES (patches/*.patch, applied by jpkg with patch -p1; the
+#   source tarball is unchanged). Keep them as `git diff -U10` output:
+#   with 3 lines of context toybox patch put a netstat hunk at an
+#   earlier spot whose leading context matched.
+#   0001  pkg/posixflag (MIT): getopt-style options for the Go tools —
+#         clustered flags (arp -an, ss -tlnp), attached values (-c3,
+#         -Ieth0); Go-style long flags (ip -br) and defined -X=VALUE
+#         (ip -c=auto) pass through.
+#   0002  ip: netlink v1.3.0 reports default routes as 0/0, never a nil
+#         Dst, so IPv4 routes lost "via GW" and default printed as
+#         0.0.0.0/0. Now "[TYPE ]{default|PREFIX}[ via GW][ dev D]
+#         [ table T] proto P[ scope S][ src S] metric M" ("scope global"
+#         stays: OpenRC's routeflush loop needs it); routes without a
+#         device no longer abort the listing; `ip [-6] route del|delete
+#         default [dev X]` no longer nil-pointer crashes; show/flush take
+#         default|PREFIX|dev|via|table main|proto dhcp|scope link;
+#         metric etc. after via/dev; iproute2-style `route get`; -V;
+#         -c/-color accepted and ignored. u-root upstream has the bugs too.
+#   0003  ss: combined flags, -p/-e/-H, iproute2 state and protocol
+#         defaults, /proc/net/{tcp,tcp6,udp,udp6} fallback when sock_diag
+#         fails (the Raspberry Pi vendor kernel has no udp_diag), UNIX
+#         sockets with paths from /proc/net/unix (no unix_diag there).
+#   0004  netstat: -p skips unreadable processes (non-root no longer
+#         aborts), reads real fd names, names programs by argv[0]; -l
+#         lists unconnected UDP; both address families by default; the
+#         listing prints once instead of repeating earlier tables.
 
 name = "jonerix-netutils"
-version = "0.2.0-r1"
+version = "0.2.0-r2"
 # License of THIS package's deliverables (the 11 binaries in /bin) is a
 # mix: 8 of the 11 cmds (arp, arping, ifconfig, route, iptunnel, tunctl,
 # ss, ethtool) are MIT, written from scratch and (C) 2026 Jon-Erik G.
@@ -80,6 +107,12 @@ for cmd in ip brctl netstat arp arping ifconfig route iptunnel tunctl ss ethtool
     fi
     go build -mod=vendor -trimpath -ldflags="-s -w" -o "bin/$cmd" "./cmds/core/$cmd"
 done
+
+# Smoke-test the r2 fixes: combined flags must parse and the socket
+# listings must not abort.
+bin/ip -V
+bin/ss -tulpn >/dev/null
+bin/netstat -tulpn >/dev/null 2>&1
 """
 install = """
 set -e

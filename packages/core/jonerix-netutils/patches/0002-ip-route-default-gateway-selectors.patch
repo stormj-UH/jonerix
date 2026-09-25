@@ -1,0 +1,1277 @@
+diff --git a/cmds/core/ip/address_linux.go b/cmds/core/ip/address_linux.go
+index e57d570..7680139 100644
+--- a/cmds/core/ip/address_linux.go
++++ b/cmds/core/ip/address_linux.go
+@@ -40,21 +40,21 @@ var stringScope = map[string]netlink.Scope{
+ 	"host":   netlink.SCOPE_HOST,
+ 	"link":   netlink.SCOPE_LINK,
+ }
+ 
+ // address is the entry point for 'ip address' subcommand.
+ func (cmd *cmd) address() error {
+ 	if !cmd.tokenRemains() {
+ 		return cmd.addressShow()
+ 	}
+ 
+-	c := cmd.findPrefix("add", "replace", "del", "show", "flush", "help")
++	c := cmd.findPrefix("add", "replace", "delete", "show", "flush", "help")
+ 	switch c {
+ 	case "show":
+ 		return cmd.addressShow()
+ 	case "add":
+ 		iface, addr, err := cmd.parseAddrAddReplace()
+ 		if err != nil {
+ 			return err
+ 		}
+ 
+ 		if err := cmd.handle.AddrAdd(iface, addr); err != nil {
+@@ -66,21 +66,21 @@ func (cmd *cmd) address() error {
+ 		iface, addr, err := cmd.parseAddrAddReplace()
+ 		if err != nil {
+ 			return err
+ 		}
+ 
+ 		if err := cmd.handle.AddrReplace(iface, addr); err != nil {
+ 			return fmt.Errorf("replacing %v on %v failed: %w", addr.IP, cmd.currentToken(), err)
+ 		}
+ 
+ 		return nil
+-	case "del":
++	case "delete":
+ 		iface, addr, err := cmd.parseAddrAddReplace()
+ 		if err != nil {
+ 			return err
+ 		}
+ 
+ 		if err := cmd.handle.AddrDel(iface, addr); err != nil {
+ 			return fmt.Errorf("deleting %v from %v failed: %w", addr.IP, cmd.currentToken(), err)
+ 		}
+ 
+ 		return nil
+diff --git a/cmds/core/ip/ip_linux.go b/cmds/core/ip/ip_linux.go
+index 76a81ae..6ad812d 100644
+--- a/cmds/core/ip/ip_linux.go
++++ b/cmds/core/ip/ip_linux.go
+@@ -9,21 +9,21 @@ package main
+ import (
+ 	"bufio"
+ 	"flag"
+ 	"fmt"
+ 	"io"
+ 	"log"
+ 	"os"
+ 	"strconv"
+ 	"strings"
+ 
+-	"github.com/u-root/u-root/pkg/uroot/unixflag"
++	"github.com/u-root/u-root/pkg/posixflag"
+ 	"github.com/vishvananda/netlink"
+ 	"github.com/vishvananda/netns"
+ 	"golang.org/x/sys/unix"
+ )
+ 
+ type flags struct {
+ 	Family         string
+ 	Inet4          bool
+ 	Inet6          bool
+ 	Bridge         bool
+@@ -41,22 +41,40 @@ type flags struct {
+ 	Color          string
+ 	RcvBuf         string
+ 	TimeStamp      bool
+ 	TimeStampShort bool
+ 	All            bool
+ 	Numeric        bool
+ 	Batch          string
+ 	Force          bool
+ 	Oneline        bool
+ 	Netns          string
++	Version        bool
+ }
+ 
++// colorFlag accepts iproute2's -c / -color[=always|auto|never] and ignores
++// it: this ip never colours its output, so "alias ip='ip -color=auto'"
++// keeps working.
++type colorFlag struct{}
++
++func (colorFlag) String() string   { return "" }
++func (colorFlag) IsBoolFlag() bool { return true }
++func (colorFlag) Set(v string) error {
++	switch v {
++	case "true", "false", "always", "auto", "never":
++		return nil
++	}
++	return fmt.Errorf("invalid color mode %q", v)
++}
++
++const ipVersion = "ip utility, jonerix-netutils-0.2.0 (u-root v0.16.0)"
++
+ const ipHelp = `Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }
+ where  OBJECT := { address |  help | link | monitor | neighbor | neighbour |
+ 				   route | tap | tcpmetrics | tunnel | tuntap | vrf | xfrm }
+        OPTIONS := { -s[tatistics] | -d[etails] | -r[esolve] |
+                     -h[uman-readable] | -iec | -j[son] | -p[retty] |
+                     -f[amily] { inet | inet6 | mpls | bridge | link } |
+                     -4 | -6 | -M | -B | -0 |
+                     -l[oops] { maximum-addr-flush-attempts } | -br[ief] |
+                     -o[neline] | -t[imestamp] | -ts[hort] | -b[atch] [filename] |
+                     -rc[vbuf] [size] | -n[etns] name | -N[umeric] | -a[ll] |
+@@ -111,22 +129,24 @@ func parseFlags(args []string, out io.Writer) (cmd, error) {
+ 	fs.IntVar(&cmd.Opts.Loops, "loops", 1, "Set maximum number of attempts to flush all addresses")
+ 	fs.BoolVar(&cmd.Opts.HumanReadable, "h", false, "Display timings and sizes in human readable format")
+ 	fs.BoolVar(&cmd.Opts.HumanReadable, "humanreadable", false, "Display timings and sizes in human-readable format")
+ 	fs.BoolVar(&cmd.Opts.Iec, "iec", false, "Use 1024-based block sizes for human-readable sizes")
+ 	fs.BoolVar(&cmd.Opts.Brief, "br", false, "Brief output")
+ 	fs.BoolVar(&cmd.Opts.Brief, "brief", false, "Brief output")
+ 	fs.BoolVar(&cmd.Opts.JSON, "j", false, "Output in JSON format")
+ 	fs.BoolVar(&cmd.Opts.JSON, "json", false, "Output in JSON format")
+ 	fs.BoolVar(&cmd.Opts.Prettify, "p", false, "Make JSON output pretty")
+ 	fs.BoolVar(&cmd.Opts.Prettify, "pretty", false, "Make JSON output pretty")
+-	fs.StringVar(&cmd.Opts.Color, "c", "", "Use color output")
+-	fs.StringVar(&cmd.Opts.Color, "color", "", "Use color output")
++	fs.Var(colorFlag{}, "c", "Use color output (accepted and ignored)")
++	fs.Var(colorFlag{}, "color", "Use color output (accepted and ignored)")
++	fs.BoolVar(&cmd.Opts.Version, "V", false, "Print the version")
++	fs.BoolVar(&cmd.Opts.Version, "Version", false, "Print the version")
+ 	fs.StringVar(&cmd.Opts.RcvBuf, "rc", "", "Set the netlink socket receive buffer size, defaults to 1MB")
+ 	fs.StringVar(&cmd.Opts.RcvBuf, "rcvbuf", "", "Set the netlink socket receive buffer size, defaults to 1MB")
+ 	fs.BoolVar(&cmd.Opts.TimeStamp, "t", false, "Display time stamps")
+ 	fs.BoolVar(&cmd.Opts.TimeStamp, "timestamp", false, "Display time stamps")
+ 	fs.BoolVar(&cmd.Opts.TimeStampShort, "ts", false, "Display short time stamps")
+ 	fs.BoolVar(&cmd.Opts.TimeStampShort, "tshort", false, "Display short time stamps")
+ 	fs.BoolVar(&cmd.Opts.All, "a", false, "Display all information")
+ 	fs.BoolVar(&cmd.Opts.All, "all", false, "Display all information")
+ 	fs.BoolVar(&cmd.Opts.Numeric, "N", false, "Print the number of protocol, scope, dsfield, etc directly instead of converting it to human readable name.")
+ 	fs.BoolVar(&cmd.Opts.Numeric, "numeric", false, "Print the number of protocol, scope, dsfield, etc directly instead of converting it to human readable name.")
+@@ -137,23 +157,28 @@ func parseFlags(args []string, out io.Writer) (cmd, error) {
+ 	fs.BoolVar(&cmd.Opts.Oneline, "oneline", false, "Output each record on a single line")
+ 	fs.StringVar(&cmd.Opts.Netns, "n", "", "Switch to network namespace")
+ 	fs.StringVar(&cmd.Opts.Netns, "netns", "", "Switch to network namespace")
+ 
+ 	fs.Usage = func() {
+ 		fmt.Fprintf(out, "%s\n\n", ipHelp)
+ 
+ 		fs.PrintDefaults()
+ 	}
+ 
+-	fs.Parse(unixflag.ArgsToGoArgs(args[1:]))
++	fs.Parse(posixflag.Args(fs, args[1:]))
+ 	cmd.Args = fs.Args()
+ 
++	if cmd.Opts.Version {
++		fmt.Fprintln(out, ipVersion)
++		os.Exit(0)
++	}
++
+ 	cmd.Family = netlink.FAMILY_ALL
+ 
+ 	if cmd.Opts.Inet4 {
+ 		cmd.Family = netlink.FAMILY_V4
+ 	}
+ 	if cmd.Opts.Inet6 {
+ 		cmd.Family = netlink.FAMILY_V6
+ 	}
+ 
+ 	if cmd.Opts.MPLS {
+@@ -176,24 +201,20 @@ func parseFlags(args []string, out io.Writer) (cmd, error) {
+ 			cmd.Family = netlink.FAMILY_V6
+ 		default:
+ 			return cmd, fmt.Errorf("invalid family %q", cmd.Opts.Family)
+ 		}
+ 	}
+ 
+ 	if cmd.Opts.Resolve {
+ 		return cmd, fmt.Errorf("resolving DNS names is unsupported")
+ 	}
+ 
+-	if cmd.Opts.Color != "" {
+-		return cmd, fmt.Errorf("color output is unsupported")
+-	}
+-
+ 	var (
+ 		err    error
+ 		handle *netlink.Handle
+ 	)
+ 
+ 	if cmd.Opts.Netns != "" {
+ 		nsHandle, err := netns.GetFromName(cmd.Opts.Netns)
+ 		if err != nil {
+ 			return cmd, fmt.Errorf("failed to find network namespace %q: %w", cmd.Opts.Netns, err)
+ 		}
+diff --git a/cmds/core/ip/route_linux.go b/cmds/core/ip/route_linux.go
+index c21fd68..d99ed6b 100644
+--- a/cmds/core/ip/route_linux.go
++++ b/cmds/core/ip/route_linux.go
+@@ -1,39 +1,44 @@
+ // Copyright 2025 the u-root Authors. All rights reserved
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ //go:build !tinygo || tinygo.enable
+ 
+ package main
+ 
+ import (
+ 	"fmt"
+ 	"net"
++	"os"
+ 	"strconv"
++	"strings"
+ 
+ 	"github.com/vishvananda/netlink"
+ 	"golang.org/x/sys/unix"
+ )
+ 
+ const routeHelp = `Usage: ip route { list | flush } SELECTOR
+ 
+        ip route get ADDRESS
+                 [ from ADDRESS] [ iif STRING ]
+                 [ oif STRING ] [ vrf NAME ]
+      
+        ip route { add | del | append | replace } ROUTE
+ 
+ 	   ip route help
+ 
+-SELECTOR := [ root PREFIX ] [ match PREFIX ] [ exact PREFIX ]
++SELECTOR := [ root PREFIX ] [ match PREFIX ] [ [ exact | to ] PREFIX ]
+             [ table TABLE_ID ] [ proto RTPROTO ]
+             [ type TYPE ] [ scope SCOPE ]
++            [ dev STRING ] [ via ADDRESS ]
++
++PREFIX := { default | ADDRESS[/LEN] }
+ 
+ ROUTE := NODE_SPEC [ INFO_SPEC ]
+ 
+ NODE_SPEC := [ TYPE ] PREFIX [ tos TOS ]
+              [ table TABLE_ID ] [ proto RTPROTO ]
+              [ scope SCOPE ] [ metric NUMBER ]
+ 
+ INFO_SPEC := NH OPTIONS [ nexthop NH ]...
+ 
+ NH := [ via [ FAMILY ] ADDRESS ] [ dev STRING ] NHFLAGS
+@@ -44,27 +49,27 @@ OPTIONS := [ mtu NUMBER ] [ advmss NUMBER ]
+            [ rtt TIME ] [ rttvar TIME ] [ reordering NUMBER ]
+            [ window NUMBER ] [ cwnd NUMBER ] [ initcwnd NUMBER ]
+            [ ssthresh NUMBER ] [ realms REALM ] [ src ADDRESS ]
+            [ rto_min TIME ] [ hoplimit NUMBER ] [ initrwnd NUMBER ]
+            [ features FEATURES ] [ quickack BOOL ] [ congctl NAME ]
+ 		   [ fastopen_no_cookie BOOL ]
+ 
+ TYPE := { unicast | local | broadcast | multicast | throw |
+           unreachable | prohibit | blackhole | nat }
+ 
+-TABLE_ID := [ local | main | default | NUMBER ]
++TABLE_ID := [ local | main | default | all | NUMBER ]
+ 
+ SCOPE := [ host | link | global | NUMBER ]
+ 
+ NHFLAGS := [ onlink | pervasive ]
+ 
+-RTPROTO := [ kernel | boot | static | NUMBER ]
++RTPROTO := [ kernel | boot | static | dhcp | ra | NAME | NUMBER ]
+ 
+ BOOL := [1|0]
+ `
+ 
+ var routeTypes = map[string]int{
+ 	"unicast":     unix.RTN_UNICAST,
+ 	"local":       unix.RTN_LOCAL,
+ 	"broadcast":   unix.RTN_BROADCAST,
+ 	"multicast":   unix.RTN_MULTICAST,
+ 	"throw":       unix.RTN_THROW,
+@@ -82,28 +87,29 @@ func routeTypeStr(routeType int) string {
+ 	}
+ 	return "unknown"
+ }
+ 
+ // route is the entry point for 'ip route' command.
+ func (cmd *cmd) route() error {
+ 	if !cmd.tokenRemains() {
+ 		return cmd.routeShow()
+ 	}
+ 
+-	switch cmd.findPrefix("show", "add", "append", "replace", "del", "list", "flush", "get", "help") {
++	// "del", "d" and "delete" all match "delete", as in iproute2.
++	switch cmd.findPrefix("show", "add", "append", "replace", "delete", "list", "flush", "get", "help") {
+ 	case "add":
+ 		return cmd.routeAdd()
+ 	case "append":
+ 		return cmd.routeAppend()
+ 	case "replace":
+ 		return cmd.routeReplace()
+-	case "del":
++	case "delete":
+ 		return cmd.routeDel()
+ 	case "show", "list":
+ 		return cmd.routeShow()
+ 	case "flush":
+ 		return cmd.routeFlush()
+ 	case "get":
+ 		return cmd.routeGet()
+ 	case "help":
+ 		fmt.Fprint(cmd.Out, routeHelp)
+ 		return nil
+@@ -126,47 +132,47 @@ func (cmd *cmd) routeAdd() error {
+ }
+ 
+ // routeAppend performs the 'ip route append' command.
+ func (cmd *cmd) routeAppend() error {
+ 	route, err := cmd.parseRouteAddAppendReplaceDel(defaultLinkIdxResolver)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+ 	if err := cmd.handle.RouteAppend(route); err != nil {
+-		return fmt.Errorf("appending route for %s: %w", route.Dst.IP, err)
++		return fmt.Errorf("appending route for %v: %w", route.Dst, err)
+ 	}
+ 	return nil
+ }
+ 
+ // routeReplace performs the 'ip route replace' command.
+ func (cmd *cmd) routeReplace() error {
+ 	route, err := cmd.parseRouteAddAppendReplaceDel(defaultLinkIdxResolver)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+ 	if err := cmd.handle.RouteReplace(route); err != nil {
+-		return fmt.Errorf("appending route for %s: %w", route.Dst.IP, err)
++		return fmt.Errorf("appending route for %v: %w", route.Dst, err)
+ 	}
+ 	return nil
+ }
+ 
+ // routeDel performs the 'ip route del' command.
+ func (cmd *cmd) routeDel() error {
+ 	route, err := cmd.parseRouteAddAppendReplaceDel(defaultLinkIdxResolver)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+ 	if err := cmd.handle.RouteDel(route); err != nil {
+-		return fmt.Errorf("deleting route for %s: %w", route.Dst.IP, err)
++		return fmt.Errorf("deleting route for %v: %w", route.Dst, err)
+ 	}
+ 	return nil
+ }
+ 
+ // defaultLinkIdxResolver resolves the link index by name.
+ // It is used by all all functions that call parseRouteAddAppendReplaceDel.
+ // It is a separate function to allow for testing with a mock implementation.
+ func defaultLinkIdxResolver(name string) (int, error) {
+ 	iface, err := netlink.LinkByName(name)
+ 	if err != nil {
+@@ -188,70 +194,49 @@ func (cmd *cmd) parseRouteAddAppendReplaceDel(resolveLinkIdxFn func(string) (int
+ 	)
+ 
+ 	// TYPE
+ 	if routeType, ok := probeRouteType(cmd.peekToken("TYPE")); ok {
+ 		cmd.Cursor++
+ 		route.Type = int(routeType)
+ 	}
+ 
+ 	// PREFIX
+ 	dest := cmd.nextToken("default", "PREFIX (in CIDR notation)")
+-	if dest == "default" {
++	isDefault := dest == "default"
++	if isDefault {
++		// Resolved to 0.0.0.0/0 or ::/0 once the family is known (below).
++		// A nil Dst makes vishvananda/netlink refuse "del default" /
++		// "del default dev X" ("either Dst.IP, Src.IP or Gw must be set").
+ 		route.Dst = nil
+ 	} else {
+-		_, route.Dst, err = net.ParseCIDR(dest)
++		route.Dst, err = parsePrefix(dest)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+ 	}
+ 
+ 	// Eventually further specification of the destination address
+ 	// (e.g. tos, table, proto, scope, metric, etc.)
+ 	// Otherwise, NH (via or dev)
+ LOOP:
+ 	for cmd.tokenRemains() {
+-		token := cmd.nextToken("dev", "via", "tos", "table", "proto", "scope", "metric")
++		token := cmd.nextToken("dev", "via", "nexthop", "tos", "table", "proto", "scope", "metric")
+ 		switch token {
+-		case "via", "dev":
++		case "via", "dev", "nexthop":
+ 			cmd.Cursor--
+ 			break LOOP // handled below
+-		case "tos":
+-			token = cmd.nextToken("TOS")
+-			route.Tos, err = parseTOS(token)
+-			if err != nil {
+-				return nil, err
+-			}
+-		case "table":
+-			token = cmd.nextToken("local", "main", "default", "all", "NUMBER")
+-			route.Table, err = parseTable(token)
+-			if err != nil {
+-				return nil, err
+-			}
+-		case "proto":
+-			token = cmd.nextToken("kernel", "boot", "static", "NUMBER")
+-			route.Protocol, err = parseProto(token)
+-			if err != nil {
+-				return nil, err
+-			}
+-		case "scope":
+-			token = cmd.nextToken("host", "link", "global", "NUMBER")
+-			route.Scope, err = parseScope(token)
+-			if err != nil {
+-				return nil, err
+-			}
+-		case "metric":
+-			token = cmd.nextToken("NUMBER")
+-			route.Priority, err = parseMetric(token)
+-			if err != nil {
+-				return nil, err
+-			}
+-		default:
++		}
++		handled, err := cmd.parseRouteNodeOpt(token, &route)
++		if err != nil {
++			return nil, err
++		}
++		if !handled {
+ 			return nil, cmd.usage()
+ 		}
+ 	}
+ 
+ 	// NH (next hop)
+ 
+ 	// "dev" or "via" must be present otherwise the loop above would not have exited. So there will be at least one
+ 	// NexthopInfo item in the route.MultiPath slice. The NexthopInfo will be populated with the information from
+ 	// the "dev" or "via" token in the loop below.
+ 	// Furhter NexthopInfo items will be appended if "nexthop" token is found in the loop below.
+@@ -428,27 +413,123 @@ LOOP:
+ 			// so use ParseBool to prevent other numbers from being accepted
+ 			fastopenNoCookie, err := strconv.ParseBool(token)
+ 			if err != nil {
+ 				return nil, err
+ 			}
+ 			// netlink.Route.FastOpenNoCookie is an int, so convert the boolean back to 0 or 1
+ 			if fastopenNoCookie {
+ 				route.FastOpenNoCookie = 1
+ 			}
+ 		default:
+-			return nil, cmd.usage()
++			// iproute2 takes the NODE_SPEC options (metric, table,
++			// proto, scope, tos) anywhere, e.g. "via X dev Y metric N".
++			handled, err := cmd.parseRouteNodeOpt(token, &route)
++			if err != nil {
++				return nil, err
++			}
++			if !handled {
++				return nil, cmd.usage()
++			}
+ 		}
+ 	}
+ 
++	if isDefault {
++		route.Dst = defaultDst(cmd.routeFamily(&route))
++	}
++
+ 	return &route, nil
+ }
+ 
++// parseRouteNodeOpt parses one NODE_SPEC option (tos, table, proto, scope,
++// metric and its aliases) into route. It reports false for other tokens.
++func (cmd *cmd) parseRouteNodeOpt(token string, route *netlink.Route) (bool, error) {
++	var err error
++	switch token {
++	case "tos", "dsfield":
++		route.Tos, err = parseTOS(cmd.nextToken("TOS"))
++	case "table":
++		route.Table, err = parseTable(cmd.nextToken("local", "main", "default", "all", "NUMBER"))
++	case "proto", "protocol":
++		route.Protocol, err = parseProto(cmd.nextToken("kernel", "boot", "static", "NUMBER"))
++	case "scope":
++		route.Scope, err = parseScope(cmd.nextToken("host", "link", "global", "NUMBER"))
++	case "metric", "priority", "preference":
++		route.Priority, err = parseMetric(cmd.nextToken("NUMBER"))
++	default:
++		return false, nil
++	}
++	return true, err
++}
++
++// parsePrefix parses a route PREFIX: a CIDR, or a bare address, which
++// iproute2 treats as a host prefix (/32 or /128).
++func parsePrefix(token string) (*net.IPNet, error) {
++	if !strings.Contains(token, "/") {
++		ip := net.ParseIP(token)
++		if ip == nil {
++			return nil, fmt.Errorf("invalid prefix %q", token)
++		}
++		if ip4 := ip.To4(); ip4 != nil {
++			return &net.IPNet{IP: ip4, Mask: net.CIDRMask(32, 32)}, nil
++		}
++		return &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}, nil
++	}
++	_, prefix, err := net.ParseCIDR(token)
++	return prefix, err
++}
++
++// routeFamily picks the address family for a route being built from the
++// command line: -4/-6 first, then "via inet6"/the gateway, else IPv4.
++func (cmd *cmd) routeFamily(r *netlink.Route) int {
++	switch {
++	case cmd.Family == netlink.FAMILY_V6:
++		return netlink.FAMILY_V6
++	case cmd.Family == netlink.FAMILY_V4:
++		return netlink.FAMILY_V4
++	case r.Family == netlink.FAMILY_V6:
++		return netlink.FAMILY_V6
++	case r.Gw != nil && r.Gw.To4() == nil:
++		return netlink.FAMILY_V6
++	}
++	return netlink.FAMILY_V4
++}
++
++// defaultDst returns 0.0.0.0/0 or ::/0.
++func defaultDst(family int) *net.IPNet {
++	if family == netlink.FAMILY_V6 {
++		return &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 8*net.IPv6len)}
++	}
++	return &net.IPNet{IP: net.IPv4zero.To4(), Mask: net.CIDRMask(0, 8*net.IPv4len)}
++}
++
++// isDefaultDst reports whether dst is a default route. vishvananda/netlink
++// v1.3.0 synthesizes 0.0.0.0/0 or ::/0 for default routes (iproute2 style)
++// instead of returning a nil Dst, so both forms must be recognised.
++func isDefaultDst(dst *net.IPNet) bool {
++	if dst == nil {
++		return true
++	}
++	ones, _ := dst.Mask.Size()
++	return ones == 0 && dst.IP.IsUnspecified()
++}
++
++// routeIsV4 reports whether r is an IPv4 route.
++func routeIsV4(r netlink.Route) bool {
++	if r.Dst != nil {
++		return r.Dst.IP.To4() != nil
++	}
++	if r.Family != 0 {
++		return r.Family == netlink.FAMILY_V4
++	}
++	return r.Gw == nil || r.Gw.To4() != nil
++}
++
+ func probeRouteType(token string) (uint32, bool) {
+ 	// The netlink package itself does not define these constants, but it uses e.g.
+ 	// unix.RTN_UNICAST in the code as default in some cases. So netlink.Route.Type value is
+ 	// set using the unix package constants. As the unix package does not document these values properly,
+ 	// values are chosen with reference to https://manpages.debian.org/testing/manpages/rtnetlink.7.en.html.
+ 	switch token {
+ 	case "unicast":
+ 		return unix.RTN_UNICAST, true
+ 	case "local":
+ 		return unix.RTN_LOCAL, true
+@@ -538,20 +619,25 @@ func parseProto(token string) (netlink.RouteProtocol, error) {
+ 	// The netlink package itself does not define these constants, but it uses the respective unix constants e.g.
+ 	// in netlink.RouteProtocol.String().
+ 	switch token {
+ 	case "kernel":
+ 		return unix.RTPROT_KERNEL, nil
+ 	case "boot":
+ 		return unix.RTPROT_BOOT, nil
+ 	case "static":
+ 		return unix.RTPROT_STATIC, nil
+ 	default:
++		for id, name := range rtProto {
++			if name == token {
++				return netlink.RouteProtocol(id), nil
++			}
++		}
+ 		n, err := strconv.ParseInt(token, 10, 0)
+ 		if err != nil {
+ 			return 0, fmt.Errorf("invalid protocol %q: %w", token, err)
+ 		}
+ 		return netlink.RouteProtocol(n), nil
+ 	}
+ }
+ 
+ func parseScope(token string) (netlink.Scope, error) {
+ 	// The netlink package itself does not define these constants, but it uses the respective unix constants e.g.
+@@ -634,96 +720,123 @@ func (cmd *cmd) routeFlush() error {
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+ 	routes, _, err := cmd.filteredRouteList(filter, filterMask, root, match, exact)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+ 	for _, route := range routes {
++		// Like "ip route show", flush acts on IPv4 unless -6 is given;
++		// "flush scope global" must not wipe every IPv6 route.
++		if !cmd.familyMatches(route) {
++			continue
++		}
+ 		if err := cmd.handle.RouteDel(&route); err != nil {
+ 			return err
+ 		}
+ 	}
+ 
+ 	return nil
+ }
+ 
+ // parseRouteShowListFlush parses the arguments to 'ip route show', 'ip route list' or 'ip route flush' from the cmdline.
+ func (cmd *cmd) parseRouteShowListFlush() (*netlink.Route, uint64, *net.IPNet, *net.IPNet, *net.IPNet, error) {
+ 	var (
+ 		filterMask uint64
+ 		filter     netlink.Route
+ 		root       *net.IPNet
+ 		match      *net.IPNet
+ 		exact      *net.IPNet
+ 	)
+ 
+ 	for cmd.tokenRemains() {
+-		switch cmd.nextToken("scope", "table", "proto", "root", "match", "exact", "type") {
++		switch token := cmd.nextToken("scope", "table", "proto", "root", "match", "exact", "type", "dev", "via", "to", "default", "PREFIX"); token {
+ 		case "scope":
+ 			filterMask |= netlink.RT_FILTER_SCOPE
+-			scope, err := cmd.parseUint8("SCOPE")
++			scope, err := parseScope(cmd.nextToken("host", "link", "global", "NUMBER"))
+ 			if err != nil {
+ 				return nil, 0, nil, nil, nil, err
+ 			}
+-			filter.Scope = netlink.Scope(scope)
++			filter.Scope = scope
+ 
+ 		case "table":
+ 			filterMask |= netlink.RT_FILTER_TABLE
+-			table, err := cmd.parseInt("TABLE_ID")
++			token := cmd.nextToken("local", "main", "default", "all", "NUMBER")
++			if token == "all" {
++				filter.Table = unix.RT_TABLE_UNSPEC
++				break
++			}
++			table, err := parseTable(token)
+ 			if err != nil {
+ 				return nil, 0, nil, nil, nil, err
+ 			}
+ 			filter.Table = table
+ 
+ 		case "proto":
+ 			filterMask |= netlink.RT_FILTER_PROTOCOL
+-			proto, err := cmd.parseInt("RTPROTO")
++			proto, err := parseProto(cmd.nextToken("RTPROTO"))
+ 			if err != nil {
+ 				return nil, 0, nil, nil, nil, err
+ 			}
+-			filter.Protocol = netlink.RouteProtocol(proto)
++			filter.Protocol = proto
+ 
+-		case "root":
+-			token := cmd.nextToken("PREFIX")
+-			_, prefix, err := net.ParseCIDR(token)
++		case "dev", "oif":
++			filterMask |= netlink.RT_FILTER_OIF
++			link, err := cmd.handle.LinkByName(cmd.nextToken("DEVICE"))
+ 			if err != nil {
+ 				return nil, 0, nil, nil, nil, err
+ 			}
+-			root = prefix
++			filter.LinkIndex = link.Attrs().Index
+ 
+-		case "match":
+-			token := cmd.nextToken("PREFIX")
+-			_, prefix, err := net.ParseCIDR(token)
+-			if err != nil {
+-				return nil, 0, nil, nil, nil, err
++		case "via":
++			filterMask |= netlink.RT_FILTER_GW
++			token := cmd.nextToken("ADDRESS")
++			if gw := net.ParseIP(token); gw != nil {
++				filter.Gw = gw
++			} else {
++				return nil, 0, nil, nil, nil, fmt.Errorf("invalid address: %s", token)
+ 			}
+-			match = prefix
+ 
+-		case "exact":
+-			token := cmd.nextToken("PREFIX")
+-			_, prefix, err := net.ParseCIDR(token)
++		case "root", "match":
++			prefix, err := cmd.parseShowPrefix(cmd.nextToken("PREFIX"))
+ 			if err != nil {
+ 				return nil, 0, nil, nil, nil, err
+ 			}
+-			exact = prefix
++			if token == "root" {
++				root = prefix
++			} else {
++				match = prefix
++			}
++
+ 		case "type":
+ 			if routeType, ok := routeTypes[cmd.nextToken()]; ok {
+ 				filter.Type = routeType
+ 				filterMask |= netlink.RT_FILTER_TYPE
+ 			} else {
+ 				return nil, 0, nil, nil, nil, cmd.usage()
+ 			}
++
+ 		default:
+-			return nil, 0, nil, nil, nil, cmd.usage()
++			// iproute2: "[ exact | to ] PREFIX", where PREFIX may be "default".
++			if token == "exact" || token == "to" {
++				token = cmd.nextToken("PREFIX")
++			}
++			if token == "all" || token == "any" {
++				continue // no destination filter, as in iproute2
++			}
++			prefix, err := cmd.parseShowPrefix(token)
++			if err != nil {
++				return nil, 0, nil, nil, nil, err
++			}
++			exact = prefix
+ 		}
+ 	}
+ 
+ 	return &filter, filterMask, root, match, exact, nil
+ }
+ 
+ func (cmd *cmd) filteredRouteList(route *netlink.Route, filterMask uint64, root, match, exact *net.IPNet) ([]netlink.Route, []string, error) {
+ 	var matchedRoutes []netlink.Route
+ 	var ifaceNames []string
+ 
+@@ -735,76 +848,113 @@ func (cmd *cmd) filteredRouteList(route *netlink.Route, filterMask uint64, root,
+ 	if root == nil && match == nil && exact == nil {
+ 		matchedRoutes = routes
+ 	} else {
+ 		matchedRoutes, err = matchRoutes(routes, root, match, exact)
+ 		if err != nil {
+ 			return matchedRoutes, nil, err
+ 		}
+ 	}
+ 
+ 	for _, route := range matchedRoutes {
+-		link, err := cmd.handle.LinkByIndex(route.LinkIndex)
+-		if err != nil {
+-			return matchedRoutes, nil, err
+-		}
+-
+-		ifaceNames = append(ifaceNames, link.Attrs().Name)
++		ifaceNames = append(ifaceNames, cmd.linkName(route.LinkIndex))
+ 	}
+ 
+ 	return matchedRoutes, ifaceNames, nil
+ }
+ 
++// parseShowPrefix parses a route-show selector PREFIX: "default", a CIDR,
++// or a bare address (treated as a host prefix, like iproute2).
++func (cmd *cmd) parseShowPrefix(token string) (*net.IPNet, error) {
++	if token == "default" {
++		fam := netlink.FAMILY_V4
++		if cmd.Family == netlink.FAMILY_V6 {
++			fam = netlink.FAMILY_V6
++		}
++		return defaultDst(fam), nil
++	}
++	return parsePrefix(token)
++}
++
+ // matchRoutes matches routes against a given prefix.
+ func matchRoutes(routes []netlink.Route, root, match, exact *net.IPNet) ([]netlink.Route, error) {
+ 	matchedRoutes := []netlink.Route{}
+ 
+ 	for _, route := range routes {
+-		if root != nil && !root.Contains(route.Dst.IP) {
++		if route.Dst == nil {
+ 			continue
+ 		}
++		ones, _ := route.Dst.Mask.Size()
+ 
+-		if match != nil && !match.Contains(route.Dst.IP) {
+-			continue
++		// root PREFIX: routes whose prefix lies inside PREFIX.
++		if root != nil {
++			rootOnes, _ := root.Mask.Size()
++			if ones < rootOnes || !root.Contains(route.Dst.IP) {
++				continue
++			}
+ 		}
+ 
+-		if exact != nil && !exact.IP.Equal(route.Dst.IP) {
+-			continue
++		// match PREFIX: routes whose prefix covers PREFIX.
++		if match != nil {
++			matchOnes, _ := match.Mask.Size()
++			if ones > matchOnes || !route.Dst.Contains(match.IP) {
++				continue
++			}
++		}
++
++		// exact PREFIX: same address and same length.
++		if exact != nil {
++			exactOnes, exactBits := exact.Mask.Size()
++			_, bits := route.Dst.Mask.Size()
++			if ones != exactOnes || bits != exactBits || !exact.IP.Equal(route.Dst.IP) {
++				continue
++			}
+ 		}
+ 
+ 		matchedRoutes = append(matchedRoutes, route)
+ 	}
+ 
+ 	return matchedRoutes, nil
+ }
+ 
+ // RouteJSON represents a route entry for JSON output format.
+ type RouteJSON struct {
+ 	Dst      string   `json:"dst"`
++	Gateway  string   `json:"gateway,omitempty"`
+ 	Dev      string   `json:"dev"`
+ 	Protocol string   `json:"protocol"`
+ 	Scope    string   `json:"scope"`
+ 	PrefSrc  string   `json:"prefsrc"`
+ 	Flags    []string `json:"flags,omitempty"`
+ }
+ 
+ // printRoutes prints the routes in the system.
+ func (cmd *cmd) printRoutes(routes []netlink.Route, ifaceNames []string) error {
+ 	if cmd.Opts.JSON {
+ 		obj := make([]RouteJSON, 0, len(routes))
+ 
+ 		for idx, route := range routes {
+ 
++			if !cmd.familyMatches(route) {
++				continue
++			}
++
+ 			pRoute := RouteJSON{
+ 				Dst:   route.Dst.String(),
+ 				Dev:   ifaceNames[idx],
+ 				Scope: route.Scope.String(),
+ 			}
++			if isDefaultDst(route.Dst) {
++				pRoute.Dst = "default"
++			}
++			if route.Gw != nil {
++				pRoute.Gateway = route.Gw.String()
++			}
+ 
+ 			if !cmd.Opts.Numeric {
+ 				pRoute.Protocol = rtProto[int(route.Protocol)]
+ 				pRoute.Scope = route.Scope.String()
+ 			} else {
+ 				pRoute.Protocol = fmt.Sprintf("%d", route.Protocol)
+ 				pRoute.Scope = fmt.Sprintf("%d", route.Scope)
+ 			}
+ 
+ 			if route.Src != nil {
+@@ -815,29 +965,34 @@ func (cmd *cmd) printRoutes(routes []netlink.Route, ifaceNames []string) error {
+ 				pRoute.Flags = route.ListFlags()
+ 			}
+ 
+ 			obj = append(obj, pRoute)
+ 		}
+ 
+ 		return printJSON(*cmd, obj)
+ 	}
+ 
+ 	for idx, route := range routes {
+-		if route.Dst == nil {
+-			cmd.printDefaultRoute(route, ifaceNames[idx])
+-		} else {
+-			cmd.printRoute(route, ifaceNames[idx])
+-		}
++		cmd.printRoute(route, ifaceNames[idx])
+ 	}
+ 	return nil
+ }
+ 
++// familyMatches applies the -4/-6 selection; with neither, iproute2 lists
++// IPv4 only.
++func (cmd *cmd) familyMatches(r netlink.Route) bool {
++	if cmd.Family == netlink.FAMILY_V6 {
++		return !routeIsV4(r)
++	}
++	return routeIsV4(r)
++}
++
+ // routing protocol identifier
+ // specified in Linux Kernel header: include/uapi/linux/rtnetlink.h
+ // See man IP-ROUTE(8) and RTNETLINK(7)
+ var rtProto = map[int]string{
+ 	unix.RTPROT_BABEL:    "babel",
+ 	unix.RTPROT_BGP:      "bgp",
+ 	unix.RTPROT_BIRD:     "bird",
+ 	unix.RTPROT_BOOT:     "boot",
+ 	unix.RTPROT_DHCP:     "dhcp",
+ 	unix.RTPROT_DNROUTED: "dnrouted",
+@@ -851,118 +1006,146 @@ var rtProto = map[int]string{
+ 	unix.RTPROT_OSPF:     "ospf",
+ 	unix.RTPROT_RA:       "ra",
+ 	unix.RTPROT_REDIRECT: "redirect",
+ 	unix.RTPROT_RIP:      "rip",
+ 	unix.RTPROT_STATIC:   "static",
+ 	unix.RTPROT_UNSPEC:   "unspec",
+ 	unix.RTPROT_XORP:     "xorp",
+ 	unix.RTPROT_ZEBRA:    "zebra",
+ }
+ 
+-const (
+-	defaultFmt   = "%vdefault via %v dev %s proto %s metric %d\n"
+-	routeFmt     = "%v%v dev %s proto %s scope %s src %s metric %d\n"
+-	route6Fmt    = "%v%s dev %s proto %s metric %d\n"
+-	routeVia6Fmt = "%v%s via %s dev %s proto %s metric %d\n"
+-)
+-
+-func (cmd *cmd) printDefaultRoute(r netlink.Route, name string) {
+-	gw := r.Gw
+-
+-	var proto string
+-
+-	if !cmd.Opts.Numeric {
+-		proto = rtProto[int(r.Protocol)]
+-	} else {
+-		proto = fmt.Sprintf("%d", r.Protocol)
++// printRoute prints one route in iproute2-like form. Default routes (nil Dst
++// or 0/0) print as "default"; a gateway prints as "via GW" for both families.
++func (cmd *cmd) printRoute(r netlink.Route, name string) {
++	if !cmd.familyMatches(r) {
++		return
+ 	}
++	cmd.printOneRoute(r, name)
++}
+ 
+-	metric := r.Priority
+-
+-	var detail string
+-
+-	if cmd.Opts.Details {
+-		detail = routeTypeStr(r.Type) + " "
++// linkName returns the name of interface idx, or "" for routes that have
++// no device (blackhole, unreachable, prohibit, multipath) or a vanished one.
++func (cmd *cmd) linkName(idx int) string {
++	if idx == 0 {
++		return ""
+ 	}
+-
+-	fmt.Fprintf(cmd.Out, defaultFmt, detail, gw, name, proto, metric)
++	link, err := cmd.handle.LinkByIndex(idx)
++	if err != nil {
++		return fmt.Sprintf("if%d", idx)
++	}
++	return link.Attrs().Name
+ }
+ 
+-func (cmd *cmd) printRoute(r netlink.Route, name string) {
+-	switch cmd.Family {
+-	// print only ipv4 per default
+-	case netlink.FAMILY_ALL, netlink.FAMILY_V4:
+-		if r.Dst.IP.To4() == nil {
+-			return
+-		}
+-
+-		cmd.printIPv4Route(r, name)
+-
+-	case netlink.FAMILY_V6:
+-		if r.Dst.IP.To4() != nil {
+-			return
+-		}
+-
+-		cmd.printIPv6Route(r, name)
++func tableStr(table int) string {
++	switch table {
++	case unix.RT_TABLE_LOCAL:
++		return "local"
++	case unix.RT_TABLE_DEFAULT:
++		return "default"
+ 	}
++	return strconv.Itoa(table)
+ }
+ 
+-func (cmd *cmd) printIPv4Route(r netlink.Route, name string) {
+-	dest := r.Dst.String()
++func (cmd *cmd) printOneRoute(r netlink.Route, name string) {
++	var b strings.Builder
+ 
+-	var proto, scope string
++	// iproute2 always names non-unicast types (local, broadcast,
++	// blackhole, unreachable, ...); -d names unicast too.
++	if cmd.Opts.Details || (r.Type != unix.RTN_UNICAST && r.Type != unix.RTN_UNSPEC) {
++		b.WriteString(routeTypeStr(r.Type) + " ")
++	}
+ 
+-	if !cmd.Opts.Numeric {
+-		proto = rtProto[int(r.Protocol)]
+-		scope = addrScopeStr(r.Scope)
++	if isDefaultDst(r.Dst) {
++		b.WriteString("default")
+ 	} else {
+-		proto = fmt.Sprintf("%d", r.Protocol)
+-		scope = fmt.Sprintf("%d", r.Scope)
++		b.WriteString(r.Dst.String())
+ 	}
+ 
+-	src := r.Src
+-	metric := r.Priority
+-
+-	var detail string
+-
+-	if cmd.Opts.Details {
+-		detail = routeTypeStr(r.Type) + " "
++	if r.Gw != nil {
++		fmt.Fprintf(&b, " via %s", r.Gw)
+ 	}
+ 
+-	fmt.Fprintf(cmd.Out, routeFmt, detail, dest, name, proto, scope, src, metric)
+-}
+-
+-func (cmd *cmd) printIPv6Route(r netlink.Route, name string) {
+-	dest := r.Dst
++	if name != "" {
++		fmt.Fprintf(&b, " dev %s", name)
++	}
+ 
+-	var proto string
++	if r.Table != 0 && r.Table != unix.RT_TABLE_MAIN {
++		fmt.Fprintf(&b, " table %s", tableStr(r.Table))
++	}
+ 
+ 	if !cmd.Opts.Numeric {
+-		proto = rtProto[int(r.Protocol)]
++		fmt.Fprintf(&b, " proto %s", rtProto[int(r.Protocol)])
+ 	} else {
+-		proto = fmt.Sprintf("%d", r.Protocol)
++		fmt.Fprintf(&b, " proto %d", r.Protocol)
+ 	}
+ 
+-	metric := r.Priority
++	if routeIsV4(r) {
++		if !cmd.Opts.Numeric {
++			fmt.Fprintf(&b, " scope %s", addrScopeStr(r.Scope))
++		} else {
++			fmt.Fprintf(&b, " scope %d", r.Scope)
++		}
++		if r.Src != nil {
++			fmt.Fprintf(&b, " src %s", r.Src)
++		}
++	}
+ 
+-	var detail string
++	fmt.Fprintf(&b, " metric %d", r.Priority)
+ 
+-	if cmd.Opts.Details {
+-		detail = routeTypeStr(r.Type) + " "
++	for _, nh := range r.MultiPath {
++		if cmd.Opts.Oneline {
++			b.WriteString(" nexthop")
++		} else {
++			b.WriteString("\n\tnexthop")
++		}
++		if nh.Gw != nil {
++			fmt.Fprintf(&b, " via %s", nh.Gw)
++		}
++		if n := cmd.linkName(nh.LinkIndex); n != "" {
++			fmt.Fprintf(&b, " dev %s", n)
++		}
++		fmt.Fprintf(&b, " weight %d", nh.Hops+1)
+ 	}
+ 
++	b.WriteString("\n")
++	fmt.Fprint(cmd.Out, b.String())
++}
++
++// printRouteGet prints an "ip route get" answer the way iproute2 does:
++// ADDRESS [via GW] dev DEV [src SRC] uid UID, then "cache" for IPv4.
++func (cmd *cmd) printRouteGet(addr net.IP, r netlink.Route) {
++	var b strings.Builder
++	if r.Type != unix.RTN_UNICAST && r.Type != unix.RTN_UNSPEC {
++		b.WriteString(routeTypeStr(r.Type) + " ")
++	}
++	b.WriteString(addr.String())
+ 	if r.Gw != nil {
+-		gw := r.Gw
+-		fmt.Fprintf(cmd.Out, routeVia6Fmt, detail, dest, gw, name, proto, metric)
+-	} else {
+-		fmt.Fprintf(cmd.Out, route6Fmt, detail, dest, name, proto, metric)
++		fmt.Fprintf(&b, " via %s", r.Gw)
++	}
++	if n := cmd.linkName(r.LinkIndex); n != "" {
++		fmt.Fprintf(&b, " dev %s", n)
++	}
++	if r.Table != 0 && r.Table != unix.RT_TABLE_MAIN {
++		fmt.Fprintf(&b, " table %s", tableStr(r.Table))
+ 	}
++	if r.Src != nil {
++		fmt.Fprintf(&b, " src %s", r.Src)
++	}
++	if addr.To4() == nil && r.Priority != 0 {
++		fmt.Fprintf(&b, " metric %d", r.Priority)
++	}
++	fmt.Fprintf(&b, " uid %d", os.Getuid())
++	b.WriteString("\n")
++	if addr.To4() != nil {
++		b.WriteString("    cache\n")
++	}
++	fmt.Fprint(cmd.Out, b.String())
+ }
+ 
+ func addrScopeStr(scope netlink.Scope) string {
+ 	switch scope {
+ 	case netlink.SCOPE_UNIVERSE:
+ 		return "global"
+ 	default:
+ 		return scope.String()
+ 	}
+ }
+@@ -1003,23 +1186,16 @@ func (cmd *cmd) parseRouteGet() (*netlink.RouteGetOptions, error) {
+ 
+ 	return &opts, nil
+ }
+ 
+ func (cmd *cmd) showRoutesForAddress(addr net.IP, options *netlink.RouteGetOptions) error {
+ 	routes, err := cmd.handle.RouteGetWithOptions(addr, options)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
++	// "ip route get ADDR" prints the answer whatever its family.
+ 	for _, route := range routes {
+-		link, err := cmd.handle.LinkByIndex(route.LinkIndex)
+-		if err != nil {
+-			return err
+-		}
+-		if route.Dst == nil {
+-			cmd.printDefaultRoute(route, link.Attrs().Name)
+-		} else {
+-			cmd.printRoute(route, link.Attrs().Name)
+-		}
++		cmd.printRouteGet(addr, route)
+ 	}
+ 	return nil
+ }
+diff --git a/cmds/core/ip/route_prefix_linux_test.go b/cmds/core/ip/route_prefix_linux_test.go
+new file mode 100644
+index 0000000..64bb68f
+--- /dev/null
++++ b/cmds/core/ip/route_prefix_linux_test.go
+@@ -0,0 +1,118 @@
++// Copyright (C) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
++// doing business as LAVA GOAT SOFTWARE.
++//
++// SPDX-License-Identifier: MIT
++//go:build !tinygo || tinygo.enable
++
++package main
++
++import (
++	"fmt"
++	"net"
++	"testing"
++
++	"github.com/vishvananda/netlink"
++)
++
++func cidr(t *testing.T, s string) *net.IPNet {
++	t.Helper()
++	_, n, err := net.ParseCIDR(s)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return n
++}
++
++func TestIsDefaultDst(t *testing.T) {
++	for s, want := range map[string]bool{
++		"0.0.0.0/0":   true,
++		"::/0":        true,
++		"10.0.0.0/8":  false,
++		"0.0.0.0/32":  false,
++		"fd00::/64":   false,
++		"0.0.0.0/1":   false,
++		"128.0.0.0/1": false,
++	} {
++		if got := isDefaultDst(cidr(t, s)); got != want {
++			t.Errorf("isDefaultDst(%s) = %v", s, got)
++		}
++	}
++	if !isDefaultDst(nil) {
++		t.Errorf("isDefaultDst(nil) = false")
++	}
++}
++
++func TestParsePrefix(t *testing.T) {
++	for in, want := range map[string]string{
++		"10.99.0.0/16": "10.99.0.0/16",
++		"192.0.2.77":   "192.0.2.77/32",
++		"fd01::5":      "fd01::5/128",
++		"fd01::/64":    "fd01::/64",
++	} {
++		got, err := parsePrefix(in)
++		if err != nil || got.String() != want {
++			t.Errorf("parsePrefix(%s) = %v, %v; want %s", in, got, err, want)
++		}
++	}
++	if _, err := parsePrefix("bogus"); err == nil {
++		t.Errorf("parsePrefix(bogus) succeeded")
++	}
++}
++
++func TestShowPrefixDefault(t *testing.T) {
++	c := &cmd{Family: netlink.FAMILY_ALL}
++	if got, _ := c.parseShowPrefix("default"); got.String() != "0.0.0.0/0" {
++		t.Errorf("default = %v", got)
++	}
++	c.Family = netlink.FAMILY_V6
++	if got, _ := c.parseShowPrefix("default"); got.String() != "::/0" {
++		t.Errorf("-6 default = %v", got)
++	}
++}
++
++func TestMatchRoutes(t *testing.T) {
++	routes := []netlink.Route{
++		{Dst: cidr(t, "0.0.0.0/0")},
++		{Dst: cidr(t, "10.0.0.0/8")},
++		{Dst: cidr(t, "10.99.0.0/16")},
++		{Dst: cidr(t, "10.99.1.0/24")},
++		{Dst: nil},
++	}
++	dsts := func(rs []netlink.Route) []string {
++		var out []string
++		for _, r := range rs {
++			out = append(out, r.Dst.String())
++		}
++		return out
++	}
++	for _, tc := range []struct {
++		root, match, exact string
++		want               []string
++	}{
++		{exact: "0.0.0.0/0", want: []string{"0.0.0.0/0"}},
++		{exact: "10.0.0.0/16", want: nil},
++		{exact: "10.99.0.0/16", want: []string{"10.99.0.0/16"}},
++		{root: "10.0.0.0/8", want: []string{"10.0.0.0/8", "10.99.0.0/16", "10.99.1.0/24"}},
++		{root: "10.99.0.0/16", want: []string{"10.99.0.0/16", "10.99.1.0/24"}},
++		{match: "10.99.1.2/32", want: []string{"0.0.0.0/0", "10.0.0.0/8", "10.99.0.0/16", "10.99.1.0/24"}},
++		{match: "10.99.0.0/16", want: []string{"0.0.0.0/0", "10.0.0.0/8", "10.99.0.0/16"}},
++	} {
++		var root, match, exact *net.IPNet
++		if tc.root != "" {
++			root = cidr(t, tc.root)
++		}
++		if tc.match != "" {
++			match = cidr(t, tc.match)
++		}
++		if tc.exact != "" {
++			exact = cidr(t, tc.exact)
++		}
++		got, err := matchRoutes(routes, root, match, exact)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if g := dsts(got); fmt.Sprint(g) != fmt.Sprint(tc.want) {
++			t.Errorf("root=%s match=%s exact=%s: got %v, want %v", tc.root, tc.match, tc.exact, g, tc.want)
++		}
++	}
++}
