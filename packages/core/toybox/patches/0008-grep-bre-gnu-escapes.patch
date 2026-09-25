@@ -1,0 +1,22 @@
+grep: send BRE patterns using \| \+ \? \{ to regcomp, not the literal fast path
+
+parse_regex()'s fast path treats every "\X" with X in "\\.^$[()|*+?{" as
+a literal X, and in BRE mode only bails to regcomp() for "\(".  So
+`grep 'a\|b'` searched for the literal string "a|b" while `grep 'a*\|b'`
+(which reaches regcomp because of the bare '*') alternated.  musl's
+regcomp implements \| \+ \? in BRE (regcomp.c "extension: treat \| as
+alternation in BRE"), and toybox sed already gets that behaviour.
+
+--- a/toys/posix/grep.c
++++ b/toys/posix/grep.c
+@@ -406,7 +406,9 @@
+     if ('.'!=*s && !FLAG(F) && strcmp(s, "^$")) for (; *s; s++) {
+       if (*s=='\\') {
+         if (!s[1] || !strchr(special, *++s)) break;
+-        if (!FLAG(E) && *s=='(') break;
++        // In a BRE, \( and \{ open a group/interval and \| \+ \? are the
++        // GNU alternation/repetition extensions musl's regcomp supports.
++        if (!FLAG(E) && strchr("(|+?{", *s)) break;
+       } else if (*s>127 || strchr(special+4, *s)) break;
+     }
+ 

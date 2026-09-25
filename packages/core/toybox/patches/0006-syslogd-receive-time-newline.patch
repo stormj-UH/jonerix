@@ -1,0 +1,54 @@
+syslogd: stamp every record with the local receive time and end every
+record with a newline.
+
+musl's syslog() stamps datagrams with gmtime_r (UTC) and toybox kept a
+well-formed client stamp, while its own records used ctime() (local
+time), so /var/log/messages mixed two time zones.  Drop the client stamp
+and always use the receive time.
+
+The socket path appends '\n' to each record but the internal logmsg()
+calls ("Toybox: syslogd started", "-- MARK --", "syslogd exiting" x3)
+pass literals without one, so the next record ran onto the same line.
+Terminate every formatted record in logmsg() itself.
+
+--- a/toys/pending/syslogd.c
++++ b/toys/pending/syslogd.c
+@@ -333,16 +333,15 @@
+   }
+   /* Jan 18 00:11:22 msg...
+    * 01234567890123456
++   * jonerix: always stamp with the local receive time.  musl's syslog()
++   * stamps with gmtime_r (UTC) but our own messages use ctime() (local),
++   * so keeping the client stamp mixed zones in one file.  Drop a
++   * well-formed client stamp instead of trusting it.
+    */
+-  if (len < 16 || msg[3] != ' ' || msg[6] != ' ' || msg[9] != ':'
+-      || msg[12] != ':' || msg[15] != ' ') {
+-    time(&now);
+-    ts = ctime(&now) + 4; /* skip day of week */
+-  } else {
+-    now = 0;
+-    ts = msg;
+-    msg += 16;
+-  }
++  if (strlen(msg) >= 16 && msg[3] == ' ' && msg[6] == ' ' && msg[9] == ':'
++      && msg[12] == ':' && msg[15] == ' ') msg += 16;
++  time(&now);
++  ts = ctime(&now) + 4; /* skip day of week */
+   ts[15] = '\0';
+   fac = LOG_FAC(pri);
+   lvl = LOG_PRI(pri);
+@@ -359,6 +358,13 @@
+     if (toys.optflags & FLAG_S) len = sprintf(toybuf, "%s %s", ts, msg);
+     else len = sprintf(toybuf, "%s %s %s.%s %s", ts, p, facstr, lvlstr, msg);
+   }
++  // jonerix: internal messages ("syslogd started", "-- MARK --", "syslogd
++  // exiting") carry no '\n'; socket input always does.  Terminate every
++  // record so the next line doesn't run on.
++  if (len > 0 && toybuf[len-1] != '\n') {
++    toybuf[len++] = '\n';
++    toybuf[len] = 0;
++  }
+   if (lvl >= TT.log_prio) return;
+ 
+   for (; tf; tf = tf->next) {

@@ -1,0 +1,20 @@
+unshare: -r creates the user namespace even when nsenter is configured out.
+
+unshare_main() runs in nsenter's flag context, where FLAG_U is 0 unless
+CONFIG_NSENTER is set (jonerix leaves nsenter to jonerix-util).  "-r" then
+never added CLONE_NEWUSER, and writing /proc/self/setgroups failed with
+EPERM.  -U is bit 0 for both commands, so set that bit directly.
+
+--- a/toys/other/nsenter.c
++++ b/toys/other/nsenter.c
+@@ -114,7 +114,9 @@
+     int euid = geteuid(), egid = getegid();
+ 
+     // unshare -U does not imply -r, so we cannot use [+rU]
+-    if (test_r()) toys.optflags |= FLAG_U;
++    // (-U is bit 0 in both option strings.  FLAG_U here is nsenter's, and
++    // that is 0 when NSENTER is configured out, so -r made no user ns.)
++    if (test_r()) toys.optflags |= 1;
+ 
+     for (i = 0; i<ARRAY_LEN(flags); i++)
+       if (test_a() || (toys.optflags & (1<<i))) f |= flags[i];

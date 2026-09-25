@@ -1,6 +1,13 @@
 #!/bin/openrc-run
 # OpenRC service script for toybox syslogd
 # Part of jonerix - MIT License
+#
+# No pidfile= here: supervise-daemon then keeps its own pid in its
+# default /run/supervise-syslogd.pid.  Until toybox 0.8.11-r15 this said
+# pidfile="/run/syslogd.pid", which is the same file as toybox's own
+# /var/run/syslogd.pid once bootmisc makes /var/run a symlink to /run,
+# and syslogd exited on every start.  (r15's syslogd no longer writes a
+# pidfile at all under -n.)
 
 name="syslogd"
 description="toybox syslogd - system log daemon"
@@ -8,10 +15,26 @@ description="toybox syslogd - system log daemon"
 supervisor="supervise-daemon"
 command="/usr/bin/syslogd"
 command_args="-n ${SYSLOGD_OPTS}"
-pidfile="/run/syslogd.pid"
+respawn_delay=2
+respawn_max=5
+respawn_period=60
 
 depend() {
     provide logger
     use net
     before *
+}
+
+start_post() {
+    # supervise-daemon succeeds as soon as it has forked.  Say so when
+    # nothing ends up listening on /dev/log, instead of dropping every
+    # syslog() message silently.
+    _n=0
+    while [ "$_n" -lt 20 ]; do
+        grep -q ' /dev/log$' /proc/net/unix 2>/dev/null && return 0
+        sleep 0.1
+        _n=$((_n + 1))
+    done
+    ewarn "syslogd is not listening on /dev/log"
+    return 0
 }

@@ -1,0 +1,19 @@
+Backport upstream toybox 8cee68231f (first released in 0.8.12): don't
+call closedir(NULL) when opendir()/fdopendir() fails.
+
+glibc ignores closedir(NULL); musl dereferences it.  Every dirtree walker
+(find, du, grep -r, tar, cp -r, rm -r, chmod/chown/chgrp -R, diff -r ...)
+run by an ordinary user therefore died with SIGSEGV at the first
+directory it could not open, and threw away the output it had buffered.
+
+--- a/lib/dirtree.c
++++ b/lib/dirtree.c
+@@ -201,7 +201,7 @@
+   }
+ 
+ done:
+-  closedir(dir);
++  if (dir) closedir(dir);
+   node->dirfd = -1;
+ 
+   return (new == DIRTREE_ABORTVAL) ? DIRTREE_ABORT : flags;

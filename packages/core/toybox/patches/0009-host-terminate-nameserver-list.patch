@@ -1,0 +1,24 @@
+host: NULL terminate the /etc/resolv.conf nameserver list.
+
+get_nsname() grew the array with xrealloc() but never stored a terminator,
+while host_main() advances through it until it reads NULL once a server
+fails to answer.  With the usual single nameserver a timeout made host
+read an uninitialized pointer and pass it to getaddrinfo().
+
+--- a/toys/net/host.c
++++ b/toys/net/host.c
+@@ -64,9 +64,12 @@
+     for (p = line; *p && !isspace(*p) && *p!='#'; p++);
+     if (p == line) return;
+     *p = 0;
+-    if (!(TT.nslen&8))
+-      TT.nsname = xrealloc(TT.nsname, (TT.nslen+8)*sizeof(void *));
++    // Keep the list NULL terminated: host_main() walks it until NULL when
++    // a server doesn't answer.  (The old "nslen&8" growth never wrote the
++    // terminator and stopped growing at 16 entries.)
++    TT.nsname = xrealloc(TT.nsname, (TT.nslen+2)*sizeof(void *));
+     TT.nsname[TT.nslen++] = xstrdup(line);
++    TT.nsname[TT.nslen] = 0;
+   }
+ }
+ 

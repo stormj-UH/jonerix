@@ -1,5 +1,9 @@
-# Options for toybox syslogd
+# Options for toybox syslogd (the init script always adds -n)
+# -s KB           rotate a log file once it would grow past KB kilobytes
+# -b N            keep N rotated copies (messages.0 .. messages.<N-1>)
+#   toybox rotates ONLY when -s or -b is given; the "default:200KB" in
+#   `syslogd --help` never applies otherwise.  Keep them when editing.
 # -R HOST[:PORT]  forward to remote syslog
 # -L              also log locally (add if you want both)
 # Remote forwarding is intentionally not configured by the base image.
-SYSLOGD_OPTS=""
+SYSLOGD_OPTS="-s 1024 -b 5"

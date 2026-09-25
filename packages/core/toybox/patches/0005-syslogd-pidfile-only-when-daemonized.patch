@@ -1,0 +1,92 @@
+syslogd: only a self-daemonized syslogd writes /var/run/syslogd.pid.
+
+toybox 0.8.11 calls xpidfile("syslogd") unconditionally, even with -n.
+jonerix runs syslogd -n under OpenRC supervise-daemon, and once bootmisc
+turned /var/run into a symlink to /run the supervisor's pidfile and
+toybox's became the same file: xpidfile() found the supervisor's live pid
+and error_exit()ed, so every start died and supervise-daemon gave up.
+
+The SIGHUP handler jumps back to init_jumpin and re-ran xpidfile(), which
+then found syslogd's own live pid and killed it.  Write the pidfile only
+in the daemonize branch (which runs once), remove it again on exit, stop
+leaking the signal pipe on each SIGHUP, and strdup the /dev/console
+fallback name that cleanup() frees on SIGHUP.
+
+--- a/toys/pending/syslogd.c
++++ b/toys/pending/syslogd.c
+@@ -69,7 +69,7 @@
+ 
+   struct unsocks *lsocks;  // list of listen sockets
+   struct logfile *lfiles;  // list of write logfiles
+-  int sigfd[2];
++  int sigfd[2], pidfile;
+ )
+ 
+ // Lookup numerical code from name
+@@ -271,7 +271,9 @@
+       free(tmpfile);
+     } else tfd->logfd = open(tfd->filename, O_CREAT | O_WRONLY | O_APPEND, 0666);
+     if (tfd->logfd < 0) {
+-      tfd->filename = "/dev/console";
++      // cleanup() frees filename (SIGHUP re-init), so it can't be a literal.
++      free(tfd->filename);
++      tfd->filename = xstrdup("/dev/console");
+       tfd->logfd = open(tfd->filename, O_APPEND);
+     }
+   }
+@@ -399,6 +401,13 @@
+   }
+ }
+ 
++// Only a syslogd that daemonized itself owns /var/run/syslogd.pid.
++static void drop_pidfile(void)
++{
++  if (TT.pidfile) unlink("/var/run/syslogd.pid");
++  TT.pidfile = 0;
++}
++
+ static void signal_handler(int sig)
+ {
+   unsigned char ch = sig;
+@@ -479,8 +488,15 @@
+     daemon(0, 0);
+     //don't daemonize again if SIGHUP received.
+     toys.optflags |= FLAG_n;
++    // jonerix: write the pidfile only when we daemonized ourselves, once.
++    // Under -n a supervisor (OpenRC supervise-daemon) owns the pid, and
++    // since bootmisc made /var/run a symlink to /run its --pidfile can be
++    // this very file: xpidfile() then found the supervisor's live pid and
++    // error_exit()ed on every start.  Calling it again on the SIGHUP
++    // re-init also found our own live pid and killed the daemon.
++    xpidfile("syslogd");
++    TT.pidfile = 1;
+   }
+-  xpidfile("syslogd");
+ 
+   logmsg("<46>Toybox: syslogd started", 27); //27 : the length of message
+   for (;;) {
+@@ -508,6 +524,7 @@
+         case SIGINT:     /* FALLTHROUGH */
+         case SIGQUIT:
+           logmsg("<46>syslogd exiting", 19);
++          drop_pidfile();
+           if (CFG_TOYBOX_FREE ) cleanup();
+           signal(sig, SIG_DFL);
+           sigset_t ss;
+@@ -520,6 +537,9 @@
+         case SIGHUP:
+           logmsg("<46>syslogd exiting", 19);
+           cleanup(); //cleanup is done, as we restart syslog.
++          // init_jumpin makes a new signal pipe; don't leak this one.
++          close(TT.sigfd[0]);
++          close(TT.sigfd[1]);
+           goto init_jumpin;
+         default: break;
+       }
+@@ -555,5 +575,6 @@
+   }
+ clean_and_exit:
+   logmsg("<46>syslogd exiting", 19);
++  drop_pidfile();
+   if (CFG_TOYBOX_FREE ) cleanup();
+ }
