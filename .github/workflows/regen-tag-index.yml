@@ -76,7 +76,9 @@ jobs:
           echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
 
       - name: Delete stale (superseded) release assets
-        if: always()
+        # Only after gen-index succeeded: when it refuses the INDEX (a
+        # package newer than its recipe), its stale list is not trustworthy
+        # either, and the losers it names may be the builds main can make.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STALE_LIST: /var/cache/jpkg/.stale-assets

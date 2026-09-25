@@ -216,6 +216,9 @@ while read -r pkg; do
             echo "note: $name ($arch): recipe $recipe_version is not published yet; indexing $version"
         fi
         depends_arr="$(meta_runtime_depends "$meta")"
+        # A .jpkg written by an old jpkg may not record its depends at all;
+        # the recipe's list is then the best available approximation.
+        [ -n "$depends_arr" ] || depends_arr="$(grep '^runtime = ' "$recipe_file" | head -1 | sed 's/^runtime = //')"
     fi
     [ "$depends_arr" = "[]" ] && depends_arr=""
 
