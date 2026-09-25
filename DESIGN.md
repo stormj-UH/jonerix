@@ -221,7 +221,9 @@ jpkg sign <file> --key <key> # sign a file with Ed25519
 
 ### License Enforcement
 
-jpkg enforces permissive licensing at build and install time. The allowlist includes: MIT, BSD-2-Clause, BSD-3-Clause, BSD-3-Clause-flex, ISC, Apache-2.0, 0BSD, CC0, Unlicense, MirOS, OpenSSL, zlib, PSF-2.0, Artistic-2.0, Ruby, MPL-2.0, and public domain variants. SPDX compound expressions (`AND`/`OR`) are parsed recursively — `AND` requires all components permissive, `OR` requires at least one.
+jpkg enforces permissive licensing when it builds a package: `jpkg build` validates the recipe and refuses a license that is not allowed. `jpkg license-audit` and `jpkg info` report against the same rule but do not block installs. The allowlist (`PERMISSIVE_LICENSES` in `packages/core/jpkg/src/util.rs`, mirrored by `scripts/license-audit.sh`) is: MIT, BSD-2-Clause, BSD-3-Clause, BSD-3-Clause-flex, BSD-2-Clause-Patent, ISC, Apache-2.0, 0BSD, CC0, CC0-1.0, Unlicense, curl, MirOS, OpenSSL, SSLeay, zlib, PSF-2.0, BSL-1.0, Artistic-2.0, Artistic-1.0-Perl, Ruby, Info-ZIP, bzip2-1.0.6, FTL, HPND, Unicode-DFS-2016, Unicode-3.0, libpng-2.0, and public domain variants. SPDX compound expressions (`AND`/`OR`) are parsed recursively — `AND` requires all components permissive, `OR` requires at least one.
+
+Exceptions are per package (`LICENSE_EXCEPTIONS`), never global: `ca-certificates` may carry MPL-2.0 because the Mozilla CA bundle is data. MPL-2.0 is file-level copyleft and is refused for every other package. The Linux kernel (GPL-2.0-only) is built out of band and never goes through the gate.
 
 ### Signing
 
@@ -580,7 +582,7 @@ build = ["clang"]
 | Item | Status | Notes |
 |------|--------|-------|
 | Linux kernel | GPLv2 — accepted | No permissive OS kernel with equivalent hardware/container support exists |
-| CA certificates | Mozilla bundle, MPL-2.0 | This is *data*, not *code*. MPL-2.0 now in jpkg allowlist. |
+| CA certificates | Mozilla bundle, MPL-2.0 | This is *data*, not *code*. MPL-2.0 is allowed for the `ca-certificates` package only (jpkg `LICENSE_EXCEPTIONS`). |
 | BIOS bootloader | syslinux (GPL) on boot media only | Not installed to rootfs. UEFI EFISTUB avoids this entirely. |
 | GNU make at build time | GPL, Alpine container only | Ruby, hostapd, wpa_supplicant upstream Makefiles require it. Never shipped. |
 

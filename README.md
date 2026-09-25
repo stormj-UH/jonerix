@@ -350,13 +350,24 @@ audited to avoid drifting back into a split `/usr` tree.
 
 ### Licensing
 
-Runtime packages must be permissively licensed. The allowlist includes MIT,
-BSD-2-Clause, BSD-3-Clause, ISC, Apache-2.0, 0BSD, Zlib, PSF-2.0,
-Artistic-2.0, MirOS, public-domain style licenses, and compatible compound
-SPDX expressions.
+Runtime packages must be permissively licensed. `jpkg build` refuses a
+recipe whose license is not on the allowlist in
+[packages/core/jpkg/src/util.rs](packages/core/jpkg/src/util.rs): MIT,
+BSD-2-Clause, BSD-3-Clause (and the -flex and -Patent variants), ISC,
+Apache-2.0, 0BSD, CC0, Unlicense, Zlib, curl, MirOS, OpenSSL, SSLeay, PSF-2.0,
+BSL-1.0, Artistic-2.0, Artistic-1.0-Perl, Ruby, Info-ZIP, bzip2-1.0.6, FTL,
+HPND, Unicode-DFS-2016, Unicode-3.0, libpng-2.0 and public-domain. SPDX
+expressions are evaluated: `A OR B` needs one permissive side (perl is
+`Artistic-1.0-Perl OR GPL-1.0-or-later` and ships under the Artistic side),
+`A AND B` needs both. [scripts/license-audit.sh](scripts/license-audit.sh)
+applies the same list to recipes and installed systems.
 
-The explicit exception is Linux itself, which is GPL-2.0-only and is built or
-fetched outside the permissive userland package set.
+Exceptions are per package, never per license:
+
+- Linux itself is GPL-2.0-only and is built or fetched outside the permissive
+  userland package set.
+- `ca-certificates` carries the Mozilla CA bundle under MPL-2.0. It is data,
+  not code, and MPL-2.0 is accepted for that package only.
 
 ### Shell Discipline
 
@@ -382,7 +393,13 @@ See [DESIGN.md](DESIGN.md) for the full rule set.
 | WSL rootfs | Rolling package release assets |
 
 Package publication is incremental: CI builds `.jpkg` files, uploads them to
-the release, and regenerates a signed package index.
+the release, and regenerates a signed package index. Only `main` publishes to
+the rolling `packages` release: the publish workflows refuse other refs, and
+`scripts/gen-index.sh` refuses to index a build that is newer than its recipe
+on `main` or built for an arch its recipe excludes.
+[scripts/check-index-drift.sh](scripts/check-index-drift.sh) (run daily by
+`.github/workflows/index-drift.yml`) reports where the published INDEX and
+the recipes have drifted apart.
 
 ## fastfetch
 

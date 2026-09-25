@@ -4,8 +4,11 @@
     - lld: out-of-tree LLD linker
     - llvm: metapackage (POSIX symlinks: cc, ld, ar, nm, etc.)
     - libcxx: stays as-is (no libLLVM.so link at runtime)
-  Remaining: wire rust recipe to use llvm-config = "/bin/llvm-config"
-  so Rust dist builds skip their own LLVM build (saves 1-2 hours).
+  Remaining: set llvm-config = "/bin/llvm-config-22" (libllvm22) in the
+  [target.*-jonerix-linux-musl] blocks of .github/workflows/rust-dist.yml
+  so Rust dist builds skip their own LLVM build (saves 1-2 hours). rustc
+  1.95 uses LLVM 22.1.x and today links its own bundled
+  libLLVM.so.22.1-rust-1.95.0-stable, not the libllvm jpkg.
 
 * llvm-libc: ship as optional package, track for eventual musl
   replacement.  Goal is fully LLVM-native stack: llvm-libc + libc++ +

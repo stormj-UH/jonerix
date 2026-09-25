@@ -36,7 +36,6 @@ workflow with maybe an hour per recipe.
 | **`age`** | BSD-3 | Modern file encryption (Curve25519, ChaCha20) | Go. Fills a real gap — jonerix has no `gpg` and shouldn't, but file encryption is sometimes wanted. |
 | **`rage`** | MIT/Apache-2.0 | Rust port of `age`, same wire format | Pick this OR `age`, not both. |
 | **`iperf3`** | BSD-3 | Bandwidth testing | C, jmake-friendly. Useful on Pi 5 + router scenarios. |
-| **`valkey`** | BSD-3 | Redis fork after Redis went SSPL | C, jmake. Real KV store with a clean license. Larger surface — modules, RDB, AOF, replication — but none of those are blockers. |
 | **`prometheus-node-exporter`** | Apache-2.0 | Host metrics for Prometheus scraping | Go. If you ever set up monitoring across the deployments, this is the canonical agent. |
 | **`caddy`** | Apache-2.0 | HTTP server with automatic Let's Encrypt | Go. Alternative to the `nginx` you already ship for use cases where ACME-by-default is the win. |
 
@@ -49,6 +48,12 @@ workflow with maybe an hour per recipe.
 | **`tinyssh`** | Public Domain | Minimal SSH server alternative to dropbear. Useful if you ever want to ship even smaller. |
 | **`darkhttpd`** | ISC | 1-file static HTTP server. Good for embedded scenarios where nginx is overkill. |
 | **`tmate`** | MIT | tmux fork that pairs sessions over SSH. C build but small. |
+
+## Shipped since this list was written
+
+| Package | Where |
+|---|---|
+| **`valkey`** | `packages/extra/valkey` (9.0.4) — the BSD-3 Redis fork, from Tier 2. |
 
 ## Off-limits — looks easy, license-blocked
 
