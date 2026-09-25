@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r9"
+version = "4.19.4-r10"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Installing this package redirects these /bin entries away from
@@ -41,6 +41,14 @@ license = "BSD-3-Clause"
 # passwd(1) + useradd(8), BSD-3-Clause, static-musl.
 description = "shadow-utils (login, passwd, user/group management) — REPLACES toybox's passwd / login / useradd / userdel / usermod / groupadd / groupdel / groupmod. /bin/chsh is owned by jonerix-util; shadow's chsh is at /bin/shadow-chsh and jonerix-util's chsh execs it for the privileged passwd write."
 
+# r10: /etc/init.d/shadow-login is multiplexed by service name.
+# `ln -s shadow-login /etc/init.d/shadow-login.tty2` gives a supervised
+# login on /dev/tty2 (tty= in conf.d overrides), replacing the hand-copied
+# per-tty scripts on jonerix-tormenta. Plain shadow-login still serves
+# /dev/tty1. jonerix-raspi5-fixups 1.6.33 stops copying its duplicate of
+# this script over ours. post_install also makes /etc/shadow, /etc/gshadow
+# and their - backups owner-only (0600).
+#
 # r9: add the missing `replaces = ["toybox"]` declaration.  The bare-name
 # /bin/<X> -> shadow-<X> symlinks (login, passwd, useradd, …) shipped in
 # r7's install step were silently rejected by jpkg at extraction time
@@ -301,6 +309,15 @@ if [ ! -e /etc/shadow/no-console ] && [ -d /etc/runlevels/default ]; then
         /bin/rc-service shadow-login start 2>/dev/null || true
     fi
 fi
+
+# --- password-hash file modes (r10) ---
+# Owner-only, whatever created them: jonerix-tormenta ended up with a
+# group-writable /etc/gshadow and /etc/gshadow- (0664).
+for f in /etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-; do
+    if [ -f "$f" ] && [ ! -L "$f" ]; then
+        chmod 0600 "$f" 2>/dev/null || true
+    fi
+done
 
 exit 0"""
 
