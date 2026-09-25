@@ -55,3 +55,17 @@ setopt INTERACTIVE_COMMENTS
 # terminals see the same palette, no surprise differences across
 # HDMI / SSH / xterm sessions.
 PROMPT='%F{blue}[%F{white}%n@%m %D{%H:%M:%S} %~%F{blue}]%F{white} %(!.#.%%)%f '
+
+# toybox ps takes only POSIX options, so the BSD habit `ps aux` fails
+# with "bad aux". Map it to the same columns in POSIX -o form.
+ps() {
+    case "${1:-}" in
+        aux|auxw|auxww|-aux)
+            shift
+            command ps -A -o user,pid,%cpu,%mem,vsz,rss,tty,stat,stime,time,args "$@"
+            ;;
+        *)
+            command ps "$@"
+            ;;
+    esac
+}
