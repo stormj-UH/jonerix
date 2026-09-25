@@ -46,6 +46,7 @@ lz4
 # Tier 2: depends on musl only (small)
 mandoc
 bc
+getent
 dhcpcd
 ifupdown-ng
 # pkgconf — drop-in pkg-config, ISC. Build-dep for any recipe whose
