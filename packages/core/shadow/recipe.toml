@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r9"
+version = "4.19.4-r10"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Installing this package redirects these /bin entries away from
@@ -53,6 +53,12 @@ description = "shadow-utils (login, passwd, user/group management) — REPLACES 
 # place the symlinks land in shadow's manifest, the yield-loop sees
 # them, and the takeover survives indefinitely.
 replaces = ["toybox"]
+
+# r10: re-assert upstream's setuid set (passwd chsh chfn chage expiry
+# gpasswd newgrp newuidmap newgidmap, shipped as /bin/shadow-<name>) after
+# llvm-strip, and again in post_install. jpkg releases up to 2.2.9 extract
+# with the tar crate's default 0o777 mode mask, so r9 installed every one of
+# them 0755: non-root `passwd` and newuidmap/newgidmap stopped working.
 
 [source]
 url = "https://github.com/shadow-maint/shadow/releases/download/4.19.4/shadow-4.19.4.tar.xz"
@@ -163,6 +169,17 @@ for f in "$DESTDIR"/lib/*.a "$DESTDIR"/lib/*.so*; do
     [ -f "$f" ] && llvm-strip --strip-unneeded "$f" 2>/dev/null || true
 done
 
+# Upstream's install-am chmods these 4755 (src/Makefile.am suidubins with
+# subordinate IDs enabled). Re-assert it here, after every step that
+# rewrites the binaries, so the archive always carries the setuid bits.
+for b in passwd chsh chfn chage expiry gpasswd newgrp newuidmap newgidmap; do
+    if [ ! -f "$DESTDIR/bin/shadow-$b" ]; then
+        echo "shadow: expected setuid binary bin/shadow-$b is missing" >&2
+        exit 1
+    fi
+    chmod 4755 "$DESTDIR/bin/shadow-$b"
+done
+
 # /etc/login.defs: keep tty prompts open indefinitely. The default
 # LOGIN_TIMEOUT=60 caused idle HDMI logins to exit every minute.
 if [ -f "$DESTDIR/etc/login.defs" ]; then
@@ -223,6 +240,19 @@ done
 # default-pre-shadow state on every fresh jonerix image — that's what
 # post_remove restores. This matches raspi5-fixups 1.6.17 (f05526a9).
 post_install = """set -e
+
+# r10: jpkg <= 2.2.9 drops setuid bits on extraction; put them back.
+# JPKG_ROOT is set when the hook runs outside a chroot for an
+# alternate-root install.
+_root=${JPKG_ROOT:-}
+case "$_root" in
+    /) _root= ;;
+esac
+for b in passwd chsh chfn chage expiry gpasswd newgrp newuidmap newgidmap; do
+    f="$_root/bin/shadow-$b"
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    chmod 4755 "$f" || echo "shadow: could not set the setuid bit on $f" >&2
+done
 
 backup_dir=/etc/jpkg/shadow/toybox-prev
 mkdir -p "$backup_dir"
