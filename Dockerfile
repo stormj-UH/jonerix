@@ -20,7 +20,7 @@
 # `jpkg` binary out of the build tree.  We don't run `cargo test`
 # here — the test suite runs at recipe-build time inside CI.
 # ============================================================
-FROM alpine:latest AS jpkg-builder
+FROM alpine:3.24 AS jpkg-builder
 
 RUN apk add --no-cache clang lld musl-dev rust cargo
 
@@ -45,7 +45,7 @@ RUN cd /src && \
 # ============================================================
 # Stage 1: Assemble jonerix rootfs using jpkg packages
 # ============================================================
-FROM alpine:latest AS rootfs
+FROM alpine:3.24 AS rootfs
 
 # Alpine tools needed only to run jpkg during assembly
 RUN apk add --no-cache curl ca-certificates zstd tar libarchive-tools

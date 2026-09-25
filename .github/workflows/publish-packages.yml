@@ -105,7 +105,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           lfs: false
 
@@ -270,7 +270,7 @@ jobs:
 
       - name: Upload published asset manifest
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: published-assets-x86_64
           path: /tmp/published-assets-x86_64.txt
@@ -278,7 +278,7 @@ jobs:
 
       - name: Upload built package artifacts
         if: ${{ always() && inputs.package != '' && inputs.package != 'all' }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: built-packages-x86_64
           path: |
@@ -302,7 +302,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           lfs: false
 
@@ -464,7 +464,7 @@ jobs:
 
       - name: Upload published asset manifest
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: published-assets-aarch64
           path: /tmp/published-assets-aarch64.txt
@@ -472,7 +472,7 @@ jobs:
 
       - name: Upload built package artifacts
         if: ${{ always() && inputs.package != '' && inputs.package != 'all' }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: built-packages-aarch64
           path: |
@@ -496,7 +496,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           lfs: false
 
@@ -536,7 +536,7 @@ jobs:
 
       - name: Download published asset manifests
         if: ${{ !inputs.index_only }}
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: published-assets-*
           path: /tmp/published-assets

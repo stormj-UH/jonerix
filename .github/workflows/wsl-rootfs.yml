@@ -26,7 +26,7 @@ jobs:
     name: Build rootfs (x86_64)
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:3.24
       options: --privileged
     permissions:
       contents: write
@@ -36,7 +36,7 @@ jobs:
         run: apk add --no-cache git git-lfs
 
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # WSL rootfs builds jpkg from in-tree code and then `jpkg install`s
           # prebuilt packages from the release INDEX — none of the LFS-tracked
@@ -150,7 +150,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # See lfs-quota note above on the x86_64 job — the WSL rootfs build
           # path never reads /workspace/sources, so LFS data is dead weight.
@@ -200,7 +200,7 @@ jobs:
             -e STAGING=/tmp/jonerix-rootfs \
             -e OUTPUT_DIR=/tmp/rootfs-out \
             -e JPKG_CACHE_HIT="$JPKG_CACHE_HIT" \
-            alpine:latest sh -c '
+            alpine:3.24 sh -c '
               set -e
               mkdir -p /var/cache/apk && ln -sf /var/cache/apk /etc/apk/cache
               apk update -q
