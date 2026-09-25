@@ -95,25 +95,16 @@ if ! bsdtar --version >/dev/null 2>&1 && \
 fi
 
 if [ -z "${JPKG_SOURCE_CACHE:-}" ] && [ -d /workspace/sources ]; then
-    # publish-packages.yml checks out with lfs:false, so LFS-tracked
-    # source tarballs come down as 130-byte pointer files. jpkg can't
-    # tell them from real archives and aborts on the hash mismatch.
-    # Purge anything matching the LFS pointer signature so jpkg falls
-    # through to the recipe's source.url instead. Mirrors the pattern
-    # in scripts/check-vendored-sources.sh.
-    pointers_purged=0
-    for src in /workspace/sources/*; do
-        [ -f "$src" ] || continue
-        IFS= read -r first_line < "$src" 2>/dev/null || continue
-        if [ "$first_line" = "version https://git-lfs.github.com/spec/v1" ]; then
-            rm -f "$src"
-            pointers_purged=$((pointers_purged + 1))
-        fi
-    done
-    if [ "$pointers_purged" -gt 0 ]; then
-        echo "ci-build: purged $pointers_purged LFS pointer(s) from /workspace/sources/ (jpkg will fetch from upstream URLs)"
-    fi
-    export JPKG_SOURCE_CACHE=/workspace/sources
+    # /workspace is the repo checkout. scripts/local-build-*.sh bind-mount
+    # the host clone here, so /workspace/sources must never be modified.
+    # Checkouts without LFS content (publish-packages.yml uses lfs:false;
+    # build hosts may lack git-lfs) hold ~130-byte pointer files that jpkg
+    # would copy and then reject on the hash check. Point jpkg at a symlink
+    # view that leaves the pointers out, so it falls through to each
+    # recipe's source.url for those.
+    JPKG_SOURCE_CACHE=$(sh /workspace/scripts/source-cache-view.sh \
+        /workspace/sources /tmp/jpkg-source-cache ci-build)
+    export JPKG_SOURCE_CACHE
 fi
 
 install_cached_pkg_if_available() {

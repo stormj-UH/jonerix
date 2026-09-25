@@ -102,6 +102,8 @@ Env knobs:
 
 Volumes mounted into the container:
   /workspace             $REPO_ROOT
+  /workspace/sources     $REPO_ROOT/sources (read-only; LFS pointer files
+                         are left out of jpkg's source cache)
   /var/cache/jpkg        $JPKG_OUTPUT
   /var/cache/jpkg-published  $JPKG_PUBLISHED
   /jpkg-bin              $JPKG_BIN
@@ -183,6 +185,7 @@ cmd_build() {
             --platform linux/amd64 \
             --entrypoint /bin/sh \
             -v "$REPO_ROOT:/workspace" \
+            -v "$REPO_ROOT/sources:/workspace/sources:ro" \
             -v "$JPKG_OUTPUT:/var/cache/jpkg" \
             -v "$JPKG_PUBLISHED:/var/cache/jpkg-published" \
             -v "$JPKG_BIN:/jpkg-bin" \
