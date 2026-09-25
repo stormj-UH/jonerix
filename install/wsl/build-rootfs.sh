@@ -248,10 +248,8 @@ fi
 PUBKEY="${DEFAULTS}/jpkg/keys/jonerix.pub"
 [ -f "${PUBKEY}" ] && cp "${PUBKEY}" "${STAGING}/etc/jpkg/keys/jonerix.pub"
 
-# CA certificates — jonerix does not ship a ca-certificates package yet,
-# so curl the Mozilla bundle from curl.se (matches Dockerfile.minimal).
-echo "--- Fetching CA certificates ---"
-curl -fsSL https://curl.se/ca/cacert.pem -o "${STAGING}/etc/ssl/certs/ca-certificates.crt"
+# CA certificates come from the ca-certificates jpkg installed above
+# (pinned, sha256-verified, and tracked by `jpkg verify`); no download here.
 
 # ---------------------------------------------------------------------------
 # 9. WSL-specific config (not in repo defaults)
