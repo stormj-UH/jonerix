@@ -1,0 +1,26 @@
+--- a/src/ntp.c
++++ b/src/ntp.c
+@@ -105,8 +105,21 @@
+ 		fatal("setsid");
+ 	log_procinit("ntp");
+ 
+-	if ((se = getservbyname("ntp", "udp")) == NULL)
+-		fatal("getservbyname");
++	if ((se = getservbyname("ntp", "udp")) == NULL) {
++		/*
++		 * jonerix: minimal images ship no /etc/services, and the
++		 * port is only needed for "listen on".  NTP is 123/udp.
++		 */
++		static char		 ntp_name[] = "ntp", udp_name[] = "udp";
++		static char		*ntp_aliases[] = { NULL };
++		static struct servent	 ntp_se;
++
++		ntp_se.s_name = ntp_name;
++		ntp_se.s_aliases = ntp_aliases;
++		ntp_se.s_port = htons(123);
++		ntp_se.s_proto = udp_name;
++		se = &ntp_se;
++	}
+ 
+ 	/* Start control socket. */
+ 	if ((fd_ctl = control_init(CTLSOCKET)) == -1)

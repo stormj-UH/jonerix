@@ -24,6 +24,13 @@ description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 # 6.8p1: same code path upstream now tests, plus those fixes.  The
 # build guard below fails the build if the adjtimex slew ever comes back.
 #
+# patches/0001-ntp-port-fallback.patch: the ntp engine calls
+# getservbyname("ntp", "udp") and fatal()s without an /etc/services
+# entry.  No jonerix package ships /etc/services and neither the Pi image
+# builder nor Dockerfile.core installs one (tormenta's is a hand-copied
+# 7-line file), so a fresh image's ntpd would exit at start.  The port is
+# only used for "listen on"; fall back to 123/udp.
+#
 # Tarball verified against openntpd-7.9p1.tar.gz.asc and the signed
 # SHA256 file on cdn.openbsd.org (Brent Cook's OpenNTPD/LibreSSL release
 # key A1EB 079B 8D3E B92B 4EBD 3139 663A F51B D5E4 D8D5, published there
