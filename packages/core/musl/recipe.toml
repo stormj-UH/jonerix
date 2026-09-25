@@ -1,6 +1,6 @@
 [package]
 name = "musl"
-version = "1.2.6-r2"
+version = "1.2.6-r3"
 license = "MIT"
 description = "Lightweight, fast, and standards-conformant C library"
 
@@ -13,6 +13,14 @@ description = "Lightweight, fast, and standards-conformant C library"
 #     anyone reading the libc.so.1 ELF or calling the symbol sees it.
 # These are surgical edits — no behavioural change to libc, just brand
 # strings — so we don't bump dependent rebuilds.
+#
+# r3: post_install asks pid 1 (openrc-init) to re-exec when it still
+# maps the libc this upgrade just replaced. jpkg installs by unlink +
+# copy, so pid 1 kept the old, deleted libc.so mapped until halt; the
+# kernel then refused to remount / read-only (EBUSY), mount-ro failed
+# and the next boot replayed the ext4 journal (tormenta, 2026-05-17,
+# reboots seconds after a musl reinstall). openrc 0.54-r8 does the
+# same for its own files.
 
 [source]
 url = "https://musl.libc.org/releases/musl-1.2.6.tar.gz"
@@ -69,6 +77,35 @@ if [ "$ok" = "0" ]; then
     echo "musl: WARN no jonerix fingerprint found in any libc.so"
 fi
 find $DESTDIR/lib -name "libc.musl-*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
+
+[hooks]
+# Only on the live root with openrc-init as pid 1; a no-op in jpkg's
+# chroot hook (no /run/openrc/init.ctl there, / is not pid 1's root),
+# in containers and on hosts without OpenRC. The openrc-init binary is
+# test-run first: as a non-init process it must reach main() and
+# exit 1, or pid 1 is left alone.
+post_install = """[ -z "${JPKG_ROOT:-}" ] || [ "$JPKG_ROOT" = / ] || [ ! -d "$JPKG_ROOT/etc" ] || exit 0
+[ -p /run/openrc/init.ctl ] || exit 0
+_p1=$(stat -L -c %d:%i /proc/1/root/ 2>/dev/null)
+[ -n "$_p1" ] && [ "$_p1" = "$(stat -L -c %d:%i / 2>/dev/null)" ] || exit 0
+case "$(readlink /proc/1/exe 2>/dev/null)" in
+    */openrc-init|*"/openrc-init (deleted)") ;;
+    *) exit 0 ;;
+esac
+grep -q ' (deleted)$' /proc/1/maps 2>/dev/null || exit 0
+[ -x /bin/openrc-shutdown ] || exit 0
+/bin/openrc-init >/dev/null 2>&1
+if [ $? -ne 1 ]; then
+    echo "musl: WARNING: /bin/openrc-init does not run; not re-executing pid 1. Reboot to finish the upgrade."
+    exit 0
+fi
+echo "musl: pid 1 still maps the replaced libc; asking openrc-init to re-exec"
+if command -v timeout >/dev/null 2>&1; then
+    timeout 10 /bin/openrc-shutdown --reexec >/dev/null 2>&1
+else
+    /bin/openrc-shutdown --reexec >/dev/null 2>&1
+fi || echo "musl: WARNING: re-exec request failed; / may stay read-write at the next halt until you reboot"
+exit 0"""
 
 [depends]
 runtime = []
