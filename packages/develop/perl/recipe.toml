@@ -1,8 +1,12 @@
 [package]
 name = "perl"
-version = "5.40.0"
-license = "Artistic-2.0"
+version = "5.40.0-r1"
+license = "Artistic-1.0-Perl OR GPL-1.0-or-later"
 description = "Practical Extraction and Report Language"
+# r1: correct the license metadata. Perl 5 is distributed under the
+# original (1.0) Artistic License OR GPL-1.0-or-later (see perlartistic.pod
+# and `perl -v`); jonerix takes it under the Artistic side. Artistic-2.0 is
+# Raku's license. Needs jpkg >= 2.2.10, which knows Artistic-1.0-Perl.
 
 [source]
 url = "https://www.cpan.org/src/5.0/perl-5.40.0.tar.xz"
