@@ -123,7 +123,8 @@ check_cached_file() {
     fi
 
     if [ -n "$expected" ]; then
-        got=$(sha256sum "$src" | awk '{print $1}')
+        got=$(sha256sum "$src")
+        got=${got%%[ 	]*}
         if [ "$got" != "$expected" ]; then
             printf 'HASH: %s expected %s got %s (%s)\n' "$label" "$expected" "$got" "$src" >&2
             failures=$((failures + 1))
@@ -158,7 +159,8 @@ for recipe in "${RECIPES}"/core/*/recipe.toml \
     fi
 
     if [ -n "$sha256" ]; then
-        got=$(sha256sum "$src" | awk '{print $1}')
+        got=$(sha256sum "$src")
+        got=${got%%[ 	]*}
         if [ "$got" != "$sha256" ]; then
             printf 'HASH: %s expected %s got %s (%s)\n' "$pkg" "$sha256" "$got" "$src" >&2
             failures=$((failures + 1))
