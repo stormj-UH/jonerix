@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r7"
+version = "0.54-r8"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -121,6 +121,20 @@ fi
 if [ -f "$DESTDIR/lib/rc/sh/gendepends.sh" ]; then
     sed -i 's|^etc/init|/etc/init|' "$DESTDIR/lib/rc/sh/gendepends.sh"
 fi
+# jonerix sysctl baseline: fs.protected_*, kptr_restrict=1, ICMP
+# redirects off, loose rp_filter.  Shipped by openrc because openrc owns
+# the sysctl service that applies /etc/sysctl.d, so every OpenRC image
+# and every `jpkg upgrade openrc` gets both together.  Numbered 10-* so
+# package defaults (50-*, e.g. toybox's ping range), image profiles
+# (60-*) and local files (90-*) all sort after them and win.  One group
+# per file: toybox `sysctl -p` abandons the rest of a file at the first
+# write the kernel rejects (kptr_restrict needs CAP_SYS_ADMIN).
+for conf in "$RECIPE_DIR"/sysctl.d/*.conf; do
+    install -Dm644 "$conf" "$DESTDIR/etc/sysctl.d/${conf##*/}"
+    # toybox sysctl writes an inline "# ..." as part of the value.
+    if grep -Eq '^[^#;]*=.*#' "$conf"; then echo "openrc: inline comment in $conf" >&2; exit 1; fi
+done
+[ -f "$DESTDIR/etc/sysctl.d/10-jonerix-fs-protected.conf" ] || { echo "openrc: sysctl baseline missing" >&2; exit 1; }
 # Ensure basic runlevel symlinks exist. OpenRC's upstream install
 # creates /etc/runlevels/{sysinit,boot,default,shutdown} directories
 # but leaves them empty — the distro is expected to populate them.
