@@ -165,10 +165,13 @@ strip_revision() {
     esac
 }
 
+# Uses its own variable names: POSIX sh has no locals, and the callers
+# keep the tarball name in $file for their messages.
 is_lfs_pointer() {
-    file=$1
-    IFS= read -r first < "$file" || return 1
-    [ "$first" = "version https://git-lfs.github.com/spec/v1" ]
+    lfs_path=$1
+    lfs_first=
+    IFS= read -r lfs_first < "$lfs_path" || [ -n "$lfs_first" ] || return 1
+    [ "$lfs_first" = "version https://git-lfs.github.com/spec/v1" ]
 }
 
 # Locate the source tarball for a package.  Tries, in order:
@@ -176,7 +179,10 @@ is_lfs_pointer() {
 #   $pkg-$base_version.tar.gz     (without -rN)
 #   $pkg-v$base_version.tar.gz    (v-prefixed, e.g. jmake)
 #   <recipe url basename>         (commit-hash-pinned, e.g.
-#                                  m4oxide-40573c872ea5f076a70a78c51946d938ed80ae9c.tar.gz)
+#                                  m4oxide-40573c872ea5f076a70a78c51946d938ed80ae9c.tar.gz,
+#                                  or suffixed, e.g. gitredoxide-1.0.23-vendored.tar.gz)
+# When none exists, prints the name jpkg's cache lookup matches first (the
+# URL basename) so the "missing" message names the file to vendor.
 find_source_tarball() {
     pkg=$1
     recipe=$2
@@ -202,6 +208,7 @@ find_source_tarball() {
     # Fall back to the recipe URL's basename. Catches commit-hash-pinned
     # tarballs whose filename doesn't follow $pkg-$version naming.
     url=$(sed -n 's/^url *= *"\(.*\)"/\1/p' "$recipe" | head -n 1)
+    url_base=
     if [ -n "$url" ]; then
         url_no_query=${url%%\?*}
         url_base=${url_no_query##*/}
@@ -210,13 +217,17 @@ find_source_tarball() {
             return 0
         fi
     fi
-    printf '%s\n' "${pkg}-${ver}.tar.gz"
+    if [ -n "$url_base" ]; then
+        printf '%s\n' "${url_base}"
+    else
+        printf '%s\n' "${pkg}-${ver}.tar.gz"
+    fi
 }
 
 # Tarball packages with registry dependencies must carry Cargo.lock,
 # vendor/, and source replacement config.  Filenames are derived from
 # each recipe's version field so version bumps propagate automatically.
-for pkg in brash exproxide gitoxide gitredoxide jmake ripgrep stormwall uutils; do
+for pkg in brash exproxide gitoxide gitredoxide jmake jonerix-mlfq ripgrep stormwall uutils; do
     recipe=$(find "${RECIPES}" -path "*/${pkg}/recipe.toml" | head -n 1)
     [ -f "$recipe" ] || continue
     file=$(find_source_tarball "$pkg" "$recipe") || continue
