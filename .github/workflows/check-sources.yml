@@ -1,0 +1,76 @@
+name: Check vendored sources
+
+# Every remote recipe source must be vendored under sources/ so package
+# builds can run offline. This gate lives in its own workflow, not inside
+# publish-images.yml, so a vendoring slip shows up as its own red check on
+# the push or PR that caused it and never masks an image build failure.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'sources/**'
+      - '.gitattributes'
+      - 'scripts/check-cargo-offline.sh'
+      - 'scripts/check-go-offline.sh'
+      - 'scripts/check-vendored-sources.sh'
+      - 'scripts/check-lfs-objects.sh'
+      - '.github/workflows/check-sources.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'sources/**'
+      - '.gitattributes'
+      - 'scripts/check-cargo-offline.sh'
+      - 'scripts/check-go-offline.sh'
+      - 'scripts/check-vendored-sources.sh'
+      - 'scripts/check-lfs-objects.sh'
+      - '.github/workflows/check-sources.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: check-sources-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The checkout skips LFS content so the gate costs no LFS bandwidth.
+  # ALLOW_LFS_POINTER_SOURCES=1 makes the checkers compare each LFS
+  # pointer's oid (the sha256 of the real tarball) with the recipe pin
+  # instead of hashing the pointer file; check-lfs-objects.sh then asks
+  # the LFS server that every pointed-to object exists. Every check runs
+  # even when an earlier one fails, so one run reports every problem.
+  check-sources:
+    name: Verify vendored sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ALLOW_LFS_POINTER_SOURCES: "1"
+    steps:
+      - name: Checkout source
+        id: checkout
+        uses: actions/checkout@v7
+        with:
+          lfs: false
+
+      - name: Check Cargo builds are offline
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: sh scripts/check-cargo-offline.sh
+
+      - name: Check Go builds are offline
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: sh scripts/check-go-offline.sh
+
+      - name: Check every recipe source has a matching vendored tarball
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: sh scripts/check-vendored-sources.sh
+
+      - name: Check LFS-tracked sources exist on the LFS server
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        env:
+          # A PR's LFS objects live in the repository it was pushed from.
+          LFS_URL: ${{ github.event_name == 'pull_request' && format('{0}/info/lfs', github.event.pull_request.head.repo.clone_url) || '' }}
+        run: sh scripts/check-lfs-objects.sh
