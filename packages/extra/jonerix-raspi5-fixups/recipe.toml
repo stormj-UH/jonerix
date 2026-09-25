@@ -40,9 +40,12 @@ description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard 
 #   - apply-pi5-boot-settings only edits a /boot that is a mounted FAT
 #     filesystem, never edits a cmdline.txt without root=, never adds
 #     rootflags=, and no longer uses sed -i.
-#   - /etc/init.d/hwclock belongs to openrc again: fixups stops shipping
-#     it, keeps it in the boot runlevel, and restores a fallback copy
-#     only if a jpkg upgrade deleted the file.
+#   - /etc/init.d/hwclock belongs to openrc alone: fixups stops shipping
+#     it and keeps it in the boot runlevel. jpkg's upgrade-clean deletes
+#     a path the old manifest listed and the new one does not, even while
+#     openrc still owns it, so pre_install keeps a copy of the live script
+#     and post_install puts it back only if the upgrade removed it.
+#     post_remove no longer deletes openrc's boot/hwclock link.
 #   - /etc/init.d/shadow-login belongs to shadow: fixups stops copying
 #     its identical duplicate over it and moves the old
 #     shadow-login.pre-raspi5-fixups backup out of /etc/init.d (OpenRC
@@ -308,10 +311,6 @@ install -Dm755 init.d/fan-control $DESTDIR/etc/init.d/fan-control
 install -Dm755 init.d/netfilter-nft-modules $DESTDIR/etc/init.d/netfilter-nft-modules
 install -Dm755 init.d/boot-trace $DESTDIR/etc/init.d/boot-trace
 install -Dm755 init.d/reboot-trace-shutdown $DESTDIR/etc/init.d/reboot-trace-shutdown
-# /etc/init.d/hwclock is openrc's. Keep only a fallback copy that
-# post_install restores if a jpkg upgrade deleted the live script (it was
-# in this package's manifest up to 1.6.32). Never installed over openrc's.
-install -Dm644 share/hwclock.fallback $DESTDIR/share/jonerix-raspi5-fixups/hwclock.fallback
 # Reboot diagnostics: last-alive heartbeat, read back by boot-trace.
 install -Dm755 bin/pi5-heartbeat $DESTDIR/bin/pi5-heartbeat
 install -Dm755 init.d/pi5-heartbeat $DESTDIR/etc/init.d/pi5-heartbeat
@@ -477,13 +476,33 @@ fi
 install = ""
 
 [hooks]
+# 1.6.33: openrc owns /etc/init.d/hwclock now. This package used to
+# ship it too, so jpkg's upgrade-clean removes it when 1.6.32 -> 1.6.33
+# drops it from the manifest. Keep a copy for post_install.
+pre_install = """if [ -f /etc/init.d/hwclock ] && [ ! -L /etc/init.d/hwclock ]; then
+    mkdir -p /etc/jpkg/raspi5-fixups
+    cp -p /etc/init.d/hwclock /etc/jpkg/raspi5-fixups/hwclock.keep 2>/dev/null || true
+fi
+exit 0"""
+
 # Wire the disable-eee OpenRC service into the boot runlevel, and
 # (on a live Raspberry Pi 5) run it now so the user doesn't need to reboot.
 # Also repoint /bin/adduser at /bin/adduser-safe on every host, to block
 # the toybox adduser passwd-file-truncation bug. The Pi-specific parts
 # are guarded by /proc/device-tree/model; the adduser swap runs
 # unconditionally because the toybox bug affects every host.
-post_install = """# --- adduser / addgroup safety (all hosts) ---
+post_install = """# --- /etc/init.d/hwclock hand-back to openrc (1.6.33) ---
+if [ -f /etc/jpkg/raspi5-fixups/hwclock.keep ]; then
+    if [ ! -e /etc/init.d/hwclock ]; then
+        mv /etc/jpkg/raspi5-fixups/hwclock.keep /etc/init.d/hwclock
+        chmod 0755 /etc/init.d/hwclock 2>/dev/null || true
+        echo "raspi5-fixups: restored /etc/init.d/hwclock (owned by openrc from now on)"
+    else
+        rm -f /etc/jpkg/raspi5-fixups/hwclock.keep
+    fi
+fi
+
+# --- adduser / addgroup safety (all hosts) ---
 # The actual `/bin/adduser -> adduser-safe` and `/bin/addgroup ->
 # addgroup-safe` symlinks ship in the tarball now (see install step
 # above) — manifest-tracked so toybox's post_install yield-loop can
@@ -693,15 +712,6 @@ rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
 rm -f /etc/runlevels/boot/keymaps \
       /etc/runlevels/boot/save-keymaps \
       /etc/runlevels/boot/save-termencoding
-# /etc/init.d/hwclock is openrc's (1.6.33). Up to 1.6.32 this package also
-# listed it, and jpkg <= 2.2.9 deletes files that drop out of a package's
-# manifest on upgrade even when another package owns them. Put the
-# fallback copy back only when the script is gone; never overwrite it.
-if [ ! -e /etc/init.d/hwclock ] && [ -r /share/jonerix-raspi5-fixups/hwclock.fallback ] && [ -d /etc/init.d ]; then
-    cp /share/jonerix-raspi5-fixups/hwclock.fallback /etc/init.d/hwclock
-    chmod 0755 /etc/init.d/hwclock
-    echo "raspi5-fixups: restored /etc/init.d/hwclock (deleted by the package upgrade; reinstall openrc to get its own copy back)"
-fi
 for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-hwmon pi5-wifi pi5-cold-reboot; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
 done
