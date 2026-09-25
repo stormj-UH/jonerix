@@ -1,0 +1,55 @@
+[package]
+name = "openssh-sftp-server"
+version = "10.5p1"
+license = "ISC AND BSD-2-Clause AND BSD-3-Clause"
+description = "OpenSSH sftp-server, the SFTP subsystem for dropbear"
+# Only sftp-server is built and shipped: no ssh, sshd or scp, and no
+# OpenSSL. dropbear serves the "sftp" subsystem by running
+# /usr/libexec/sftp-server (its SFTPSERVER_PATH), which merged /usr
+# resolves to the /libexec/sftp-server installed here. Without it,
+# OpenSSH 9+ scp (SFTP by default), sftp, sshfs and GUI SFTP clients
+# fail against dropbear.
+#
+# License: `ld.lld --trace` shows sftp-server links sftp-common,
+# sftp-server, sftp-server-main, ssherr(-nolibcrypto), sshbuf*,
+# fatal, log, match, xmalloc, addr, addrmatch, atomicio, misc,
+# sftp-realpath and platform-* from the top level, plus bsd-closefrom,
+# bsd-misc, base64, fmt_scaled, freezero, pwcache, recallocarray,
+# strmode, strtonum, timingsafe_bcmp, vis and port-net from
+# openbsd-compat. Each file's header is ISC, BSD-2-Clause or
+# BSD-3-Clause (no advertising clause). log.c, match.c and xmalloc.c
+# also carry Tatu Ylonen's "can be used freely for any purpose" notice,
+# and base64.c an ISC-style IBM notice. OpenSSH's LICENCE states it
+# contains no GPL code; it is installed under /share/licenses.
+#
+# Source verified against openssh-10.5p1.tar.gz.asc (Damien Miller,
+# 7168B983815A5EEF59A4ADFD2A3F414E736060BA) and the SHA256 in the
+# upstream release notes.
+#
+# --without-openssl uses OpenSSH's internal crypto for the rest of
+# libssh.a; sftp-server itself needs no crypto. The build checks the
+# binary links nothing but libc.
+
+[source]
+url = "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-10.5p1.tar.gz"
+sha256 = "d44d28a839ea9daf969cc69150fde59910b2b39361dad81a3bd6cbd19218db11"
+
+[build]
+system = "autoconf"
+configure = "./configure --prefix=/ --bindir=/bin --sbindir=/bin --libexecdir=/libexec --sysconfdir=/etc/ssh --without-openssl --with-zlib=no --disable-security-key --disable-lastlog --disable-utmp --disable-utmpx --disable-wtmp --disable-wtmpx CC=clang"
+build = "make -j$(nproc) sftp-server"
+install = """set -e
+bad=$(readelf -d sftp-server | grep NEEDED | grep -v -F '[libc.so]' || true)
+if [ -n "$bad" ]; then
+    echo "openssh-sftp-server: sftp-server links more than libc:" >&2
+    echo "$bad" >&2
+    exit 1
+fi
+install -Dm755 sftp-server "$DESTDIR/libexec/sftp-server"
+install -Dm644 sftp-server.8 "$DESTDIR/share/man/man8/sftp-server.8"
+install -Dm644 LICENCE "$DESTDIR/share/licenses/openssh-sftp-server/LICENCE"
+llvm-strip --strip-all "$DESTDIR/libexec/sftp-server" 2>/dev/null || true"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang", "make", "jonerix-headers", "onetrueawk"]

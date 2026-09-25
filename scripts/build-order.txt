@@ -73,6 +73,7 @@ xz
 zstd
 libressl
 expat
+openssh-sftp-server
 dropbear
 openrc
 flex
