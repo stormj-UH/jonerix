@@ -1,0 +1,54 @@
+name: Package INDEX drift
+
+# Compares the live rolling INDEX (releases/download/packages/INDEX.zst)
+# with the recipes on main via scripts/check-index-drift.sh.
+#
+# Fails when the INDEX serves something main cannot rebuild: a version
+# newer than main's recipe (published from another tree), a package with
+# no recipe, or an arch the recipe excludes. Recipe bumps that are not
+# published yet only warn. Not run on pull requests: publishing happens
+# after merge, so every version bump would warn there by design.
+
+on:
+  schedule:
+    - cron: '23 13 * * *'
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: 'Also fail on unpublished recipe bumps'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'scripts/check-index-drift.sh'
+      - '.github/workflows/index-drift.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: index-drift
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: INDEX vs recipes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          lfs: false
+
+      - name: Ensure zstd
+        run: command -v zstd >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq zstd; }
+
+      - name: Check INDEX drift
+        env:
+          STRICT: ${{ inputs.strict && '1' || '0' }}
+        run: sh scripts/check-index-drift.sh
