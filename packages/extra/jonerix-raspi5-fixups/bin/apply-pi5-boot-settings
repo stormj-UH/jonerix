@@ -16,19 +16,59 @@
 #     as "didn't boot" even when the system is running fine. Safe on
 #     headless boxes (output goes to no monitor, no effect).
 #
+# Safety rules (1.6.33):
+#   * Only edit the real firmware partition. If /boot is not a mounted
+#     FAT filesystem, the files under /boot are stubs on the root
+#     filesystem that the firmware never reads, so skip with a message
+#     instead of "patching" them (tormenta ran that way for months).
+#   * Never touch a cmdline.txt that has no root= in it: prepending to
+#     an empty or foreign file would make it unbootable.
+#   * Never add rootflags= of any kind. ext4 rejects noatime as a
+#     rootflags option and the kernel panics before init; noatime
+#     belongs in /etc/fstab. A rootflags=...noatime... that is already
+#     there is reported, not rewritten.
+#
 # Called from post_install on every Pi 5. Usable standalone too.
 # Part of jonerix-raspi5-fixups — MIT License.
 
 set -e
 
+BOOT=${PI5_BOOT_DIR:-/boot}
+DT=${PI5_DT:-/proc/device-tree}
+
 # Only touch anything on a real Pi 5.
-if [ ! -r /proc/device-tree/model ] \
-    || ! grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null
-then
+if [ ! -r "$DT/model" ] || ! grep -q "Raspberry Pi 5" "$DT/model" 2>/dev/null; then
     exit 0
 fi
 
-[ -d /boot ] || exit 0
+[ -d "$BOOT" ] || exit 0
+
+# The firmware partition must be mounted at $BOOT. (No awk: jonerix
+# images do not necessarily ship one.)
+_boot_fstype() {
+    _t=
+    while read -r _dev _mnt _fs _rest; do
+        [ "$_mnt" = "$BOOT" ] && _t=$_fs
+    done < /proc/mounts
+    printf '%s\n' "$_t"
+}
+if command -v mountpoint >/dev/null 2>&1; then
+    if ! mountpoint -q "$BOOT"; then
+        echo "raspi5-fixups: $BOOT is not a mountpoint; skipping cmdline.txt/config.txt (run 'mount $BOOT', then apply-pi5-boot-settings)"
+        exit 0
+    fi
+fi
+case "$(_boot_fstype)" in
+    vfat|msdos|fat) ;;
+    "")
+        echo "raspi5-fixups: $BOOT is not mounted; skipping cmdline.txt/config.txt (run 'mount $BOOT', then apply-pi5-boot-settings)"
+        exit 0
+        ;;
+    *)
+        echo "raspi5-fixups: $BOOT is mounted as $(_boot_fstype), not the FAT firmware partition; skipping"
+        exit 0
+        ;;
+esac
 
 changed=0
 _backup() {
@@ -36,24 +76,41 @@ _backup() {
     [ -f "$1.pre-pi5-fixups" ] || cp "$1" "$1.pre-pi5-fixups"
 }
 
-# --- /boot/cmdline.txt: reboot=c ---
-CMDLINE=/boot/cmdline.txt
-if [ -f "$CMDLINE" ] && ! grep -q 'reboot=c' "$CMDLINE"; then
-    _backup "$CMDLINE"
-    if sed -i '1 s|^|reboot=c |' "$CMDLINE" 2>/dev/null; then
-        :
-    else
-        tmp=$(mktemp) || exit 1
-        printf 'reboot=c ' > "$tmp"
-        cat "$CMDLINE" >> "$tmp"
-        mv "$tmp" "$CMDLINE"
+# --- $BOOT/cmdline.txt: reboot=c ---
+CMDLINE=$BOOT/cmdline.txt
+if [ -f "$CMDLINE" ]; then
+    line=$(cat "$CMDLINE")
+    case " $line " in
+        *" root="*) ;;
+        *)
+            echo "raspi5-fixups: $CMDLINE has no root= argument; leaving it alone"
+            line=
+            ;;
+    esac
+    case " $line " in
+        *" rootflags="*noatime*)
+            echo "raspi5-fixups: WARNING: $CMDLINE passes noatime in rootflags=; ext4 rejects it and the kernel will panic at boot. Remove it (keep noatime in /etc/fstab)." >&2
+            ;;
+    esac
+    if [ -n "$line" ]; then
+        case " $line " in
+            *" reboot=c "*) ;;
+            *)
+                _backup "$CMDLINE"
+                # Write a sibling file and rename it over the original:
+                # same filesystem, so the rename replaces it in one step.
+                tmp="$CMDLINE.tmp.$$"
+                printf 'reboot=c %s\n' "$line" > "$tmp"
+                mv -f "$tmp" "$CMDLINE"
+                echo "raspi5-fixups: prepended reboot=c to $CMDLINE"
+                changed=1
+                ;;
+        esac
     fi
-    echo "raspi5-fixups: prepended reboot=c to $CMDLINE"
-    changed=1
 fi
 
-# --- /boot/config.txt: hdmi_force_hotplug on both ports ---
-CONFIG=/boot/config.txt
+# --- $BOOT/config.txt: hdmi_force_hotplug on both ports ---
+CONFIG=$BOOT/config.txt
 if [ -f "$CONFIG" ] && ! grep -qE '^[[:space:]]*hdmi_force_hotplug' "$CONFIG"; then
     _backup "$CONFIG"
     {
@@ -63,6 +120,8 @@ if [ -f "$CONFIG" ] && ! grep -qE '^[[:space:]]*hdmi_force_hotplug' "$CONFIG"; t
         echo '# monitor. Pi 5s that lose power mid-HDMI-insert sometimes'
         echo '# come back with the display pipeline stalled, reading'
         echo '# externally as "did not boot" even when the OS is fine.'
+        echo '# [all] ends any conditional section the file finished in.'
+        echo '[all]'
         echo 'hdmi_force_hotplug:0=1'
         echo 'hdmi_force_hotplug:1=1'
     } >> "$CONFIG"
@@ -71,5 +130,5 @@ if [ -f "$CONFIG" ] && ! grep -qE '^[[:space:]]*hdmi_force_hotplug' "$CONFIG"; t
 fi
 
 if [ "$changed" = 0 ]; then
-    echo "raspi5-fixups: /boot already patched, nothing to do"
+    echo "raspi5-fixups: $BOOT already patched, nothing to do"
 fi

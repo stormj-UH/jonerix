@@ -1,11 +1,175 @@
 #!/bin/openrc-run
+# boot-trace — write /var/log/reboot-trace/boot-<utc>-<uptime>.log early in
+# every boot, so an unexplained reset leaves evidence behind.
+#
+# Besides the raw state (cmdline, mounts, rc-status, dmesg) the trace
+# records why the board came up:
+#   [reset cause]    bootloader PM_RSTS + PMIC power_reset from the
+#                    firmware's /chosen device-tree node.
+#   [previous boot]  whether the previous boot left a shutdown trace
+#                    (clean) or not (unclean), the last heartbeat that
+#                    pi5-heartbeat wrote before the reset, and whether
+#                    ext4 had to replay its journal.
+#   [ext4]           per-filesystem errors_count from /sys/fs/ext4.
+# The directory keeps the newest $keep boot and shutdown traces.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
 name="boot-trace"
 description="Capture early jonerix boot diagnostics"
+
+: "${PI5_DT:=/proc/device-tree}"
+: "${keep:=50}"
 
 depend() {
     need procfs sysfs root
     after localmount
-    before dhcpcd network ntpd tailscaled tailscale-up sshd
+    before dhcpcd network ntpd tailscaled tailscale-up sshd pi5-heartbeat
+}
+
+# First line after a "[boot id]" header in a trace file. Plain sh: jonerix
+# images do not necessarily ship an awk.
+_trace_boot_id() {
+    local f l
+    [ -r "$1" ] || return 0
+    f=0
+    while IFS= read -r l; do
+        if [ "$f" = 1 ]; then
+            printf '%s\n' "$l"
+            return 0
+        fi
+        [ "$l" = "[boot id]" ] && f=1
+    done < "$1"
+}
+
+# Keep the newest $3 "<prefix>-*.log" files in $1. Names embed a fixed-width
+# UTC timestamp and globs expand sorted, so the first matches are the oldest.
+# Never delete the file a latest-*.log link points at, even if a bad clock
+# made it sort first.
+_prune_traces() {
+    local d p k n keep1 keep2 f
+    d=$1 p=$2 k=$3
+    case "$k" in ''|*[!0-9]*) return 0 ;; esac
+    set -- "$d/$p"-*.log
+    [ -e "$1" ] || return 0
+    n=$(($# - k))
+    [ "$n" -gt 0 ] || return 0
+    keep1=$(readlink "$d/latest-boot.log" 2>/dev/null)
+    keep2=$(readlink "$d/latest-shutdown.log" 2>/dev/null)
+    for f in "$@"; do
+        [ "$n" -gt 0 ] || break
+        n=$((n - 1))
+        case "${f##*/}" in
+            "$keep1"|"$keep2") continue ;;
+        esac
+        rm -f "$f"
+    done
+}
+
+_reset_cause() {
+    local p f v
+    for p in bootloader/rsts power/power_reset power/max_current \
+             power/usb_max_current_enable power/usb_over_current_detected \
+             power/sd_overcurrent; do
+        f=$PI5_DT/chosen/$p
+        [ -r "$f" ] || continue
+        v=$(od -An -tx1 "$f" 2>/dev/null | tr -d ' \n')
+        printf '%s=0x%s\n' "$p" "$v"
+    done
+    f=$PI5_DT/chosen/bootloader/rsts
+    if [ -r "$f" ]; then
+        # The property is one big-endian u32; the first 8 hex digits are it.
+        v=$(od -An -tx1 "$f" 2>/dev/null | tr -d ' \n' | cut -c1-8)
+        case "$v" in
+            ''|*[!0-9a-f]*) v=0 ;;
+        esac
+        v=$((0x$v))
+        # PM_RSTS bits: 0x1000 HADPOR (power-on reset; on a Pi 5 this
+        # also covers reboot=c cold reboots, so read it together with
+        # [previous boot] below), 0x10/0x20/0x40 watchdog quick/full/hard
+        # reset (a warm reboot or a watchdog expiry).
+        if [ $((v & 0x1000)) -ne 0 ]; then
+            echo "rsts decode: power-on reset (power loss, PSU brown-out, or a cold reboot)"
+        elif [ $((v & 0x70)) -ne 0 ]; then
+            echo "rsts decode: watchdog reset (warm reboot or watchdog expiry)"
+        else
+            echo "rsts decode: no known reset bit set"
+        fi
+    else
+        echo "no $PI5_DT/chosen/bootloader/rsts (not booted by the Pi 5 EEPROM loader?)"
+    fi
+    printf 'watchdog_bootstatus='
+    cat /sys/class/watchdog/watchdog0/bootstatus 2>/dev/null || echo '?'
+}
+
+_previous_boot() {
+    local d pb sb hb
+    d=$1
+    pb=$(_trace_boot_id "$d/latest-boot.log")
+    sb=$(_trace_boot_id "$d/latest-shutdown.log")
+    if [ -z "$pb" ]; then
+        echo "previous boot: unknown (no earlier boot trace)"
+    elif [ "$pb" = "$sb" ]; then
+        echo "previous boot: clean (shutdown trace present for boot_id $pb)"
+    else
+        echo "previous boot: UNCLEAN (no shutdown trace for boot_id $pb; last shutdown trace was for ${sb:-none})"
+    fi
+    if [ -r "$d/heartbeat" ]; then
+        hb=$(cat "$d/heartbeat" 2>/dev/null)
+        echo "last heartbeat: $hb"
+        case "$hb" in
+            *"boot_id=$pb "*) ;;
+            *) [ -n "$pb" ] && echo "note: last heartbeat is not from boot_id $pb" ;;
+        esac
+    else
+        echo "last heartbeat: none recorded"
+    fi
+    if dmesg 2>/dev/null | grep -q 'EXT4-fs .*recovery complete'; then
+        echo "ext4 journal recovery this boot: yes (the filesystem was not unmounted cleanly)"
+    else
+        echo "ext4 journal recovery this boot: no"
+    fi
+}
+
+_ext4_errors() {
+    local d n
+    for d in /sys/fs/ext4/*/; do
+        n=${d%/}
+        n=${n##*/}
+        [ "$n" = features ] && continue
+        [ -r "$d/errors_count" ] || continue
+        printf '%s errors_count=%s first_error_time=%s last_error_time=%s\n' \
+            "$n" "$(cat "$d/errors_count" 2>/dev/null)" \
+            "$(cat "$d/first_error_time" 2>/dev/null)" \
+            "$(cat "$d/last_error_time" 2>/dev/null)"
+    done
+}
+
+_boot_partition() {
+    local dev mnt fstype rest found
+    found=
+    while read -r dev mnt fstype rest; do
+        [ "$mnt" = /boot ] && found="$dev type $fstype"
+    done < /proc/mounts
+    if [ -n "$found" ]; then
+        echo "/boot: $found"
+    else
+        echo "/boot: NOT mounted (cmdline.txt/config.txt edits would land on the rootfs)"
+    fi
+}
+
+_runlevel_hygiene() {
+    local l f
+    for l in /etc/runlevels/*/*; do
+        [ -L "$l" ] || continue
+        [ -e "$l" ] || echo "dangling runlevel link: $l -> $(readlink "$l")"
+    done
+    for f in /etc/init.d/*; do
+        case "${f##*/}" in
+            *.bak|*.bak.*|*.pre-*|*.orig|*~)
+                [ -f "$f" ] && echo "backup copy parsed as a service: $f" ;;
+        esac
+    done
 }
 
 start() {
@@ -26,10 +190,26 @@ start() {
         echo "[uptime]"
         cat /proc/uptime 2>/dev/null || true
         echo
+        echo "[reset cause]"
+        _reset_cause
+        echo
+        echo "[previous boot]"
+        _previous_boot "$dir"
+        echo
+        echo "[ext4]"
+        _ext4_errors
+        echo
+        echo "[throttled]"
+        if [ -x /bin/pi5-fw ]; then
+            /bin/pi5-fw get_throttled 2>&1 || true
+        else
+            echo "pi5-fw not installed"
+        fi
+        echo
         echo "[cmdline]"
         cat /proc/cmdline 2>/dev/null || true
         echo
-        echo "[reboot mode]"
+        echo "[reboot mode (configured, not the reset cause)]"
         cat /sys/kernel/reboot/mode 2>/dev/null || true
         echo
         echo "[printk]"
@@ -37,6 +217,12 @@ start() {
         echo
         echo "[pstore]"
         ls -la /sys/fs/pstore 2>&1 || true
+        echo
+        echo "[boot partition]"
+        _boot_partition
+        echo
+        echo "[runlevel hygiene]"
+        _runlevel_hygiene
         echo
         echo "[rc-status]"
         rc-status -a 2>&1 || true
@@ -61,6 +247,11 @@ start() {
         dmesg 2>&1 || true
     } > "$log" 2>&1
     ln -sf "$base" "$dir/latest-boot.log"
+    _prune_traces "$dir" boot "$keep"
+    _prune_traces "$dir" shutdown "$keep"
+    # Flush now: a reset within the writeback window used to leave 0-byte
+    # boot traces behind (2026-04-23 on tormenta).
+    sync
     echo 4 > /proc/sys/kernel/printk 2>/dev/null || true
     eend 0
 }

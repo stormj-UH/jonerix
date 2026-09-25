@@ -1,4 +1,12 @@
 #!/bin/openrc-run
+# hwclock (jonerix-raspi5-fixups fallback copy)
+#
+# /etc/init.d/hwclock belongs to the openrc package. raspi5-fixups up to
+# 1.6.32 also shipped it, so a jpkg that still deletes files dropped from a
+# package's manifest removes openrc's script when fixups upgrades to 1.6.33.
+# post_install copies this file into place ONLY when /etc/init.d/hwclock is
+# missing afterwards; it never replaces an existing script. It avoids
+# --systz, which jonerix-util's hwclock rejects.
 
 extra_commands="save show"
 

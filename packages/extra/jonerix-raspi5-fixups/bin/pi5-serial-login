@@ -1,0 +1,40 @@
+#!/bin/sh
+# pi5-serial-login — login(1) on a serial port at a fixed baud rate.
+#
+# Usage: pi5-serial-login /dev/ttyAMA10 [BAUD]      (BAUD defaults to 115200)
+#
+# shadow-getty is written for virtual consoles and leaves the line at
+# B38400, which garbles a real UART such as the Pi 5 debug connector
+# (/dev/ttyAMA10). This helper pins the line first, then gives login(1) a
+# fresh session with the port as its controlling terminal.
+#
+#  - clocal: ttyAMA10 comes up with -clocal, so open() would block waiting
+#    for DCD on a debug probe that never drives it.
+#  - toybox stty exits non-zero when one flag cannot be changed (for example
+#    on the kernel console port); the baud still applies, so that is ignored.
+#  - setsid -w stays in the foreground so supervise-daemon supervises the
+#    right pid; the shell it starts is the session leader, and its first
+#    open() of the tty makes that tty the controlling terminal.
+#
+# Run by /etc/init.d/serial-login under supervise-daemon.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
+tty=$1
+baud=${2:-115200}
+
+if [ -z "$tty" ]; then
+    printf 'usage: pi5-serial-login TTY [BAUD]\n' >&2
+    exit 2
+fi
+case "$baud" in
+    ''|*[!0-9]*) printf 'pi5-serial-login: bad baud rate: %s\n' "$baud" >&2; exit 2 ;;
+esac
+if [ ! -c "$tty" ]; then
+    printf 'pi5-serial-login: %s is not a character device\n' "$tty" >&2
+    exit 1
+fi
+
+stty -F "$tty" "$baud" cs8 -cstopb -parenb clocal 2>/dev/null || true
+
+exec setsid -w sh -c 'exec <"$1" >"$1" 2>&1; exec /bin/login -p' pi5-serial-login "$tty"

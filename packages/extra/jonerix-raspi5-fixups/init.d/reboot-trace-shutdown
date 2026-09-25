@@ -1,9 +1,36 @@
 #!/bin/openrc-run
+# reboot-trace-shutdown — write /var/log/reboot-trace/shutdown-*.log on the
+# way down. boot-trace compares the boot id recorded here with the one in
+# the previous boot trace to tell a clean shutdown from an unclean reset.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
 name="reboot-trace-shutdown"
 description="Capture shutdown diagnostics before reboot"
 
+: "${keep:=50}"
+
 depend() {
     before killprocs savecache mount-ro
+}
+
+# Same retention rule as boot-trace: keep the newest $keep shutdown traces
+# (globs expand sorted and the names embed a UTC timestamp).
+_prune_shutdown_traces() {
+    local d n keep1 f
+    d=$1
+    case "$keep" in ''|*[!0-9]*) return 0 ;; esac
+    set -- "$d"/shutdown-*.log
+    [ -e "$1" ] || return 0
+    n=$(($# - keep))
+    [ "$n" -gt 0 ] || return 0
+    keep1=$(readlink "$d/latest-shutdown.log" 2>/dev/null)
+    for f in "$@"; do
+        [ "$n" -gt 0 ] || break
+        n=$((n - 1))
+        [ "${f##*/}" = "$keep1" ] && continue
+        rm -f "$f"
+    done
 }
 
 start() {
@@ -27,14 +54,26 @@ start() {
         echo "[cmdline]"
         cat /proc/cmdline 2>/dev/null || true
         echo
-        echo "[reboot mode]"
+        echo "[reboot mode (configured)]"
         cat /sys/kernel/reboot/mode 2>/dev/null || true
+        echo
+        echo "[throttled]"
+        if [ -x /bin/pi5-fw ]; then
+            /bin/pi5-fw get_throttled 2>&1 || true
+        else
+            echo "pi5-fw not installed"
+        fi
         echo
         echo "[rc-status]"
         rc-status -a 2>&1 || true
         echo
         echo "[processes]"
-        ps 2>&1 || true
+        # toybox ps with no selection lists only processes on stdin's tty,
+        # and at shutdown stdin is the console, so it printed nothing but
+        # the header. Select every process explicitly; </dev/null keeps the
+        # tty filter from ever applying.
+        # shellcheck disable=SC2217
+        ps -A -o pid,ppid,user,args </dev/null 2>&1 || true
         echo
         echo "[mounts]"
         cat /proc/mounts 2>/dev/null || true
@@ -60,6 +99,7 @@ start() {
         dmesg 2>&1 || true
     } > "$log" 2>&1
     ln -sf "$base" "$dir/latest-shutdown.log"
+    _prune_shutdown_traces "$dir"
     sync
     eend 0
 }
