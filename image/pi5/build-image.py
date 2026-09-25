@@ -32,13 +32,15 @@ DEFAULT_HOSTNAME = "jonerix-pi"
 DEFAULT_ARCH = "aarch64"
 DEFAULT_BOOT_MB = 256  # Standard Pi SD layout
 
-# Minimal package set. Any extra user packages are additive. Everything listed
-# here MUST exist in packages/{core,develop,extra}/ as a recipe so jpkg install
-# can resolve it from the jonerix package repository.
+# Minimal package set. --packages adds to it; --no-default-packages starts
+# from an empty set instead (MANDATORY_PACKAGES are always installed).
+# Everything listed here MUST exist in packages/{core,develop,extra}/ as a
+# recipe so jpkg install can resolve it from the jonerix package repository.
 #
 # Kept intentionally small: a booting Pi 5 needs a shell, init, network
-# client, SSH, and the raspi5 fixups. The full 46-package set is overkill for
-# the default SD image -- users can opt into more via --packages.
+# client, SSH, a CA trust store, and the raspi5 fixups. The full package set
+# is overkill for the default SD image -- users can opt into more via
+# --packages.
 DEFAULT_PACKAGES = [
     # ── Minimal boot userland ─────────────────────────────────────────
     "musl",
@@ -79,16 +81,29 @@ DEFAULT_PACKAGES = [
     # ── Interactive niceties (parity with running jonerix-tormenta) ───
     # These bloat the image by ~25 MB total but make the resulting host
     # feel like a usable workstation rather than an embedded appliance.
-    # Strip them via `--packages "..."` if you want a leaner image.
+    # For a leaner image pass --no-default-packages plus your own
+    # --packages list.
     "zsh",        # interactive shell w/ prompt
     "gitredoxide",   # git in pure Rust (no GPL git userland)
     "ripgrep",    # fast recursive grep
     "pico",       # text editor (apache-2.0, alpine-2.26)
     "fastfetch",  # system-info banner; pleasant on first login
 
-    # Intentionally NOT in the default set: ca-certificates.
-    # jonerix doesn't yet ship a ca-certificates jpkg; the WSL rootfs
-    # curl's the Mozilla bundle from curl.se at build time instead.
+    # ── TLS trust store ───────────────────────────────────────────────
+    # Mozilla CA bundle (packages/extra/ca-certificates, MPL-2.0 data,
+    # the one non-permissive-list exception). Package-owned, so
+    # `jpkg upgrade` refreshes it; it also owns /etc/ssl/cert.pem (a
+    # symlink to the bundle) via `replaces = ["libressl"]`. Installed in a
+    # final pass, see jpkg_install().
+    "ca-certificates",
+]
+
+# Installed last with `jpkg install --force` so that, whatever order the
+# main transaction used, the package that owns a contested path ends up
+# on disk and in the database (ca-certificates takes /etc/ssl/cert.pem
+# over from libressl).
+LATE_PACKAGES = [
+    "ca-certificates",
 ]
 
 # Always present, regardless of --packages. These are load-bearing for Pi 5.
@@ -118,6 +133,19 @@ def _default_release_tag() -> str:
     return "packages"  # safe rolling fallback
 
 DEFAULT_RELEASE_TAG = _default_release_tag()
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Base account files seeded into the image before any package installs.
+# Package hooks (openntpd's _ntp, unbound, docker's addgroup-safe calls)
+# append to these; addgroup-safe refuses to touch a missing /etc/group.
+# (name, mode) — copied from config/defaults/etc/ only if absent.
+BASE_ACCOUNT_FILES = [
+    ("passwd", 0o644),
+    ("group", 0o644),
+    ("shadow", 0o600),
+    ("shells", 0o644),
+]
+
 RELEASE_BASE_URL = "https://github.com/stormj-UH/jonerix/releases/download"
 ROLLING_TAG = "packages"
 
@@ -384,14 +412,6 @@ def format_root(part: str) -> None:
     run(["mkfs.ext4", "-F", "-q", "-L", "root", "-m", "1", part])
 
 
-def blkid_value(part: str, tag: str) -> str:
-    """Look up a blkid token (e.g. PARTUUID, UUID, LABEL) for a partition."""
-    out = run_out(["blkid", "-s", tag, "-o", "value", part])
-    if not out:
-        die(f"blkid {tag} for {part} returned empty")
-    return out
-
-
 def read_mbr_partuuid(img_path: Path, partnum: int) -> str:
     """Compute the PARTUUID of an MBR partition from the image directly.
 
@@ -410,6 +430,47 @@ def read_mbr_partuuid(img_path: Path, partnum: int) -> str:
     if len(sig) != 4:
         die(f"short read on MBR disk signature in {img_path}")
     return f"{int.from_bytes(sig, 'little'):08x}-{partnum:02x}"
+
+
+def format_ext4_uuid(raw: bytes) -> str:
+    """16 raw superblock bytes -> the lowercase dashed form blkid prints."""
+    h = raw.hex()
+    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+
+
+def format_vfat_volid(raw: bytes) -> str:
+    """4 little-endian volume-ID bytes -> blkid's uppercase XXXX-XXXX."""
+    return f"{raw[3]:02X}{raw[2]:02X}-{raw[1]:02X}{raw[0]:02X}"
+
+
+def read_fs_uuid(part: str, fstype: str) -> str:
+    """Read the filesystem UUID straight from the superblock of `part`.
+
+    Same value `blkid -s UUID -o value` reports, but without depending on
+    which blkid is installed (reforger's blkid does not recognise FAT) or on
+    the partition being visible to blkid's probing (the offset-loop
+    fallback). ext4: s_uuid at superblock (byte 1024) + 0x68, after checking
+    the 0xEF53 magic at +0x38. FAT32: BS_VolID at 67 when "FAT32" sits at
+    82; FAT12/16: BS_VolID at 39 when "FAT" sits at 54.
+    """
+    with open(part, "rb") as f:
+        if fstype == "ext4":
+            f.seek(1024)
+            sb = f.read(0x78)
+            if len(sb) < 0x78 or sb[0x38:0x3A] != b"\x53\xef":
+                die(f"{part}: no ext2/3/4 superblock magic")
+            return format_ext4_uuid(sb[0x68:0x78])
+        if fstype == "vfat":
+            bs = f.read(512)
+            if len(bs) < 512 or bs[510:512] != b"\x55\xaa":
+                die(f"{part}: no FAT boot-sector signature")
+            if bs[82:87] == b"FAT32":
+                return format_vfat_volid(bs[67:71])
+            if bs[54:57] == b"FAT":
+                return format_vfat_volid(bs[39:43])
+            die(f"{part}: not a FAT12/16/32 boot sector")
+    die(f"read_fs_uuid: unsupported fstype {fstype}")
+    return ""
 
 
 # ----------------------------------------------------------------------------
@@ -473,6 +534,9 @@ def jpkg_install(root: Path, packages: Iterable[str], release_tag: str) -> None:
         usr_link.symlink_to(".")
     log(f"merged-usr: {usr_link} -> .")
 
+    # Account files before the first package hook runs.
+    seed_base_accounts(root)
+
     # `--root <path>` redirects jpkg's entire worldview into <path>,
     # including its cache + index + db. So even if we've called
     # `jpkg update` on the host, the rooted install still needs its
@@ -523,10 +587,19 @@ def jpkg_install(root: Path, packages: Iterable[str], release_tag: str) -> None:
         log(f"jpkg install -r {root} toybox (bootstrap)")
         run(["jpkg", "--root", str(root), "install", "toybox"])
 
-    log(f"jpkg install -r {root} {' '.join(pkgs)}")
-    # Per packages/jpkg/src/main.c line 81 ("-r, --root <path> Use alternative
-    # root filesystem"), --root is a top-level flag BEFORE the subcommand.
-    run(["jpkg", "--root", str(root), "install"] + pkgs)
+    late = [p for p in pkgs if p in LATE_PACKAGES]
+    main_pkgs = [p for p in pkgs if p not in LATE_PACKAGES]
+
+    log(f"jpkg install -r {root} {' '.join(main_pkgs)}")
+    # --root is a top-level flag BEFORE the subcommand.
+    if main_pkgs:
+        run(["jpkg", "--root", str(root), "install"] + main_pkgs)
+    for pkg in late:
+        # --force: reinstall even if the main pass pulled it in as a
+        # dependency, so its files (and `replaces` ownership transfer)
+        # land after everything else.
+        log(f"jpkg install -r {root} --force {pkg} (late pass)")
+        run(["jpkg", "--root", str(root), "install", "--force", pkg])
 
     # Switch the booted system back to the rolling mirror so future
     # `jpkg update` / `jpkg upgrade` follow main rather than staying
@@ -671,30 +744,41 @@ def write_file(path: Path, content: str, mode: int = 0o644) -> None:
     path.chmod(mode)
 
 
-def fetch_ca_bundle(root: Path) -> None:
-    """Drop a current Mozilla CA bundle into the image at
-    /etc/ssl/certs/ca-certificates.crt.
+def seed_base_accounts(root: Path) -> None:
+    """Copy config/defaults/etc/{passwd,group,shadow,shells} into the image
+    if absent, before any package installs.
 
-    jonerix doesn't yet ship a ca-certificates jpkg, but tailscale,
-    curl, openntpd-with-TLS, and dropbear-with-TLS all need a trust
-    store on first boot. Matches what install/wsl/build-rootfs.sh does
-    (curl the Mozilla bundle directly from curl.se). Same permissive
-    licence (MPL-2.0 for the bundle, curl's distribution is BSD).
+    No package ships a root account, and package hooks only append service
+    users (openntpd's _ntp, unbound) or refuse to run on a missing file
+    (addgroup-safe). Existing files are never overwritten, so a re-run or a
+    hook that already created them wins.
     """
-    certs_dir = root / "etc" / "ssl" / "certs"
-    certs_dir.mkdir(parents=True, exist_ok=True)
-    dest = certs_dir / "ca-certificates.crt"
-    if dest.exists() and dest.stat().st_size > 0:
-        log(f"ca-certificates.crt already present ({dest.stat().st_size} bytes)")
+    src_dir = REPO_ROOT / "config" / "defaults" / "etc"
+    etc = root / "etc"
+    etc.mkdir(parents=True, exist_ok=True)
+    for name, mode in BASE_ACCOUNT_FILES:
+        dst = etc / name
+        if dst.exists():
+            continue
+        src = src_dir / name
+        if not src.is_file():
+            die(f"missing {src}; cannot seed /etc/{name}")
+        shutil.copyfile(src, dst)
+        dst.chmod(mode)
+        log(f"seeded /etc/{name} from {src.relative_to(REPO_ROOT)}")
+
+
+def check_ca_bundle(root: Path, packages: list[str]) -> None:
+    """The CA bundle comes from the ca-certificates package (pinned sha256 in
+    its recipe), not from an unpinned download at image-build time."""
+    bundle = root / "etc" / "ssl" / "certs" / "ca-certificates.crt"
+    if "ca-certificates" not in packages:
+        log("WARN: ca-certificates not in the package set; TLS clients "
+            "will have no trust store")
         return
-    url = "https://curl.se/ca/cacert.pem"
-    log(f"fetching CA bundle from {url}")
-    try:
-        with urllib.request.urlopen(url, timeout=60) as resp, dest.open("wb") as fp:
-            shutil.copyfileobj(resp, fp)
-    except Exception as e:
-        die(f"failed to download CA bundle: {e}")
-    log(f"wrote {dest} ({dest.stat().st_size} bytes)")
+    if not bundle.is_file() or bundle.stat().st_size == 0:
+        die("ca-certificates was installed but /etc/ssl/certs/ca-certificates.crt is missing")
+    log(f"CA bundle: {bundle.stat().st_size} bytes (package ca-certificates)")
 
 
 def write_hostname(root: Path, hostname: str) -> None:
@@ -708,21 +792,27 @@ def write_hostname(root: Path, hostname: str) -> None:
     write_file(root / "etc" / "hosts", hosts)
 
 
-def write_fstab(root: Path, boot_partuuid: str, root_partuuid: str) -> None:
-    """Write /etc/fstab referencing partitions by PARTUUID so the image works
-    equally on /dev/mmcblk0p* (SD) and /dev/sda* (USB).
+def write_fstab(root: Path, boot_uuid: str, root_uuid: str) -> None:
+    """Write /etc/fstab referencing filesystems by UUID so the image works
+    equally on /dev/mmcblk0p* (SD), /dev/sda* (USB) and /dev/nvme0n1p* .
 
-    raspi5-fixups 1.3.1 post_install appends devpts / sysfs / tmpfs lines
-    idempotently on first boot, but we include them here so a fresh image is
-    correct before the first package manager run. errors=remount-ro matches
-    what that fixup enforces.
+    Not PARTUUID: toybox mount (what localmount runs) resolves only UUID=,
+    through `blkid -U`; a PARTUUID= spec reaches mount(2) verbatim and fails,
+    which left /boot unmounted on every Pi built so far. cmdline.txt keeps
+    root=PARTUUID= because the kernel resolves that one itself.
+
+    raspi5-fixups post_install appends devpts / sysfs / tmpfs lines
+    idempotently, but we include them here so a fresh image is correct
+    before the first package manager run. errors=remount-ro matches what
+    that fixup enforces. Never move noatime into cmdline rootflags=: ext4
+    rejects it there and the kernel panics.
     """
     fstab = (
         "# /etc/fstab -- jonerix Pi 5 image\n"
         "# Generated by image/pi5/build-image.py. Safe to edit by hand.\n"
-        "# Using PARTUUID so SD vs USB boot works identically.\n"
-        f"PARTUUID={root_partuuid}  /           ext4    defaults,noatime,errors=remount-ro  0 1\n"
-        f"PARTUUID={boot_partuuid}  /boot       vfat    defaults,noatime                    0 2\n"
+        "# Filesystem UUIDs, so SD, USB and NVMe boot work identically.\n"
+        f"UUID={root_uuid}  /     ext4    defaults,noatime,errors=remount-ro  0 1\n"
+        f"UUID={boot_uuid}  /boot  vfat    defaults,noatime                    0 2\n"
         "devpts                     /dev/pts    devpts  gid=5,mode=0620,ptmxmode=0666       0 0\n"
         "sysfs                      /sys        sysfs   defaults                            0 0\n"
         "tracefs                    /sys/kernel/tracing  tracefs  nosuid,nodev,noexec,relatime  0 0\n"
@@ -813,7 +903,7 @@ def enforce_pi5_boot_defaults(root: Path) -> None:
     normalize_login_timeout(root)
 
 
-def validate_pi5_boot_defaults(root: Path) -> None:
+def validate_pi5_boot_defaults(root: Path, packages: list[str]) -> None:
     problems: list[str] = []
 
     def expect_link(path: str, targets: set[str]) -> None:
@@ -847,10 +937,13 @@ def validate_pi5_boot_defaults(root: Path) -> None:
         expected = (
             'supervisor="supervise-daemon"',
             'command="/bin/shadow-getty"',
-            'command_args="/dev/tty1"',
             "respawn_max=0",
         )
-        if not all(token in text for token in expected):
+        # shadow <= r9 hard-codes /dev/tty1; r10+ defaults to tty1 through
+        # its multiplexed tty= variable.
+        serves_tty1 = ('command_args="/dev/tty1"' in text
+                       or ("tty1" in text and 'command_args="/dev/${tty}"' in text))
+        if not all(token in text for token in expected) or not serves_tty1:
             problems.append("/etc/init.d/shadow-login is not the supervised shadow-getty service")
 
     disable_eee = root / "etc" / "init.d" / "disable-eee"
@@ -866,6 +959,30 @@ def validate_pi5_boot_defaults(root: Path) -> None:
         for line in login_defs.read_text(errors="replace").splitlines():
             if re.match(r"^\s*LOGIN_TIMEOUT\s", line) and line.split()[-1] != "0":
                 problems.append(f"/etc/login.defs keeps nonzero {line!r}")
+
+    passwd = root / "etc" / "passwd"
+    if not passwd.is_file() or not re.search(
+            r"^root:[^:]*:0:0:", passwd.read_text(errors="replace"), re.M):
+        problems.append("/etc/passwd has no root account")
+    shadow = root / "etc" / "shadow"
+    if not shadow.is_file():
+        problems.append("/etc/shadow is missing")
+    elif shadow.stat().st_mode & 0o077:
+        problems.append(f"/etc/shadow is mode {shadow.stat().st_mode & 0o777:o}, expected 600")
+
+    if "dropbear" in packages:
+        ssh = ssh_service(root)
+        if not ssh:
+            problems.append("dropbear is installed but no /etc/init.d/sshd service exists "
+                            "(needs a dropbear package that ships it)")
+        elif not (root / "etc" / "runlevels" / "default" / ssh).is_symlink():
+            problems.append(f"/etc/init.d/{ssh} is not in the default runlevel")
+
+    fstab = root / "etc" / "fstab"
+    fstab_text = fstab.read_text(errors="replace") if fstab.is_file() else ""
+    for mnt in ("/", "/boot"):
+        if not re.search(rf"^UUID=[0-9A-Fa-f-]+\s+{re.escape(mnt)}\s", fstab_text, re.M):
+            problems.append(f"/etc/fstab has no UUID= entry for {mnt}")
 
     if problems:
         die("Pi 5 boot defaults failed validation:\n  - " + "\n  - ".join(problems))
@@ -1142,42 +1259,82 @@ def write_boot_cmdline(boot_mnt: Path, root_partuuid: str) -> None:
     write_file(boot_mnt / "cmdline.txt", cmdline)
 
 
-def enable_default_services(root: Path) -> None:
-    """Wire runlevels to match jonerix-tormenta's core Pi startup.
+# Services wired into runlevels when their init scripts are present. Kept in
+# step with jonerix-raspi5-fixups' post_install and install/pi5-install.sh.
+BOOT_SERVICES = (
+    "boot-trace",
+    "dhcpcd",
+    "disable-eee",
+    "fan-control",
+    "hostname",
+    "hwclock",
+    "localmount",
+    "loopback",
+    "netfilter-nft-modules",
+    "pi5-cold-reboot",
+    "pi5-hwmon",
+    "pi5-wifi",
+    "root",
+    "sysctl",
+)
+DEFAULT_SERVICES = (
+    "disable-eee-late",
+    "ntp-bootstrap",
+    "ntpd",
+    "pi5-heartbeat",
+    "shadow-login",
+    "snooze-crond",
+    "syslogd",
+    "wpa_supplicant_wlan0",
+)
+# dropbear's OpenRC service. The dropbear package names it sshd; older
+# builds that call it dropbear are accepted too. First one present wins.
+SSH_SERVICES = ("sshd", "dropbear")
 
-    Host-specific apps such as Tailscale, sshd/dropbear variants, and syslog
-    forwarding destinations are deliberately left out. Only enables services whose init
-    scripts are present.
+
+def ssh_service(root: Path) -> Optional[str]:
+    for svc in SSH_SERVICES:
+        if (root / "etc" / "init.d" / svc).is_file():
+            return svc
+    return None
+
+
+def enable_default_services(root: Path) -> None:
+    """Wire runlevels to match jonerix-tormenta's core Pi startup, plus the
+    SSH daemon (the README promises dropbear on port 22).
+
+    Host-specific apps such as Tailscale and syslog forwarding destinations
+    are deliberately left out. Only enables services whose init scripts are
+    present.
     """
     for svc in ("devfs", "modules"):
         disable_openrc_service(root, svc, "boot")
     for svc in ("dhcpcd", "local"):
         disable_openrc_service(root, svc, "default")
 
-    for svc in (
-        "boot-trace",
-        "dhcpcd",
-        "disable-eee",
-        "fan-control",
-        "hostname",
-        "hwclock",
-        "localmount",
-        "loopback",
-        "netfilter-nft-modules",
-        "pi5-cold-reboot",
-        "pi5-wifi",
-        "root",
-        "sysctl",
-    ):
+    for svc in BOOT_SERVICES:
         if (root / "etc" / "init.d" / svc).exists():
             enable_openrc_service(root, svc, runlevel="boot")
 
-    for svc in ("ntp-bootstrap", "ntpd", "shadow-login", "syslogd", "wpa_supplicant_wlan0"):
+    for svc in DEFAULT_SERVICES:
         if (root / "etc" / "init.d" / svc).exists():
             enable_openrc_service(root, svc, runlevel="default")
 
+    ssh = ssh_service(root)
+    if ssh:
+        enable_openrc_service(root, ssh, runlevel="default")
+
     if (root / "etc" / "init.d" / "reboot-trace-shutdown").exists():
         enable_openrc_service(root, "reboot-trace-shutdown", runlevel="shutdown")
+
+
+def finalize_account_perms(root: Path) -> None:
+    """shadow/gshadow hold password hashes: owner-only, whatever a package
+    hook or seeding left behind (tormenta ended up with a 0664 gshadow)."""
+    for name in ("shadow", "shadow-", "gshadow", "gshadow-"):
+        f = root / "etc" / name
+        if f.is_file() and not f.is_symlink():
+            f.chmod(0o600)
 
 
 # ----------------------------------------------------------------------------
@@ -1215,26 +1372,43 @@ def write_sha256sums(paths: list[Path], out: Path) -> None:
 # ----------------------------------------------------------------------------
 
 
+def resolve_packages(extra: str, no_defaults: bool) -> list[str]:
+    """--packages is additive: DEFAULT_PACKAGES (unless --no-default-packages)
+    + the user's list + MANDATORY_PACKAGES, de-duplicated, order kept."""
+    user = [p.strip() for p in (extra or "").split(",") if p.strip()]
+    base = [] if no_defaults else list(DEFAULT_PACKAGES)
+    return list(dict.fromkeys(base + user + MANDATORY_PACKAGES))
+
+
+def print_plan(args: argparse.Namespace, packages: list[str]) -> None:
+    late = [p for p in packages if p in LATE_PACKAGES]
+    print(f"release tag:      {args.release_tag}")
+    print(f"packages ({len(packages)}):   {' '.join(p for p in packages if p not in late)}")
+    print(f"late (--force):   {' '.join(late) or '-'}")
+    print(f"seeded accounts:  {' '.join('/etc/' + n for n, _ in BASE_ACCOUNT_FILES)}"
+          f" (from config/defaults/etc, only if absent)")
+    print(f"boot runlevel:    {' '.join(BOOT_SERVICES)}")
+    print(f"default runlevel: {' '.join(DEFAULT_SERVICES)} + {'|'.join(SSH_SERVICES)}")
+    print("fstab:            UUID= for / (ext4) and /boot (vfat); cmdline root=PARTUUID=")
+
+
 def build(args: argparse.Namespace) -> int:
-    require_root()
-    require_cmd(
-        "sfdisk", "mkfs.vfat", "mkfs.ext4", "mount", "umount",
-        "losetup", "blkid", "truncate", "zstd", "bsdtar",
-    )
     if args.arch != "aarch64":
         die(f"only --arch aarch64 is supported (got {args.arch})")
 
+    packages = resolve_packages(args.packages, args.no_default_packages)
+    if args.dry_run:
+        print_plan(args, packages)
+        return 0
+
+    require_root()
+    require_cmd(
+        "sfdisk", "mkfs.vfat", "mkfs.ext4", "mount", "umount",
+        "losetup", "truncate", "zstd", "bsdtar",
+    )
+
     out_img = Path(args.output).resolve()
     out_img.parent.mkdir(parents=True, exist_ok=True)
-
-    packages = list(dict.fromkeys(
-        [p.strip() for p in (args.packages or "").split(",") if p.strip()]
-        or DEFAULT_PACKAGES
-    ))
-    # Always force mandatory packages on the end (so user --packages can't drop them).
-    for m in MANDATORY_PACKAGES:
-        if m not in packages:
-            packages.append(m)
 
     size_bytes = parse_size(args.size)
 
@@ -1253,10 +1427,13 @@ def build(args: argparse.Namespace) -> int:
         # identically whether the loop-device pipeline went through
         # the partscan path or the per-partition-offset fallback path
         # (the latter doesn't let blkid see a partition-table context).
-        boot_partuuid = read_mbr_partuuid(out_img, 1)
         root_partuuid = read_mbr_partuuid(out_img, 2)
-        log(f"boot PARTUUID: {boot_partuuid}")
-        log(f"root PARTUUID: {root_partuuid}")
+        log(f"root PARTUUID: {root_partuuid} (cmdline.txt)")
+        # Filesystem UUIDs for fstab, read from the fresh superblocks.
+        boot_uuid = read_fs_uuid(boot_part, "vfat")
+        root_uuid = read_fs_uuid(root_part, "ext4")
+        log(f"boot UUID: {boot_uuid}")
+        log(f"root UUID: {root_uuid}")
 
         # Stage 3: populate rootfs via jpkg, then boot/ via firmware tarball.
         mnt_root = Path(tempfile.mkdtemp(prefix="pi5-root-"))
@@ -1268,9 +1445,8 @@ def build(args: argparse.Namespace) -> int:
                 enforce_pi5_boot_defaults(mnt_root)
 
                 # CA trust store for TLS-using daemons (tailscale,
-                # curl, ntpd). Must come AFTER jpkg_install so the
-                # rootfs skeleton exists.
-                fetch_ca_bundle(mnt_root)
+                # curl, ntpd) comes from the ca-certificates package.
+                check_ca_bundle(mnt_root, packages)
 
                 # Pi 5 firmware/kernel. CI passes --firmware-cache so
                 # Raspi Imager artifacts are self-contained; local
@@ -1309,7 +1485,7 @@ def build(args: argparse.Namespace) -> int:
                 write_boot_cmdline(mnt_boot, root_partuuid)
 
                 # /etc/fstab, /etc/hostname, /etc/hosts in the rootfs.
-                write_fstab(mnt_root, boot_partuuid, root_partuuid)
+                write_fstab(mnt_root, boot_uuid, root_uuid)
                 write_hostname(mnt_root, args.hostname)
 
                 if args.ssh_key:
@@ -1324,7 +1500,8 @@ def build(args: argparse.Namespace) -> int:
                 write_restricted_motd(mnt_root)
 
                 enable_default_services(mnt_root)
-                validate_pi5_boot_defaults(mnt_root)
+                finalize_account_perms(mnt_root)
+                validate_pi5_boot_defaults(mnt_root, packages)
 
                 # Make sure /boot exists on rootfs for the fstab mount point.
                 (mnt_root / "boot").mkdir(exist_ok=True)
@@ -1361,16 +1538,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         prog="build-image.py",
         description="Build a bootable jonerix Raspberry Pi 5 disk image.",
     )
-    p.add_argument("--output", required=True, help="Output .img path")
+    p.add_argument("--output", help="Output .img path (required unless --dry-run)")
     p.add_argument("--size", default=DEFAULT_SIZE,
                    help=f"Total image size (default {DEFAULT_SIZE}). Accepts K/M/G/T suffixes.")
     p.add_argument("--boot-mb", type=int, default=DEFAULT_BOOT_MB,
                    help=f"Size of FAT32 /boot partition in MiB (default {DEFAULT_BOOT_MB})")
     p.add_argument("--hostname", default=DEFAULT_HOSTNAME)
     p.add_argument("--packages", default="",
-                   help="Comma-separated extra packages (additive to defaults). "
+                   help="Comma-separated extra packages, added to the defaults. "
                         f"Defaults: {','.join(DEFAULT_PACKAGES)}. "
                         f"Always installed: {','.join(MANDATORY_PACKAGES)}.")
+    p.add_argument("--no-default-packages", action="store_true",
+                   help="Start from an empty package set: install only --packages "
+                        "plus the mandatory packages.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print the resolved package set, runlevels and fstab "
+                        "scheme, then exit (no root needed).")
     p.add_argument("--arch", default=DEFAULT_ARCH,
                    help="Only 'aarch64' is supported right now")
     p.add_argument("--ssh-key", default=None,
@@ -1391,7 +1574,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                        "left pointing at the rolling mirror — pinning is install-"
                        "time only, for reproducibility."
                    ))
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    if not args.dry_run and not args.output:
+        p.error("--output is required")
+    return args
 
 
 def main() -> int:

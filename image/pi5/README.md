@@ -5,7 +5,7 @@ Raspberry Pi 5 that boots identically from an SD card or a USB stick.
 
 It is a single Python 3 file with no third-party dependencies (stdlib only --
 no PyYAML, no click, no requests). It shells out to `sfdisk`, `losetup`,
-`mkfs.vfat`, `mkfs.ext4`, `mount`, `blkid`, `jpkg`, `bsdtar`, and `zstd` --
+`mkfs.vfat`, `mkfs.ext4`, `mount`, `jpkg`, `bsdtar`, and `zstd` --
 all tools already present in the jonerix builder containers.
 
 ## What the image contains
@@ -19,9 +19,18 @@ The partition table is **MBR**, not GPT. The Pi 5 EEPROM bootloader does not
 recognise GPT for the boot partition. `image/mkimage.sh` (x86_64) uses GPT;
 that pattern is wrong for Raspberry Pi.
 
-All device references (`/etc/fstab`, `cmdline.txt`) use `PARTUUID=` rather
-than `/dev/mmcblk0p*` so the same image boots from SD (`/dev/mmcblk0`) and
-from USB (`/dev/sda`) without modification.
+No device reference names `/dev/mmcblk0p*` or `/dev/sda*`, so the same image
+boots from SD (`/dev/mmcblk0`), USB (`/dev/sda`) or NVMe without
+modification:
+
+- `cmdline.txt` uses `root=PARTUUID=...`, which the kernel resolves itself.
+- `/etc/fstab` uses filesystem `UUID=...` for `/` and `/boot`. toybox
+  `mount` (what OpenRC's `localmount` runs) resolves `UUID=` through
+  `blkid -U` and does not understand `PARTUUID=`. The UUIDs are read
+  straight from the new superblocks, so no `blkid` is needed at build
+  time.
+- Never put `noatime` into `rootflags=` on the command line: ext4 rejects
+  it there and the kernel panics before init. It belongs in fstab.
 
 ### Default package set
 
@@ -35,11 +44,18 @@ from USB (`/dev/sda`) without modification.
 | `dropbear` | SSH server (MIT) |
 | `ifupdown-ng` | interface config |
 | `bsdtar` | permissive tar |
-| `ca-certificates` | TLS trust |
-| `jonerix-raspi5-fixups` | **Always installed**: Pi 5 EEE, fan control, onboard WiFi bring-up, fstab rescue, adduser safety |
+| `ca-certificates` | TLS trust (package-owned Mozilla bundle; also owns `/etc/ssl/cert.pem`) |
+| `jonerix-raspi5-fixups` | **Always installed**: Pi 5 EEE, fan control, onboard WiFi bring-up, reboot diagnostics, fstab rescue, adduser safety |
 
-Pass `--packages foo,bar` to add more. `jonerix-raspi5-fixups` is mandatory
-and added automatically even if the user passes `--packages`.
+The full list is `DEFAULT_PACKAGES` in `build-image.py`; `--dry-run` prints
+it. Pass `--packages foo,bar` to add more; `--no-default-packages` starts
+from an empty set instead. `jonerix-raspi5-fixups` is mandatory and always
+added.
+
+Before the first package installs, the builder seeds `/etc/passwd`,
+`/etc/group`, `/etc/shadow` and `/etc/shells` from `config/defaults/etc/`
+(only if absent), so package hooks that add service users append to a real
+account database. `root` is locked (`!`): log in with `--ssh-key`.
 
 ### Kernel and firmware
 
@@ -60,14 +76,16 @@ rationale.
 # Minimal: 4 GB image with default packages
 sudo python3 image/pi5/build-image.py --output jonerix-pi5.img
 
-# Larger image, custom hostname, extra packages, bake in an SSH key + Tailscale auth key
+# Larger image, custom hostname, extra packages, bake in an SSH key
 sudo python3 image/pi5/build-image.py \
     --output jonerix-pi5.img \
     --size 8G \
     --hostname jonerix-tormenta \
-    --packages pico,btop,tmux,nerdctl,containerd,runc,cni-plugins \
-    --ssh-key "$(cat ~/.ssh/id_ed25519.pub)" \
-    --tailscale-authkey tskey-auth-xxxx
+    --packages btop,tmux,nerdctl,containerd,runc,cni-plugins \
+    --ssh-key "$(cat ~/.ssh/id_ed25519.pub)"
+
+# Show what would be installed and enabled, without building anything
+python3 image/pi5/build-image.py --dry-run --packages tmux
 ```
 
 Output:
@@ -82,14 +100,16 @@ SHA256SUMS               # checksums for both
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--output` | (required) | Path to the raw `.img` file |
+| `--output` | (required unless `--dry-run`) | Path to the raw `.img` file |
 | `--size` | `4G` | Total image size. `K`/`M`/`G`/`T` suffixes accepted |
 | `--boot-mb` | `256` | FAT32 boot partition size in MiB |
 | `--hostname` | `jonerix-pi` | Written to `/etc/hostname` and `/etc/hosts` |
-| `--packages` | (see above) | Comma-separated, additive to defaults |
+| `--packages` | (see above) | Comma-separated, added to the defaults |
+| `--no-default-packages` | off | Install only `--packages` plus `jonerix-raspi5-fixups` |
+| `--dry-run` | off | Print the package set, runlevels and fstab scheme, then exit |
+| `--release-tag` | `v<VERSION_ID>` | Package release to install from; `packages` = rolling |
 | `--arch` | `aarch64` | Only `aarch64` is supported right now |
 | `--ssh-key` | none | Full authorized_keys line (e.g. `"ssh-ed25519 AAAA..."`) |
-| `--tailscale-authkey` | none | If set, a first-boot OpenRC oneshot runs `tailscale up --authkey=<key> --ssh` |
 | `--firmware-dir` | none | Skip the download; copy firmware from this local directory |
 | `--firmware-cache` | `~/.cache/jonerix-pi5-firmware.tar.gz` | Where to cache the firmware tarball |
 
@@ -119,11 +139,14 @@ decompress first).
   loads `kernel_2712.img` + `bcm2712-rpi-5-b.dtb`.
 - OpenRC starts as PID 1, runs `jonerix-raspi5-fixups` (disable-eee,
   fan-control, pi5-wifi) and `dhcpcd`.
-- If `--ssh-key` was provided, dropbear listens on port 22; log in as
-  `root@<hostname>.local`.
-- If `--tailscale-authkey` was provided, `tailscale-firstboot` runs *once*
-  after dhcpcd gets an address. The sentinel
-  `/var/lib/jonerix/tailscale-firstboot.done` prevents re-running.
+- dropbear's `sshd` service is in the default runlevel and listens on
+  port 22 (the build fails validation if the dropbear package has no
+  `sshd` service). With `--ssh-key`, log in as `root@<hostname>.local`;
+  root has no password.
+- `boot-trace` writes `/var/log/reboot-trace/boot-*.log` early in every
+  boot, including the firmware reset cause and whether the previous boot
+  shut down cleanly; `pi5-heartbeat` stamps
+  `/var/log/reboot-trace/heartbeat` every minute.
 
 ## CI artifacts
 
@@ -157,7 +180,6 @@ workflow run as a zip bundle instead of a release.
 | `mkfs.vfat` | dosfstools (build-time only) | Format FAT32 boot partition |
 | `mkfs.ext4` | e2fsprogs (build-time only) | Format ext4 root partition |
 | `mount`/`umount` | util-linux (build-time only) | Populate partitions via filesystem mount |
-| `blkid` | util-linux (build-time only) | Look up PARTUUID after formatting, for fstab/cmdline |
 | `jpkg` | jonerix (MIT) | Install the rootfs by resolving recipes from the jonerix package repo |
 | `bsdtar` | libarchive (BSD-2-Clause) | Extract the firmware tarball; matches the rest of jonerix |
 | `zstd` | BSD/GPLv2 dual (BSD chosen) | Compress the final image for distribution |
@@ -192,11 +214,40 @@ GNU make for bootstrap).
   wires up the `brcmfmac -> cyfmac` symlinks so the CYW43455 radio comes up
   as `wlan0` on the next `modprobe brcmfmac` or reboot. Wired ethernet and
   SSH work out of the box on the base image without this step.
-- **Tailscale binary is assumed to be in a user-supplied package.** The
-  first-boot service runs `tailscale up` but doesn't install `tailscale`;
-  add `tailscale` (or whatever you call it) to `--packages` if you want
-  it. A `tailscaled` OpenRC service likewise must be provided by that
-  package.
+- **Tailscale is user-supplied.** jonerix does not package `tailscale` /
+  `tailscaled` (removed in cf0f9a2a) and the builder has no auth-key flag.
+  If you install it yourself, bound the `tailscale up` in your boot
+  service with `--timeout`, so an expired node key or a missing login
+  cannot hang the default runlevel:
+
+  ```sh
+  #!/bin/openrc-run
+  # /etc/init.d/tailscale-up
+  description="Bring the tailscale tunnel up after tailscaled starts"
+
+  depend() {
+      need tailscaled
+      after net
+  }
+
+  start_pre() {
+      i=0
+      while [ $i -lt 15 ] && [ ! -S /run/tailscale/tailscaled.sock ]; do
+          sleep 1
+          i=$((i + 1))
+      done
+  }
+
+  start() {
+      ebegin "Bringing tailscale tunnel up"
+      /bin/tailscale up --timeout=30s
+      eend $? "tailscale up failed (expired node key? run it by hand)"
+  }
+  ```
+
+  Leave out a `stop()` that runs `tailscale down`: that persists
+  "down" in tailscaled's state, so a boot where `tailscale up` times out
+  would leave the node offline.
 - **`mksh` isn't in the default recipe set yet.** If `mksh` is missing,
   `jpkg install` will error out and the build fails. Either add it to
   `packages/extra/mksh/` or drop it from the default list -- the

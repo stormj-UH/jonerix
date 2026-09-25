@@ -74,6 +74,17 @@ NETBOOT_ROOTFS_PACKAGES = [
     "jonerix-raspi5-fixups",
 ]
 
+# Installed last with --force (same as build-image.py LATE_PACKAGES): the
+# package that owns a contested path (ca-certificates owns
+# /etc/ssl/cert.pem) must land after everything else.
+LATE_PACKAGES = ["ca-certificates"]
+
+# Base account files seeded before any package hook runs (same as
+# build-image.py): no package ships a root account, and addgroup-safe
+# refuses to touch a missing /etc/group. Copied only if absent.
+BASE_ACCOUNT_FILES = [("passwd", 0o644), ("group", 0o644),
+                      ("shadow", 0o600), ("shells", 0o644)]
+
 RELEASE_BASE_URL = "https://github.com/stormj-UH/jonerix/releases/download"
 ROLLING_TAG = "packages"
 
@@ -99,6 +110,22 @@ def _resolve_release_tag(tag: str) -> str:
 def run(cmd: list[str], **kw):
     LOG(" ".join(cmd))
     subprocess.run(cmd, check=True, **kw)
+
+
+def seed_base_accounts(root: pathlib.Path):
+    src_dir = pathlib.Path(__file__).resolve().parents[2] / "config" / "defaults" / "etc"
+    etc = root / "etc"
+    etc.mkdir(parents=True, exist_ok=True)
+    for name, mode in BASE_ACCOUNT_FILES:
+        dst = etc / name
+        if dst.exists():
+            continue
+        src = src_dir / name
+        if not src.is_file():
+            DIE(f"missing {src}; cannot seed /etc/{name}")
+        shutil.copyfile(src, dst)
+        dst.chmod(mode)
+        LOG(f"seeded /etc/{name}")
 
 
 def jpkg_install(root: pathlib.Path, packages: list[str], release_tag: str):
@@ -137,13 +164,24 @@ def jpkg_install(root: pathlib.Path, packages: list[str], release_tag: str):
             usr.rmdir()
         usr.symlink_to(".")
 
+    seed_base_accounts(root)
+
     run(["jpkg", "--root", str(root), "update"])
     if "toybox" in packages:
         # Mirror build-image.py: replacement hooks need toybox applets
         # available before mksh/shadow/raspi5-fixups run, and toybox must
         # not be installed later after those packages claim their links.
         run(["jpkg", "--root", str(root), "install", "toybox"])
-    run(["jpkg", "--root", str(root), "install"] + packages)
+    run(["jpkg", "--root", str(root), "install"]
+        + [p for p in packages if p not in LATE_PACKAGES])
+    for pkg in (p for p in packages if p in LATE_PACKAGES):
+        run(["jpkg", "--root", str(root), "install", "--force", pkg])
+
+    # Password hashes: owner-only, whatever a hook left behind.
+    for name in ("shadow", "shadow-", "gshadow", "gshadow-"):
+        f = root / "etc" / name
+        if f.is_file() and not f.is_symlink():
+            f.chmod(0o600)
 
     # Switch to rolling for post-boot updates
     (staging_jpkg / "repos.conf").write_text(
@@ -187,7 +225,7 @@ tmpfs      /tmp         tmpfs       defaults,size=512M                0 0
 
     # OpenRC service that parses the cmdline and mounts /var/state.
     svc = root / "etc" / "init.d" / "pi5-state"
-    svc.write_text("""#!/sbin/openrc-run
+    svc.write_text("""#!/bin/openrc-run
 # pi5-state — mount /var/state with size driven by kernel cmdline.
 #
 # Parses /proc/cmdline for `jonerix.state_size=<value>` and mounts a
@@ -246,9 +284,11 @@ def install_menu_and_init(root: pathlib.Path, release_tag: str):
     shutil.copy(menu_src, menu_dst)
     menu_dst.chmod(0o755)
 
-    # The pi5-install.sh script the menu's mode-A path execs
+    # The pi5-install.sh script the menu's mode-A path execs. /bin, not
+    # /usr/local/bin: jonerix is merged-usr-flat and dropped /usr/local/bin
+    # in raspi5-fixups 1.6.28.
     pi5_install_src = repo_root / "install" / "pi5-install.sh"
-    pi5_install_dst = root / "usr" / "local" / "bin" / "pi5-install.sh"
+    pi5_install_dst = root / "bin" / "pi5-install.sh"
     pi5_install_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(pi5_install_src, pi5_install_dst)
     pi5_install_dst.chmod(0o755)
@@ -277,7 +317,7 @@ def install_menu_and_init(root: pathlib.Path, release_tag: str):
     # Drop the OpenRC service-script header so init.d/pi5-netboot-menu
     # passes `rc-service ... start` correctly. The actual menu logic
     # is the body of netboot-menu.sh; we wrap it.
-    wrapper = """#!/sbin/openrc-run
+    wrapper = """#!/bin/openrc-run
 # pi5-netboot-menu — wraps image/pi5/netboot-menu.sh as an OpenRC
 # service that owns tty1 at first netboot. supervise-daemon respawns
 # it if the user picks "drop to shell" and exits.

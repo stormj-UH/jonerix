@@ -7,7 +7,7 @@
 # from jpkg, and applies every current jonerix-raspi5-fixups setting.
 #
 # Usage:
-#   pi5-install.sh [-y] [-d /dev/sdX] [--kernel-only]
+#   pi5-install.sh [-y] [-d /dev/sdX] [--packages LIST] [--no-default-packages]
 #
 #   -y / --yes           Skip all interactive prompts (assume yes).
 #   -d / --device PATH   Target block device. If omitted, prompts
@@ -23,6 +23,11 @@
 #                        Skips partition / format / userland install,
 #                        and only downloads + extracts firmware to
 #                        the existing FAT32 boot partition.
+#   --packages LIST      Extra packages (comma- or space-separated),
+#                        added to the default set.
+#   --no-default-packages
+#                        Install only --packages plus the mandatory
+#                        jonerix-raspi5-fixups.
 #   --branch NAME        Git branch of jonerix repo to pull recipes
 #                        and helpers from. Default: main.
 #   --release-tag TAG    GitHub release tag whose pinned package set
@@ -48,7 +53,7 @@
 #      hdmi / wake-on-power / wifi fixups to the target.
 #   5. Rewrites cmdline.txt and config.txt on the target boot
 #      partition with jonerix defaults (reboot=c, root PARTUUID,
-#      hdmi_force_hotplug).
+#      hdmi_force_hotplug), and /etc/fstab with filesystem UUIDs.
 #   6. Unmounts cleanly, verifies boot-critical paths, prints a
 #      summary.
 #
@@ -86,7 +91,13 @@ FIRMWARE_ONLY=0     # --firmware-only: skip partition/format/userland,
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 reforger raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch"
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 reforger raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch ca-certificates"
+MANDATORY_PACKAGES="jonerix-raspi5-fixups"
+# Installed last with --force so their files and `replaces` ownership land
+# after the main transaction (ca-certificates owns /etc/ssl/cert.pem).
+LATE_PACKAGES="ca-certificates"
+EXTRA_PACKAGES=""
+NO_DEFAULT_PACKAGES=0
 # Kept identical to image/pi5/build-image.py's DEFAULT_PACKAGES so a
 # Pi installed by hand via this script lands at the same package set
 # as a CI-built jonerix-pi5.img. Beyond the minimal boot core (musl,
@@ -95,6 +106,7 @@ DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar ope
 #   shadow      — proper /bin/login + shadow-getty on tty1
 #   jonerix-netutils  — u-root ip(8) (toybox ip can't enumerate TUN devs)
 #   zsh, gitredoxide, ripgrep, pico, fastfetch — interactive niceties
+#   ca-certificates — package-owned Mozilla CA bundle (no ad-hoc download)
 # jonerix-raspi5-fixups is mandatory regardless of this list (Pi 5
 # hardware bring-up — EEE, fan, modprobe-shim, cold-reboot).
 
@@ -187,10 +199,29 @@ while [ $# -gt 0 ]; do
             ;;
         --branch) BRANCH="${2:-main}"; GH_RAW="https://raw.githubusercontent.com/stormj-UH/jonerix/${BRANCH}"; shift ;;
         --release-tag) RELEASE_TAG="${2:-}"; shift ;;
-        -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
+        --packages) EXTRA_PACKAGES="$EXTRA_PACKAGES $(printf '%s' "${2:-}" | tr ',' ' ')"; shift ;;
+        --no-default-packages) NO_DEFAULT_PACKAGES=1 ;;
+        -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
         *) die "unknown arg: $1" ;;
     esac
     shift
+done
+
+# Resolve the package list: defaults (unless --no-default-packages) +
+# --packages + mandatory, de-duplicated in order.
+if [ "$NO_DEFAULT_PACKAGES" = 1 ]; then
+    _pkgs_in="$EXTRA_PACKAGES $MANDATORY_PACKAGES"
+else
+    _pkgs_in="$DEFAULT_PACKAGES $EXTRA_PACKAGES $MANDATORY_PACKAGES"
+fi
+INSTALL_PACKAGES=""
+INSTALL_LATE=""
+for _p in $_pkgs_in; do
+    case " $INSTALL_PACKAGES $INSTALL_LATE " in *" $_p "*) continue ;; esac
+    case " $LATE_PACKAGES " in
+        *" $_p "*) INSTALL_LATE="$INSTALL_LATE $_p" ;;
+        *) INSTALL_PACKAGES="$INSTALL_PACKAGES $_p" ;;
+    esac
 done
 
 # Resolve --release-tag: if unset, pull config/defaults/etc/os-release
@@ -288,8 +319,11 @@ if [ "$(ask 'Proceed?' n)" != y ]; then
 fi
 
 # ── Partitioning / formatting ───────────────────────────────────────
-P1="${TARGET}1"
-P2="${TARGET}2"
+# /dev/sda -> /dev/sda1; /dev/nvme0n1 and /dev/mmcblk0 -> ...p1.
+case "$TARGET" in
+    *[0-9]) P1="${TARGET}p1"; P2="${TARGET}p2" ;;
+    *)      P1="${TARGET}1";  P2="${TARGET}2" ;;
+esac
 if [ ! -b "$P1" ] || [ ! -b "$P2" ]; then
     die "$TARGET lacks p1/p2. Pre-partition with \`sfdisk\` or install \
 util-linux + dosfstools + e2fsprogs on this host and re-run so we can \
@@ -343,6 +377,43 @@ if [ "$_have_ext4" = 0 ]; then
         die "$P2 is not ext4 and mkfs.ext4 is unavailable. Pre-format it."
     fi
 fi
+
+# ── Base account files ──────────────────────────────────────────────
+# Copied into the target's /etc only when absent. Source order: a jonerix
+# checkout next to this script, then the BRANCH on GitHub, then a minimal
+# built-in root/nobody set.
+_seed_one() {
+    _name=$1
+    _mode=$2
+    _dst="$ROOT_MNT/etc/$_name"
+    [ -e "$_dst" ] && return 0
+    _here=$(dirname "$0")
+    if [ -f "$_here/../config/defaults/etc/$_name" ]; then
+        cp "$_here/../config/defaults/etc/$_name" "$_dst"
+    elif curl -fsSL -o "$_dst.tmp" "${GH_RAW}/config/defaults/etc/$_name" 2>/dev/null; then
+        mv -f "$_dst.tmp" "$_dst"
+    else
+        rm -f "$_dst.tmp"
+        case "$_name" in
+            passwd) printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' \
+                        'nobody:x:65534:65534:nobody:/nonexistent:/bin/false' > "$_dst" ;;
+            group)  printf '%s\n' 'root:x:0:root' 'tty:x:5:' 'wheel:x:10:' \
+                        'nobody:x:65534:' > "$_dst" ;;
+            shadow) printf '%s\n' 'root:!:19808:0:99999:7:::' \
+                        'nobody:!:19808:0:99999:7:::' > "$_dst" ;;
+            shells) printf '%s\n' /bin/sh /bin/mksh > "$_dst" ;;
+        esac
+        warn "could not fetch config/defaults/etc/$_name; wrote a minimal one"
+    fi
+    chmod "$_mode" "$_dst"
+}
+_seed_accounts() {
+    mkdir -p "$ROOT_MNT/etc"
+    _seed_one passwd 644
+    _seed_one group 644
+    _seed_one shadow 600
+    _seed_one shells 644
+}
 
 # ── Mount targets ───────────────────────────────────────────────────
 WORK=$(mktemp -d /tmp/jonerix-pi5-install.XXXXXX)
@@ -479,10 +550,21 @@ REPOSEOF
             ln -sf . "$ROOT_MNT/usr"
         fi
 
+        # Base accounts before the first package hook: no package ships a
+        # root account, hooks only append service users (openntpd's _ntp,
+        # unbound), and addgroup-safe refuses to touch a missing
+        # /etc/group. Never overwrite files that are already there.
+        msg "Seeding base account files"
+        _seed_accounts
+
         msg "Installing core packages into $ROOT_MNT (pinned to $RELEASE_TAG)"
         # shellcheck disable=SC2086  # word-split is intentional
-        jpkg -r "$ROOT_MNT" install $DEFAULT_PACKAGES 2>&1 \
+        jpkg -r "$ROOT_MNT" install $INSTALL_PACKAGES 2>&1 \
             | sed 's/^/  /'
+        for _p in $INSTALL_LATE; do
+            msg "Installing $_p last (--force) so it owns its shared paths"
+            jpkg -r "$ROOT_MNT" install --force "$_p" 2>&1 | sed 's/^/  /'
+        done
 
         # Switch the booted system to the rolling mirror so post-install
         # `jpkg update` / `upgrade` follow main rather than staying
@@ -499,40 +581,99 @@ REPOSEOF
 fi
 
 # ── Configure /etc/fstab, cmdline.txt, config.txt ───────────────────
-# Give the new root a unique UUID so it doesn't clash with any other
-# jonerix disk in the same Pi. We don't need tune2fs for this — the
-# UUID lives at offset 0x468 in the ext4 superblock (16 bytes) and we
-# can poke it with dd + /dev/urandom when mkfs.ext4 wasn't available.
-# Helper: return a blkid token if blkid recognises the partition,
-# empty otherwise. Reforger's blkid prints its "unrecognized filesystem"
-# line to stdout and exits non-zero, which both poisons the capture
-# and trips `set -e`. Swallow both and re-validate the output looks
-# UUID/PARTUUID-shaped (hex or 4345-C4D4 FAT-style) before trusting it.
+# cmdline.txt needs the root PARTITION's PARTUUID (the kernel resolves
+# root=PARTUUID= itself; there is no initramfs). /etc/fstab needs the
+# FILESYSTEM UUIDs: toybox mount resolves only UUID= (via `blkid -U`), and a
+# PARTUUID= line never mounts. Both are read straight off the disk with
+# dd + od, so this works whichever blkid the host has (reforger's blkid
+# knows neither PARTUUID nor FAT). blkid stays as a cross-check fallback.
+
+# Hex dump of COUNT bytes at byte OFFSET of FILE, lowercase, no spaces.
+_hex_at() {
+    dd if="$1" bs=1 skip="$2" count="$3" 2>/dev/null | od -An -tx1 | tr -d ' \n'
+}
+# Byte N (1-based) of a hex string as two hex digits.
+_hexbyte() {
+    printf '%s' "$1" | cut -c"$(( $2 * 2 - 1 ))-$(( $2 * 2 ))"
+}
+
 _probe_blkid() {
-    _tag="$1"
-    _dev="$2"
-    _out=$(blkid -s "$_tag" -o value "$_dev" 2>/dev/null || true)
+    # Reforger's blkid prints "unrecognized filesystem" on stdout and exits
+    # non-zero; keep only UUID-shaped output.
+    command -v blkid >/dev/null 2>&1 || return 0
+    _out=$(blkid -s "$1" -o value "$2" 2>/dev/null || true)
     case "$_out" in
-        *unrecognized*|*error*|*refused*|*": "*) _out="" ;;
-    esac
-    # Accept anything matching UUID-ish, PARTUUID-ish, or FAT-ish formats.
-    case "$_out" in
-        *[!0-9a-fA-F-]*) _out="" ;;
+        ''|*[!0-9a-fA-F-]*) _out="" ;;
     esac
     printf '%s' "$_out"
 }
 
-_probe_partuuid() { _probe_blkid PARTUUID "$1"; }
+# ext2/3/4 filesystem UUID: magic 0xEF53 at 1024+0x38, s_uuid at 1024+0x68.
+_ext4_uuid() {
+    [ "$(_hex_at "$1" 1080 2)" = "53ef" ] || return 1
+    _h=$(_hex_at "$1" 1128 16)
+    [ "${#_h}" -eq 32 ] || return 1
+    printf '%s-%s-%s-%s-%s\n' "$(printf '%s' "$_h" | cut -c1-8)" \
+        "$(printf '%s' "$_h" | cut -c9-12)" "$(printf '%s' "$_h" | cut -c13-16)" \
+        "$(printf '%s' "$_h" | cut -c17-20)" "$(printf '%s' "$_h" | cut -c21-32)"
+}
 
-_root_partuuid=""
-_p1_partuuid=""
-if command -v blkid >/dev/null 2>&1; then
-    _root_partuuid=$(_probe_partuuid "$P2")
-    _p1_partuuid=$(_probe_partuuid "$P1")
-fi
+# FAT volume ID as blkid prints it (uppercase XXXX-XXXX): BS_VolID at 67
+# on FAT32 ("FAT32" at 82), at 39 on FAT12/16 ("FAT" at 54).
+_vfat_uuid() {
+    [ "$(_hex_at "$1" 510 2)" = "55aa" ] || return 1
+    if [ "$(dd if="$1" bs=1 skip=82 count=5 2>/dev/null)" = "FAT32" ]; then
+        _off=67
+    elif [ "$(dd if="$1" bs=1 skip=54 count=3 2>/dev/null)" = "FAT" ]; then
+        _off=39
+    else
+        return 1
+    fi
+    _h=$(_hex_at "$1" "$_off" 4)
+    [ "${#_h}" -eq 8 ] || return 1
+    printf '%s%s-%s%s\n' "$(_hexbyte "$_h" 4)" "$(_hexbyte "$_h" 3)" \
+        "$(_hexbyte "$_h" 2)" "$(_hexbyte "$_h" 1)" | tr 'a-f' 'A-F'
+}
+
+# PARTUUID of partition N on DISK. MBR: <disk signature>-<NN>. GPT: the
+# partition entry's unique GUID (mixed-endian, as the kernel prints it).
+_partuuid() {
+    _disk=$1
+    _n=$2
+    [ "$(_hex_at "$_disk" 510 2)" = "55aa" ] || return 1
+    if [ "$(_hex_at "$_disk" 450 1)" != "ee" ]; then
+        _s=$(_hex_at "$_disk" 440 4)
+        [ "${#_s}" -eq 8 ] || return 1
+        printf '%s%s%s%s-%02x\n' "$(_hexbyte "$_s" 4)" "$(_hexbyte "$_s" 3)" \
+            "$(_hexbyte "$_s" 2)" "$(_hexbyte "$_s" 1)" "$_n"
+        return 0
+    fi
+    # GPT: header at LBA 1.
+    _ss=$(cat "/sys/block/${_disk##*/}/queue/logical_block_size" 2>/dev/null || echo 512)
+    case "$_ss" in ''|*[!0-9]*) _ss=512 ;; esac
+    [ "$(dd if="$_disk" bs=1 skip="$_ss" count=8 2>/dev/null)" = "EFI PART" ] || return 1
+    _h=$(_hex_at "$_disk" $(( _ss + 72 )) 4)
+    _lba=$(( 0x$(_hexbyte "$_h" 4)$(_hexbyte "$_h" 3)$(_hexbyte "$_h" 2)$(_hexbyte "$_h" 1) ))
+    _h=$(_hex_at "$_disk" $(( _ss + 84 )) 4)
+    _esz=$(( 0x$(_hexbyte "$_h" 4)$(_hexbyte "$_h" 3)$(_hexbyte "$_h" 2)$(_hexbyte "$_h" 1) ))
+    _g=$(_hex_at "$_disk" $(( _lba * _ss + (_n - 1) * _esz + 16 )) 16)
+    [ "${#_g}" -eq 32 ] || return 1
+    printf '%s%s%s%s-%s%s-%s%s-%s-%s\n' \
+        "$(_hexbyte "$_g" 4)" "$(_hexbyte "$_g" 3)" "$(_hexbyte "$_g" 2)" "$(_hexbyte "$_g" 1)" \
+        "$(_hexbyte "$_g" 6)" "$(_hexbyte "$_g" 5)" "$(_hexbyte "$_g" 8)" "$(_hexbyte "$_g" 7)" \
+        "$(printf '%s' "$_g" | cut -c17-20)" "$(printf '%s' "$_g" | cut -c21-32)"
+}
+
+_root_partuuid=$(_partuuid "$TARGET" 2 || true)
+[ -n "$_root_partuuid" ] || _root_partuuid=$(_probe_blkid PARTUUID "$P2")
 if [ -z "$_root_partuuid" ]; then
     die "could not determine PARTUUID for $P2; root=UUID is not valid for this initramfs-free boot"
 fi
+_root_uuid=$(_ext4_uuid "$P2" || true)
+[ -n "$_root_uuid" ] || _root_uuid=$(_probe_blkid UUID "$P2")
+_boot_uuid=$(_vfat_uuid "$P1" || true)
+[ -n "$_boot_uuid" ] || _boot_uuid=$(_probe_blkid UUID "$P1")
+msg "root PARTUUID=$_root_partuuid UUID=${_root_uuid:-?}; boot UUID=${_boot_uuid:-?}"
 
 msg "Patching $BOOT_MNT/cmdline.txt"
 _cmdline="$BOOT_MNT/cmdline.txt"
@@ -566,8 +707,10 @@ EOF
 
 msg "Writing $ROOT_MNT/etc/fstab"
 mkdir -p "$ROOT_MNT/etc"
-if [ -n "$_root_partuuid" ]; then _root_spec="PARTUUID=$_root_partuuid"; else _root_spec="$P2"; fi
-if [ -n "$_p1_partuuid" ];   then _boot_spec="PARTUUID=$_p1_partuuid";   else _boot_spec="$P1"; fi
+# UUID= (toybox mount resolves it); fall back to the device node if a
+# superblock could not be read. Never put noatime into cmdline rootflags=.
+if [ -n "$_root_uuid" ]; then _root_spec="UUID=$_root_uuid"; else _root_spec="$P2"; fi
+if [ -n "$_boot_uuid" ]; then _boot_spec="UUID=$_boot_uuid"; else _boot_spec="$P1"; fi
 cat > "$ROOT_MNT/etc/fstab" <<EOF
 # /etc/fstab — jonerix Pi 5 (generated by pi5-install.sh)
 $_root_spec  /      ext4  defaults,noatime,errors=remount-ro  0 1
@@ -589,13 +732,26 @@ _enable_openrc_service() {
 }
 rm -f "$ROOT_MNT/etc/runlevels/boot/devfs" "$ROOT_MNT/etc/runlevels/boot/modules"
 rm -f "$ROOT_MNT/etc/runlevels/default/dhcpcd" "$ROOT_MNT/etc/runlevels/default/local"
-for _svc in boot-trace dhcpcd disable-eee fan-control hostname hwclock localmount loopback netfilter-nft-modules pi5-cold-reboot pi5-wifi root sysctl; do
+# Kept in step with image/pi5/build-image.py BOOT_SERVICES/DEFAULT_SERVICES.
+for _svc in boot-trace dhcpcd disable-eee fan-control hostname hwclock localmount loopback netfilter-nft-modules pi5-cold-reboot pi5-hwmon pi5-wifi root sysctl; do
     _enable_openrc_service "$_svc" boot
 done
-for _svc in ntp-bootstrap ntpd shadow-login syslogd wpa_supplicant_wlan0; do
+for _svc in disable-eee-late ntp-bootstrap ntpd pi5-heartbeat shadow-login snooze-crond syslogd wpa_supplicant_wlan0; do
     _enable_openrc_service "$_svc" default
 done
+# dropbear's service (sshd; older builds called it dropbear): first one present.
+for _svc in sshd dropbear; do
+    if [ -f "$ROOT_MNT/etc/init.d/$_svc" ]; then
+        _enable_openrc_service "$_svc" default
+        break
+    fi
+done
 _enable_openrc_service reboot-trace-shutdown shutdown
+
+# Password hashes: owner-only, whatever a hook left behind.
+for _f in shadow shadow- gshadow gshadow-; do
+    [ -f "$ROOT_MNT/etc/$_f" ] && chmod 600 "$ROOT_MNT/etc/$_f"
+done
 
 # ── Verify ──────────────────────────────────────────────────────────
 msg "Verifying"
