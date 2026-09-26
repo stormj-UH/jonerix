@@ -281,12 +281,15 @@ permissive replacement implementations.
 
 Most package work should run in a jonerix builder container.
 
-Source and recipe checks:
+Source and recipe checks (CI runs the first four in `check-sources.yml`;
+set `ALLOW_LFS_POINTER_SOURCES=1` in a clone without LFS content):
 
 ```sh
 sh scripts/check-vendored-sources.sh
 sh scripts/check-cargo-offline.sh
 sh scripts/check-init-shebangs.sh
+sh scripts/check-go-offline.sh
+sh scripts/check-lfs-objects.sh
 sh scripts/license-audit.sh
 ```
 

@@ -60,6 +60,7 @@ Quick checklist:
 - [ ] License is permissive (run `scripts/license-audit.sh`)
 - [ ] Source URL is stable (prefer tagged releases, not `master` branches)
 - [ ] SHA256 hash is correct
+- [ ] Source tarball is committed under `sources/` in the same change. Paths matched by `.gitattributes` go to Git LFS, so commit and push them with git-lfs installed. Then `sh scripts/check-vendored-sources.sh`, `sh scripts/check-cargo-offline.sh` and `sh scripts/check-lfs-objects.sh` pass (the `check-sources` workflow runs them on every push and PR).
 - [ ] Package builds cleanly with `scripts/build-all.sh`
 - [ ] Package installs to `$DESTDIR` correctly (no hardcoded paths)
 - [ ] Patches are minimal and well-documented

@@ -14,6 +14,13 @@
 #   ./scripts/local-build-aarch64.sh upload  # push winning .jpkgs to GitHub release
 #   ./scripts/local-build-aarch64.sh status  # what's in the local hedge cache
 #
+# Sources: the checkout's sources/ is mounted read-only, and ci-build-*.sh
+# gives jpkg a symlink view of it (scripts/source-cache-view.sh) that leaves
+# out Git LFS pointer files, so a clone without LFS content is never
+# modified. jpkg fetches those packages from their recipe URLs instead; the
+# rust, rustdoc, rustfmt and rustup recipes have no URL fallback and need
+# the real tarballs (install git-lfs, then `git lfs pull`).
+#
 # Once one of these wins a race against CI we upload the .jpkg(s) to the
 # `packages` release on GitHub, then trigger the regen-tag-index workflow
 # so the freshly-uploaded asset gets pulled into a signed INDEX.zst.
@@ -137,6 +144,8 @@ Env knobs:
 
 Volumes mounted into the container:
   /workspace             $REPO_ROOT
+  /workspace/sources     $REPO_ROOT/sources (read-only; LFS pointer files
+                         are left out of jpkg's source cache)
   /var/cache/jpkg        $JPKG_OUTPUT
   /var/cache/jpkg-published  $JPKG_PUBLISHED
   /jpkg-bin              $JPKG_BIN
@@ -276,6 +285,7 @@ cmd_build() {
             --platform linux/arm64 \
             --entrypoint /bin/sh \
             -v "$REPO_ROOT:/workspace" \
+            -v "$REPO_ROOT/sources:/workspace/sources:ro" \
             -v "$JPKG_OUTPUT:/var/cache/jpkg" \
             -v "$JPKG_PUBLISHED:/var/cache/jpkg-published" \
             -v "$JPKG_BIN:/jpkg-bin" \

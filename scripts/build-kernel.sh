@@ -61,7 +61,7 @@ echo ""
 docker run --rm \
     -v "$REPO_ROOT:/workspace" \
     -v "$OUTPUT_DIR:/output" \
-    alpine:latest sh -c '
+    alpine:3.24 sh -c '
         set -e
 
         echo "==> Installing Alpine build dependencies"

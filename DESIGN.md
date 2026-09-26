@@ -401,9 +401,11 @@ docker run --rm -v "$PWD:/workspace" -v "$PWD/.build/pkgs:/output" \
 The CI pipeline (`publish-images.yml`) builds and publishes all images:
 
 ```
-check-sources → minimal (arm64 + amd64) → core → builder → smoke tests
-                                               → router  →
+minimal (arm64 + amd64) → core → builder → smoke tests
+                               → router  →
 ```
+
+`check-sources.yml` runs separately on pushes and pull requests that touch recipes or `sources/`. It checks that every remote recipe source is vendored under `sources/` with a matching sha256, that Cargo and Go builds stay offline, and that every LFS-tracked tarball's object exists on the LFS server. Because it is a separate workflow, a vendoring slip cannot hide an image build failure.
 
 Package builds (`publish-packages.yml`) compile recipes inside `jonerix:builder` containers and upload `.jpkg` files to the rolling `packages` GitHub Release. The rolling INDEX is regenerated and Ed25519-signed after each build.
 
@@ -479,6 +481,7 @@ jonerix/
 │
 ├── .github/
 │   └── workflows/
+│       ├── check-sources.yml     ← CI: vendored-source + offline-build gate
 │       ├── publish-images.yml    ← CI: build + push Docker images
 │       ├── publish-packages.yml  ← CI: build + upload jpkg packages
 │       ├── full-bootstrap.yml    ← CI: full from-source bootstrap test

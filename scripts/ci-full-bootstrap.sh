@@ -58,31 +58,18 @@ fi
 # stall on slow upstreams (musl.libc.org timed out at 134s in earlier
 # CI runs). Same pattern as scripts/ci-build-{x86_64,aarch64}.sh.
 #
-# full-bootstrap.yml now checks out with lfs:false (the repo's LFS-
-# tracked tarballs blow GitHub's free-tier bandwidth budget within a
-# handful of runs and the whole checkout step ##error's). The LFS-
-# tracked archives therefore come down as ~130-byte pointer files
-# that jpkg can't distinguish from real archives until the hash check
-# explodes. Purge any matching the LFS pointer signature so jpkg
-# falls through to the recipe's source.url instead. Mirrors the
-# workaround block in scripts/ci-build-{x86_64,aarch64}.sh.
-if [ -d /workspace/sources ]; then
-    pointers_purged=0
-    for src in /workspace/sources/*; do
-        [ -f "$src" ] || continue
-        IFS= read -r first_line < "$src" 2>/dev/null || continue
-        if [ "$first_line" = "version https://git-lfs.github.com/spec/v1" ]; then
-            rm -f "$src"
-            pointers_purged=$((pointers_purged + 1))
-        fi
-    done
-    if [ "$pointers_purged" -gt 0 ]; then
-        echo "ci-full-bootstrap: purged $pointers_purged LFS pointer(s) from /workspace/sources/ (jpkg will fetch upstream)"
-    fi
-fi
+# full-bootstrap.yml checks out with lfs:false (the repo's LFS-tracked
+# tarballs blow GitHub's free-tier bandwidth budget within a handful of
+# runs and the whole checkout step ##error's), so the LFS-tracked
+# archives come down as ~130-byte pointer files that jpkg would copy
+# and then reject on the hash check. source-cache-view.sh builds a
+# symlink view without them, so jpkg falls through to each recipe's
+# source.url, and /workspace (possibly a host checkout) is left alone.
 if [ -z "${JPKG_SOURCE_CACHE:-}" ] && [ -d /workspace/sources ]; then
-    export JPKG_SOURCE_CACHE=/workspace/sources
-    echo ">>> JPKG_SOURCE_CACHE=$JPKG_SOURCE_CACHE ($(ls /workspace/sources | wc -l) tarballs)"
+    JPKG_SOURCE_CACHE=$(sh /workspace/scripts/source-cache-view.sh \
+        /workspace/sources /tmp/jpkg-source-cache ci-full-bootstrap)
+    export JPKG_SOURCE_CACHE
+    echo ">>> JPKG_SOURCE_CACHE=$JPKG_SOURCE_CACHE ($(ls "$JPKG_SOURCE_CACHE" | wc -l) tarballs)"
 fi
 
 # Heavy packages whose build dominates wall time. is_heavy() does an exact

@@ -16,7 +16,7 @@ ARG MINIMAL_IMAGE=ghcr.io/stormj-uh/jonerix:minimal
 #   bin/reset, etc., it would follow /bin/clear->toybox and overwrite
 #   /bin/toybox with the ncurses binary. This destroyed the shell.
 #   Fixed by using `toybox tar` pipe instead of `cp -a` in install_files().
-FROM alpine:latest AS jpkg-builder
+FROM alpine:3.24 AS jpkg-builder
 # jpkg 2.0 is Rust; build via cargo with crt-static + symbol strip.  No
 # LibreSSL bootstrap needed — the Rust port uses ureq + rustls + ring,
 # which is statically linked and bundles its own roots via webpki-roots.

@@ -19,15 +19,37 @@ failures=0
 # When running under a checkout that didn't fetch LFS objects (e.g. the LFS
 # bandwidth quota is exhausted, or the runner deliberately skipped `lfs:
 # true`), the LFS-tracked source tarballs are present only as small pointer
-# files.  Their sha256 doesn't match the recipe-pinned tarball hash, but the
-# file IS still version-pinned via the LFS oid in the pointer.  When
-# ALLOW_LFS_POINTER_SOURCES=1, treat the pointer file as an exemption: skip
-# the content-side check for that one entry rather than failing the whole
-# gate. Mirrors the same pattern in check-cargo-offline.sh.
+# files.  Their own sha256 doesn't match the recipe-pinned tarball hash, but
+# the pointer's `oid sha256:` line IS the sha256 of the real content.  When
+# ALLOW_LFS_POINTER_SOURCES=1, compare that oid with the expected hash
+# instead of hashing the file, so a stale or wrong pointer still fails the
+# gate. scripts/check-lfs-objects.sh checks that the object itself exists
+# on the LFS server.
 is_lfs_pointer() {
-    file=$1
-    IFS= read -r first < "$file" || return 1
-    [ "$first" = "version https://git-lfs.github.com/spec/v1" ]
+    lfs_path=$1
+    lfs_first=
+    IFS= read -r lfs_first < "$lfs_path" || [ -n "$lfs_first" ] || return 1
+    [ "$lfs_first" = "version https://git-lfs.github.com/spec/v1" ]
+}
+
+lfs_pointer_oid() {
+    sed -n 's/^oid sha256:\([0-9a-f]*\)$/\1/p' "$1" | head -n 1
+}
+
+# check_lfs_pointer LABEL PATH EXPECTED_SHA256
+check_lfs_pointer() {
+    oid=$(lfs_pointer_oid "$2")
+    if [ -z "$oid" ]; then
+        printf 'HASH: %s LFS pointer has no sha256 oid (%s)\n' "$1" "$2" >&2
+        failures=$((failures + 1))
+    elif [ -z "$3" ]; then
+        printf 'LFS: %s is an LFS pointer and has no pinned sha256 (%s)\n' "$1" "$2" >&2
+    elif [ "$oid" != "$3" ]; then
+        printf 'HASH: %s LFS pointer oid %s does not match expected %s (%s)\n' "$1" "$oid" "$3" "$2" >&2
+        failures=$((failures + 1))
+    else
+        printf 'LFS: %s pointer oid matches the pinned sha256; content not fetched (%s)\n' "$1" "$2" >&2
+    fi
 }
 
 strip_release_suffix() {
@@ -96,12 +118,13 @@ check_cached_file() {
     fi
 
     if is_lfs_pointer "$src" && [ "${ALLOW_LFS_POINTER_SOURCES:-0}" = 1 ]; then
-        printf 'SKIP: %s is an LFS pointer; sha256 check exempt (%s)\n' "$label" "$file" >&2
+        check_lfs_pointer "$label" "$src" "$expected"
         return
     fi
 
     if [ -n "$expected" ]; then
-        got=$(sha256sum "$src" | awk '{print $1}')
+        got=$(sha256sum "$src")
+        got=${got%%[ 	]*}
         if [ "$got" != "$expected" ]; then
             printf 'HASH: %s expected %s got %s (%s)\n' "$label" "$expected" "$got" "$src" >&2
             failures=$((failures + 1))
@@ -131,12 +154,13 @@ for recipe in "${RECIPES}"/core/*/recipe.toml \
     fi
 
     if is_lfs_pointer "$src" && [ "${ALLOW_LFS_POINTER_SOURCES:-0}" = 1 ]; then
-        printf 'SKIP: %s is an LFS pointer; sha256 check exempt (%s)\n' "$pkg" "$src" >&2
+        check_lfs_pointer "$pkg" "$src" "$sha256"
         continue
     fi
 
     if [ -n "$sha256" ]; then
-        got=$(sha256sum "$src" | awk '{print $1}')
+        got=$(sha256sum "$src")
+        got=${got%%[ 	]*}
         if [ "$got" != "$sha256" ]; then
             printf 'HASH: %s expected %s got %s (%s)\n' "$pkg" "$sha256" "$got" "$src" >&2
             failures=$((failures + 1))

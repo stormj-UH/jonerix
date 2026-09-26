@@ -74,7 +74,7 @@ build_minimal() {
     docker build \
         --platform "$DOCKER_PLATFORM" \
         -f "$REPO_ROOT/Dockerfile.minimal" \
-        --build-arg BUILDER=alpine:latest \
+        --build-arg BUILDER=alpine:3.24 \
         --tag "${TAG_PREFIX}:minimal" \
         $CACHE_FLAG \
         "$REPO_ROOT"

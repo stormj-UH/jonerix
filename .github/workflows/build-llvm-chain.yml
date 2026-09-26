@@ -78,18 +78,18 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           lfs: false
 
       - name: Restore jpkg binary cache (x86_64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/jpkg-bin-x86_64
           key: jpkg-bin-x86_64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
 
       - name: Restore sccache cache (x86_64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/sccache-cache
           key: sccache-llvm-x86_64-${{ env.SCCACHE_CACHE_VERSION }}-${{ github.run_id }}
@@ -277,18 +277,18 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           lfs: false
 
       - name: Restore jpkg binary cache (aarch64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/jpkg-bin-aarch64
           key: jpkg-bin-aarch64-v3-${{ hashFiles('packages/core/jpkg/src/**', 'packages/core/jpkg/Cargo.toml', 'packages/core/jpkg/Cargo.lock', 'packages/core/jpkg/.cargo/config.toml', 'packages/core/jpkg/bin/jpkg-conform', 'packages/core/jpkg/vendor/**') }}
 
       - name: Restore sccache cache (aarch64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/sccache-cache
           key: sccache-llvm-aarch64-${{ env.SCCACHE_CACHE_VERSION }}-${{ github.run_id }}

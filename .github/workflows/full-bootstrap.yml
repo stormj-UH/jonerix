@@ -52,7 +52,7 @@ jobs:
       packages: read
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # lfs: false — the repo's LFS-tracked source tarballs
           # (kernel, llvm-project, node, rust×2, gitredoxide-vendored)
@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload bootstrap artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: full-bootstrap-${{ matrix.arch }}
           path: |
@@ -147,7 +147,7 @@ jobs:
     needs: bootstrap
     if: always()
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Combined summary
