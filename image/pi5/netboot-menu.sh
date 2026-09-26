@@ -168,15 +168,24 @@ mode_install() {
     printf '%sRunning pi5-install.sh -y -d %s --branch main%s\n' "$DIM" "$_target" "$RESET"
     echo
 
-    # The live rootfs ships pi5-install.sh at /usr/local/bin/. Run it
-    # with the same release tag we ourselves netbooted from so the
-    # local disk ends up identical to a build-image.py output.
-    _ver=$(awk -F= '/^VERSION_ID=/ { gsub(/"/,"",$2); print $2 }' /etc/os-release 2>/dev/null)
+    # The live rootfs ships pi5-install.sh at /bin/. Run it
+    # with the same release tag this rootfs was built from (recorded in
+    # build-info.json by build-netboot-rootfs.py; the CI payload uses the
+    # rolling `packages` tag), so the local disk gets the same package set.
+    # Fall back to v$VERSION_ID for rootfs builds without that record.
     _tag=""
-    [ -n "${_ver:-}" ] && _tag="--release-tag v$_ver"
+    # sed, not awk: the live rootfs does not necessarily ship an awk.
+    _rel=$(sed -n 's/^ *"release_tag": *"\([A-Za-z0-9._-]*\)".*/\1/p' \
+        /etc/jonerix-netboot/build-info.json 2>/dev/null | head -n 1)
+    if [ -n "${_rel:-}" ]; then
+        _tag="--release-tag $_rel"
+    else
+        _ver=$(awk -F= '/^VERSION_ID=/ { gsub(/"/,"",$2); print $2 }' /etc/os-release 2>/dev/null)
+        [ -n "${_ver:-}" ] && _tag="--release-tag v$_ver"
+    fi
 
     # shellcheck disable=SC2086  # _tag is intentionally word-split
-    if /usr/local/bin/pi5-install.sh -y -d "$_target" $_tag; then
+    if /bin/pi5-install.sh -y -d "$_target" $_tag; then
         echo
         printf '%sInstall complete.%s\n' "${BOLD}${GREEN}" "$RESET"
         printf 'Reboot now to start jonerix from %s? [Y/n] ' "$_target"

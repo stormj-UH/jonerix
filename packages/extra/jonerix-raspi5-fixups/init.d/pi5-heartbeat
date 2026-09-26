@@ -1,0 +1,27 @@
+#!/bin/openrc-run
+# pi5-heartbeat — supervise /bin/pi5-heartbeat, which rewrites
+# /var/log/reboot-trace/heartbeat every $interval seconds (default 60).
+# boot-trace records the previous boot's last heartbeat, so an unclean
+# reset's time is bracketed even when syslog is down. Set interval= in
+# /etc/conf.d/pi5-heartbeat to change the cadence (minimum 10 s).
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
+description="Write a last-alive heartbeat for reboot diagnostics"
+
+: "${interval:=60}"
+
+supervisor="supervise-daemon"
+command="/bin/pi5-heartbeat"
+command_args="${interval} /var/log/reboot-trace"
+pidfile="/run/pi5-heartbeat.pid"
+respawn_delay=5
+respawn_max=0
+
+depend() {
+    need localmount
+    # boot-trace must read the previous boot's heartbeat before this
+    # service overwrites it.
+    after boot-trace
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}

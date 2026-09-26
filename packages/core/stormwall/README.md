@@ -776,8 +776,12 @@ sudo ln -sf /usr/local/bin/iptables-trace.sh /usr/sbin/iptables
 sudo rc-service docker restart
 sudo tail -f /var/log/iptables-trace.log
 
-# Restore when done
+# Restore when done, then remove the tracer and its log. Leaving them
+# behind leaves a stray script in /usr/local/bin and a log file that grows
+# on every iptables call (and anyone who chmods it 0666 to share it has
+# given every local user an unbounded append target on the root fs).
 sudo mv /usr/sbin/iptables.bak /usr/sbin/iptables
+sudo rm -f /usr/local/bin/iptables-trace.sh /var/log/iptables-trace.log
 ```
 
 The `exec -a` form preserves `argv[0]` so stormwall picks the iptables

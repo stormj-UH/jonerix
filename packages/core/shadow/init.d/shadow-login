@@ -1,6 +1,16 @@
 #!/bin/openrc-run
 # shadow-login — supervise-daemon respawns shadow-getty on /dev/tty1.
 #
+# Multiplexed by service name: more virtual consoles need only a symlink,
+#
+#   ln -s shadow-login /etc/init.d/shadow-login.tty2
+#   rc-update add shadow-login.tty2 default
+#
+# and shadow-login.tty2 serves /dev/tty2. Set tty= in
+# /etc/conf.d/<service name> to override. This is for virtual consoles:
+# shadow-getty leaves the line at B38400, so a real UART needs a
+# baud-aware getty (jonerix-raspi5-fixups ships serial-login for the Pi 5).
+#
 # Pre-history (the bad shape we keep coming back to): a manual mksh
 # while-loop running shadow-getty in a backgrounded subshell. Worked
 # but lost OpenRC's supervisor — the pidfile pointed at mksh not the
@@ -23,13 +33,17 @@
 #
 # Part of shadow (BSD-3-Clause jonerix core jpkg).
 
-name="shadow-login"
-description="shadow-utils login(1) on /dev/tty1 via shadow-getty"
+_instance=${RC_SVCNAME#shadow-login}
+_instance=${_instance#.}
+: "${tty:=${_instance:-tty1}}"
+
+name="${RC_SVCNAME:-shadow-login}"
+description="shadow-utils login(1) on /dev/${tty} via shadow-getty"
 
 supervisor="supervise-daemon"
 
 command="/bin/shadow-getty"
-command_args="/dev/tty1"
+command_args="/dev/${tty}"
 
 # Respawn cadence — 1s delay, no retry cap. shadow-getty doesn't
 # return until login(1) returns, so a real "logout → re-prompt"
@@ -40,9 +54,15 @@ respawn_delay=1
 respawn_max=0
 
 start_pre() {
-    # Make sure /dev/tty1 exists. On devtmpfs kernels it does;
+    # Make sure the VT node exists. On devtmpfs kernels it does;
     # this is a no-op safety check for minimal environments.
-    [ -c /dev/tty1 ] || mknod /dev/tty1 c 4 1 2>/dev/null || true
+    [ -c "/dev/${tty}" ] && return 0
+    case "${tty}" in
+        tty[0-9]|tty[0-9][0-9])
+            mknod "/dev/${tty}" c 4 "${tty#tty}" 2>/dev/null || true
+            ;;
+    esac
+    [ -c "/dev/${tty}" ] || { eerror "/dev/${tty} is not a character device"; return 1; }
 }
 
 depend() {

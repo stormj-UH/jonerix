@@ -1,0 +1,51 @@
+#!/bin/sh
+# pi5-heartbeat — record a "last alive" stamp every INTERVAL seconds.
+#
+# Usage: pi5-heartbeat [INTERVAL [DIR]]     (defaults: 60, /var/log/reboot-trace)
+#
+# Writes one line to DIR/heartbeat, replacing it atomically each time:
+#
+#   2026-09-25T19:30:00Z boot_id=<id> uptime=12345.67 throttled=0x0 temp_mC=48250
+#
+# boot-trace copies the previous boot's last line into the next boot trace.
+# After an unclean reset that brackets when the board died: a stamp from a
+# minute before the reset means an instant power loss; a stamp from long
+# before means a hang that was power-cycled later. The throttled field is
+# the firmware's sticky flag word (bit 16 = under-voltage has occurred), so
+# a brown-out shows up even when syslog is down.
+#
+# Run under supervise-daemon by /etc/init.d/pi5-heartbeat.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
+interval=${1:-60}
+dir=${2:-/var/log/reboot-trace}
+case "$interval" in
+    ''|*[!0-9]*) interval=60 ;;
+esac
+[ "$interval" -ge 10 ] || interval=10
+
+mkdir -p "$dir" || exit 1
+bootid=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+tmp="$dir/.heartbeat.tmp"
+sleeper=
+
+trap '[ -n "$sleeper" ] && kill "$sleeper" 2>/dev/null; rm -f "$tmp"; exit 0' HUP INT TERM
+
+while :; do
+    up=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)
+    thr=
+    if [ -x /bin/pi5-fw ]; then
+        thr=$(/bin/pi5-fw get_throttled 2>/dev/null | head -n 1)
+    fi
+    temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+    if printf '%s boot_id=%s uptime=%s %s temp_mC=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${bootid:-?}" "${up:-?}" \
+        "${thr:-throttled=?}" "${temp:-?}" > "$tmp"; then
+        mv -f "$tmp" "$dir/heartbeat"
+    fi
+    sleep "$interval" &
+    sleeper=$!
+    wait "$sleeper"
+    sleeper=
+done

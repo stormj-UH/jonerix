@@ -23,6 +23,11 @@ description="Load onboard Broadcom WiFi driver stack (Pi 5 only)"
 
 depend() {
     before net
+    # sysctl may carry a stale kernel.modprobe (early Pi images shipped a
+    # hand-written /etc/sysctl.d/10-modprobe-shim.conf pointing at the
+    # pre-1.6.28 /usr/local/bin path). Run after it so the helper chosen
+    # below always wins, including on rc_parallel=YES hosts.
+    after sysctl
     need localmount
 }
 
@@ -35,17 +40,20 @@ start() {
     is_pi5 || { einfo "not a Pi 5; skipping"; return 0; }
 
     # Prefer toybox's own modprobe (0.8.11-r2 ships it with .ko.xz
-    # support) so the kernel's request_module(2) path works through a
-    # real modprobe. Fall back to the shell shim installed by this
-    # package if the toybox build predates the modprobe applet.
-    if toybox --help 2>&1 | grep -qw modprobe; then
+    # support and fnmatch alias lookup) so the kernel's request_module(2)
+    # path works through a real modprobe. Fall back to the shell shim
+    # installed by this package if the toybox build predates the modprobe
+    # applet. Note: bare `toybox` lists its applets; `toybox --help`
+    # prints only the multiplexer's own help and never names modprobe,
+    # which is why every host before 1.6.33 ended up on the shim.
+    if [ -x /bin/modprobe ] && toybox 2>/dev/null | grep -qw modprobe; then
         MODPROBE=/bin/modprobe
     else
         MODPROBE=/bin/modprobe-shim
     fi
 
     ebegin "Registering $MODPROBE as kernel modprobe"
-    echo -n "$MODPROBE" > /proc/sys/kernel/modprobe
+    printf '%s' "$MODPROBE" > /proc/sys/kernel/modprobe
     eend $? || return 1
 
     # Already up? Check by presence of a wireless PHY.

@@ -3,16 +3,55 @@ name = "jonerix-raspi5-fixups"
 version = "1.6.33"
 arch = "aarch64"
 license = "0BSD"
-description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
-# 1.6.33: stop shipping /etc/init.d/hwclock. openrc owned the same
-# path, so two manifests listed it and whichever package installed last
-# won. openrc 0.54-r8 now ships a hwclock script that works with both
-# toybox and jonerix-util hwclock, and owns the file and its boot
-# runlevel link alone. jpkg's upgrade-clean deletes a path that the
-# old manifest listed and the new one does not, even while openrc
-# still owns it, so pre_install keeps a copy and post_install puts it
-# back if the upgrade removed it. post_remove no longer deletes
-# openrc's /etc/runlevels/boot/hwclock link.
+description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor, reset-cause boot traces + heartbeat, under-voltage hwmon, serial login) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.33: reboot diagnostics, module loading and ownership cleanup.
+#   - boot-trace records why the board came up: PM_RSTS and the PMIC
+#     power_reset word from /proc/device-tree/chosen, whether the
+#     previous boot left a shutdown trace (clean) or not (unclean), the
+#     previous boot's last heartbeat, ext4 journal recovery and
+#     /sys/fs/ext4/*/errors_count, the firmware throttled flags, whether
+#     /boot is really mounted, and dangling runlevel links / backup
+#     copies in /etc/init.d. It syncs after writing (two 2026-04-23
+#     traces were 0 bytes) and both trace services keep only the newest
+#     50 boot and 50 shutdown logs.
+#   - reboot-trace-shutdown lists every process (`ps -A -o ...`); bare
+#     toybox ps filtered to the console tty and printed only a header.
+#   - new pi5-heartbeat service (default runlevel) rewrites
+#     /var/log/reboot-trace/heartbeat every 60 s with the time, boot id,
+#     uptime, throttled flags and SoC temperature, so the time of an
+#     unclean reset is bracketed even while syslog is down.
+#   - new pi5-hwmon service (boot runlevel) loads raspberrypi_hwmon.
+#     Nothing coldplugs modules on jonerix, so the firmware's
+#     under-voltage alarm never reached the kernel log.
+#   - modprobe detection: `toybox --help` never lists applets, so
+#     pi5-wifi and post_install always fell back to the exact-match
+#     modprobe-shim. Bare `toybox` lists them; toybox modprobe (fnmatch
+#     aliases, .ko.xz) is now the kernel's helper when present.
+#   - pi5-wifi runs `after sysctl` so its kernel.modprobe choice wins
+#     over a stale sysctl.d value, also with rc_parallel=YES. post_install
+#     deletes an unowned /etc/sysctl.d/10-modprobe-shim.conf that still
+#     names the pre-1.6.28 /usr/local/bin/modprobe-shim.
+#   - ship /etc/sysctl.d/60-pi5-dualhome.conf (arp_announce=2,
+#     arp_ignore=1: no ARP flux with eth0 and wlan0 on one subnet) and
+#     61-pi5-panic-reboot.conf (kernel.panic=10).
+#   - new serial-login service + /bin/pi5-serial-login: login(1) on the
+#     Pi 5 debug UART (ttyAMA10, 115200) or any serial port via
+#     serial-login.<tty> symlinks. Not enabled by default.
+#   - apply-pi5-boot-settings only edits a /boot that is a mounted FAT
+#     filesystem, never edits a cmdline.txt without root=, never adds
+#     rootflags=, and no longer uses sed -i.
+#   - /etc/init.d/hwclock belongs to openrc alone: fixups stops shipping
+#     it and keeps it in the boot runlevel. jpkg's upgrade-clean deletes
+#     a path the old manifest listed and the new one does not, even while
+#     openrc still owns it, so pre_install keeps a copy of the live script
+#     and post_install puts it back only if the upgrade removed it.
+#     post_remove no longer deletes openrc's boot/hwclock link.
+#   - /etc/init.d/shadow-login belongs to shadow: fixups stops copying
+#     its identical duplicate over it and moves the old
+#     shadow-login.pre-raspi5-fixups backup out of /etc/init.d (OpenRC
+#     parsed it as a second service) into /etc/jpkg/raspi5-fixups.
+#   - drop dhcpcd-hooks/60-netconsole: never installed, and the
+#     netconsole-trace service it starts does not exist.
 #
 # 1.6.32: strip keymaps + save-keymaps + save-termencoding from the
 # boot runlevel.  OpenRC's upstream meson install symlinks them in
@@ -272,6 +311,18 @@ install -Dm755 init.d/fan-control $DESTDIR/etc/init.d/fan-control
 install -Dm755 init.d/netfilter-nft-modules $DESTDIR/etc/init.d/netfilter-nft-modules
 install -Dm755 init.d/boot-trace $DESTDIR/etc/init.d/boot-trace
 install -Dm755 init.d/reboot-trace-shutdown $DESTDIR/etc/init.d/reboot-trace-shutdown
+# Reboot diagnostics: last-alive heartbeat, read back by boot-trace.
+install -Dm755 bin/pi5-heartbeat $DESTDIR/bin/pi5-heartbeat
+install -Dm755 init.d/pi5-heartbeat $DESTDIR/etc/init.d/pi5-heartbeat
+# Under-voltage / throttling alarms: nothing coldplugs raspberrypi-hwmon.
+install -Dm755 init.d/pi5-hwmon $DESTDIR/etc/init.d/pi5-hwmon
+# Serial console login (debug UART by default; not enabled by default).
+install -Dm755 bin/pi5-serial-login $DESTDIR/bin/pi5-serial-login
+install -Dm755 init.d/serial-login $DESTDIR/etc/init.d/serial-login
+# sysctl drop-ins: ARP behaviour for dual-homed eth0+wlan0, and reboot
+# after a kernel panic. Applied by openrc's sysctl service at boot.
+install -Dm644 sysctl/60-pi5-dualhome.conf $DESTDIR/etc/sysctl.d/60-pi5-dualhome.conf
+install -Dm644 sysctl/61-pi5-panic-reboot.conf $DESTDIR/etc/sysctl.d/61-pi5-panic-reboot.conf
 # adduser-safe / addgroup-safe: safe replacements for toybox adduser /
 # addgroup, both of which truncate /etc/passwd|/etc/shadow|/etc/group
 # on failure paths (see header in each script for the full diagnosis).
@@ -317,7 +368,6 @@ install -Dm755 init.d/pi5-wifi     $DESTDIR/etc/init.d/pi5-wifi
 # uplink while it has carrier and falls over to wlan0 automatically.
 install -Dm755 bin/pi5-wifi-connect $DESTDIR/bin/pi5-wifi-connect
 install -Dm755 init.d/wpa_supplicant_wlan0 $DESTDIR/etc/init.d/wpa_supplicant_wlan0
-install -Dm755 init.d/shadow-login $DESTDIR/share/jonerix-raspi5-fixups/shadow-login
 
 # pi5-wifi-set-country: Python+ctypes shim for `iw reg set <CC>` (which
 # is GPL-2 and not in jonerix). Sends NL80211_CMD_REQ_SET_REG over a
@@ -409,8 +459,8 @@ install -Dm644 cron.d/disable-eee-watchdog $DESTDIR/etc/cron.d/disable-eee-watch
 # but no init layer, so prior to 1.6.19 every /etc/cron.d/* entry on
 # jonerix was silently broken — cron files existed, no daemon dispatched
 # them. This service fixes that for the whole system; without it the
-# disable-eee-watchdog cron entry above (and pi5-rtc-battery, and
-# ntp-set) would never fire.
+# disable-eee-watchdog and pi5-rtc-battery cron entries above would
+# never fire.
 install -Dm755 init.d/snooze-crond $DESTDIR/etc/init.d/snooze-crond
 
 # 1.6.28 dropped /usr/local/bin/* entirely — every script previously
@@ -577,6 +627,22 @@ rm -f /etc/init.d/pi5-cold-shutdown              2>/dev/null || true
 rm -f /etc/runlevels/shutdown/pi5-cold-shutdown  2>/dev/null || true
 rm -f /etc/runlevels/default/pi5-cold-shutdown   2>/dev/null || true
 
+# --- stale kernel.modprobe drop-in (pre-1.6.28 path, 1.6.33) ---
+# Early Pi 5 hosts carry a hand-written /etc/sysctl.d/10-modprobe-shim.conf
+# that points kernel.modprobe at /usr/local/bin/modprobe-shim. 1.6.28 moved
+# the shim to /bin and pi5-wifi owns kernel.modprobe; once openrc's sysctl
+# service really runs, that file would point request_module() at a missing
+# helper until pi5-wifi rewrote it. Delete it only while its one setting is
+# still the dead path, so a deliberate operator edit survives.
+_f=/etc/sysctl.d/10-modprobe-shim.conf
+if [ -f "$_f" ] && [ ! -e /usr/local/bin/modprobe-shim ]; then
+    _v=$(grep -v '^[[:space:]]*#' "$_f" | grep -v '^[[:space:]]*$' | tr -d ' 	')
+    if [ "$_v" = "kernel.modprobe=/usr/local/bin/modprobe-shim" ]; then
+        rm -f "$_f"
+        echo "raspi5-fixups: removed stale $_f (named the pre-1.6.28 /usr/local/bin/modprobe-shim)"
+    fi
+fi
+
 # --- Legacy bootstrap cleanup (all hosts) ---
 # Some pre-jonerix Pi images shipped a bare /etc/init.d/networking
 # script that spawned its own dhcpcd. On jonerix-tormenta this raced
@@ -646,18 +712,18 @@ rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
 rm -f /etc/runlevels/boot/keymaps \
       /etc/runlevels/boot/save-keymaps \
       /etc/runlevels/boot/save-termencoding
-for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-wifi pi5-cold-reboot; do
+for svc in boot-trace dhcpcd disable-eee fan-control hwclock netfilter-nft-modules pi5-hwmon pi5-wifi pi5-cold-reboot; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/boot/$svc" 2>/dev/null || true
 done
-for svc in ntp-bootstrap ntpd shadow-login syslogd snooze-crond wpa_supplicant_wlan0 disable-eee-late; do
+for svc in ntp-bootstrap ntpd shadow-login syslogd snooze-crond wpa_supplicant_wlan0 disable-eee-late pi5-heartbeat; do
     [ -f "/etc/init.d/$svc" ] && ln -sf "/etc/init.d/$svc" "/etc/runlevels/default/$svc" 2>/dev/null || true
 done
 [ -f /etc/init.d/reboot-trace-shutdown ] && ln -sf /etc/init.d/reboot-trace-shutdown /etc/runlevels/shutdown/reboot-trace-shutdown 2>/dev/null || true
 
 # --- shadow login defaults ---
 # shadow owns /etc/init.d/shadow-login and /etc/login.defs. Keep ownership
-# there, but normalize Pi images away from the supervised one-minute idle
-# timeout loop that spammed logs on jonerix-tormenta.
+# there, but normalize Pi images away from the one-minute idle timeout
+# loop that spammed logs on jonerix-tormenta.
 if [ -f /etc/login.defs ]; then
     if [ ! -e /etc/login.defs.pre-raspi5-fixups ]; then
         cp -p /etc/login.defs /etc/login.defs.pre-raspi5-fixups 2>/dev/null || true
@@ -668,14 +734,17 @@ if [ -f /etc/login.defs ]; then
         echo 'LOGIN_TIMEOUT	0' >> /etc/login.defs
     fi
 fi
-if [ -x /bin/shadow-getty ] && [ -d /etc/init.d ]; then
-    if [ -f /etc/init.d/shadow-login ] && [ ! -e /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
-        cp -p /etc/init.d/shadow-login /etc/init.d/shadow-login.pre-raspi5-fixups 2>/dev/null || true
-    fi
-    if [ -r /share/jonerix-raspi5-fixups/shadow-login ]; then
-        cp /share/jonerix-raspi5-fixups/shadow-login /etc/init.d/shadow-login
-        chmod 0755 /etc/init.d/shadow-login
-    fi
+# Up to 1.6.32 this package copied an identical shadow-login over shadow's
+# and parked the original as /etc/init.d/shadow-login.pre-raspi5-fixups,
+# which OpenRC parsed as a second service. 1.6.33 leaves shadow's script
+# alone and moves that backup under /etc/jpkg/raspi5-fixups.
+if [ -f /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
+    mkdir -p /etc/jpkg/raspi5-fixups
+    mv -f /etc/init.d/shadow-login.pre-raspi5-fixups /etc/jpkg/raspi5-fixups/shadow-login.pre-raspi5-fixups
+    chmod 0644 /etc/jpkg/raspi5-fixups/shadow-login.pre-raspi5-fixups 2>/dev/null || true
+    echo "raspi5-fixups: moved /etc/init.d/shadow-login.pre-raspi5-fixups to /etc/jpkg/raspi5-fixups/"
+fi
+if [ -x /bin/shadow-getty ] && [ -f /etc/init.d/shadow-login ]; then
     mkdir -p /etc/runlevels/default
     ln -sf /etc/init.d/shadow-login /etc/runlevels/default/shadow-login 2>/dev/null || true
 fi
@@ -711,13 +780,14 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     # stack if it isn't already up. pi5-wifi runs the same logic at
     # every boot; we duplicate it here only for the first-install
     # case. Prefer toybox's modprobe (0.8.11-r2+) over the shell shim.
-    if toybox --help 2>&1 | grep -qw modprobe; then
+    # Bare `toybox` lists the applets; `toybox --help` does not (1.6.33).
+    if [ -x /bin/modprobe ] && toybox 2>/dev/null | grep -qw modprobe; then
         MP=/bin/modprobe
     else
         MP=/bin/modprobe-shim
     fi
     if [ -w /proc/sys/kernel/modprobe ]; then
-        echo -n "$MP" > /proc/sys/kernel/modprobe
+        printf '%s' "$MP" > /proc/sys/kernel/modprobe
     fi
     if [ ! -d /sys/class/ieee80211/phy0 ]; then
         "$MP" brcmfmac-cyw 2>/dev/null || true
@@ -730,12 +800,25 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
     if command -v rc-service >/dev/null 2>&1; then
         rc-service netfilter-nft-modules start 2>/dev/null || true
     fi
+    # (1.6.33: no more shadow-login restart here. This package no longer
+    # replaces shadow's script, and a restart logged out the tty1 console.)
+
+    # Live-start the 1.6.33 diagnostics: under-voltage alarms and the
+    # heartbeat. Both are idempotent.
     if command -v rc-service >/dev/null 2>&1; then
-        rc-service shadow-login restart 2>/dev/null || true
+        rc-service pi5-hwmon start 2>/dev/null || true
+        rc-service pi5-heartbeat start 2>/dev/null || true
     fi
 
+    # Apply this package's sysctl drop-ins now instead of at next boot.
+    # Only these two files: re-running every sysctl.d file live is the
+    # sysctl service's job.
+    for _f in /etc/sysctl.d/60-pi5-dualhome.conf /etc/sysctl.d/61-pi5-panic-reboot.conf; do
+        [ -f "$_f" ] && sysctl -p "$_f" >/dev/null 2>&1 || true
+    done
+
     # Live-(re)start snooze-crond so the cron entries (disable-eee-watchdog,
-    # pi5-rtc-battery, ntp-set) actually fire on this install.  snooze-crond
+    # pi5-rtc-battery) actually fire on this install.  snooze-crond
     # forks a snooze child per cron file at startup and never re-reads the
     # directory afterwards, so a `start` when already running would silently
     # keep the old cron contents.  Use `restart` so any cron.d/* file we
@@ -789,12 +872,11 @@ exit 0"""
 # Tear down the runlevel symlinks that post_install created.
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
 # Also restore the original /bin/adduser symlink if we have a record of it.
-post_remove = """rm -f /etc/runlevels/boot/boot-trace /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console /etc/runlevels/default/wpa_supplicant_wlan0 /etc/runlevels/shutdown/reboot-trace-shutdown
-if [ -f /etc/init.d/shadow-login.pre-raspi5-fixups ]; then
-    cp -p /etc/init.d/shadow-login.pre-raspi5-fixups /etc/init.d/shadow-login
-    chmod 0755 /etc/init.d/shadow-login 2>/dev/null || true
-    rm -f /etc/init.d/shadow-login.pre-raspi5-fixups
-fi
+post_remove = """rm -f /etc/runlevels/boot/boot-trace /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-hwmon /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console /etc/runlevels/default/wpa_supplicant_wlan0 /etc/runlevels/default/snooze-crond /etc/runlevels/default/disable-eee-late /etc/runlevels/default/pi5-heartbeat /etc/runlevels/default/serial-login /etc/runlevels/shutdown/reboot-trace-shutdown
+# hwclock's boot link and /etc/init.d/hwclock are openrc's (1.6.33); leave them.
+# The shadow-login backup is stale by now: shadow owns the live script, so
+# do not copy the backup over it. Just drop it.
+rm -f /etc/jpkg/raspi5-fixups/shadow-login.pre-raspi5-fixups /etc/init.d/shadow-login.pre-raspi5-fixups
 if [ -f /etc/login.defs.pre-raspi5-fixups ]; then
     cp -p /etc/login.defs.pre-raspi5-fixups /etc/login.defs
     rm -f /etc/login.defs.pre-raspi5-fixups

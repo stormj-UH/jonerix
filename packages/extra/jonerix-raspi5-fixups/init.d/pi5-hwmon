@@ -1,0 +1,58 @@
+#!/bin/openrc-run
+# pi5-hwmon — load raspberrypi_hwmon so the firmware's under-voltage and
+# throttling alarms reach the kernel log ("Undervoltage detected!").
+#
+# jonerix has no udev/mdev coldplug, so nothing binds the
+# raspberrypi-hwmon platform device on the stock Raspberry Pi kernel
+# (the driver is =m there). Load it by name, the same way
+# netfilter-nft-modules loads its modules. No-op when the driver is
+# built in or already bound, and on anything that is not a Pi 5.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
+description="Load the Raspberry Pi firmware hwmon driver (under-voltage alarms)"
+
+: "${PI5_DT:=/proc/device-tree}"
+
+depend() {
+    after localmount modules
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+_modprobe() {
+    if [ -x /bin/modprobe ] && toybox 2>/dev/null | grep -qw modprobe; then
+        echo /bin/modprobe
+    elif command -v modprobe >/dev/null 2>&1; then
+        command -v modprobe
+    elif [ -x /bin/modprobe-shim ]; then
+        echo /bin/modprobe-shim
+    else
+        return 1
+    fi
+}
+
+start() {
+    local mp
+    if ! grep -q "Raspberry Pi 5" "$PI5_DT/model" 2>/dev/null; then
+        einfo "not a Raspberry Pi 5; skipping"
+        return 0
+    fi
+    if [ -e /sys/bus/platform/devices/raspberrypi-hwmon/driver ] \
+        || grep -q '^raspberrypi_hwmon ' /proc/modules 2>/dev/null; then
+        einfo "raspberrypi_hwmon already bound"
+        return 0
+    fi
+    mp=$(_modprobe) || {
+        ewarn "no modprobe found; under-voltage alarms stay silent"
+        return 0
+    }
+    ebegin "Loading raspberrypi_hwmon"
+    if "$mp" raspberrypi_hwmon; then
+        eend 0
+    else
+        # Images without /lib/modules (permissive-only, before
+        # jonerix-pi5-restricted) land here. Warn, do not fail the boot.
+        eend 1 "raspberrypi_hwmon did not load (no module for $(uname -r)?)"
+    fi
+    return 0
+}

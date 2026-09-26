@@ -74,6 +74,24 @@ NETBOOT_ROOTFS_PACKAGES = [
     "jonerix-raspi5-fixups",
 ]
 
+# Installed last with --force (same as build-image.py LATE_PACKAGES): the
+# package that owns a contested path (ca-certificates owns
+# /etc/ssl/cert.pem) must land after everything else.
+LATE_PACKAGES = ["ca-certificates"]
+
+# Base account files seeded before any package hook runs (same as
+# build-image.py): no package ships a root account, and addgroup-safe
+# refuses to touch a missing /etc/group. Copied only if absent.
+BASE_ACCOUNT_FILES = [("passwd", 0o644), ("group", 0o644),
+                      ("shadow", 0o600), ("shells", 0o644)]
+
+# Always installed, even with --no-default-packages (Pi 5 bring-up).
+MANDATORY_PACKAGES = ["jonerix-raspi5-fixups"]
+
+# dropbear's OpenRC service (same list as build-image.py SSH_SERVICES): the
+# first one present goes into the default runlevel.
+SSH_SERVICES = ("sshd", "dropbear")
+
 RELEASE_BASE_URL = "https://github.com/stormj-UH/jonerix/releases/download"
 ROLLING_TAG = "packages"
 
@@ -99,6 +117,48 @@ def _resolve_release_tag(tag: str) -> str:
 def run(cmd: list[str], **kw):
     LOG(" ".join(cmd))
     subprocess.run(cmd, check=True, **kw)
+
+
+def resolve_packages(extra: str, no_defaults: bool) -> list[str]:
+    """--packages is additive (same contract as build-image.py):
+    NETBOOT_ROOTFS_PACKAGES (unless --no-default-packages) + the user's
+    list + MANDATORY_PACKAGES, de-duplicated, order kept."""
+    user = [p.strip() for p in (extra or "").replace(",", " ").split() if p.strip()]
+    base = [] if no_defaults else list(NETBOOT_ROOTFS_PACKAGES)
+    return list(dict.fromkeys(base + user + MANDATORY_PACKAGES))
+
+
+def enable_ssh_service(root: pathlib.Path):
+    """Put dropbear's service in the default runlevel when the package
+    ships one, like build-image.py does for SD/USB images. root stays
+    locked, so logins need a key in /root/.ssh/authorized_keys."""
+    for svc in SSH_SERVICES:
+        if (root / "etc" / "init.d" / svc).is_file():
+            rl = root / "etc" / "runlevels" / "default"
+            rl.mkdir(parents=True, exist_ok=True)
+            link = rl / svc
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            link.symlink_to(f"/etc/init.d/{svc}")
+            LOG(f"enabled {svc} in the default runlevel")
+            return
+    LOG("WARN: no sshd/dropbear OpenRC service in the rootfs; SSH stays off")
+
+
+def seed_base_accounts(root: pathlib.Path):
+    src_dir = pathlib.Path(__file__).resolve().parents[2] / "config" / "defaults" / "etc"
+    etc = root / "etc"
+    etc.mkdir(parents=True, exist_ok=True)
+    for name, mode in BASE_ACCOUNT_FILES:
+        dst = etc / name
+        if dst.exists():
+            continue
+        src = src_dir / name
+        if not src.is_file():
+            DIE(f"missing {src}; cannot seed /etc/{name}")
+        shutil.copyfile(src, dst)
+        dst.chmod(mode)
+        LOG(f"seeded /etc/{name}")
 
 
 def jpkg_install(root: pathlib.Path, packages: list[str], release_tag: str):
@@ -137,13 +197,24 @@ def jpkg_install(root: pathlib.Path, packages: list[str], release_tag: str):
             usr.rmdir()
         usr.symlink_to(".")
 
+    seed_base_accounts(root)
+
     run(["jpkg", "--root", str(root), "update"])
     if "toybox" in packages:
         # Mirror build-image.py: replacement hooks need toybox applets
         # available before mksh/shadow/raspi5-fixups run, and toybox must
         # not be installed later after those packages claim their links.
         run(["jpkg", "--root", str(root), "install", "toybox"])
-    run(["jpkg", "--root", str(root), "install"] + packages)
+    run(["jpkg", "--root", str(root), "install"]
+        + [p for p in packages if p not in LATE_PACKAGES])
+    for pkg in (p for p in packages if p in LATE_PACKAGES):
+        run(["jpkg", "--root", str(root), "install", "--force", pkg])
+
+    # Password hashes: owner-only, whatever a hook left behind.
+    for name in ("shadow", "shadow-", "gshadow", "gshadow-"):
+        f = root / "etc" / name
+        if f.is_file() and not f.is_symlink():
+            f.chmod(0o600)
 
     # Switch to rolling for post-boot updates
     (staging_jpkg / "repos.conf").write_text(
@@ -236,7 +307,8 @@ stop() {
     link.symlink_to("/etc/init.d/pi5-state")
 
 
-def install_menu_and_init(root: pathlib.Path, release_tag: str):
+def install_menu_and_init(root: pathlib.Path, release_tag: str,
+                          packages: list[str]):
     """Copy the menu script + an OpenRC service that runs it on tty1."""
     repo_root = pathlib.Path(__file__).resolve().parents[2]
     menu_src = repo_root / "image" / "pi5" / "netboot-menu.sh"
@@ -254,9 +326,11 @@ def install_menu_and_init(root: pathlib.Path, release_tag: str):
     menu_dst = root / "etc" / "init.d" / "pi5-netboot-menu"
     menu_dst.parent.mkdir(parents=True, exist_ok=True)
 
-    # The pi5-install.sh script the menu's mode-A path execs
+    # The pi5-install.sh script the menu's mode-A path execs. /bin, not
+    # /usr/local/bin: jonerix is merged-usr-flat and dropped /usr/local/bin
+    # in raspi5-fixups 1.6.28.
     pi5_install_src = repo_root / "install" / "pi5-install.sh"
-    pi5_install_dst = root / "usr" / "local" / "bin" / "pi5-install.sh"
+    pi5_install_dst = root / "bin" / "pi5-install.sh"
     pi5_install_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(pi5_install_src, pi5_install_dst)
     pi5_install_dst.chmod(0o755)
@@ -268,7 +342,7 @@ def install_menu_and_init(root: pathlib.Path, release_tag: str):
         "generator": "image/pi5/build-netboot-rootfs.py",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "release_tag": release_tag,
-        "packages": NETBOOT_ROOTFS_PACKAGES,
+        "packages": packages,
     }, indent=2) + "\n")
 
     # Wire the menu to run on tty1 BEFORE shadow-login does. We replace
@@ -329,6 +403,8 @@ def build(args):
 
     args.release_tag = _resolve_release_tag(args.release_tag)
     LOG(f"target release: {args.release_tag}")
+    packages = resolve_packages(args.packages, args.no_default_packages)
+    LOG(f"packages: {' '.join(packages)}")
 
     out = pathlib.Path(args.output).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -337,9 +413,10 @@ def build(args):
         root = pathlib.Path(tmp) / "rootfs"
         root.mkdir()
 
-        jpkg_install(root, NETBOOT_ROOTFS_PACKAGES, args.release_tag)
+        jpkg_install(root, packages, args.release_tag)
         write_netboot_fstab_and_state_service(root)
-        install_menu_and_init(root, args.release_tag)
+        install_menu_and_init(root, args.release_tag, packages)
+        enable_ssh_service(root)
 
         # Tar + zstd. Use `tar --xattrs` so file caps + ACLs survive.
         # zstd -19 --long for ~2-3x better compression than default.
@@ -363,6 +440,12 @@ def parse_args():
                    help="Output tarball path")
     p.add_argument("--release-tag", default="",
                    help="Pin packages to this jonerix release tag (default: v$VERSION_ID)")
+    p.add_argument("--packages", default="",
+                   help="Comma-separated extra packages, added to the live-rootfs "
+                        "defaults.")
+    p.add_argument("--no-default-packages", action="store_true",
+                   help="Install only --packages plus "
+                        f"{','.join(MANDATORY_PACKAGES)}.")
     return p.parse_args()
 
 

@@ -72,6 +72,45 @@ require_cmd() {
     done
 }
 
+# Filesystem UUIDs for /etc/fstab, read straight from the superblock so the
+# result does not depend on which blkid the host has. toybox mount (what
+# OpenRC's localmount runs on jonerix) resolves only UUID=, through
+# `blkid -U`; PARTLABEL= and PARTUUID= lines are passed to mount(2)
+# verbatim and never mount.
+hex_at() {
+    dd if="$1" bs=1 skip="$2" count="$3" 2>/dev/null | od -An -tx1 | tr -d ' \n'
+}
+
+ext4_uuid() {
+    [ "$(hex_at "$1" 1080 2)" = "53ef" ] || return 1
+    _h=$(hex_at "$1" 1128 16)
+    [ "${#_h}" -eq 32 ] || return 1
+    printf '%s-%s-%s-%s-%s\n' "$(printf '%s' "$_h" | cut -c1-8)" \
+        "$(printf '%s' "$_h" | cut -c9-12)" "$(printf '%s' "$_h" | cut -c13-16)" \
+        "$(printf '%s' "$_h" | cut -c17-20)" "$(printf '%s' "$_h" | cut -c21-32)"
+}
+
+vfat_uuid() {
+    [ "$(hex_at "$1" 510 2)" = "55aa" ] || return 1
+    [ "$(dd if="$1" bs=1 skip=82 count=5 2>/dev/null)" = "FAT32" ] || return 1
+    _h=$(hex_at "$1" 67 4)
+    [ "${#_h}" -eq 8 ] || return 1
+    printf '%s%s-%s%s\n' "$(printf '%s' "$_h" | cut -c7-8)" \
+        "$(printf '%s' "$_h" | cut -c5-6)" "$(printf '%s' "$_h" | cut -c3-4)" \
+        "$(printf '%s' "$_h" | cut -c1-2)" | tr 'a-f' 'A-F'
+}
+
+fs_uuid() {
+    # $1 = ext4|vfat, $2 = device. Superblock first, then blkid.
+    _u=$("${1}_uuid" "$2" || true)
+    if [ -z "$_u" ] && command -v blkid >/dev/null 2>&1; then
+        _u=$(blkid -s UUID -o value "$2" 2>/dev/null || true)
+        case "$_u" in *[!0-9a-fA-F-]*) _u="" ;; esac
+    fi
+    [ -n "$_u" ] || die "cannot read the filesystem UUID of $2"
+    printf '%s\n' "$_u"
+}
+
 # ---------------------------------------------------------------------------
 # Validate inputs
 # ---------------------------------------------------------------------------
@@ -240,11 +279,16 @@ chmod 1777 "$WORK_DIR/rootfs/tmp" 2>/dev/null || true
 # ---------------------------------------------------------------------------
 
 info "Generating /etc/fstab..."
+ROOT_UUID="$(fs_uuid ext4 "$PART_ROOT")"
+ESP_UUID="$(fs_uuid vfat "$PART_ESP")"
+info "  root UUID=$ROOT_UUID  ESP UUID=$ESP_UUID"
+# The kernel command line keeps root=PARTLABEL= (the kernel resolves it);
+# fstab uses UUID= because toybox mount does not know PARTLABEL=.
 cat > "$WORK_DIR/rootfs/etc/fstab" <<EOF
 # /etc/fstab — jonerix filesystem table
-# <device>                  <mount>     <type>  <options>               <dump> <pass>
-PARTLABEL=${LABEL_ROOT}     /           ext4    defaults,noatime,errors=remount-ro  0  1
-PARTLABEL=${LABEL_ESP}      /boot/efi   vfat    defaults,noatime        0      2
+# <device>                                  <mount>     <type>  <options>               <dump> <pass>
+UUID=${ROOT_UUID}  /           ext4    defaults,noatime,errors=remount-ro  0  1
+UUID=${ESP_UUID}                             /boot/efi   vfat    defaults,noatime        0      2
 tmpfs                       /tmp        tmpfs   defaults,nosuid,nodev   0      0
 tmpfs                       /run        tmpfs   defaults,nosuid,nodev   0      0
 devtmpfs                    /dev        devtmpfs defaults               0      0

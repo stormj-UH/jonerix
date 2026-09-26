@@ -1,0 +1,39 @@
+#!/bin/openrc-run
+# serial-login — supervised login(1) on a serial port.
+#
+# Defaults to the Raspberry Pi 5 debug UART, /dev/ttyAMA10 at 115200 8N1.
+# Multiplexed by service name, so another port needs only a symlink:
+#
+#   ln -s serial-login /etc/init.d/serial-login.ttyAMA0
+#   rc-update add serial-login.ttyAMA0 default
+#
+# Set baud= (or port=) in /etc/conf.d/<service name> to override.
+# Not enabled by default: add it to a runlevel if you want a serial login.
+#
+# Part of jonerix-raspi5-fixups — MIT License
+
+_instance=${RC_SVCNAME#serial-login}
+_instance=${_instance#.}
+: "${port:=${_instance:-ttyAMA10}}"
+: "${baud:=115200}"
+
+description="login(1) on /dev/${port} at ${baud} baud via pi5-serial-login"
+
+supervisor="supervise-daemon"
+command="/bin/pi5-serial-login"
+command_args="/dev/${port} ${baud}"
+respawn_delay=1
+respawn_max=0
+
+start_pre() {
+    if [ ! -c "/dev/${port}" ]; then
+        eerror "/dev/${port} is not a character device"
+        return 1
+    fi
+}
+
+depend() {
+    need localmount
+    after devfs
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
