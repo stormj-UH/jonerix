@@ -1,0 +1,35 @@
+--- a/main.c
++++ b/main.c
+@@ -1277,6 +1277,7 @@
+ 	const struct timespec timeout = { 0, 100000000 };  /* 0.1s */
+ #define MAX_PAGER_ARGS 16
+ 	char		*argv[MAX_PAGER_ARGS];
++	char		*fallback[3];
+ 	const char	*pager;
+ 	char		*cp;
+ #if HAVE_LESS_T
+@@ -1370,6 +1371,24 @@
+ 		nanosleep(&timeout, NULL);
+ 
+ 	execvp(argv[0], argv);
++
++	/*
++	 * $MANPAGER or $PAGER may name a pager that is not installed:
++	 * PAGER=less is a common default, but less(1) is not part of
++	 * every system.  Rather than show nothing, fall back to the
++	 * built-in pager and then to cat(1), which is always present.
++	 */
++
++	if (errno == ENOENT || errno == EACCES) {
++		fallback[1] = outst->tag_files->ofn;
++		fallback[2] = NULL;
++		if (strcmp(argv[0], BINM_PAGER) != 0) {
++			fallback[0] = (char *)BINM_PAGER;
++			execvp(fallback[0], fallback);
++		}
++		fallback[0] = (char *)"cat";
++		execvp(fallback[0], fallback);
++	}
+ 	mandoc_msg(MANDOCERR_EXEC, 0, 0, "%s: %s", argv[0], strerror(errno));
+ 	_exit(mandoc_msg_getrc());
+ }

@@ -1,0 +1,119 @@
+.\" Copyright (c) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+.\" doing business as LAVA GOAT SOFTWARE. All rights reserved.
+.\" SPDX-License-Identifier: MIT
+.Dd September 25, 2026
+.Dt GETENT 1
+.Os
+.Sh NAME
+.Nm getent
+.Nd get entries from administrative databases
+.Sh SYNOPSIS
+.Nm
+.Op Fl i
+.Op Fl s Ar service
+.Ar database
+.Op Ar key ...
+.Sh DESCRIPTION
+.Nm
+prints the entries that match each
+.Ar key
+in
+.Ar database ,
+or every entry of
+.Ar database
+when no key is given.
+It asks the C library, so it sees exactly what programs see.
+musl has no name service switch: users, groups and shadow entries come
+from the files in
+.Pa /etc ,
+hosts from
+.Pa /etc/hosts
+and DNS, services from
+.Pa /etc/services ,
+and protocols from the table built into musl.
+.Pp
+The output formats and exit statuses match the
+.Nm
+of glibc, so scripts written for it keep working.
+.Pp
+The databases are:
+.Bl -tag -width initgroups
+.It Cm passwd
+Users, by name or numeric user ID.
+.It Cm group
+Groups, by name or numeric group ID.
+.It Cm shadow
+Shadow password entries, by user name.
+Only root can read them.
+.It Cm initgroups
+The group IDs a user belongs to, including the primary group.
+A key is required.
+.It Cm hosts
+Addresses of a host name, IPv6 first and then IPv4, or the name of an
+address.
+Without a key, the entries of
+.Pa /etc/hosts .
+.It Cm ahosts , ahostsv4 , ahostsv6
+The results of
+.Xr getaddrinfo 3
+for a host name, one line per address and socket type, for any address
+family, IPv4 only, or IPv6 with IPv4-mapped addresses.
+.It Cm services
+Network services, by name or port number, optionally followed by
+.No / Ns Ar protocol ,
+for example
+.Ql ssh
+or
+.Ql 53/udp .
+.It Cm protocols
+IP protocols, by name or number.
+.El
+.Pp
+The options are:
+.Bl -tag -width Ds
+.It Fl i , Fl -no-idn
+Accepted for compatibility with glibc and ignored.
+.It Fl s Ar service , Fl -service Ns = Ns Ar service
+Accepted for compatibility with glibc and ignored, since musl has
+only one source for each database.
+.It Fl h , Fl -help
+Print a usage message and the list of databases.
+.It Fl V , Fl -version
+Print the version.
+.El
+.Pp
+Options may also follow
+.Ar database
+or a
+.Ar key ,
+as with glibc.
+An argument of
+.Fl -
+ends the options, so every argument after it is a key.
+.Sh EXIT STATUS
+.Bl -tag -width Ds -compact
+.It 0
+Every key was found, or the database was listed.
+.It 1
+An argument is missing, or the database or an option is unknown.
+.It 2
+At least one key was not found.
+.It 3
+The database cannot be listed without a key.
+.El
+.Sh EXAMPLES
+Check whether a user exists:
+.Dl getent passwd unbound >/dev/null || echo "no unbound user"
+.Pp
+Resolve a name the way programs do:
+.Dl getent hosts example.com
+.Sh SEE ALSO
+.Xr getaddrinfo 3 ,
+.Xr getgrnam 3 ,
+.Xr getpwnam 3 ,
+.Xr getservbyname 3 ,
+.Xr getspnam 3 ,
+.Xr group 5 ,
+.Xr hosts 5 ,
+.Xr passwd 5 ,
+.Xr services 5

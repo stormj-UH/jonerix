@@ -20,3 +20,12 @@
   it.
 
 * UNIX V7 / SUSv4 full compatibility package
+
+* jpkg post-transaction trigger for man pages: rebuild
+  /share/man/mandoc.db (`makewhatis /share/man`) once per install,
+  upgrade or remove transaction that touches share/man/.  Until then
+  mandoc indexes in its own post_install, getent and uutils re-index in
+  their hooks, and the images run makewhatis after their package loop;
+  pages from other packages still show through man's directory search,
+  but apropos/whatis miss them and man warns "outdated mandoc.db" until
+  `makewhatis /share/man` is run.

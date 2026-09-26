@@ -1,8 +1,9 @@
 [package]
 name = "zsh"
-version = "5.9-r15"
+version = "5.9-r16"
 license = "MIT"
 description = "Z shell — feature-rich interactive shell"
+# r16: /etc/zshrc maps the BSD habit `ps aux` onto toybox's POSIX ps.
 # Upstream `make install` stages /bin/sh -> zsh. Strip that path from the
 # package payload so mksh remains the system /bin/sh provider and zsh stays
 # an interactive/login shell package.

@@ -52,11 +52,13 @@ COPY config/profile/router/ /
 
 # Unbound: recursive DNS resolver with DNSSEC.
 #
-# The unbound jpkg's post_install does the heavy lifting — creates the
-# unbound user, seeds /etc/unbound/unbound.conf.default, adds
-# `nohook resolv.conf` to dhcpcd.conf, points /etc/resolv.conf at
-# 127.0.0.1, and enables the OpenRC service in the `default`
-# runlevel. We layer on top of that with the router-specific config
+# The unbound jpkg's post_install creates the unbound user, seeds
+# /etc/unbound/unbound.conf from unbound.conf.default, and enables the
+# OpenRC service in the `default` runlevel. It only repoints
+# /etc/resolv.conf and adds `nohook resolv.conf` to dhcpcd.conf on a
+# running system, after unbound has started; during an image build it
+# leaves DNS to the image (:core copies a resolv.conf that points at
+# 127.0.0.1). We layer on top of that with the router-specific config
 # (opens :53 on 0.0.0.0 and adds LAN access-control), and re-assert
 # the rc-update in case a future :core grows an /etc/unbound/no-takeover
 # sentinel and the unbound post_install short-circuited on this layer.

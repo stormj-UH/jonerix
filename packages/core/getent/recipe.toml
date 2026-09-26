@@ -1,0 +1,51 @@
+[package]
+name = "getent"
+version = "1.0.0"
+license = "MIT"
+description = "getent(1) for musl: look up users, groups, shadow entries, hosts, services and protocols the way glibc's getent does"
+# musl ships no getent(1) (Alpine gets one from its musl-utils package),
+# so scripts and package hooks written on glibc systems break here:
+# `getent passwd NAME >/dev/null || useradd NAME` re-adds the user on
+# every run. This is a clean-room C implementation against musl's
+# lookup functions, so it sees exactly what programs see. Output
+# formats and exit statuses (0 found, 1 usage, 2 not found, 3 no
+# enumeration) follow glibc's getent.
+
+# No [source] — local-only build from $RECIPE_DIR/src.
+
+[build]
+system = "custom"
+build = """set -e
+$CC $CFLAGS -Wall -Wextra -o getent "$RECIPE_DIR/src/getent.c" $LDFLAGS
+# Smoke test when the build host can run the result.
+if [ "$JPKG_HOST_ARCH" = "$JPKG_TARGET_ARCH" ]; then
+    ./getent passwd 0 | grep -q '^[^:]*:[^:]*:0:'
+    ./getent protocols tcp | grep -q ' 6$'
+    ./getent passwd jonerix-no-such-user && exit 1
+    [ $? -eq 2 ]
+fi"""
+install = """set -e
+install -Dm755 getent "$DESTDIR/bin/getent"
+llvm-strip --strip-all "$DESTDIR/bin/getent" 2>/dev/null || true
+install -Dm644 "$RECIPE_DIR/src/getent.1" "$DESTDIR/share/man/man1/getent.1"
+"""
+
+[hooks]
+# Keep getent(1) in step with mandoc's man page index where mandoc keeps
+# one (jpkg has no post-transaction trigger for this yet).
+post_install = """_root=${JPKG_ROOT:-}
+case "$_root" in /) _root= ;; esac
+if [ -z "$_root" ] && [ -x /bin/makewhatis ] && [ -f /share/man/mandoc.db ]; then
+    /bin/makewhatis /share/man >/dev/null 2>&1 || true
+fi
+exit 0"""
+post_remove = """_root=${JPKG_ROOT:-}
+case "$_root" in /) _root= ;; esac
+if [ -z "$_root" ] && [ -x /bin/makewhatis ] && [ -f /share/man/mandoc.db ]; then
+    /bin/makewhatis /share/man >/dev/null 2>&1 || true
+fi
+exit 0"""
+
+[depends]
+runtime = ["musl"]
+build = ["clang"]

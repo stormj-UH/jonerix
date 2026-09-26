@@ -158,7 +158,7 @@ for pkg in \
     zlib zstd lz4 xz bzip2 ncurses libressl ca-certificates curl \
     snooze tzdata \
     dropbear dhcpcd ifupdown-ng unbound openntpd \
-    shadow \
+    shadow getent \
     libarchive bsdtar openrsync \
     pigz mandoc onetrueawk \
     reforger exproxide \
@@ -174,6 +174,12 @@ done
 if [ "$failures" -ne 0 ]; then
     echo "package install failures:$failed" >&2
     exit 1
+fi
+
+# mandoc's post_install indexed only the man pages installed before it;
+# index them all now so man(1) stops warning "outdated mandoc.db".
+if [ -x "${STAGING}/bin/makewhatis" ]; then
+    chroot "${STAGING}" /bin/makewhatis /share/man 2>/dev/null || true
 fi
 
 # Install jpkg into the rootfs. Always prefer the freshly-built binary

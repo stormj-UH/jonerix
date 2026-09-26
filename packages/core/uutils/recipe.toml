@@ -1,6 +1,6 @@
 [package]
 name = "uutils"
-version = "0.7.0-r2"
+version = "0.7.0-r3"
 license = "MIT"
 description = "Rust rewrite of GNU coreutils (tr, sort, wc, cut, and 70+ more)"
 # Claim toybox's multicall /bin/* symlinks for every command uutils
@@ -15,6 +15,18 @@ description = "Rust rewrite of GNU coreutils (tr, sort, wc, cut, and 70+ more)"
 # `jpkg upgrade toybox` doesn't silently stomp the takeover via tarball
 # extraction.
 replaces = ["toybox"]
+#
+# 0.7.0-r3: ship a man page for every command we link (`man ls`),
+# rendered by upstream's uudoc from each command's own option table,
+# and keep mandoc's apropos index in step on install and removal.
+# post_remove relinks through /bin/toybox's own ln (r2 called /bin/ln,
+# which the removal had just deleted, so every command stayed missing)
+# and only for commands toybox actually has.
+# hashsum is no longer a uutils utility (0.7.0 multicall has no such
+# name), so its /bin link, which only printed an error, is dropped.
+# The vendored source (upstream tag + vendor/ + .cargo/config.toml, the
+# sha256 below) is sources/uutils-0.7.0.tar.gz, which jpkg's source
+# cache matches for every -rN of 0.7.0.
 
 [source]
 url = "https://github.com/uutils/coreutils/archive/refs/tags/0.7.0.tar.gz"
@@ -35,14 +47,18 @@ export RUSTFLAGS="-C strip=symbols -C target-feature=-crt-static"
 # hack silently produced a 720 KB stub because upstream defines PROGS as
 # a multi-line sed extraction, not a single-line assignment — our grep
 # matched nothing and `--features "" --no-default-features` built empty.
-cargo build --release --frozen --offline --features feat_os_unix --no-default-features"""
+cargo build --release --frozen --offline --features feat_os_unix --no-default-features
+# uudoc renders man pages from each command's clap definition. Build it
+# in the dev profile: it only runs during install below, and the release
+# profile's LTO would link every applet a second time.
+cargo build --frozen --offline --features "feat_os_unix uudoc" --no-default-features --bin uudoc"""
 install = """set -e
 install -Dm755 target/release/coreutils "$DESTDIR/bin/uutils"
 
 # Create per-command symlinks (mirrors upstream GNUmakefile MULTICALL=y layout).
 CMDS="arch base32 base64 basename basenc cat chgrp chmod chown chroot cksum
  comm cp csplit cut date dd df dir dircolors dirname du echo env expand
- factor false fmt fold groups hashsum head hostname id install join
+ factor false fmt fold groups head hostname id install join
  kill link ln logname ls md5sum mkdir mkfifo mknod mktemp more mv nice
  nl nohup nproc numfmt od paste pr printenv printf ptx pwd readlink
  realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum
@@ -57,6 +73,19 @@ for cmd in $CMDS; do
 done
 # [ is a symlink to test
 ln -sf uutils "$DESTDIR/bin/["
+
+# Man pages for the same commands (needs a native build to run uudoc).
+if [ "$JPKG_HOST_ARCH" = "$JPKG_TARGET_ARCH" ]; then
+  install -d "$DESTDIR/share/man/man1"
+  for cmd in $CMDS; do
+    page="$DESTDIR/share/man/man1/$cmd.1"
+    if ! target/debug/uudoc manpage "$cmd" > "$page" || [ ! -s "$page" ]; then
+      echo "uutils: no man page for $cmd" >&2
+      rm -f "$page"
+    fi
+  done
+  [ -s "$DESTDIR/share/man/man1/ls.1" ] || { echo "FATAL: uudoc produced no ls.1" >&2; exit 1; }
+fi
 
 if command -v readelf >/dev/null 2>&1 && \
    readelf -d "$DESTDIR/bin/uutils" 2>/dev/null | grep -Eq 'libgcc_s|libstdc\\+\\+'; then
@@ -75,7 +104,7 @@ llvm-strip --strip-all "$DESTDIR/bin/uutils" 2>/dev/null || true"""
 # in sync.
 post_install = """CMDS="arch base32 base64 basename basenc cat chgrp chmod chown
  chroot cksum comm cp csplit cut date dd df dir dircolors dirname du
- echo env expand factor false fmt fold groups hashsum head hostname
+ echo env expand factor false fmt fold groups head hostname
  id install join kill link ln logname ls md5sum mkdir mkfifo mknod
  mktemp more mv nice nl nohup nproc numfmt od paste pr printenv printf
  ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum
@@ -86,25 +115,45 @@ for cmd in $CMDS; do
   ln -sf uutils "/bin/$cmd" 2>/dev/null || true
 done
 ln -sf uutils "/bin/[" 2>/dev/null || true
+# Index the man pages we just added (jpkg has no post-transaction
+# trigger for this yet). Only where mandoc already keeps an index.
+_root=${JPKG_ROOT:-}
+case "$_root" in /) _root= ;; esac
+if [ -z "$_root" ] && [ -x /bin/makewhatis ] && [ -f /share/man/mandoc.db ]; then
+  /bin/makewhatis /share/man >/dev/null 2>&1 || true
+fi
 exit 0"""
 
 post_remove = """# Restore toybox symlinks for commands uutils took over.
-# Only restore ones that no longer exist AND toybox is still present.
+# Only restore ones that no longer exist AND that toybox provides.
+# /bin/ln itself was one of our links and is gone by now, so every link
+# is made with toybox's own ln.
 CMDS="arch base32 base64 basename basenc cat chgrp chmod chown chroot
  cksum comm cp csplit cut date dd df dir dircolors dirname du echo env
- expand factor false fmt fold groups hashsum head hostname id
+ expand factor false fmt fold groups head hostname id
  install join kill link ln logname ls md5sum mkdir mkfifo mknod mktemp
  more mv nice nl nohup nproc numfmt od paste pr printenv printf ptx
  pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum
  sha384sum sha512sum shred shuf sleep sort split stat stdbuf stty sum
  sync tac tail tee test timeout touch tr true truncate tsort tty uname
  unexpand uniq unlink uptime users vdir wc who whoami yes"
-for cmd in $CMDS; do
-  [ ! -e "/bin/$cmd" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/$cmd"
-done
-[ ! -e "/bin/[" ] && [ -x /bin/toybox ] && ln -sf toybox "/bin/["
-# Hand /bin/expr back to exproxide if it's installed.
-[ ! -e "/bin/expr" ] && [ -x /bin/exproxide ] && ln -sf exproxide "/bin/expr"
+if [ -x /bin/toybox ]; then
+  set -f
+  _applets=" $(echo $(/bin/toybox)) "
+  set +f
+  for cmd in $CMDS "["; do
+    case "$_applets" in *" $cmd "*) ;; *) continue ;; esac
+    [ -e "/bin/$cmd" ] || /bin/toybox ln -sf toybox "/bin/$cmd"
+  done
+  # Hand /bin/expr back to exproxide if it's installed.
+  [ ! -e "/bin/expr" ] && [ -x /bin/exproxide ] && /bin/toybox ln -sf exproxide "/bin/expr"
+fi
+# Drop the removed man pages from mandoc's index.
+_root=${JPKG_ROOT:-}
+case "$_root" in /) _root= ;; esac
+if [ -z "$_root" ] && [ -x /bin/makewhatis ] && [ -f /share/man/mandoc.db ]; then
+  /bin/makewhatis /share/man >/dev/null 2>&1 || true
+fi
 exit 0"""
 
 [depends]

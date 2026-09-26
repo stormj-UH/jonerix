@@ -102,7 +102,7 @@ RUN jpkg --root /jonerix update && \
       exproxide \
       curl dropbear openrc \
       snooze dhcpcd ifupdown-ng unbound \
-      shadow \
+      shadow getent \
       mandoc fastfetch \
       pico \
       gitredoxide \
@@ -121,6 +121,10 @@ RUN if [ -d /jonerix/usr ]; then \
         cp -a /jonerix/usr/. /jonerix/ && rm -rf /jonerix/usr; \
     fi && \
     ln -s / /jonerix/usr
+
+# Index every installed man page (mandoc's post_install ran before most
+# of the packages above had added theirs).
+RUN chroot /jonerix /bin/makewhatis /share/man || true
 
 # Copy jpkg + jpkg-local + jpkg-conform into the rootfs
 RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg && \

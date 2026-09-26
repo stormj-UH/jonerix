@@ -49,6 +49,7 @@ lz4
 # Tier 2: depends on musl only (small)
 mandoc
 bc
+getent
 dhcpcd
 # openresolv: resolvconf(8), pure sh (needs only make + mksh to build).
 # dhcpcd and tailscaled both use it when present.
