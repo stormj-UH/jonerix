@@ -1,0 +1,396 @@
+diff --git a/LICENSE.MIT b/LICENSE.MIT
+index 2e51ea4..d82ee07 100644
+--- a/LICENSE.MIT
++++ b/LICENSE.MIT
+@@ -9,20 +9,28 @@ GOAT SOFTWARE" header. As of jonerix-netutils 0.2.0, that is:
+ 
+     cmds/core/arp/arp_linux.go
+     cmds/core/arping/arping_linux.go
+     cmds/core/ethtool/ethtool_linux.go
+     cmds/core/ifconfig/ifconfig_linux.go
+     cmds/core/iptunnel/iptunnel_linux.go
+     cmds/core/route/route_linux.go
+     cmds/core/ss/ss_linux.go
+     cmds/core/tunctl/tunctl_linux.go
+ 
++and, added by the jonerix-netutils 0.2.0-r2 patches:
++
++    pkg/posixflag/posixflag.go
++    pkg/posixflag/posixflag_test.go
++    cmds/core/ss/ss_linux_test.go
++    cmds/core/ip/route_prefix_linux_test.go
++    pkg/netstat/prog_test.go
++
+ All other files in this tree — including but not limited to:
+     cmds/core/ip/*
+     cmds/core/brctl/*
+     cmds/core/netstat/*
+     pkg/brctl/*
+     pkg/netstat/*
+     pkg/uroot/unixflag/*
+     vendor/*
+ — retain their original copyright notices and licenses.  The bulk of
+ the non-MIT code is BSD-3-Clause (u-root and vendored Go libraries);
+diff --git a/cmds/core/arp/arp_linux.go b/cmds/core/arp/arp_linux.go
+index 0e5d808..2445a8d 100644
+--- a/cmds/core/arp/arp_linux.go
++++ b/cmds/core/arp/arp_linux.go
+@@ -20,20 +20,21 @@
+ // Requires CAP_NET_ADMIN for modify operations; list works unprivileged.
+ package main
+ 
+ import (
+ 	"flag"
+ 	"fmt"
+ 	"net"
+ 	"os"
+ 	"strings"
+ 
++	"github.com/u-root/u-root/pkg/posixflag"
+ 	"github.com/vishvananda/netlink"
+ 	"golang.org/x/sys/unix"
+ )
+ 
+ var (
+ 	flagNumeric = flag.Bool("n", false, "show numerical addresses (no DNS lookup)")
+ 	flagDevice  = flag.String("i", "", "restrict to network interface")
+ 	flagAll     = flag.Bool("a", false, "BSD-style list (optionally for host)")
+ 	flagDelete  = flag.String("d", "", "delete entry for host")
+ 	flagSet     = flag.Bool("s", false, "set static entry: -s host hwaddr")
+@@ -213,21 +214,21 @@ func set(host, hw string, ifIdx int) error {
+ 		HardwareAddr: hwaddr,
+ 	}
+ 	if err := netlink.NeighSet(n); err != nil {
+ 		return fmt.Errorf("set %s -> %s on iface %d: %w", ips[0], hwaddr, ifIdx, err)
+ 	}
+ 	return nil
+ }
+ 
+ func main() {
+ 	flag.Usage = usage
+-	flag.Parse()
++	flag.CommandLine.Parse(posixflag.Args(flag.CommandLine, os.Args[1:]))
+ 	if *flagHelp {
+ 		usage()
+ 		os.Exit(0)
+ 	}
+ 
+ 	ifIdx, err := ifaceFilter(*flagDevice)
+ 	if err != nil {
+ 		fmt.Fprintf(os.Stderr, "arp: %v\n", err)
+ 		os.Exit(1)
+ 	}
+diff --git a/cmds/core/arping/arping_linux.go b/cmds/core/arping/arping_linux.go
+index cb67ef5..372cce7 100644
+--- a/cmds/core/arping/arping_linux.go
++++ b/cmds/core/arping/arping_linux.go
+@@ -34,20 +34,21 @@ package main
+ import (
+ 	"bytes"
+ 	"encoding/binary"
+ 	"flag"
+ 	"fmt"
+ 	"net"
+ 	"os"
+ 	"time"
+ 
+ 	"github.com/mdlayher/packet"
++	"github.com/u-root/u-root/pkg/posixflag"
+ )
+ 
+ const (
+ 	etherTypeARP = 0x0806
+ 	hwTypeEther  = 1
+ 	pTypeIPv4    = 0x0800
+ 	opRequest    = 1
+ 	opReply      = 2
+ )
+ 
+@@ -115,21 +116,21 @@ func firstIPv4(addrs []net.Addr) net.IP {
+ 	for _, a := range addrs {
+ 		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
+ 			return ipn.IP.To4()
+ 		}
+ 	}
+ 	return nil
+ }
+ 
+ func main() {
+ 	flag.Usage = usage
+-	flag.Parse()
++	flag.CommandLine.Parse(posixflag.Args(flag.CommandLine, os.Args[1:]))
+ 	if *flagIface == "" || flag.NArg() != 1 {
+ 		usage()
+ 		os.Exit(2)
+ 	}
+ 	target := net.ParseIP(flag.Arg(0))
+ 	if target == nil || target.To4() == nil {
+ 		fmt.Fprintf(os.Stderr, "arping: %q is not an IPv4 address\n", flag.Arg(0))
+ 		os.Exit(2)
+ 	}
+ 	target = target.To4()
+diff --git a/cmds/core/ethtool/ethtool_linux.go b/cmds/core/ethtool/ethtool_linux.go
+index 299bcfa..6e93f66 100644
+--- a/cmds/core/ethtool/ethtool_linux.go
++++ b/cmds/core/ethtool/ethtool_linux.go
+@@ -27,20 +27,21 @@
+ package main
+ 
+ import (
+ 	"flag"
+ 	"fmt"
+ 	"os"
+ 	"sort"
+ 	"strings"
+ 
+ 	"github.com/safchain/ethtool"
++	"github.com/u-root/u-root/pkg/posixflag"
+ )
+ 
+ func usage() {
+ 	fmt.Fprint(os.Stderr, `Usage: ethtool IFACE                       link info (default)
+        ethtool -i IFACE                    driver info
+        ethtool -k IFACE                    offload features
+        ethtool -K IFACE FEATURE on|off ... change feature
+        ethtool -S IFACE                    statistics
+        ethtool -P IFACE                    permanent MAC
+        ethtool -l IFACE                    channel counts
+@@ -190,21 +191,21 @@ func main() {
+ 	var (
+ 		showDrv     = flag.Bool("i", false, "driver info")
+ 		showFeats   = flag.Bool("k", false, "offload features")
+ 		changeFeats = flag.Bool("K", false, "change feature: FEATURE on|off ...")
+ 		showStats   = flag.Bool("S", false, "statistics")
+ 		showPerm    = flag.Bool("P", false, "permanent MAC")
+ 		showChan    = flag.Bool("l", false, "channels")
+ 		showCoal    = flag.Bool("c", false, "coalesce")
+ 	)
+ 	flag.Usage = usage
+-	flag.Parse()
++	flag.CommandLine.Parse(posixflag.Args(flag.CommandLine, os.Args[1:]))
+ 	if flag.NArg() < 1 {
+ 		usage()
+ 		os.Exit(2)
+ 	}
+ 	iface := flag.Arg(0)
+ 
+ 	e, err := ethtool.NewEthtool()
+ 	if err != nil {
+ 		fmt.Fprintf(os.Stderr, "ethtool: %v\n", err)
+ 		os.Exit(1)
+diff --git a/cmds/core/tunctl/tunctl_linux.go b/cmds/core/tunctl/tunctl_linux.go
+index e818981..843664c 100644
+--- a/cmds/core/tunctl/tunctl_linux.go
++++ b/cmds/core/tunctl/tunctl_linux.go
+@@ -24,20 +24,21 @@
+ //	Requires CAP_NET_ADMIN (usually run as root).
+ package main
+ 
+ import (
+ 	"errors"
+ 	"flag"
+ 	"fmt"
+ 	"os"
+ 	"unsafe"
+ 
++	"github.com/u-root/u-root/pkg/posixflag"
+ 	"golang.org/x/sys/unix"
+ )
+ 
+ // ifReq matches struct ifreq's TUN-relevant prefix:
+ //
+ //	char ifrn_name[IFNAMSIZ];   // 16 bytes, NUL-padded
+ //	short ifru_flags;           // padded to 24-byte ifreq total
+ //
+ // The kernel only reads the first 18 bytes for TUNSETIFF, but we pass
+ // a full ifreq-shaped struct (40 bytes on Linux) for safety.
+@@ -142,21 +143,21 @@ func usage() {
+ }
+ 
+ func main() {
+ 	var (
+ 		create_ = flag.String("t", "", "create persistent device with this name")
+ 		delete_ = flag.String("d", "", "destroy persistent device with this name")
+ 		tunMode = flag.Bool("n", false, "with -t, create a TUN (point-to-point) instead of a TAP")
+ 		help    = flag.Bool("h", false, "show usage")
+ 	)
+ 	flag.Usage = usage
+-	flag.Parse()
++	flag.CommandLine.Parse(posixflag.Args(flag.CommandLine, os.Args[1:]))
+ 
+ 	if *help || (*create_ == "" && *delete_ == "") || (*create_ != "" && *delete_ != "") {
+ 		usage()
+ 		if *help {
+ 			os.Exit(0)
+ 		}
+ 		os.Exit(2)
+ 	}
+ 
+ 	var err error
+diff --git a/pkg/posixflag/posixflag.go b/pkg/posixflag/posixflag.go
+new file mode 100644
+index 0000000..7181630
+--- /dev/null
++++ b/pkg/posixflag/posixflag.go
+@@ -0,0 +1,87 @@
++// Copyright (C) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
++// doing business as LAVA GOAT SOFTWARE.
++//
++// SPDX-License-Identifier: MIT
++
++// Package posixflag rewrites a POSIX/getopt-style command line into the
++// form Go's flag package understands, using the FlagSet itself to know
++// which single-letter options take a value.
++//
++//   - Clustered short options are split: -tlnp becomes -t -l -n -p.
++//   - A value-taking letter ends the cluster; the rest of the cluster is
++//     its value (-c3 becomes -c 3, -Ieth0 becomes -I eth0). With nothing
++//     left in the cluster, the next argument is its value, verbatim.
++//   - A single-dash word that names a defined multi-letter flag (Go style,
++//     e.g. -inet6, -br, -numeric=true) passes through unchanged, and so
++//     does a defined flag of any length given with =VALUE (iproute2's
++//     -c=auto, Go's -t=false).
++//   - --long[=value] becomes -long[=value].
++//   - Parsing stops at "--", at "-", and at the first operand; the rest is
++//     passed through unchanged, as POSIX getopt does.
++//
++// Unknown letters are passed through as -X so flag.Parse reports them.
++package posixflag
++
++import (
++	"flag"
++	"strings"
++)
++
++type boolFlag interface {
++	IsBoolFlag() bool
++}
++
++func takesValue(f *flag.Flag) bool {
++	if bf, ok := f.Value.(boolFlag); ok && bf.IsBoolFlag() {
++		return false
++	}
++	return true
++}
++
++// Args converts args (without the program name) for fs.Parse.
++func Args(fs *flag.FlagSet, args []string) []string {
++	out := make([]string, 0, len(args))
++	for i := 0; i < len(args); i++ {
++		a := args[i]
++		if a == "--" || a == "-" || !strings.HasPrefix(a, "-") {
++			return append(out, args[i:]...)
++		}
++		if strings.HasPrefix(a, "--") {
++			out = append(out, a[1:])
++			continue
++		}
++		name := a[1:]
++		hasValue := false
++		if k := strings.IndexByte(name, '='); k >= 0 {
++			name, hasValue = name[:k], true
++		}
++		if (len(name) > 1 || hasValue) && fs.Lookup(name) != nil {
++			out = append(out, a)
++			continue
++		}
++		body := []rune(a[1:])
++		for j, r := range body {
++			c := string(r)
++			f := fs.Lookup(c)
++			if f == nil || !takesValue(f) {
++				out = append(out, "-"+c)
++				continue
++			}
++			out = append(out, "-"+c)
++			if rest := string(body[j+1:]); rest != "" {
++				out = append(out, strings.TrimPrefix(rest, "="))
++			} else if i+1 < len(args) {
++				i++
++				out = append(out, args[i])
++			}
++			break
++		}
++	}
++	return out
++}
++
++// Parse parses args (without the program name) into fs after rewriting
++// them with Args.
++func Parse(fs *flag.FlagSet, args []string) error {
++	return fs.Parse(Args(fs, args))
++}
+diff --git a/pkg/posixflag/posixflag_test.go b/pkg/posixflag/posixflag_test.go
+new file mode 100644
+index 0000000..82563a4
+--- /dev/null
++++ b/pkg/posixflag/posixflag_test.go
+@@ -0,0 +1,68 @@
++// Copyright (C) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
++// doing business as LAVA GOAT SOFTWARE.
++//
++// SPDX-License-Identifier: MIT
++
++package posixflag
++
++import (
++	"flag"
++	"io"
++	"reflect"
++	"testing"
++)
++
++func TestArgs(t *testing.T) {
++	fs := flag.NewFlagSet("t", flag.ContinueOnError)
++	fs.Bool("t", false, "")
++	fs.Bool("l", false, "")
++	fs.Bool("n", false, "")
++	fs.Bool("p", false, "")
++	fs.Bool("br", false, "")
++	fs.Bool("inet6", false, "")
++	fs.String("I", "", "")
++	fs.Int("c", 0, "")
++
++	for _, tc := range []struct {
++		in, want []string
++	}{
++		{[]string{"-tlnp"}, []string{"-t", "-l", "-n", "-p"}},
++		{[]string{"-ltn", "-p"}, []string{"-l", "-t", "-n", "-p"}},
++		{[]string{"-c3", "host"}, []string{"-c", "3", "host"}},
++		{[]string{"-nc", "3", "host"}, []string{"-n", "-c", "3", "host"}},
++		{[]string{"-Ieth0", "-n"}, []string{"-I", "eth0", "-n"}},
++		{[]string{"-I", "-weird", "-n"}, []string{"-I", "-weird", "-n"}},
++		{[]string{"-I=eth0"}, []string{"-I=eth0"}},
++		{[]string{"-c=3", "-t=false"}, []string{"-c=3", "-t=false"}},
++		{[]string{"-nc=3"}, []string{"-n", "-c", "3"}},
++		{[]string{"-br", "addr"}, []string{"-br", "addr"}},
++		{[]string{"-inet6"}, []string{"-inet6"}},
++		{[]string{"--inet6", "--tcp"}, []string{"-inet6", "-tcp"}},
++		{[]string{"-t", "--", "-l"}, []string{"-t", "--", "-l"}},
++		{[]string{"-t", "host", "-l"}, []string{"-t", "host", "-l"}},
++		{[]string{"-tz"}, []string{"-t", "-z"}},
++		{[]string{"-"}, []string{"-"}},
++	} {
++		if got := Args(fs, tc.in); !reflect.DeepEqual(got, tc.want) {
++			t.Errorf("Args(%q) = %q, want %q", tc.in, got, tc.want)
++		}
++	}
++}
++
++func TestParse(t *testing.T) {
++	fs := flag.NewFlagSet("t", flag.ContinueOnError)
++	fs.SetOutput(io.Discard)
++	tf := fs.Bool("t", false, "")
++	lf := fs.Bool("l", false, "")
++	cf := fs.Int("c", 0, "")
++	iface := fs.String("I", "", "")
++	if err := Parse(fs, []string{"-tl", "-c=3", "-Ieth0", "host", "-x"}); err != nil {
++		t.Fatal(err)
++	}
++	if !*tf || !*lf || *cf != 3 || *iface != "eth0" || !reflect.DeepEqual(fs.Args(), []string{"host", "-x"}) {
++		t.Errorf("t=%v l=%v c=%d I=%q args=%q", *tf, *lf, *cf, *iface, fs.Args())
++	}
++	if err := Parse(fs, []string{"-tq"}); err == nil {
++		t.Errorf("unknown letter in a cluster was accepted")
++	}
++}

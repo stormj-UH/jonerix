@@ -1,0 +1,994 @@
+diff --git a/cmds/core/ss/ss_linux.go b/cmds/core/ss/ss_linux.go
+index 2759df3..6ef4d5c 100644
+--- a/cmds/core/ss/ss_linux.go
++++ b/cmds/core/ss/ss_linux.go
+@@ -1,249 +1,646 @@
+ // Copyright (C) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
+ // doing business as LAVA GOAT SOFTWARE.
+ //
+ // SPDX-License-Identifier: MIT
+ //go:build !tinygo || tinygo.enable
+ 
+-// ss enumerates kernel sockets via sock_diag netlink.
++// ss lists TCP, UDP and UNIX-domain sockets, iproute2 style.
+ //
+ // Synopsis:
+ //
+-//	ss [-t] [-u] [-x] [-l] [-a] [-n] [-4 | -6]
++//	ss [-tuxlanpeH46] [--tcp] [--udp] [--unix] [--listening] [--all]
++//	   [--numeric] [--processes] [--extended] [--no-header]
++//	   [--ipv4] [--ipv6]
+ //
+-//	-t  TCP   (default if no -u/-x)
+-//	-u  UDP
+-//	-x  UNIX
+-//	-l  only listening (TCP) / unconnected (UDP)
+-//	-a  all states (TCP); default shows only ESTABLISHED + LISTEN
+-//	-n  numeric (no service-name lookup)
++//	-t  TCP sockets
++//	-u  UDP sockets
++//	-x  UNIX-domain sockets
++//	    (none of -t/-u/-x: TCP and UDP, plus UNIX unless -4/-6 is given)
++//	-l  only listening sockets (TCP/UNIX LISTEN, unconnected UDP)
++//	-a  all sockets; default shows only connected ones
++//	-n  numeric ports (no /etc/services lookup)
++//	-p  show the processes using each socket (all processes as root,
++//	    otherwise only the caller's own)
++//	-e  show uid and inode
++//	-H  no header line
+ //	-4  IPv4 only
+ //	-6  IPv6 only
+ //
+-// We dump via vishvananda/netlink's SocketDiag{TCP,UDP} and
+-// UnixSocketDiag helpers, which wrap the SOCK_DIAG_BY_FAMILY netlink
+-// request. This is the same interface iproute2's ss uses.
++// Short options may be combined (ss -tulpn). TCP and UDP sockets are read
++// with sock_diag netlink (the interface iproute2's ss uses). Kernels built
++// without udp_diag or tcp_diag (e.g. the Raspberry Pi vendor kernel has no
++// udp_diag) fall back to /proc/net/{tcp,tcp6,udp,udp6}, as iproute2 does.
++// UNIX sockets come from /proc/net/unix, which also carries socket paths;
++// unix_diag netlink is used only when that file cannot be read.
+ package main
+ 
+ import (
++	"bufio"
++	"encoding/binary"
++	"errors"
+ 	"flag"
+ 	"fmt"
++	"io"
+ 	"net"
+ 	"os"
+-	"sort"
++	"path/filepath"
+ 	"strconv"
++	"strings"
+ 
++	"github.com/u-root/u-root/pkg/posixflag"
+ 	"github.com/vishvananda/netlink"
+ 	"golang.org/x/sys/unix"
+ )
+ 
+-var (
+-	flagTCP     = flag.Bool("t", false, "TCP sockets")
+-	flagUDP     = flag.Bool("u", false, "UDP sockets")
+-	flagUNIX    = flag.Bool("x", false, "UNIX-domain sockets")
+-	flagListen  = flag.Bool("l", false, "listening sockets only")
+-	flagAll     = flag.Bool("a", false, "include non-LISTEN/ESTABLISHED TCP states")
+-	flagNumeric = flag.Bool("n", false, "no service-name resolution")
+-	flag4       = flag.Bool("4", false, "IPv4 only")
+-	flag6       = flag.Bool("6", false, "IPv6 only")
++const version = "ss utility, jonerix-netutils-0.2.0"
++
++type options struct {
++	tcp, udp, unix  bool
++	listen, all     bool
++	numeric         bool
++	procs, extended bool
++	noHeader        bool
++	v4, v6          bool
++	help, version   bool
++}
++
++func newFlagSet(o *options, errOut io.Writer) *flag.FlagSet {
++	fs := flag.NewFlagSet("ss", flag.ContinueOnError)
++	fs.SetOutput(errOut)
++	for _, f := range []struct {
++		p           *bool
++		short, long string
++		help        string
++	}{
++		{&o.tcp, "t", "tcp", "TCP sockets"},
++		{&o.udp, "u", "udp", "UDP sockets"},
++		{&o.unix, "x", "unix", "UNIX-domain sockets"},
++		{&o.listen, "l", "listening", "listening sockets only"},
++		{&o.all, "a", "all", "all sockets, listening and connected"},
++		{&o.numeric, "n", "numeric", "do not resolve service names"},
++		{&o.procs, "p", "processes", "show processes using each socket"},
++		{&o.extended, "e", "extended", "show uid and inode"},
++		{&o.noHeader, "H", "no-header", "suppress the header line"},
++		{&o.v4, "4", "ipv4", "IPv4 only"},
++		{&o.v6, "6", "ipv6", "IPv6 only"},
++		{&o.help, "h", "help", "show this help"},
++		{&o.version, "V", "version", "show version"},
++	} {
++		fs.BoolVar(f.p, f.short, false, f.help)
++		fs.BoolVar(f.p, f.long, false, f.help)
++	}
++	fs.Usage = func() { usage(errOut) }
++	return fs
++}
++
++func usage(w io.Writer) {
++	fmt.Fprint(w, `Usage: ss [ OPTIONS ]
++   -t, --tcp          display TCP sockets
++   -u, --udp          display UDP sockets
++   -x, --unix         display UNIX domain sockets
++   -l, --listening    display listening sockets
++   -a, --all          display all sockets
++   -n, --numeric      don't resolve service names
++   -p, --processes    show process using socket
++   -e, --extended     show uid and inode
++   -H, --no-header    suppress header line
++   -4, --ipv4         display only IP version 4 sockets
++   -6, --ipv6         display only IP version 6 sockets
++   -h, --help         this message
++   -V, --version      output version information
++`)
++}
++
++// sock is one socket, whichever source it came from.
++type sock struct {
++	netid        string // tcp, udp, u_str, u_dgr, u_seq
++	family       uint8  // AF_INET, AF_INET6, AF_UNIX
++	state        uint8  // TCP_* numbering (include/net/tcp_states.h)
++	recvQ, sendQ uint32
++	lip, rip     net.IP
++	lport, rport uint16
++	path         string // UNIX only
++	uid          uint32
++	inode        uint64
++	hasUID       bool
++}
++
++// TCP states, include/net/tcp_states.h.
++const (
++	stEstablished = 1
++	stSynSent     = 2
++	stSynRecv     = 3
++	stFinWait1    = 4
++	stFinWait2    = 5
++	stTimeWait    = 6
++	stClose       = 7
++	stCloseWait   = 8
++	stLastAck     = 9
++	stListen      = 10
++	stClosing     = 11
+ )
+ 
+-// tcpState mirrors include/net/tcp_states.h.
+-var tcpState = []string{
+-	0:                       "UNKNOWN",
+-	unix.BPF_TCP_ESTABLISHED: "ESTAB",
+-	unix.BPF_TCP_SYN_SENT:    "SYN-SENT",
+-	unix.BPF_TCP_SYN_RECV:    "SYN-RECV",
+-	unix.BPF_TCP_FIN_WAIT1:   "FIN-WAIT-1",
+-	unix.BPF_TCP_FIN_WAIT2:   "FIN-WAIT-2",
+-	unix.BPF_TCP_TIME_WAIT:   "TIME-WAIT",
+-	unix.BPF_TCP_CLOSE:       "CLOSE",
+-	unix.BPF_TCP_CLOSE_WAIT:  "CLOSE-WAIT",
+-	unix.BPF_TCP_LAST_ACK:    "LAST-ACK",
+-	unix.BPF_TCP_LISTEN:      "LISTEN",
+-	unix.BPF_TCP_CLOSING:     "CLOSING",
++var stateNames = map[uint8]string{
++	stEstablished: "ESTAB",
++	stSynSent:     "SYN-SENT",
++	stSynRecv:     "SYN-RECV",
++	stFinWait1:    "FIN-WAIT-1",
++	stFinWait2:    "FIN-WAIT-2",
++	stTimeWait:    "TIME-WAIT",
++	stClose:       "UNCONN",
++	stCloseWait:   "CLOSE-WAIT",
++	stLastAck:     "LAST-ACK",
++	stListen:      "LISTEN",
++	stClosing:     "CLOSING",
+ }
+ 
+ func stateName(s uint8) string {
+-	if int(s) < len(tcpState) && tcpState[s] != "" {
+-		return tcpState[s]
++	if n, ok := stateNames[s]; ok {
++		return n
+ 	}
+ 	return fmt.Sprintf("STATE-%d", s)
+ }
+ 
+-func formatAddr(ip net.IP, port uint16, numeric bool) string {
+-	host := "*"
+-	if ip != nil && !ip.IsUnspecified() {
+-		host = ip.String()
++// wanted applies iproute2's state selection: -l is LISTEN plus unconnected
++// (UNCONN) sockets, which is how bound UDP and UNIX datagram sockets show,
++// -a is everything, and the default is every connected state except
++// TIME-WAIT and SYN-RECV.
++func wanted(o *options, s *sock) bool {
++	switch {
++	case o.all:
++		return true
++	case o.listen:
++		return s.state == stListen || s.state == stClose
++	}
++	switch s.state {
++	case stListen, stClose, stTimeWait, stSynRecv:
++		return false
+ 	}
+-	p := fmt.Sprintf("%d", port)
+-	if !numeric && port != 0 {
+-		// LookupPort sometimes returns the protocol's well-known name
+-		// (http, ssh, dns, ...). Cheap and useful for the LISTEN case.
+-		if name, err := net.LookupPort("tcp", p); err == nil && name != int(port) {
+-			p = fmt.Sprintf("%d", port)
++	return true
++}
++
++func errNotExist(err error) bool {
++	return errors.Is(err, os.ErrNotExist)
++}
++
++// inetSockets returns the TCP or UDP sockets of one family: sock_diag
++// netlink first, /proc/net/<proto>[6] when that fails. A missing /proc file
++// (e.g. no IPv6 in the kernel) is an empty result, not an error.
++func inetSockets(proto string, family uint8) ([]sock, error) {
++	var (
++		socks []*netlink.Socket
++		nlErr error
++	)
++	if proto == "tcp" {
++		socks, nlErr = netlink.SocketDiagTCP(family)
++	} else {
++		socks, nlErr = netlink.SocketDiagUDP(family)
++	}
++	if nlErr == nil {
++		out := make([]sock, 0, len(socks))
++		for _, s := range socks {
++			out = append(out, sock{
++				netid:  proto,
++				family: family,
++				state:  s.State,
++				recvQ:  s.RQueue,
++				sendQ:  s.WQueue,
++				lip:    append(net.IP(nil), s.ID.Source...),
++				lport:  s.ID.SourcePort,
++				rip:    append(net.IP(nil), s.ID.Destination...),
++				rport:  s.ID.DestinationPort,
++				uid:    s.UID,
++				inode:  uint64(s.INode),
++				hasUID: true,
++			})
+ 		}
++		return out, nil
+ 	}
+-	if ip != nil && ip.To4() == nil && !ip.IsUnspecified() {
+-		// IPv6: bracket the host
+-		return fmt.Sprintf("[%s]:%s", host, p)
++
++	name := proto
++	if family == unix.AF_INET6 {
++		name += "6"
+ 	}
+-	return fmt.Sprintf("%s:%s", host, p)
++	out, err := procInet(filepath.Join(procNet, name), proto, family)
++	if err != nil {
++		if errNotExist(err) {
++			return nil, nil
++		}
++		return nil, fmt.Errorf("%s: netlink: %v; /proc: %v", name, nlErr, err)
++	}
++	return out, nil
+ }
+ 
+-type sockRow struct {
+-	state                  string
+-	recvQ, sendQ           uint32
+-	local, peer            string
+-	proto                  string
+-}
++var procNet = "/proc/net"
+ 
+-func collectTCP(family uint8, listen, all, numeric bool) ([]sockRow, error) {
+-	socks, err := netlink.SocketDiagTCP(family)
++// procInet parses /proc/net/{tcp,tcp6,udp,udp6}:
++//
++//	sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode ...
++//
++// Addresses are the kernel's in-memory words printed as hex, so they are
++// decoded in native byte order; ports are plain hex numbers.
++func procInet(file, proto string, family uint8) ([]sock, error) {
++	f, err := os.Open(file)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	var out []sockRow
+-	for _, s := range socks {
+-		if listen && s.State != unix.BPF_TCP_LISTEN {
++	defer f.Close()
++
++	var out []sock
++	sc := bufio.NewScanner(f)
++	sc.Scan() // header
++	for sc.Scan() {
++		fl := strings.Fields(sc.Text())
++		if len(fl) < 10 {
+ 			continue
+ 		}
+-		if !listen && !all {
+-			if s.State != unix.BPF_TCP_ESTABLISHED && s.State != unix.BPF_TCP_LISTEN {
+-				continue
+-			}
++		lip, lport, err1 := parseHexAddr(fl[1])
++		rip, rport, err2 := parseHexAddr(fl[2])
++		st, err3 := strconv.ParseUint(fl[3], 16, 8)
++		if err1 != nil || err2 != nil || err3 != nil {
++			continue
++		}
++		s := sock{
++			netid:  proto,
++			family: family,
++			state:  uint8(st),
++			lip:    lip,
++			lport:  lport,
++			rip:    rip,
++			rport:  rport,
++		}
++		if tx, rx, ok := strings.Cut(fl[4], ":"); ok {
++			t, _ := strconv.ParseUint(tx, 16, 32)
++			r, _ := strconv.ParseUint(rx, 16, 32)
++			s.sendQ, s.recvQ = uint32(t), uint32(r)
++		}
++		if uid, err := strconv.ParseUint(fl[7], 10, 32); err == nil {
++			s.uid, s.hasUID = uint32(uid), true
++		}
++		s.inode, _ = strconv.ParseUint(fl[9], 10, 64)
++		out = append(out, s)
++	}
++	return out, sc.Err()
++}
++
++func parseHexAddr(s string) (net.IP, uint16, error) {
++	hexIP, hexPort, ok := strings.Cut(s, ":")
++	if !ok || (len(hexIP) != 8 && len(hexIP) != 32) {
++		return nil, 0, fmt.Errorf("bad address %q", s)
++	}
++	ip := make(net.IP, len(hexIP)/2)
++	for i := 0; i < len(hexIP); i += 8 {
++		w, err := strconv.ParseUint(hexIP[i:i+8], 16, 32)
++		if err != nil {
++			return nil, 0, err
+ 		}
+-		out = append(out, sockRow{
+-			state:  stateName(s.State),
+-			recvQ:  s.RQueue,
+-			sendQ:  s.WQueue,
+-			local:  formatAddr(s.ID.Source, s.ID.SourcePort, numeric),
+-			peer:   formatAddr(s.ID.Destination, s.ID.DestinationPort, numeric),
+-			proto:  "tcp",
++		binary.NativeEndian.PutUint32(ip[i/2:], uint32(w))
++	}
++	port, err := strconv.ParseUint(hexPort, 16, 16)
++	if err != nil {
++		return nil, 0, err
++	}
++	return ip, uint16(port), nil
++}
++
++// unixSockets reads /proc/net/unix (Num RefCount Protocol Flags Type St
++// Inode [Path]); if that is unreadable it asks unix_diag netlink, which
++// does not report paths.
++func unixSockets() ([]sock, error) {
++	out, err := procUnix(filepath.Join(procNet, "unix"))
++	if err == nil {
++		return out, nil
++	}
++	socks, nlErr := netlink.UnixSocketDiag()
++	if nlErr != nil {
++		return nil, fmt.Errorf("unix: /proc: %v; netlink: %v", err, nlErr)
++	}
++	out = out[:0]
++	for _, s := range socks {
++		out = append(out, sock{
++			netid:  unixNetid(uint64(s.Type)),
++			family: unix.AF_UNIX,
++			state:  s.State,
++			inode:  uint64(s.INode),
+ 		})
+ 	}
+ 	return out, nil
+ }
+ 
+-func collectUDP(family uint8, listen, numeric bool) ([]sockRow, error) {
+-	socks, err := netlink.SocketDiagUDP(family)
++func unixNetid(t uint64) string {
++	switch t {
++	case unix.SOCK_DGRAM:
++		return "u_dgr"
++	case unix.SOCK_SEQPACKET:
++		return "u_seq"
++	}
++	return "u_str"
++}
++
++const soAcceptCon = 1 << 16 // __SO_ACCEPTCON
++
++func procUnix(file string) ([]sock, error) {
++	f, err := os.Open(file)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	var out []sockRow
+-	for _, s := range socks {
+-		// "Listening" UDP = unconnected (peer == 0.0.0.0:0).
+-		if listen && s.ID.DestinationPort != 0 {
++	defer f.Close()
++
++	var out []sock
++	sc := bufio.NewScanner(f)
++	sc.Scan() // header
++	for sc.Scan() {
++		fl := strings.Fields(sc.Text())
++		if len(fl) < 7 {
+ 			continue
+ 		}
+-		out = append(out, sockRow{
+-			state:  "UNCONN",
+-			recvQ:  s.RQueue,
+-			sendQ:  s.WQueue,
+-			local:  formatAddr(s.ID.Source, s.ID.SourcePort, numeric),
+-			peer:   formatAddr(s.ID.Destination, s.ID.DestinationPort, numeric),
+-			proto:  "udp",
+-		})
++		flags, err1 := strconv.ParseUint(fl[3], 16, 32)
++		typ, err2 := strconv.ParseUint(fl[4], 16, 16)
++		st, err3 := strconv.ParseUint(fl[5], 16, 8)
++		ino, err4 := strconv.ParseUint(fl[6], 10, 64)
++		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
++			continue
++		}
++		s := sock{
++			netid:  unixNetid(typ),
++			family: unix.AF_UNIX,
++			inode:  ino,
++		}
++		if len(fl) > 7 {
++			s.path = strings.Join(fl[7:], " ")
++		}
++		// SS_* socket states: 1 unconnected, 2 connecting, 3 connected,
++		// 4 disconnecting; a listener is unconnected with __SO_ACCEPTCON.
++		switch {
++		case flags&soAcceptCon != 0:
++			s.state = stListen
++		case st == 2:
++			s.state = stSynSent
++		case st == 3:
++			s.state = stEstablished
++		case st == 4:
++			s.state = stClosing
++		default:
++			s.state = stClose
++		}
++		out = append(out, s)
+ 	}
+-	return out, nil
++	return out, sc.Err()
+ }
+ 
+-func collectUNIX(listen bool) ([]sockRow, error) {
+-	socks, err := netlink.UnixSocketDiag()
++// procUsers maps socket inodes to the processes holding them, from the
++// /proc/<pid>/fd/* links the caller may read. Unreadable processes (other
++// users' when not root, or ones exiting mid-scan) are skipped.
++func procUsers(proc string) map[uint64][]string {
++	users := map[uint64][]string{}
++	ents, err := os.ReadDir(proc)
+ 	if err != nil {
+-		return nil, err
++		return users
+ 	}
+-	var out []sockRow
+-	for _, s := range socks {
+-		if listen && s.State != unix.BPF_TCP_LISTEN {
++	for _, e := range ents {
++		pid, err := strconv.Atoi(e.Name())
++		if err != nil || pid <= 0 {
+ 			continue
+ 		}
+-		st := "u_str"
+-		switch s.Type {
+-		case unix.SOCK_STREAM:
+-			st = "u_str"
+-		case unix.SOCK_DGRAM:
+-			st = "u_dgr"
+-		case unix.SOCK_SEQPACKET:
+-			st = "u_seq"
+-		}
+-		// Path attribute isn't exposed by the vendored helper; report
+-		// inode only. Good enough to confirm a unix socket exists
+-		// (paths visible via /proc/net/unix).
+-		out = append(out, sockRow{
+-			state:  stateName(s.State),
+-			local:  fmt.Sprintf("[inode:%d]", s.INode),
+-			peer:   "*",
+-			proto:  st,
+-		})
++		fdDir := filepath.Join(proc, e.Name(), "fd")
++		fds, err := os.ReadDir(fdDir)
++		if err != nil {
++			continue
++		}
++		comm := ""
++		for _, fd := range fds {
++			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
++			if err != nil {
++				continue
++			}
++			rest, ok := strings.CutPrefix(link, "socket:[")
++			if !ok {
++				continue
++			}
++			ino, err := strconv.ParseUint(strings.TrimSuffix(rest, "]"), 10, 64)
++			if err != nil {
++				continue
++			}
++			if comm == "" {
++				b, _ := os.ReadFile(filepath.Join(proc, e.Name(), "comm"))
++				comm = strings.TrimSpace(string(b))
++			}
++			users[ino] = append(users[ino], fmt.Sprintf("(%q,pid=%d,fd=%s)", comm, pid, fd.Name()))
++		}
+ 	}
+-	return out, nil
++	return users
+ }
+ 
+-func printRows(rows []sockRow) {
+-	sort.SliceStable(rows, func(i, j int) bool {
+-		if rows[i].proto != rows[j].proto {
+-			return rows[i].proto < rows[j].proto
++// services maps "port/proto" to the first name /etc/services gives it.
++func loadServices(file string) map[string]string {
++	m := map[string]string{}
++	f, err := os.Open(file)
++	if err != nil {
++		return m
++	}
++	defer f.Close()
++	sc := bufio.NewScanner(f)
++	for sc.Scan() {
++		line, _, _ := strings.Cut(sc.Text(), "#")
++		fl := strings.Fields(line)
++		if len(fl) < 2 {
++			continue
++		}
++		if _, ok := m[fl[1]]; !ok {
++			m[fl[1]] = fl[0]
+ 		}
+-		return rows[i].local < rows[j].local
+-	})
+-	fmt.Printf("%-6s %-12s %-6s %-6s %-30s %-30s\n",
+-		"Netid", "State", "Recv-Q", "Send-Q", "Local Address:Port", "Peer Address:Port")
+-	for _, r := range rows {
+-		fmt.Printf("%-6s %-12s %-6d %-6d %-30s %-30s\n",
+-			r.proto, r.state, r.recvQ, r.sendQ, r.local, r.peer)
+ 	}
++	return m
+ }
+ 
+-func main() {
+-	flag.Parse()
++type printer struct {
++	o        *options
++	services map[string]string
++	users    map[uint64][]string
++}
+ 
+-	// Default to TCP if nothing else picked.
+-	if !*flagTCP && !*flagUDP && !*flagUNIX {
+-		*flagTCP = true
++func (p *printer) port(proto string, port uint16) string {
++	if port == 0 {
++		return "*"
+ 	}
++	ps := strconv.Itoa(int(port))
++	if !p.o.numeric {
++		if name, ok := p.services[ps+"/"+proto]; ok {
++			return name
++		}
++	}
++	return ps
++}
+ 
+-	// Family filter.
++func (p *printer) addr(s *sock, ip net.IP, port uint16) string {
++	var host string
++	switch {
++	case s.family == unix.AF_INET6 && ip.To4() != nil && !ip.IsUnspecified():
++		host = "[::ffff:" + ip.To4().String() + "]"
++	case s.family == unix.AF_INET6:
++		if ip == nil {
++			ip = net.IPv6unspecified
++		}
++		host = "[" + ip.String() + "]"
++	default:
++		if ip == nil {
++			ip = net.IPv4zero
++		}
++		host = ip.To4().String()
++	}
++	return host + ":" + p.port(s.netid, port)
++}
++
++func (p *printer) row(s *sock) []string {
++	var local, peer string
++	if s.family == unix.AF_UNIX {
++		path := s.path
++		if path == "" {
++			path = "*"
++		}
++		local = path + " " + strconv.FormatUint(s.inode, 10)
++		peer = "* 0"
++	} else {
++		local = p.addr(s, s.lip, s.lport)
++		peer = p.addr(s, s.rip, s.rport)
++	}
++	r := []string{s.netid, stateName(s.state),
++		strconv.FormatUint(uint64(s.recvQ), 10), strconv.FormatUint(uint64(s.sendQ), 10),
++		local, peer}
++	var extra []string
++	if p.o.procs {
++		if u := p.users[s.inode]; len(u) > 0 && s.inode != 0 {
++			extra = append(extra, "users:("+strings.Join(u, ",")+")")
++		}
++	}
++	if p.o.extended && s.family != unix.AF_UNIX {
++		if s.hasUID {
++			extra = append(extra, fmt.Sprintf("uid:%d", s.uid))
++		}
++		extra = append(extra, fmt.Sprintf("ino:%d", s.inode))
++	}
++	return append(r, strings.Join(extra, " "))
++}
++
++func (p *printer) print(w io.Writer, socks []sock, showNetid bool) {
++	rows := [][]string{}
++	if !p.o.noHeader {
++		rows = append(rows, []string{"Netid", "State", "Recv-Q", "Send-Q",
++			"Local Address:Port", "Peer Address:Port", "Process"})
++	}
++	for i := range socks {
++		rows = append(rows, p.row(&socks[i]))
++	}
++	first := 0
++	if !showNetid {
++		first = 1
++	}
++	width := make([]int, 7)
++	for _, r := range rows {
++		for i, c := range r {
++			width[i] = max(width[i], len(c))
++		}
++	}
++	for _, r := range rows {
++		var b strings.Builder
++		for i := first; i < len(r); i++ {
++			if i > first {
++				b.WriteString(" ")
++			}
++			switch {
++			case i == len(r)-1:
++				b.WriteString(r[i])
++			case i == 2 || i == 3:
++				fmt.Fprintf(&b, "%*s", width[i], r[i])
++			default:
++				fmt.Fprintf(&b, "%-*s", width[i], r[i])
++			}
++		}
++		fmt.Fprintln(w, strings.TrimRight(b.String(), " "))
++	}
++}
++
++func run(args []string, stdout, stderr io.Writer) int {
++	var o options
++	fs := newFlagSet(&o, stderr)
++	if err := posixflag.Parse(fs, args); err != nil {
++		if errors.Is(err, flag.ErrHelp) {
++			return 0
++		}
++		return 2
++	}
++	if o.help {
++		usage(stdout)
++		return 0
++	}
++	if o.version {
++		fmt.Fprintln(stdout, version)
++		return 0
++	}
++	if fs.NArg() > 0 {
++		fmt.Fprintf(stderr, "ss: filter expressions are not supported: %s\n", strings.Join(fs.Args(), " "))
++		return 1
++	}
++
++	if !o.tcp && !o.udp && !o.unix {
++		o.tcp, o.udp = true, true
++		o.unix = !o.v4 && !o.v6
++	}
+ 	families := []uint8{unix.AF_INET, unix.AF_INET6}
+ 	switch {
+-	case *flag4 && !*flag6:
++	case o.v4 && !o.v6:
+ 		families = []uint8{unix.AF_INET}
+-	case *flag6 && !*flag4:
++	case o.v6 && !o.v4:
+ 		families = []uint8{unix.AF_INET6}
+ 	}
+ 
+-	var all []sockRow
+-	if *flagTCP {
+-		for _, fam := range families {
+-			rows, err := collectTCP(fam, *flagListen, *flagAll, *flagNumeric)
+-			if err != nil {
+-				fmt.Fprintf(os.Stderr, "ss: tcp(%d): %v\n", fam, err)
+-				continue
++	var (
++		all           []sock
++		tried, failed int
++		protos        = 0
++	)
++	collect := func(socks []sock, err error) {
++		tried++
++		if err != nil {
++			failed++
++			fmt.Fprintf(stderr, "ss: %v\n", err)
++			return
++		}
++		for i := range socks {
++			if wanted(&o, &socks[i]) {
++				all = append(all, socks[i])
+ 			}
+-			all = append(all, rows...)
+ 		}
+ 	}
+-	if *flagUDP {
++	for _, proto := range []string{"tcp", "udp"} {
++		if (proto == "tcp" && !o.tcp) || (proto == "udp" && !o.udp) {
++			continue
++		}
++		protos++
+ 		for _, fam := range families {
+-			rows, err := collectUDP(fam, *flagListen, *flagNumeric)
+-			if err != nil {
+-				fmt.Fprintf(os.Stderr, "ss: udp(%d): %v\n", fam, err)
+-				continue
+-			}
+-			all = append(all, rows...)
++			collect(inetSockets(proto, fam))
+ 		}
+ 	}
+-	if *flagUNIX {
+-		rows, err := collectUNIX(*flagListen)
+-		if err != nil {
+-			fmt.Fprintf(os.Stderr, "ss: unix: %v\n", err)
+-		} else {
+-			all = append(all, rows...)
+-		}
++	if o.unix {
++		protos++
++		collect(unixSockets())
++	}
++
++	p := &printer{o: &o}
++	if !o.numeric {
++		p.services = loadServices("/etc/services")
+ 	}
++	if o.procs {
++		p.users = procUsers("/proc")
++	}
++	p.print(stdout, all, protos > 1)
+ 
+-	printRows(all)
++	if tried > 0 && failed == tried {
++		return 1
++	}
++	return 0
++}
+ 
+-	// Keep "go vet" quiet about unused imports if a future refactor
+-	// drops a code path.
+-	_ = strconv.Itoa
++func main() {
++	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+ }
+diff --git a/cmds/core/ss/ss_linux_test.go b/cmds/core/ss/ss_linux_test.go
+new file mode 100644
+index 0000000..44c90d2
+--- /dev/null
++++ b/cmds/core/ss/ss_linux_test.go
+@@ -0,0 +1,179 @@
++// Copyright (C) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
++// doing business as LAVA GOAT SOFTWARE.
++//
++// SPDX-License-Identifier: MIT
++//go:build !tinygo || tinygo.enable
++
++package main
++
++import (
++	"encoding/binary"
++	"fmt"
++	"net"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"golang.org/x/sys/unix"
++)
++
++// hexAddr renders ip:port the way the kernel prints /proc/net/{tcp,udp}*.
++func hexAddr(ip net.IP, port uint16) string {
++	if v4 := ip.To4(); v4 != nil {
++		ip = v4
++	}
++	var b strings.Builder
++	for i := 0; i < len(ip); i += 4 {
++		fmt.Fprintf(&b, "%08X", binary.NativeEndian.Uint32(ip[i:i+4]))
++	}
++	return fmt.Sprintf("%s:%04X", b.String(), port)
++}
++
++func writeFile(t *testing.T, name, body string) string {
++	t.Helper()
++	p := filepath.Join(t.TempDir(), name)
++	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	return p
++}
++
++const inetHeader = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
++
++func TestProcInetUDP(t *testing.T) {
++	body := inetHeader +
++		fmt.Sprintf("  1: %s %s 07 00000000:00000000 00:00000000 00000000     0        0 4711 2 0000000000000000 0\n",
++			hexAddr(net.IPv4zero, 68), hexAddr(net.IPv4zero, 0)) +
++		fmt.Sprintf("  2: %s %s 01 00000010:00000020 00:00000000 00000000  1000        0 4712 2 0000000000000000 0\n",
++			hexAddr(net.ParseIP("10.0.0.8"), 41641), hexAddr(net.ParseIP("10.0.0.1"), 53))
++	socks, err := procInet(writeFile(t, "udp", body), "udp", unix.AF_INET)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(socks) != 2 {
++		t.Fatalf("got %d sockets, want 2", len(socks))
++	}
++	p := &printer{o: &options{numeric: true}}
++	if got := p.row(&socks[0]); got[1] != "UNCONN" || got[4] != "0.0.0.0:68" || got[5] != "0.0.0.0:*" {
++		t.Errorf("unconnected row = %q", got)
++	}
++	s := socks[1]
++	if got := p.row(&s); got[1] != "ESTAB" || got[4] != "10.0.0.8:41641" || got[5] != "10.0.0.1:53" {
++		t.Errorf("connected row = %q", got)
++	}
++	if s.sendQ != 0x10 || s.recvQ != 0x20 || s.uid != 1000 || s.inode != 4712 {
++		t.Errorf("queues/uid/inode = %d/%d/%d/%d", s.sendQ, s.recvQ, s.uid, s.inode)
++	}
++
++	listen := &options{listen: true}
++	if !wanted(listen, &socks[0]) || wanted(listen, &socks[1]) {
++		t.Errorf("-l must keep only the unconnected socket")
++	}
++	if wanted(&options{}, &socks[0]) || !wanted(&options{}, &socks[1]) {
++		t.Errorf("default must keep only the connected socket")
++	}
++}
++
++func TestProcInetTCP6(t *testing.T) {
++	body := inetHeader +
++		fmt.Sprintf("  0: %s %s 0A 00000000:00000000 00:00000000 00000000     0        0 9001 1 0000000000000000 100 0 0 10 0\n",
++			hexAddr(net.IPv6unspecified, 22), hexAddr(net.IPv6unspecified, 0)) +
++		fmt.Sprintf("  1: %s %s 01 00000000:00000000 00:00000000 00000000     0        0 9002 1 0000000000000000 100 0 0 10 0\n",
++			hexAddr(net.ParseIP("fd7a:115c:a1e0::338:f6d"), 60432), hexAddr(net.ParseIP("::ffff:10.0.0.9"), 51000))
++	socks, err := procInet(writeFile(t, "tcp6", body), "tcp", unix.AF_INET6)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &printer{o: &options{numeric: true}}
++	for i, want := range [][2]string{
++		{"[::]:22", "[::]:*"},
++		{"[fd7a:115c:a1e0::338:f6d]:60432", "[::ffff:10.0.0.9]:51000"},
++	} {
++		got := p.row(&socks[i])
++		if got[4] != want[0] || got[5] != want[1] {
++			t.Errorf("row %d = %q, want local %s peer %s", i, got, want[0], want[1])
++		}
++	}
++	if stateName(socks[0].state) != "LISTEN" {
++		t.Errorf("state = %s", stateName(socks[0].state))
++	}
++}
++
++func TestProcInetMissing(t *testing.T) {
++	old := procNet
++	procNet = t.TempDir()
++	defer func() { procNet = old }()
++	// No /proc/net/udp6 (kernel without IPv6) is an empty table; the
++	// netlink half of the lookup may or may not succeed here, so only
++	// the /proc half is checked.
++	if _, err := procInet(filepath.Join(procNet, "udp6"), "udp", unix.AF_INET6); !errNotExist(err) {
++		t.Errorf("missing file: err = %v, want not-exist", err)
++	}
++}
++
++func TestProcUnix(t *testing.T) {
++	body := "Num       RefCount Protocol Flags    Type St Inode Path\n" +
++		"0000000000000000: 00000002 00000000 00010000 0001 01 101 /run/dropbear.sock\n" +
++		"0000000000000000: 00000002 00000000 00000000 0002 01 102 /dev/log\n" +
++		"0000000000000000: 00000003 00000000 00000000 0001 03 103 @abstract\n" +
++		"0000000000000000: 00000003 00000000 00000000 0005 03 104\n"
++	socks, err := procUnix(writeFile(t, "unix", body))
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &printer{o: &options{}}
++	want := [][3]string{
++		{"u_str", "LISTEN", "/run/dropbear.sock 101"},
++		{"u_dgr", "UNCONN", "/dev/log 102"},
++		{"u_str", "ESTAB", "@abstract 103"},
++		{"u_seq", "ESTAB", "* 104"},
++	}
++	if len(socks) != len(want) {
++		t.Fatalf("got %d sockets, want %d", len(socks), len(want))
++	}
++	for i, w := range want {
++		got := p.row(&socks[i])
++		if got[0] != w[0] || got[1] != w[1] || got[4] != w[2] {
++			t.Errorf("row %d = %q, want %q", i, got, w)
++		}
++	}
++	listen := &options{listen: true}
++	if !wanted(listen, &socks[0]) || !wanted(listen, &socks[1]) || wanted(listen, &socks[2]) {
++		t.Errorf("-l must keep the listener and the bound datagram socket only")
++	}
++}
++
++func TestServices(t *testing.T) {
++	svc := loadServices(writeFile(t, "services", "# comment\nssh\t\t22/tcp\ndomain\t53/tcp\ndomain\t53/udp  # DNS\nbootpc 68/udp\n"))
++	p := &printer{o: &options{}, services: svc}
++	if got := p.port("tcp", 22); got != "ssh" {
++		t.Errorf("tcp/22 = %s", got)
++	}
++	if got := p.port("udp", 68); got != "bootpc" {
++		t.Errorf("udp/68 = %s", got)
++	}
++	if got := p.port("udp", 22); got != "22" {
++		t.Errorf("udp/22 = %s", got)
++	}
++	if got := p.port("tcp", 0); got != "*" {
++		t.Errorf("port 0 = %s", got)
++	}
++	p.o.numeric = true
++	if got := p.port("tcp", 22); got != "22" {
++		t.Errorf("-n tcp/22 = %s", got)
++	}
++}
++
++func TestRunFlags(t *testing.T) {
++	var out, errOut strings.Builder
++	if rc := run([]string{"-V"}, &out, &errOut); rc != 0 || !strings.Contains(out.String(), "jonerix-netutils") {
++		t.Errorf("-V: rc=%d out=%q", rc, out.String())
++	}
++	if rc := run([]string{"-tlnq"}, &out, &errOut); rc != 2 {
++		t.Errorf("unknown flag: rc=%d", rc)
++	}
++	if rc := run([]string{"-tln", "sport", "=", ":22"}, &out, &errOut); rc != 1 {
++		t.Errorf("filter expression: rc=%d", rc)
++	}
++}

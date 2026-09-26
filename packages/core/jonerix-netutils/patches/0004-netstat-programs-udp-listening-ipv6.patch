@@ -1,0 +1,762 @@
+diff --git a/cmds/core/netstat/netstat_linux.go b/cmds/core/netstat/netstat_linux.go
+index 2301248..f8897a0 100644
+--- a/cmds/core/netstat/netstat_linux.go
++++ b/cmds/core/netstat/netstat_linux.go
+@@ -8,21 +8,21 @@ package main
+ import (
+ 	"errors"
+ 	"flag"
+ 	"fmt"
+ 	"io"
+ 	"log"
+ 	"os"
+ 	"time"
+ 
+ 	"github.com/u-root/u-root/pkg/netstat"
+-	"github.com/u-root/u-root/pkg/uroot/unixflag"
++	"github.com/u-root/u-root/pkg/posixflag"
+ )
+ 
+ var help = `usage: netstat [-WeenNC] [<Af>] -r         netstat {-h|--help}
+        netstat [-WnNaeol] [<Socket> ...]
+        netstat { [-WeenNa] -I[<Iface>] | [-eenNa] -i | [-cnNe] | -s [-6tuw] } [delay]
+ 
+         -r, --route             display routing table
+         -I, --interface=<Iface> display interface table for <Iface>
+         -i, --interfaces        display interface table
+         -g, --groups            display multicast group memberships
+@@ -95,23 +95,25 @@ type cmd struct {
+ 
+ var errMutualExcludeFlags = errors.New("only one of route, interfaces, groups, statistics or interface allowed")
+ 
+ func (c cmd) run() error {
+ 	afs := make([]netstat.AddressFamily, 0)
+ 
+ 	if !xorFlags(c.route, c.interfaces, c.groups, c.stats, c.iface != "") {
+ 		return errMutualExcludeFlags
+ 	}
+ 
+-	// use IPv4 as default if no address family is given
++	// With no address family given, list sockets of both families (as
++	// net-tools does), but only the IPv4 routing table and statistics.
+ 	if !c.ipv4 && !c.ipv6 {
+ 		c.ipv4 = true
++		c.ipv6 = !c.route && !c.stats
+ 	}
+ 
+ 	// In case we want to print IP Sockets and give no further information, all protocols shall
+ 	// be printet. The default value of the protocol flags is false, but for that we need to override
+ 	// them to be true.
+ 	if (c.ipv4 || c.ipv6 || c.stats) &&
+ 		!(c.tcp || c.udp || c.udpL || c.raw || c.unix) {
+ 		c.tcp = true
+ 		c.udp = true
+ 		c.udpL = true
+@@ -155,20 +157,22 @@ func (c cmd) run() error {
+ 		ProgNames: c.programs,
+ 		Timer:     c.timers,
+ 		Symbolic:  c.symbolic,
+ 	}
+ 
+ 	// Set up output generator for route and socket listing
+ 	outfmts, err := netstat.NewOutput(outflags)
+ 	if err != nil {
+ 		return err
+ 	}
++	outfmts.Listening = c.listening
++	outfmts.All = c.all
+ 
+ 	if c.route {
+ 		if c.ipv4 {
+ 			afs = append(afs, netstat.NewAddressFamily(false, outfmts))
+ 		}
+ 
+ 		if c.ipv6 {
+ 			afs = append(afs, netstat.NewAddressFamily(true, outfmts))
+ 		}
+ 
+@@ -213,119 +217,77 @@ func (c cmd) run() error {
+ 
+ 		for _, af := range afs {
+ 			if err := af.PrintStatistics(c.out); err != nil {
+ 				return err
+ 			}
+ 		}
+ 		return nil
+ 	}
+ 
+ 	for {
++		// Every table appends to outfmts; print the listing once.
+ 		for _, sock := range socks {
+-			str, err := sock.SocketsString(c.listening, c.all, outfmts)
+-			if err != nil {
++			if _, err := sock.SocketsString(c.listening, c.all, outfmts); err != nil {
+ 				return err
+ 			}
+-			fmt.Fprintf(c.out, "%s\n", str)
+ 		}
++		fmt.Fprint(c.out, outfmts.String())
+ 		if !c.contin {
+ 			break
+ 		}
+-		outfmts.Builder.Reset()
++		outfmts.Reset()
+ 		time.Sleep(2 * time.Second)
+ 	}
+ 
+ 	return nil
+ }
+ 
+ func xorFlags(flags ...bool) bool {
+ 	c := 0
+ 	for _, flag := range flags {
+ 		if flag {
+ 			c++
+ 		}
+ 	}
+ 
+ 	return c <= 1
+ }
+ 
+ func evalProtocols(tcp, udp, udpl, raw, unix, ipv4, ipv6 bool) ([]netstat.Socket, error) {
+ 	retProtos := make([]netstat.Socket, 0)
+ 
+-	if tcp && ipv4 {
+-		t, err := netstat.NewSocket(netstat.PROT_TCP)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating TCP4 socket: %w", err)
+-		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if tcp && ipv6 {
+-		t, err := netstat.NewSocket(netstat.PROT_TCP6)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating TCP6 socket: %w", err)
+-		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if udp && ipv4 {
+-		t, err := netstat.NewSocket(netstat.PROT_UDP)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating UDP4 socket: %w", err)
+-		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if udp && ipv6 {
+-		t, err := netstat.NewSocket(netstat.PROT_UDP6)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating UDP6 socket: %w", err)
+-		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if udpl && ipv4 {
+-		t, err := netstat.NewSocket(netstat.PROT_UDPL)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating UDPL4 socket: %w", err)
+-		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if udpl && ipv6 {
+-		t, err := netstat.NewSocket(netstat.PROT_UDPL6)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating UDPL6 socket: %w", err)
+-		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if raw && ipv4 {
+-		t, err := netstat.NewSocket(netstat.PROT_RAW)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating RAW4 socket: %w", err)
+-		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if raw && ipv6 {
+-		t, err := netstat.NewSocket(netstat.PROT_RAW6)
+-		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating RAW6 socket: %w", err)
++	for _, p := range []struct {
++		want  bool
++		proto netstat.Protocol
++		name  string
++	}{
++		{tcp && ipv4, netstat.PROT_TCP, "TCP4"},
++		{tcp && ipv6, netstat.PROT_TCP6, "TCP6"},
++		{udp && ipv4, netstat.PROT_UDP, "UDP4"},
++		{udp && ipv6, netstat.PROT_UDP6, "UDP6"},
++		{udpl && ipv4, netstat.PROT_UDPL, "UDPL4"},
++		{udpl && ipv6, netstat.PROT_UDPL6, "UDPL6"},
++		{raw && ipv4, netstat.PROT_RAW, "RAW4"},
++		{raw && ipv6, netstat.PROT_RAW6, "RAW6"},
++		{unix, netstat.PROT_UNIX, "UNIX"},
++	} {
++		if !p.want {
++			continue
+ 		}
+-		retProtos = append(retProtos, t)
+-	}
+-
+-	if unix {
+-		t, err := netstat.NewSocket(netstat.PROT_UNIX)
++		t, err := netstat.NewSocket(p.proto)
+ 		if err != nil {
+-			return nil, fmt.Errorf("evalProtocols creating UNIX socket: %w", err)
++			// A kernel without IPv6 or UDP-Lite has no such
++			// /proc/net table: there is nothing to list.
++			if errors.Is(err, os.ErrNotExist) {
++				continue
++			}
++			return nil, fmt.Errorf("evalProtocols creating %s socket: %w", p.name, err)
+ 		}
+ 		retProtos = append(retProtos, t)
+ 	}
+ 
+ 	return retProtos, nil
+ }
+ 
+ func command(out io.Writer, args []string) *cmd {
+ 	var c cmd
+ 	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
+@@ -393,21 +355,21 @@ func command(out io.Writer, args []string) *cmd {
+ 	fs.BoolVar(&c.contin, "continuous", false, "continuous listing")
+ 	fs.BoolVar(&c.contin, "c", false, "continuous listing")
+ 
+ 	fs.BoolVar(&c.listening, "listening", false, "display listening server sockets")
+ 	fs.BoolVar(&c.listening, "l", false, "display listening server sockets")
+ 
+ 	fs.BoolVar(&c.all, "all", false, "display all sockets (default: connected)")
+ 	fs.BoolVar(&c.all, "a", false, "display all sockets (default: connected)")
+ 
+ 	fs.Usage = printHelp
+-	fs.Parse(unixflag.ArgsToGoArgs(args[1:]))
++	fs.Parse(posixflag.Args(fs, args[1:]))
+ 
+ 	// Apply alternative address family setting
+ 	switch c.af {
+ 	case "inet":
+ 		c.ipv4 = true
+ 	case "inet6":
+ 		c.ipv6 = true
+ 	}
+ 
+ 	c.out = out
+diff --git a/pkg/netstat/format.go b/pkg/netstat/format.go
+index eed59cb..731e74d 100644
+--- a/pkg/netstat/format.go
++++ b/pkg/netstat/format.go
+@@ -1,19 +1,20 @@
+ // Copyright 2024 the u-root Authors. All rights reserved
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+ package netstat
+ 
+ import (
+ 	"fmt"
+ 	"net"
++	"os"
+ 	"os/user"
+ 	"strconv"
+ 	"strings"
+ )
+ 
+ type FmtFlags struct {
+ 	Extend    bool // Adds fields User and Inode for ip sockets
+ 	Wide      bool // Unknown
+ 	NumHosts  bool // dont resolve host ip to names - applies to ip socks
+ 	NumPorts  bool // dont resolve port numbers to names - applies to ip socks
+@@ -21,42 +22,74 @@ type FmtFlags struct {
+ 	ProgNames bool // Adds fields PID/Program name for sockets (for ip and unix sockets)
+ 	Timer     bool // Adds field timer for sockets (not unix socket)
+ 	Symbolic  bool // Rounting table/cache -> no ip to name conversion, same as -n
+ }
+ 
+ type Output struct {
+ 	strings.Builder
+ 	FmtFlags
+ 
+ 	ProgCache map[int]ProcNode
++
++	// Listening and All select the "Active ... connections" title.
++	Listening, All bool
++	ipTitleDone    bool
++}
++
++// Reset clears the output for the next round of -c (continuous) mode.
++func (o *Output) Reset() {
++	o.Builder.Reset()
++	o.ipTitleDone = false
++}
++
++func (o *Output) titleSuffix() string {
++	switch {
++	case o.All:
++		return "(servers and established)"
++	case o.Listening:
++		return "(only servers)"
++	}
++	return "(w/o servers)"
+ }
+ 
+ func NewOutput(
+ 	flags FmtFlags,
+ ) (*Output, error) {
+ 	ret := &Output{}
+ 
+ 	if flags.ProgNames {
+-		cache, err := readProgFS()
++		cache, denied, err := readProgFS()
+ 		if err != nil {
+ 			return nil, fmt.Errorf("reading /proc filesystem: %w", err)
+ 		}
++		if denied && os.Geteuid() != 0 {
++			fmt.Fprint(os.Stderr, "(Not all processes could be identified, non-owned process info\n"+
++				" will not be shown, you would have to be root to see it all.)\n")
++		}
+ 		ret.ProgCache = cache
+ 	}
+ 
+ 	ret.Builder = strings.Builder{}
+ 	ret.FmtFlags = flags
+ 
+ 	return ret, nil
+ }
+ 
++// InitIPSocketTitels writes the title and column headers once per round:
++// the TCP, UDP, UDPLite and RAW tables of both families share one listing,
++// as in net-tools.
+ func (o *Output) InitIPSocketTitels() {
++	if o.ipTitleDone {
++		return
++	}
++	o.ipTitleDone = true
++	fmt.Fprintf(&o.Builder, "Active Internet connections %s\n", o.titleSuffix())
+ 	fmt.Fprintf(&o.Builder, "%-6s %-6s %-6s %-35s %-35s %-17s",
+ 		"Proto",
+ 		"Recv-Q",
+ 		"Send-Q",
+ 		"Local Address",
+ 		"Foreign Address",
+ 		"State",
+ 	)
+ 
+ 	if o.Extend {
+@@ -68,21 +101,21 @@ func (o *Output) InitIPSocketTitels() {
+ 	}
+ 
+ 	if o.Timer {
+ 		fmt.Fprintf(&o.Builder, "%-10s", "Timer")
+ 	}
+ 
+ 	fmt.Fprint(&o.Builder, "\n")
+ }
+ 
+ func (o *Output) InitUnixSocketTitels() {
+-	fmt.Fprintf(&o.Builder, "%s\n", "Active sockets in the UNIX domain")
++	fmt.Fprintf(&o.Builder, "Active UNIX domain sockets %s\n", o.titleSuffix())
+ 	fmt.Fprintf(&o.Builder, "%-8s%-8s%-8s%-10s%-16s%-10s",
+ 		"Proto",
+ 		"RefCnt",
+ 		"Flags",
+ 		"Type",
+ 		"State",
+ 		"I-Node",
+ 	)
+ 
+ 	if o.ProgNames {
+@@ -220,21 +253,23 @@ func (o *Output) resolveAddress(addr IPAddress, netmask net.IPMask) string {
+ 	}
+ 
+ 	switch len(addr.Address) {
+ 	case 4:
+ 		// IPv4 case
+ 		// Always assume 0xFFFFFF00 as netmask?
+ 		if addr.Address.String() == ANYADDR {
+ 			if netmask.String() == ANYMASK {
+ 				s.WriteString("default")
+ 			} else {
+-				s.WriteString("*")
++				// A wildcard socket address keeps its port
++				// ("0.0.0.0:22", "0.0.0.0:*"), as in net-tools.
++				s.WriteString(addr.String())
+ 			}
+ 			return s.String()
+ 		}
+ 
+ 		if addr.Address.Mask(netmask).String() != ANYADDR {
+ 			hn, err := net.LookupAddr(addr.Address.String())
+ 			if len(hn) > 0 {
+ 				if err != nil {
+ 					s.WriteString("unable to resolve")
+ 				}
+diff --git a/pkg/netstat/prog.go b/pkg/netstat/prog.go
+index 963b0a4..6db2607 100644
+--- a/pkg/netstat/prog.go
++++ b/pkg/netstat/prog.go
+@@ -13,81 +13,91 @@ import (
+ )
+ 
+ type ProcNode struct {
+ 	Name  string
+ 	PID   int
+ 	Inode int
+ }
+ 
+ var procFS = "/proc"
+ 
+-func readProgFS() (map[int]ProcNode, error) {
++// progNameLen is the longest program name printed, as in net-tools.
++const progNameLen = 20
++
++// progName returns the program name for a process: the base name of
++// argv[0], or the kernel's comm for processes without a command line
++// (kernel threads, zombies).
++func progName(dir string) string {
++	if cmdline, err := os.ReadFile(path.Join(dir, "cmdline")); err == nil {
++		argv0, _, _ := strings.Cut(string(cmdline), "\x00")
++		if name := path.Base(argv0); argv0 != "" && name != "/" && name != "." {
++			return name
++		}
++	}
++	comm, _ := os.ReadFile(path.Join(dir, "comm"))
++	return strings.TrimSpace(string(comm))
++}
++
++// readProgFS maps socket inodes to the processes holding them. Processes
++// whose fd directory cannot be read (other users' processes when not
++// root, or processes that exit during the scan) are skipped, like
++// net-tools does; denied reports whether any were skipped for lack of
++// permission. Only failing to read procFS itself is an error.
++func readProgFS() (retMap map[int]ProcNode, denied bool, err error) {
+ 	fs, err := os.ReadDir(procFS)
+ 	if err != nil {
+-		return nil, err
++		return nil, false, err
+ 	}
+ 
+-	retMap := make(map[int]ProcNode)
++	retMap = make(map[int]ProcNode)
+ 
+ 	for _, entry := range fs {
+-		if !entry.IsDir() {
+-			continue
+-		}
+-
+ 		// We only want numbers
+ 		pid, err := strconv.Atoi(entry.Name())
+-		if err != nil {
+-			// Most likely not a number if we have an error
++		if err != nil || !entry.IsDir() {
+ 			continue
+ 		}
+ 
+-		cmdpath := path.Join(procFS, entry.Name(), "cmdline")
+-		cmdline, err := os.ReadFile(cmdpath)
+-		if err != nil {
+-			return nil, err
+-		}
+-
+-		splitcmdline := strings.Split(string(cmdline), "/")
+-		lencmd := len(splitcmdline)
+-		cmdName := splitcmdline[lencmd-1]
+-		lencmd = min(len(cmdName)-1, 20)
+-
+-		fdpath := path.Join(procFS, entry.Name(), "fd")
++		pdir := path.Join(procFS, entry.Name())
++		fdpath := path.Join(pdir, "fd")
+ 		fddir, err := os.ReadDir(fdpath)
+ 		if err != nil {
+-			return nil, err
++			if errors.Is(err, os.ErrPermission) {
++				denied = true
++			}
++			continue
+ 		}
+ 
+-		var fdnum string
+-		for i := 0; i < len(fddir); i++ {
+-			fdnum = strconv.Itoa(i)
+-
+-			fdnumpath := path.Join(fdpath, fdnum)
+-			fdlink, err := os.Readlink(fdnumpath)
+-			if err != nil && !errors.Is(err, os.ErrNotExist) {
+-				return nil, err
++		name := ""
++		for _, fd := range fddir {
++			fdlink, err := os.Readlink(path.Join(fdpath, fd.Name()))
++			if err != nil {
++				continue
+ 			}
+ 
+-			fdnumStr, ok := strings.CutPrefix(fdlink, "socket:[")
++			inodeStr, ok := strings.CutPrefix(fdlink, "socket:[")
+ 			if !ok {
+ 				continue
+ 			}
+ 
+-			fdnumStr1, _ := strings.CutSuffix(fdnumStr, "]")
+-
+-			sockInode, err := strconv.Atoi(fdnumStr1)
++			sockInode, err := strconv.Atoi(strings.TrimSuffix(inodeStr, "]"))
+ 			if err != nil {
+-				return nil, err
++				continue
+ 			}
+ 
+-			pNode := ProcNode{
+-				Name:  string(cmdName[:lencmd]),
++			if name == "" {
++				name = progName(pdir)
++				if len(name) > progNameLen {
++					name = name[:progNameLen]
++				}
++			}
++
++			retMap[sockInode] = ProcNode{
++				Name:  name,
+ 				PID:   pid,
+ 				Inode: sockInode,
+ 			}
+-
+-			retMap[sockInode] = pNode
+ 		}
+ 	}
+ 
+-	return retMap, nil
++	return retMap, denied, nil
+ }
+diff --git a/pkg/netstat/prog_test.go b/pkg/netstat/prog_test.go
+new file mode 100644
+index 0000000..d25e373
+--- /dev/null
++++ b/pkg/netstat/prog_test.go
+@@ -0,0 +1,123 @@
++// Copyright (C) 2026 Jon-Erik G. Storm, Inc., a California Corporation,
++// doing business as LAVA GOAT SOFTWARE.
++//
++// SPDX-License-Identifier: MIT
++
++package netstat
++
++import (
++	"net"
++	"os"
++	"path/filepath"
++	"reflect"
++	"strings"
++	"testing"
++)
++
++// fakeProc builds a /proc-like tree: one directory per pid with cmdline,
++// comm and fd/<n> symlinks.
++func fakeProc(t *testing.T) string {
++	t.Helper()
++	root := t.TempDir()
++	mk := func(pid, cmdline, comm string, fds map[string]string) {
++		dir := filepath.Join(root, pid)
++		if err := os.MkdirAll(filepath.Join(dir, "fd"), 0o755); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(filepath.Join(dir, "cmdline"), []byte(cmdline), 0o644); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(filepath.Join(dir, "comm"), []byte(comm+"\n"), 0o644); err != nil {
++			t.Fatal(err)
++		}
++		for fd, target := range fds {
++			if err := os.Symlink(target, filepath.Join(dir, "fd", fd)); err != nil {
++				t.Fatal(err)
++			}
++		}
++	}
++	// Later arguments contain slashes; the name is argv[0]'s base name.
++	mk("2453", "/bin/dropbear\x00-R\x00-P\x00/run/dropbear.pid\x00", "dropbear",
++		map[string]string{"0": "/dev/null", "3": "socket:[101]"})
++	// The socket sits on fd 25, above a gap in the fd numbers.
++	mk("2043", "/usr/sbin/tailscaled\x00--socket=/run/tailscale/tailscaled.sock\x00", "tailscaled",
++		map[string]string{"0": "/dev/null", "1": "/dev/null", "25": "socket:[102]"})
++	// A kernel thread has no cmdline: the name comes from comm.
++	mk("7", "", "kworker/0:1", map[string]string{"4": "socket:[103]"})
++	// Names are cut to 20 characters.
++	mk("99", "/opt/averyveryverylongprogramname\x00", "x", map[string]string{"5": "socket:[104]"})
++	// A process that exited mid-scan (no fd directory) is skipped, and
++	// entries that are not pids are ignored.
++	for _, d := range []string{"1234", "net"} {
++		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if err := os.WriteFile(filepath.Join(root, "uptime"), []byte("1 1\n"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	return root
++}
++
++func TestReadProgFS(t *testing.T) {
++	old := procFS
++	procFS = fakeProc(t)
++	defer func() { procFS = old }()
++
++	got, _, err := readProgFS()
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := map[int]ProcNode{
++		101: {Name: "dropbear", PID: 2453, Inode: 101},
++		102: {Name: "tailscaled", PID: 2043, Inode: 102},
++		103: {Name: "kworker/0:1", PID: 7, Inode: 103},
++		104: {Name: "averyveryverylongpro", PID: 99, Inode: 104},
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Errorf("readProgFS() = %v, want %v", got, want)
++	}
++}
++
++func TestDatagramListening(t *testing.T) {
++	unconnected := netSocket{
++		Protocol:    PROT_UDP,
++		LocalAddr:   IPAddress{Address: net.IPv4(0, 0, 0, 0).To4(), Port: 68},
++		ForeignAddr: IPAddress{Address: net.IPv4(0, 0, 0, 0).To4()},
++		State:       7,
++	}
++	connected := netSocket{
++		Protocol:    PROT_UDP,
++		LocalAddr:   IPAddress{Address: net.IPv4(10, 0, 0, 8).To4(), Port: 41641},
++		ForeignAddr: IPAddress{Address: net.IPv4(10, 0, 0, 1).To4(), Port: 53},
++		State:       1,
++	}
++	n := &NetSockets{Protocol: PROT_UDP, Entries: []netSocket{unconnected, connected}}
++
++	for _, tc := range []struct {
++		lst, all bool
++		want     []string
++	}{
++		{lst: true, want: []string{"0.0.0.0:68"}},
++		{want: []string{"10.0.0.8:41641"}},
++		{all: true, want: []string{"0.0.0.0:68", "10.0.0.8:41641"}},
++	} {
++		o := &Output{FmtFlags: FmtFlags{NumHosts: true, NumPorts: true}, Listening: tc.lst, All: tc.all}
++		out, err := n.SocketsString(tc.lst, tc.all, o)
++		if err != nil {
++			t.Fatal(err)
++		}
++		var locals []string
++		for _, line := range strings.Split(out, "\n") {
++			if f := strings.Fields(line); len(f) > 3 && f[0] == "udp" {
++				locals = append(locals, f[3])
++			}
++		}
++		if !reflect.DeepEqual(locals, tc.want) {
++			t.Errorf("lst=%v all=%v: listed %v, want %v\n%s", tc.lst, tc.all, locals, tc.want, out)
++		}
++		if tc.lst && !strings.Contains(out, "0.0.0.0:*") {
++			t.Errorf("unconnected peer should print as 0.0.0.0:*\n%s", out)
++		}
++	}
++}
+diff --git a/pkg/netstat/sockets.go b/pkg/netstat/sockets.go
+index 62a2f7f..8532419 100644
+--- a/pkg/netstat/sockets.go
++++ b/pkg/netstat/sockets.go
+@@ -112,20 +112,26 @@ func (n *NetSockets) readData() error {
+ 
+ 		entries = append(entries, entry)
+ 	}
+ 
+ 	n.Entries = entries
+ 
+ 	return nil
+ }
+ 
+ func (n *NetSockets) SocketsString(lst, all bool, outputfmt *Output) (string, error) {
++	switch n.Protocol {
++	case PROT_TCP, PROT_TCP6:
++	default:
++		return n.datagramString(lst, all, outputfmt)
++	}
++
+ 	states := []NetState{TCP_ESTABLISHED, TCP_TIME_WAIT}
+ 
+ 	if lst {
+ 		states = []NetState{TCP_LISTEN}
+ 	}
+ 
+ 	outputfmt.InitIPSocketTitels()
+ 
+ 	if all {
+ 		states = []NetState{
+@@ -148,20 +154,37 @@ func (n *NetSockets) SocketsString(lst, all bool, outputfmt *Output) (string, er
+ 		for _, state := range states {
+ 			if entry.State.String() == state.String() {
+ 				outputfmt.AddIPSocket(entry)
+ 			}
+ 		}
+ 	}
+ 
+ 	return outputfmt.String(), nil
+ }
+ 
++// datagramString lists UDP, UDPLite and RAW sockets, which have no LISTEN
++// state. As in net-tools, a socket with no remote address (0.0.0.0:0 or
++// [::]:0, i.e. unconnected) counts as listening: -l shows only those, the
++// default shows only connected ones, and -a shows both.
++func (n *NetSockets) datagramString(lst, all bool, outputfmt *Output) (string, error) {
++	outputfmt.InitIPSocketTitels()
++
++	for _, entry := range n.Entries {
++		unconnected := entry.ForeignAddr.Port == 0 && entry.ForeignAddr.Address.IsUnspecified()
++		if all || unconnected == lst {
++			outputfmt.AddIPSocket(entry)
++		}
++	}
++
++	return outputfmt.String(), nil
++}
++
+ type UnixSockets struct {
+ 	Entries []unixSocket
+ }
+ 
+ type unixSocket struct {
+ 	RefCnt uint32
+ 	Proto  uint32
+ 	Flags  uint32
+ 	Type   SockType
+ 	St     SockState
+diff --git a/pkg/netstat/util.go b/pkg/netstat/util.go
+index 0f8d284..99a15c4 100644
+--- a/pkg/netstat/util.go
++++ b/pkg/netstat/util.go
+@@ -11,21 +11,26 @@ import (
+ 	"net"
+ 	"strconv"
+ 	"strings"
+ )
+ 
+ type IPAddress struct {
+ 	Address net.IP
+ 	Port    uint16
+ }
+ 
++// String formats the address as net-tools does: port 0 (an unbound or
++// unconnected end) prints as "*".
+ func (s *IPAddress) String() string {
++	if s.Port == 0 {
++		return fmt.Sprintf("%v:*", s.Address)
++	}
+ 	return fmt.Sprintf("%v:%d", s.Address, s.Port)
+ }
+ 
+ const (
+ 	ipv4Len    = 8
+ 	ipv6Len    = 32
+ 	ipv6GrpLen = 4
+ )
+ 
+ func newIPAddress(addr string) (IPAddress, error) {
