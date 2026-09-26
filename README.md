@@ -13,8 +13,8 @@
 **jonerix is a self-hosting alt-Linux built around permissive licensing.**
 
 The current tagged distro release is
-**[v1.2.2](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.2)**.
-The tree currently tracks **118 package recipes** and builds for
+**[v1.2.3](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.3)**.
+The tree currently tracks **145 package recipes** and builds for
 `x86_64` and `aarch64`.
 
 jonerix is a "bring your own kernel" distribution. The Linux kernel is not part
@@ -149,7 +149,7 @@ iwr -useb https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/wsl/i
   -OutFile $env:TEMP\jonerix-install.ps1
 
 & $env:TEMP\jonerix-install.ps1 -InstallDir "D:\WSL\jonerix" -DistroName "jonerix-dev"
-& $env:TEMP\jonerix-install.ps1 -Release "v1.2.2"
+& $env:TEMP\jonerix-install.ps1 -Release "v1.2.3"
 ```
 
 See [install/wsl/install.ps1](install/wsl/install.ps1) and
@@ -171,7 +171,7 @@ Pin the package set to a tagged release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
-  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.2
+  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.3
 ```
 
 Complete a CI image after `dd` by adding the firmware/kernel payload that the
@@ -221,7 +221,7 @@ jpkg list
 jpkg owns /bin/ping
 jpkg local install ./pkg.jpkg
 jpkg local build ./packages/core/jpkg
-jpkg conform 1.2.2
+jpkg conform 1.2.3
 ```
 
 The current source tree packages `jpkg` **2.2.10**. The Rust implementation
@@ -391,7 +391,7 @@ See [DESIGN.md](DESIGN.md) for the full rule set.
 
 | Release surface | Location |
 | --------------- | -------- |
-| Tagged distro release | GitHub release tags like `v1.2.2` |
+| Tagged distro release | GitHub release tags like `v1.2.3` |
 | Rolling jpkg packages | [`packages`](https://github.com/stormj-UH/jonerix/releases/tag/packages) release |
 | Source mirrors | `source-*` releases plus vendored files under [sources/](sources) |
 | Container images | `ghcr.io/stormj-uh/jonerix:*` |
@@ -413,7 +413,7 @@ the recipes have drifted apart.
     _                       _            jonerik@tormenta
    (_) ___  _ __   ___ _ __(_)_  __      ----------------
    | |/ _ \| '_ \ / _ \ '__| \ \/ /      Host -> Raspberry Pi 5 Model B Rev 1.1
-   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.2.2 aarch64
+   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.2.3 aarch64
   _/ |\___/|_| |_|\___|_|  |_/_/\_\      Init System -> openrc-init
  |__/                                    Packages -> 87 (jpkg)
  ========= permissive + linux =========  Shell -> brash
