@@ -86,12 +86,13 @@ FIRMWARE_ONLY=0     # --firmware-only: skip partition/format/userland,
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 reforger raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch"
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd openresolv ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 reforger raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch"
 # Kept identical to image/pi5/build-image.py's DEFAULT_PACKAGES so a
 # Pi installed by hand via this script lands at the same package set
 # as a CI-built jonerix-pi5.img. Beyond the minimal boot core (musl,
 # toybox, mksh, openrc, dhcpcd, dropbear, ifupdown-ng, bsdtar,
 # openntpd, sudo, python3, reforger, raspi-config), the list adds:
+#   openresolv  — resolvconf(8), so dhcpcd and tailscaled share /etc/resolv.conf
 #   shadow      — proper /bin/login + shadow-getty on tty1
 #   jonerix-netutils  — u-root ip(8) (toybox ip can't enumerate TUN devs)
 #   zsh, gitredoxide, ripgrep, pico, fastfetch — interactive niceties

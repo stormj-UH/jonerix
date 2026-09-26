@@ -46,6 +46,7 @@ DEFAULT_PACKAGES = [
     "mksh",       # /bin/sh
     "openrc",     # init system
     "dhcpcd",     # DHCP client
+    "openresolv", # resolvconf(8): dhcpcd and tailscaled share /etc/resolv.conf
     "ifupdown-ng",
     "dropbear",   # SSH server
     "bsdtar",
