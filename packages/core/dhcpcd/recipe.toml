@@ -1,14 +1,18 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r11"
+version = "10.1.0-r10"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
-# r10 was built and published from the unmerged lava-goat/dropbear-pq-kex
-# branch: /etc/init.d/dhcpcd uses #!/bin/openrc-run (jonerix has no
+# r10: /etc/init.d/dhcpcd uses #!/bin/openrc-run (jonerix has no
 # /sbin/openrc-run, so the old shebang left the boot runlevel without
 # DHCP), dhcpcd-run-hooks is pinned to mksh, and mksh is a runtime dep.
-# r11 lands the same payload on main so republishing from main supersedes
-# the branch build instead of being discarded as older.
+# r10 was first built and published from the unmerged
+# lava-goat/dropbear-pq-kex branch; this recipe reproduces that payload
+# byte for byte and keeps the same revision on purpose. The publish step
+# skips it as already published, so no host is pushed a reinstall, and
+# jpkg (<= 2.2.10) has no config protection: a reinstall would overwrite
+# a locally edited /etc/dhcpcd.conf (tormenta's `nohook resolv.conf`).
+# Bump the revision only when the payload really changes.
 
 [source]
 url = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.1.0/dhcpcd-10.1.0.tar.xz"
