@@ -117,7 +117,11 @@ during implementation).
 | `CLASSIFY` | covered (1.1.9) | `--set-class M:N` → `meta priority set M:N`; the value is encoded since 1.1.13. |
 | `<user-chain>` | covered | nft `jump <name>`; user chain auto-created if missing (1.1.2/1.1.3) |
 | `--goto <name>` | covered | nft `goto <name>` |
-| `AUDIT`, `CHECKSUM`, `CLUSTERIP`, `CONNSECMARK`, `DNPT`, `DSCP`, `ECN`, `HL`, `HMARK`, `IDLETIMER`, `LED`, `NETMAP`, `RATEEST`, `SECMARK`, `SET`, `SYNPROXY`, `MIRROR`, `SAME`, `ULOG` | missing | parsed as `Target::Jump(<NAME>)` and ensure_jump_target_chain creates a user chain — wrong but installable. |
+| `DSCP` | installs a TOS-byte set | `--set-dscp N` / `--set-dscp-class` → `meta nfproto ipv4 @nh,8,8 set <N&lt;&lt;2>`, the same encoding as `-j TOS`. The DSCP bits land, but the write covers the whole TOS byte, so any ECN marking on the packet is cleared; iptables' `DSCP` target leaves ECN alone. |
+| `CHECKSUM` | missing | `--checksum-fill` exits 0 and installs `comment "checksum-fill"` and nothing else — no checksum action reaches the kernel. Wrong but installable. |
+| `AUDIT`, `ECN`, `SECMARK`, `SYNPROXY` | refused | Their mandatory options are not recognised (`unknown flag: --type`, `--ecn-tcp-remove`, `--selctx`, `--sack-perm`), so any real use exits 2. |
+| `NETMAP`, `SET` | refused | `-j NETMAP --to 10.0.0.0/24` is refused by the synthesiser (`snat to 10.0.0.0/24 ... IPv4 only`); `-j SET --add-set` needs an nft set that does not exist and fails with a bare `No such file or directory (os error 2)` — safe, but an unhelpful message. |
+| `CLUSTERIP`, `MIRROR`, `ULOG`, and any unrecognised name | missing | parsed as `Target::Jump(<NAME>)` and ensure_jump_target_chain creates an empty user chain — exit 0 and the rule does nothing, where iptables fails with "Couldn't load target". `CONNSECMARK`, `DNPT`, `HMARK`, `IDLETIMER`, `LED`, `RATEEST` and `SAME` are in the same code path but untested with their own options. See limitation 5. |
 
 ## Match modules (`-m`)
 

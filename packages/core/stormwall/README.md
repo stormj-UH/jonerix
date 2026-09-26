@@ -912,9 +912,11 @@ address range, with at most one port), `MARK` and `CONNMARK`
 `--restore-mark` with `--nfmask`/`--ctmask`), `TPROXY`, `TRACE`,
 `NOTRACK`, `NFQUEUE` (`--queue-num` with `--queue-bypass` or
 `--queue-cpu-fanout`), `CT` (incl. `--notrack`, `--helper`, `--zone`),
-`TOS`, `DSCP`, `TTL --ttl-set`, `CLASSIFY`, `CHECKSUM`, `NETMAP`,
-`SET`, plus user-chain jumps and `--goto`. NAT targets accept
-`--random-fully` (modern NAT randomisation).
+`TOS`, `DSCP` (a whole-TOS-byte write, so ECN bits are cleared),
+`TTL --ttl-set`, `CLASSIFY`, plus user-chain jumps and `--goto`.
+NAT targets accept `--random-fully` (modern NAT randomisation).
+`NETMAP` and `SET` are refused, and `CHECKSUM` installs only a
+comment — see [Known gaps](#known-gaps).
 
 **Refused by 1.1.13** (parsed, but the nft parser cannot encode them
 yet, so the command fails instead of installing a different rule):
@@ -943,13 +945,11 @@ see Known gaps. `--ctstatus`, `--ctdir`, `--ctexpire`, `--ctproto` and
 the `--ctorig*`/`--ctrepl*` address and port options are **not
 recognised at all** — the command fails with "unknown flag", exit 2),
 `multiport`,
-`mark`, `connmark`, `owner` (numeric ids), `set`, `mac`, `limit`,
+`mark`, `connmark`, `owner` (numeric ids), `mac`, `limit`,
 `tcp`/`udp` (incl. `--syn`, `! --syn`, `--tcp-flags`), `iprange`,
 `length`, `pkttype`, `tos`, `dscp`, `ttl` and `hl` (`--ttl-eq`/`--hl-eq`),
 `statistic` (`--mode random` and `--mode nth`), `helper`, `time`
-(`--timestart` **with** `--timestop`, and `--weekdays`), `recent`
-(`--set`/`--rcheck`/`--update`/`--remove` with `--seconds`/`--hitcount`/
-`--name`/`--rsource`/`--rdest`), `hashlimit` (`--hashlimit-upto`/
+(`--timestart` **with** `--timestop`, and `--weekdays`), `hashlimit` (`--hashlimit-upto`/
 `--hashlimit-above` required; the htable and rate-match flags ride
 along as a comment marker), `ipv6header`.
 
@@ -966,6 +966,20 @@ optionless form of every `-m <name>` (`-m hbh -j DROP`), and any
 `-m quota`, `-m bpf`, `-m nfacct`, `-m cluster`, …). See
 [Known gaps](#known-gaps) for what 1.1.13 and earlier installed
 instead.
+
+**Need a set that already exists:** `-m set --match-set NAME`, and
+`-m recent` (`--set`/`--rcheck`/`--update`/`--remove` with
+`--seconds`/`--hitcount`/`--name`/`--rsource`/`--rdest`), both parse and
+lower to a named nft set. On a box that has no such set the command
+fails with a bare `No such file or directory (os error 2)`; create the
+set with `nft` first. The message is unhelpful but the failure is safe —
+nothing is installed.
+
+**An unrecognised target still installs.** `-j NOSUCHTARGET`, and the
+targets stormwall has no arm for (`CLUSTERIP`, `MIRROR`, `ULOG`), exit 0
+and install `jump NOSUCHTARGET` into an auto-created empty chain, so the
+rule does nothing; iptables fails with "Couldn't load target". Check the
+output of `iptables -S` after loading a ruleset you did not write.
 
 ---
 
