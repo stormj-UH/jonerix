@@ -242,12 +242,15 @@ done
 post_install = """set -e
 
 # r10: jpkg <= 2.2.9 drops setuid bits on extraction; put them back.
-# JPKG_ROOT is set when the hook runs outside a chroot for an
-# alternate-root install.
+# Host-side alternate-root hooks see the files under $JPKG_ROOT. A root
+# `jpkg --root X install` (the image builders) chroots into X but still
+# exports JPKG_ROOT=X, and there the files are at /bin. So use
+# $JPKG_ROOT only when shadow's files are actually visible under it.
 _root=${JPKG_ROOT:-}
 case "$_root" in
     /) _root= ;;
 esac
+[ -e "$_root/bin/shadow-passwd" ] || _root=
 for b in passwd chsh chfn chage expiry gpasswd newgrp newuidmap newgidmap; do
     f="$_root/bin/shadow-$b"
     [ -f "$f" ] && [ ! -L "$f" ] || continue

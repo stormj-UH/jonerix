@@ -68,12 +68,19 @@ chmod 4755 "$DESTDIR/bin/sudo"
 
 [hooks]
 # Belt and braces for jpkg <= 2.2.9, whose extractor masks modes to 0o777:
-# re-apply the setuid bit the archive carries. JPKG_ROOT is set when the
-# hook runs outside a chroot for an alternate-root install.
+# re-apply the setuid bit the archive carries. Three ways the hook runs:
+#   - in place on /: JPKG_ROOT is unset or "/";
+#   - host-side for an alternate root (non-root jpkg, or no /bin/sh in the
+#     root yet): JPKG_ROOT names that root and the file is under it;
+#   - chrooted into the alternate root (root `jpkg --root X install`, the
+#     image builders' path): JPKG_ROOT is still exported as X, but inside
+#     the chroot the file is at /bin/sudo.
+# So use $JPKG_ROOT only when the binary is actually visible under it.
 post_install = """_root=${JPKG_ROOT:-}
 case "$_root" in
     /) _root= ;;
 esac
+[ -e "$_root/bin/sudo" ] || _root=
 if [ -f "$_root/bin/sudo" ] && [ ! -L "$_root/bin/sudo" ]; then
     chmod 4755 "$_root/bin/sudo" || echo "sudo: could not set the setuid bit on $_root/bin/sudo" >&2
 fi
