@@ -1,6 +1,6 @@
 [package]
 name = "snooze"
-version = "0.5-r1"
+version = "0.5-r2"
 license = "CC0"
 description = "Lightweight cron alternative for running a command at a specific time"
 
@@ -8,56 +8,61 @@ description = "Lightweight cron alternative for running a command at a specific 
 url = "https://github.com/leahneukirchen/snooze/archive/refs/tags/v0.5.tar.gz"
 sha256 = "d63fde85d9333188bed5996baabd833eaa00842ce117443ffbf8719c094be414"
 
+# 0.5-r2: /bin/snooze-crond (jonerix's cron.d dispatcher, MIT, kept in
+# this directory as snooze-crond) now
+#   - rescans /etc/cron.d every 60 s and restarts its job loops when a
+#     file is added, removed or edited, so packages that drop a cron.d
+#     file (jonerix-logrotate, jonerix-raspi5-fixups) no longer need a
+#     service restart;
+#   - rewrites cron's */N to snooze's /N (snooze reads "-H */3" as "-H *",
+#     i.e. every hour -- /etc/cron.d/ntp-set on tormenta used that form);
+#   - runs each COMMAND in a subshell, so an `exit`/`exec` in a job no
+#     longer ends that job's loop for good;
+#   - backs off 60 s instead of spinning when snooze rejects a timespec,
+#     and never pathname-expands the timespec;
+#   - stops its whole process group on SIGTERM/SIGINT/SIGHUP, with
+#     SIGKILL after 3 s for a job that ignores SIGTERM.
+# post_install restarts a running dispatcher so the new script is used.
+# The job logs it writes under /var/log/cron are capped by
+# jonerix-logrotate, now a runtime dependency.
+
 [build]
 system = "custom"
-build = "make CC=clang CFLAGS=\"-O2 -fomit-frame-pointer\" PREFIX=/"
-install = """install -Dm755 snooze $DESTDIR/bin/snooze
+build = """set -e
+make CC=clang CFLAGS="-O2 -fomit-frame-pointer" PREFIX=/
+mksh -n "$RECIPE_DIR/snooze-crond"
+"""
+install = """set -e
+install -Dm755 snooze $DESTDIR/bin/snooze
+install -Dm644 snooze.1 $DESTDIR/share/man/man1/snooze.1
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
-mkdir -p $DESTDIR/bin
-cat > $DESTDIR/bin/snooze-crond << 'CROND_EOF'
-#!/bin/mksh
-# snooze-crond -- cron dispatcher launched by /etc/init.d/snooze.
-#
-# Scans /etc/cron.d/* for job files, then for each file runs:
-#   while :; do snooze <SNOOZE_ARGS> && eval <COMMAND>; done
-# in the background.  Re-scans the directory each time all children exit.
-#
-# Job file format (shell-sourceable):
-#   SNOOZE_ARGS="-H /3 -M 0 -S 0"   # snooze(1) flags
-#   COMMAND="/bin/my-script"          # command to run when timer fires
-#
-# SNOOZE TIMESPEC: use /N (every Nth unit) NOT */N (cron syntax).
-#   -H /3  = every 3rd hour (00, 03, 06, ...)
-#   -H */3 = cron syntax; snooze misinterprets this as every hour.
+llvm-strip --strip-all $DESTDIR/bin/snooze 2>/dev/null || true
+install -Dm755 "$RECIPE_DIR/snooze-crond" $DESTDIR/bin/snooze-crond"""
 
-CRONDIR=${SNOOZE_CRONDIR:-/etc/cron.d}
-LOGDIR=${SNOOZE_LOGDIR:-/var/log/cron}
-mkdir -p "$LOGDIR"
-
-while :; do
-    for job in "$CRONDIR"/*; do
-        [ -f "$job" ] || continue
-        SNOOZE_ARGS=
-        COMMAND=
-        . "$job"
-        [ -n "$COMMAND" ] || continue
-        (
-            while :; do
-                /usr/bin/snooze $SNOOZE_ARGS && {
-                    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$COMMAND"
-                    eval "$COMMAND"
-                } >> "$LOGDIR/$(basename "$job").log" 2>&1
-            done
-        ) &
-    done
-    wait
+[hooks]
+# Restart a running dispatcher so the new script (rescan, */N fix) is the
+# one running.  The r1 dispatcher takes its job loops down with it when it
+# is stopped (mksh kills its background jobs when it is killed), so a
+# plain restart leaves no duplicates.  Skipped outside a booted OpenRC
+# system (image builds, containers) and when jpkg runs hooks on the host
+# for an alternate root.
+post_install = '''case "${JPKG_ROOT:-/}" in
+    /) ;;
+    *) exit 0 ;;
+esac
+[ -e /run/openrc/softlevel ] || exit 0
+[ -x /bin/rc-service ] || exit 0
+for svc in snooze-crond snooze; do
+    [ -x "/etc/init.d/$svc" ] || continue
+    rc-service "$svc" status >/dev/null 2>&1 || continue
+    rc-service "$svc" restart >/dev/null 2>&1
+    echo "snooze: restarted $svc so the new snooze-crond is running"
 done
-CROND_EOF
-chmod 755 $DESTDIR/bin/snooze-crond"""
+exit 0'''
 
 [depends]
-runtime = ["musl"]
-build = ["clang", "make"]
+# snooze-crond is a mksh script; its per-job logs are rotated by
+# jonerix-logrotate (hourly job in /etc/cron.d).
+runtime = ["musl", "mksh", "jonerix-logrotate"]
+build = ["clang", "make", "mksh"]

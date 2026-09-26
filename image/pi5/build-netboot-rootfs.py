@@ -50,7 +50,7 @@ from datetime import datetime, timezone
 NETBOOT_ROOTFS_PACKAGES = [
     # Boot core
     "musl", "toybox", "mksh", "openrc",
-    "dhcpcd", "ifupdown-ng", "dropbear",
+    "dhcpcd", "openresolv", "ifupdown-ng", "dropbear",
     "bsdtar", "openntpd", "sudo", "python3",
 
     # mkfs + fsck (mode A target formatting)

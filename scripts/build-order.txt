@@ -40,6 +40,9 @@ ncurses
 # Tier 1: depends on musl only (tiny)
 # byacc must precede jq (which uses yacc)
 byacc
+# jonerix-logrotate: POSIX-sh /var/log rotator + cron.d entry, no build
+# deps; snooze lists it as a runtime dep (its job logs are rotated).
+jonerix-logrotate
 snooze
 pigz
 lz4
@@ -47,6 +50,9 @@ lz4
 mandoc
 bc
 dhcpcd
+# openresolv: resolvconf(8), pure sh (needs only make + mksh to build).
+# dhcpcd and tailscaled both use it when present.
+openresolv
 ifupdown-ng
 # pkgconf — drop-in pkg-config, ISC. Build-dep for any recipe whose
 # configure runs PKG_CHECK_MODULES (shadow, python3, libnghttp2,

@@ -1,0 +1,151 @@
+#!/bin/mksh
+# snooze-crond -- cron dispatcher started by the snooze-crond / snooze
+# OpenRC services.
+#
+# For every job file in /etc/cron.d it runs, in the background,
+#   while :; do snooze <SNOOZE_ARGS> && eval <COMMAND>; done
+# and appends each run's output to /var/log/cron/<file>.log
+# (jonerix-logrotate caps those logs).
+#
+# Job file format (shell-sourceable):
+#   SNOOZE_ARGS="-H /3 -M 0 -S 0"   # snooze(1) flags
+#   COMMAND="/bin/my-script"          # command to run when timer fires
+#
+# SNOOZE TIMESPEC: snooze uses /N (every Nth unit).  cron's */N means the
+# same thing to a human, but snooze parses "-H */3" as "-H *" (every
+# hour), so */ is rewritten to / before snooze sees it.
+#
+# Rescan: the job directory is checked every SNOOZE_RESCAN seconds
+# (default 60).  When a job file is added, removed or edited, every job
+# loop is stopped and the set is started again, so a package that drops
+# a file into /etc/cron.d does not have to restart this service.
+#
+# Stop: SIGTERM, SIGINT or SIGHUP stop every process in our process group
+# -- the job loops, their snooze timers and any job still running, with
+# SIGKILL after 3 s for a job that ignores SIGTERM -- before exiting.  The
+# same group sweep restarts the job loops after a rescan.
+# supervise-daemon and start-stop-daemon --background both start us as a
+# process-group leader; started any other way we re-exec under setsid(1)
+# so the group can never include our caller.
+#
+# Each COMMAND runs in its own subshell: an `exit` or `exec` in it ends
+# that run, not the job's loop (up to snooze 0.5-r1 it ended the loop).
+#
+# SPDX-License-Identifier: MIT
+# Part of jonerix.
+
+CRONDIR=${SNOOZE_CRONDIR:-/etc/cron.d}
+LOGDIR=${SNOOZE_LOGDIR:-/var/log/cron}
+RESCAN=${SNOOZE_RESCAN:-60}
+SNOOZE=${SNOOZE_BIN:-/bin/snooze}
+
+# Set _pg to the process-group id of pid $1 (field 5 of /proc/<pid>/stat).
+# The comm field can contain spaces and parentheses, so cut at the last
+# ") ".  No command substitution: this runs once per /proc entry.
+pgrp_of() {
+    _pg=
+    _st=
+    # 2>/dev/null first: a process that exited since the /proc glob
+    # must not leave "can't open" noise in the dispatcher's log.
+    read -r _st 2>/dev/null < "/proc/$1/stat" || return 1
+    set -- ${_st##*") "}
+    _pg=${3:-}
+}
+
+pgrp_of $$
+if [ "$_pg" != "$$" ] && [ -z "${SNOOZE_CROND_SETSID:-}" ] &&
+    command -v setsid >/dev/null 2>&1; then
+    SNOOZE_CROND_SETSID=1
+    export SNOOZE_CROND_SETSID
+    exec setsid "$0" "$@"
+fi
+unset SNOOZE_CROND_SETSID
+
+cd / || exit 1
+mkdir -p "$LOGDIR"
+
+# Send signal $1 to every process in our process group except ourselves.
+# Returns 0 if at least one such process exists.
+signal_jobs() {
+    _found=1
+    for _d in /proc/[0-9]*; do
+        _p=${_d#/proc/}
+        [ "$_p" = "$$" ] && continue
+        pgrp_of "$_p" || continue
+        [ "$_pg" = "$$" ] || continue
+        kill -s "$1" "$_p" 2>/dev/null && _found=0
+    done
+    return $_found
+}
+
+# TERM the job loops, KILL whatever is left after ~3 s (a job that traps
+# TERM must not wedge the dispatcher), then reap.
+stop_jobs() {
+    if signal_jobs TERM; then
+        _n=0
+        while [ "$_n" -lt 3 ]; do
+            sleep 1
+            signal_jobs 0 || break
+            _n=$((_n + 1))
+        done
+        signal_jobs KILL
+    fi
+    wait
+}
+
+start_jobs() {
+    for job in "$CRONDIR"/*; do
+        [ -f "$job" ] || continue
+        SNOOZE_ARGS=
+        COMMAND=
+        . "$job"
+        [ -n "$COMMAND" ] || continue
+        args=$(printf '%s\n' "$SNOOZE_ARGS" | sed 's#\*/#/#g')
+        log="$LOGDIR/${job##*/}.log"
+        (
+            while :; do
+                # No pathname expansion of the timespec ("-H *" must stay
+                # a literal *); COMMAND keeps normal shell semantics.
+                set -f
+                "$SNOOZE" $args
+                rc=$?
+                set +f
+                if [ "$rc" != 0 ]; then
+                    # Bad timespec or missing snooze: do not spin.
+                    printf '%s snooze exited %s (SNOOZE_ARGS=%s)\n' \
+                        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "$args" >> "$log" 2>&1
+                    sleep 60
+                    continue
+                fi
+                {
+                    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$COMMAND"
+                    # Subshell: an `exit` in COMMAND must not end the loop.
+                    ( eval "$COMMAND" )
+                } >> "$log" 2>&1
+            done
+        ) &
+    done
+}
+
+# Name, mtime (with nanoseconds) and size of the directory and of every
+# job file: changes whenever a file is added, removed or edited.
+dirstamp() {
+    stat -c '%n %y %s' "$CRONDIR" "$CRONDIR"/* 2>/dev/null
+}
+
+trap 'stop_jobs; exit 0' TERM INT HUP
+
+while :; do
+    stamp=$(dirstamp)
+    start_jobs
+    while :; do
+        # Background sleep + wait: a trapped signal interrupts `wait` at
+        # once, whereas a foreground sleep would delay the trap.
+        sleep "$RESCAN" &
+        wait $!
+        [ "$(dirstamp)" = "$stamp" ] || break
+    done
+    printf '%s snooze-crond: %s changed, restarting job loops\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CRONDIR"
+    stop_jobs
+done

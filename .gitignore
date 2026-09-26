@@ -22,7 +22,7 @@ output/
 *.dSYM/
 # Exceptions: directories named *.d under config/ (these are config
 # drop-in dirs — conf.d, sysctl.d, cron.d, local.d, limits.d, init.d)
-# and under packages/*/*/ (per-package init.d).  Without these, the
+# and under packages/*/*/ (per-package init.d, cron.d, conf.d, sysctl.d).  Without these, the
 # *.d wildcard above swallows every drop-in directory in the tree.
 !config/**/*.d/
 !config/**/*.d/**
@@ -30,6 +30,7 @@ output/
 !packages/*/*/init.d/**
 !packages/*/*/cron.d/
 !packages/*/*/conf.d/
+!packages/*/*/sysctl.d/
 # Test binaries (keep .c sources)
 packages/jpkg/tests/test_toml
 packages/jpkg/tests/test_pkg

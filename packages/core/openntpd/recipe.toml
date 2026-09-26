@@ -1,27 +1,69 @@
 [package]
 name = "openntpd"
-version = "6.8p1-r5"
+version = "7.9p1"
 license = "ISC"
 description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 
+# 7.9p1 (was 6.8p1-r5).  6.8p1's Linux ntpd_adjtime() slewed with
+# adjtimex(ADJ_OFFSET_SINGLESHOT | ADJ_STATUS).  ADJ_OFFSET_SINGLESHOT
+# includes ADJ_ADJTIME, and the kernel's ADJ_ADJTIME branch ignores
+# ADJ_STATUS, so STA_UNSYNC was never cleared and every call returned
+# TIME_ERROR.  ntpd read that as "not synced", re-set STA_UNSYNC, and
+# stayed there: jonerix-tormenta reported "5/5 peers valid, clock
+# unsynced" for 26 days with 0 ppm frequency correction, an empty drift
+# file, 30 s polling forever, and (because the kernel only writes the RTC
+# while synced) an RTC 231 s behind.  openntpd-portable #65 / #78.
+#
+# Upstream's fix is to slew with adjtime(3) again; it ships in 7.9p1,
+# which also brings the other Linux fixes accumulated since 2020: kernel
+# sync status updated at startup and when the clock goes unsynced, retry
+# instead of abort on EACCES from recvmsg()/connect(), corrected T1/T4
+# offset handling, monotonic-time handling on fast-booting systems,
+# corrected NTP fixed-point conversions, and constraint DNS reset.
+# Taking the release is preferred over forcing ac_cv_func_adjtimex=no on
+# 6.8p1: same code path upstream now tests, plus those fixes.  The
+# build guard below fails the build if the adjtimex slew ever comes back.
+#
+# patches/0001-ntp-port-fallback.patch: the ntp engine calls
+# getservbyname("ntp", "udp") and fatal()s without an /etc/services
+# entry.  No jonerix package ships /etc/services and neither the Pi image
+# builder nor Dockerfile.core installs one (tormenta's is a hand-copied
+# 7-line file), so a fresh image's ntpd would exit at start.  The port is
+# only used for "listen on"; fall back to 123/udp.
+#
+# Tarball verified against openntpd-7.9p1.tar.gz.asc and the signed
+# SHA256 file on cdn.openbsd.org (Brent Cook's OpenNTPD/LibreSSL release
+# key A1EB 079B 8D3E B92B 4EBD 3139 663A F51B D5E4 D8D5, published there
+# as libressl.asc).
 [source]
-url = "https://cdn.openbsd.org/pub/OpenBSD/OpenNTPD/openntpd-6.8p1.tar.gz"
-sha256 = "8582db838a399153d4a17f2a76518b638cc3020f58028575bf54127518f55a46"
+url = "https://cdn.openbsd.org/pub/OpenBSD/OpenNTPD/openntpd-7.9p1.tar.gz"
+sha256 = "091eeb3f4e358e28c3ab2ea58f93d7a0b5758a20d7c8a0418e162e9b2c27addc"
 
 [build]
 system = "custom"
 # openntpd's configure leaks FDs and hits the default 1024 fd limit
 # around configure.lineno[506] ("too many open files in shell"). Bump
 # the limit for this build shell so it can finish. exproxide provides
-# the /bin/expr autoconf probes expect.
+# the /bin/expr autoconf probes expect; onetrueawk the awk that
+# config.status uses.
 build = """set -e
 ulimit -n 65536 || true
 GREP=/bin/grep EGREP="/bin/grep -E" FGREP="/bin/grep -F" \
   CC=clang LD=ld.lld \
   CFLAGS="-Os -fstack-protector-strong -fPIE -D_DEFAULT_SOURCE" \
   LDFLAGS="-fuse-ld=lld -pie" \
-  ./configure --prefix=/ --sbindir=/bin --sysconfdir=/etc --with-privsep-user=_ntp
-jmake -j$(nproc)"""
+  ./configure --prefix=/ --sbindir=/bin --sysconfdir=/etc \
+    --localstatedir=/var/db --runstatedir=/run --with-privsep-user=_ntp
+jmake -j$(nproc)
+# Guard: ntpd_adjtime() must slew with adjtime(3).  6.8p1's
+# adjtimex(ADJ_OFFSET_SINGLESHOT|ADJ_STATUS) path never clears STA_UNSYNC.
+sed -n '/^ntpd_adjtime(double d)/,/^}/p' src/ntpd.c > ntpd_adjtime.body
+grep -q 'adjtime(&tv, &olddelta)' ntpd_adjtime.body
+if grep -q adjtimex ntpd_adjtime.body; then echo 'openntpd: ntpd_adjtime() uses adjtimex again' >&2; exit 1; fi
+if grep -q 'adjtimex returned' src/ntpd; then echo 'openntpd: binary still has the 6.8p1 adjtimex slew' >&2; exit 1; fi
+# 7.9p1 derives the drift file and control socket from these dirs.
+grep -q '/var/db/ntpd.drift' src/ntpd
+grep -q '/run/ntpd.sock' src/ntpd"""
 install = """set -e
 DESTDIR=$DESTDIR jmake install
 # Merged-usr flatten: autoconf honors --sbindir=/bin but hand-
@@ -29,6 +71,8 @@ DESTDIR=$DESTDIR jmake install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -rf "$DESTDIR/sbin"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+# install-exec-hook creates $runstatedir; /run is a tmpfs, do not ship it.
+rmdir "$DESTDIR/run" 2>/dev/null || true
 mkdir -p $DESTDIR/etc
 cat > $DESTDIR/etc/ntpd.conf <<EOF
 # /etc/ntpd.conf — jonerix default
@@ -50,6 +94,11 @@ command="/bin/ntpd"
 command_args="-d ${NTPD_OPTS:-}"
 command_background="yes"
 pidfile="/run/ntpd.pid"
+# With -d ntpd logs to stderr, not syslog.  Keep it: sync state changes,
+# peer validity and large adjustments land here (a few lines a day).
+# jonerix-logrotate caps /var/log/*.log.
+output_log="/var/log/ntpd.log"
+error_log="/var/log/ntpd.log"
 
 depend() {
     need net
@@ -58,8 +107,12 @@ depend() {
 }
 
 start_pre() {
-    # /var/db is the drift-file location — writable by _ntp.
-    checkpath -d -m 0755 -o _ntp:_ntp /var/db
+    # /var/db holds the drift file.  ntpd's privileged parent (root)
+    # opens and writes it; the _ntp child is chrooted to /var/empty and
+    # never touches it.  /var/db also holds jpkg's package database, so
+    # it must stay root-owned (up to 6.8p1-r5 this chowned it to _ntp).
+    checkpath -d -m 0755 -o root:root /var/db
+    checkpath -f -m 0640 -o root:root /var/log/ntpd.log
     # /var/empty is the privsep chroot — openntpd rejects anything
     # not owned by root (uid 0) with "bad privsep dir permissions".
     # Must be mode 0711 (exec-only access for others) and root-owned.
@@ -103,9 +156,12 @@ if ! grep -q "^_ntp:" /etc/passwd 2>/dev/null; then
     fi
 fi
 
-# 2) /var/db (drift file) — _ntp-owned, 0755.
+# 2) /var/db (drift file, and jpkg's database) — root-owned, 0755.
+# The drift file is written by ntpd's root parent; releases up to
+# 6.8p1-r5 chowned /var/db to _ntp, which let that account rename
+# /var/db/jpkg.  Take it back.
 mkdir -p /var/db
-chown _ntp:_ntp /var/db 2>/dev/null
+chown root:root /var/db 2>/dev/null
 chmod 0755 /var/db
 
 # 3) /var/empty (privsep chroot) — MUST be root-owned with mode 0711.
@@ -121,9 +177,18 @@ if [ -d /etc/runlevels/default ]; then
     ln -sf /etc/init.d/ntpd /etc/runlevels/default/ntpd
 fi
 
-# 5) Start now if OpenRC is driving PID 1 on this host.
-if [ -d /run ] && [ -x /bin/rc-service ]; then
-    if readlink /proc/1/exe 2>/dev/null | grep -q openrc; then
+# 5) On a booted OpenRC system (not an image-build chroot, whose /run is
+# empty), (re)start ntpd so an upgrade runs the new binary.  Nothing
+# `need`s ntpd (tailscaled only `use`s it), so a restart stops nothing
+# else.
+case "${JPKG_ROOT:-/}" in
+    /) ;;
+    *) exit 0 ;;
+esac
+if [ -e /run/openrc/softlevel ] && [ -x /bin/rc-service ]; then
+    if rc-service ntpd status >/dev/null 2>&1; then
+        rc-service ntpd restart 2>/dev/null
+    else
         rc-service ntpd start 2>/dev/null
     fi
 fi
@@ -143,4 +208,6 @@ exit 0"""
 
 [depends]
 runtime = ["musl", "libressl"]
-build = ["clang", "jmake", "exproxide"]
+# onetrueawk: 7.9p1's configure/config.status (newer autoconf/libtool)
+# need awk; 6.8p1's did not.
+build = ["clang", "jmake", "exproxide", "onetrueawk"]

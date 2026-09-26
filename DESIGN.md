@@ -344,7 +344,7 @@ All packages are built with:
 - **Multi-user**: getty on tty1-tty3, `/etc/securetty` restricts root login to console + tty1-3 + ttyS0.
 - **SUID bits**: Only `su`, `passwd`, and `login` have setuid (chmod 4755).
 - **System accounts**: daemon, bin, sys with nologin. Separate groups for tty, disk access.
-- **Kernel hardening**: `kernel.kptr_restrict=2`, `kernel.dmesg_restrict=1`, `kernel.unprivileged_bpf_disabled=1`.
+- **Kernel hardening baseline** (openrc package, `/etc/sysctl.d/10-jonerix-*.conf`): `fs.protected_{hardlinks,symlinks,fifos,regular}=1`, `kernel.kptr_restrict=1`, ICMP redirects ignored (`accept_redirects=0`, IPv4 and IPv6), loose reverse-path filtering (`rp_filter=2`). The `minimal` profile adds `kernel.kptr_restrict=2`, `kernel.dmesg_restrict=1`, `net.core.bpf_jit_harden=2`. Unprivileged BPF stays at the kernel default (disabled, 2, with `CONFIG_BPF_UNPRIV_DEFAULT_OFF`). See config/README.md "sysctl ordering".
 - **Router sysctl**: SYN cookies, ICMP redirect rejection, reverse path filtering, no source routing.
 
 ### Rust
