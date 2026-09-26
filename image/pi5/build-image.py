@@ -86,9 +86,9 @@ DEFAULT_PACKAGES = [
     "pico",       # text editor (apache-2.0, alpine-2.26)
     "fastfetch",  # system-info banner; pleasant on first login
 
-    # Not in the default set yet: ca-certificates. The jpkg exists
-    # (packages/extra/ca-certificates); until it is listed here,
-    # fetch_ca_bundle() drops the Mozilla bundle from curl.se instead.
+    # Intentionally NOT in the default set: ca-certificates.
+    # jonerix doesn't yet ship a ca-certificates jpkg; the WSL rootfs
+    # curl's the Mozilla bundle from curl.se at build time instead.
 ]
 
 # Always present, regardless of --packages. These are load-bearing for Pi 5.
@@ -675,11 +675,11 @@ def fetch_ca_bundle(root: Path) -> None:
     """Drop a current Mozilla CA bundle into the image at
     /etc/ssl/certs/ca-certificates.crt.
 
-    Fallback for images built without the ca-certificates jpkg (it is
-    not in DEFAULT_PACKAGES yet): tailscale, curl, openntpd-with-TLS,
-    and dropbear-with-TLS all need a trust store on first boot. Returns
-    early when a package already provided the bundle. The bundle is
-    MPL-2.0 data, allowed only as the ca-certificates exception.
+    jonerix doesn't yet ship a ca-certificates jpkg, but tailscale,
+    curl, openntpd-with-TLS, and dropbear-with-TLS all need a trust
+    store on first boot. Matches what install/wsl/build-rootfs.sh does
+    (curl the Mozilla bundle directly from curl.se). Same permissive
+    licence (MPL-2.0 for the bundle, curl's distribution is BSD).
     """
     certs_dir = root / "etc" / "ssl" / "certs"
     certs_dir.mkdir(parents=True, exist_ok=True)
