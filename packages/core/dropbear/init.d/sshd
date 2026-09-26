@@ -1,0 +1,49 @@
+#!/bin/openrc-run
+# OpenRC service for the dropbear SSH daemon.
+# Part of the jonerix dropbear jpkg — MIT License
+#
+# Settings live in /etc/conf.d/sshd (OpenRC reads conf.d/<service name>):
+#   DROPBEAR_OPTS  extra dropbear flags. Unset means "-g": root may log in
+#                  with a key but never with a password; other accounts
+#                  may use either. "-s" refuses passwords for everyone
+#                  (set it once every account has authorized_keys).
+#                  DROPBEAR_OPTS="" gives upstream's defaults, which allow
+#                  root password logins. Avoid "-w": it refuses root even
+#                  with a key.
+#   DROPBEAR_PORT  [address:]port to listen on (default 22).
+#
+# Host keys live in /etc/dropbear and are generated on first start.
+#
+# There is deliberately no reload: dropbear has no SIGHUP handler, so a
+# HUP kills the listener. New flags take effect on `rc-service sshd restart`,
+# which leaves established sessions running.
+
+: "${DROPBEAR_OPTS=-g}"
+: "${DROPBEAR_PORT:=22}"
+
+name="sshd"
+description="Dropbear SSH daemon"
+
+command="/bin/dropbear"
+command_args="-R -p ${DROPBEAR_PORT} -P /run/dropbear.pid ${DROPBEAR_OPTS}"
+pidfile="/run/dropbear.pid"
+
+depend() {
+    need net
+    use dns logger
+    after firewall
+}
+
+start_pre() {
+    checkpath -d -m 0700 /etc/dropbear
+
+    if [ ! -f /etc/dropbear/dropbear_ed25519_host_key ]; then
+        einfo "Generating Ed25519 host key"
+        dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key || return 1
+    fi
+
+    if [ ! -f /etc/dropbear/dropbear_ecdsa_host_key ]; then
+        einfo "Generating ECDSA host key"
+        dropbearkey -t ecdsa -s 256 -f /etc/dropbear/dropbear_ecdsa_host_key || return 1
+    fi
+}

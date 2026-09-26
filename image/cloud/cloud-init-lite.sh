@@ -448,14 +448,28 @@ configure_ssh_keys() {
         chmod 0600 "$auth_keys"
         log_info "SSH keys installed to $auth_keys"
 
-        # Enable root login for initial setup (via key only, no password)
-        # Note: dropbear -w disables root password login but allows key auth
-        # when -g is not set.
-        local dropbear_conf="/etc/conf.d/dropbear"
-        if [ -f "$dropbear_conf" ]; then
-            if grep -q "DROPBEAR_OPTS" "$dropbear_conf"; then
-                # Ensure -w (disable root password) but not -g (disable root entirely)
-                sed -i 's/-g //g' "$dropbear_conf" 2>/dev/null || true
+        # Root logs in with the key just installed. dropbear's -g (the sshd
+        # service default) refuses only root *passwords*, so it stays; -w
+        # refuses root entirely, keys included, so drop it if set. The
+        # service is sshd, and OpenRC reads /etc/conf.d/<service>.
+        sshd_conf="/etc/conf.d/sshd"
+        if [ -f "$sshd_conf" ] &&
+            grep -Eq '^[[:space:]]*DROPBEAR_OPTS=(.*[" ])?-w([" ]|$)' "$sshd_conf"; then
+            sshd_tmp="$(mktemp "${sshd_conf}.XXXXXX")"
+            if sed -e '/^[[:space:]]*DROPBEAR_OPTS=/{
+:a
+s/ -w\([" ]\)/\1/
+ta
+s/ -w$//
+s/\([="]\)-w /\1/
+s/\([="]\)-w"/\1"/
+s/=-w$/=/
+}' "$sshd_conf" > "$sshd_tmp"; then
+                chmod 0644 "$sshd_tmp"
+                mv "$sshd_tmp" "$sshd_conf"
+                log_info "Removed -w from DROPBEAR_OPTS in $sshd_conf so root can use its key"
+            else
+                rm -f "$sshd_tmp"
             fi
         fi
     fi
