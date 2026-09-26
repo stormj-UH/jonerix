@@ -1,0 +1,62 @@
+# FreeType — TrueType / OpenType / Type1 / WOFF / WOFF2 / SFNT
+# rasteriser.  Required by fontconfig (which queries glyph tables to
+# build its caches), by Tectonic's xetex_layout, and by the Rust
+# `fontdb` crate when fontconfig is enabled (which is typst's path).
+#
+# Upstream dual-licenses as `FTL OR GPL-2.0-only`; we elect FTL — a
+# BSD-style attribution licence on jpkg's whitelist as of this commit.
+
+[package]
+name = "freetype"
+version = "2.13.3"
+license = "FTL"
+description = "TrueType / OpenType / Type1 / WOFF / WOFF2 / SFNT rasteriser (libfreetype)"
+
+[source]
+url = "https://downloads.sourceforge.net/freetype/freetype-2.13.3.tar.xz"
+sha256 = "0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289"
+
+[build]
+# FreeType 2.13 ships both an autotools and a meson build.  We use
+# meson for parity with harfbuzz and fontconfig.
+#
+# Optional codecs:
+#   harfbuzz: skipped at this layer — harfbuzz itself depends on
+#             freetype, so wiring harfbuzz back into freetype would
+#             create a circular build.  Re-enable only if we ever
+#             ship two passes (freetype-bootstrap then freetype-full).
+#   brotli:   skipped — no brotli package in jonerix yet.  WOFF2 still
+#             decompresses via the standard zlib path; brotli is only
+#             needed for `.woff2` font streams (typst and tectonic
+#             both consume `.otf`/`.ttf`).
+#   bzip2:    enabled — `.pcf.bz2` bitmap fonts.
+#   zlib:     enabled — gzipped PCF, woff.
+#   png:      enabled — sbix/CBDT colour-emoji glyph tables.
+system = "custom"
+configure = """
+set -e
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  --default-library=both \
+  -Dharfbuzz=disabled \
+  -Dbrotli=disabled \
+  -Dbzip2=enabled \
+  -Dzlib=enabled \
+  -Dpng=enabled \
+  -Dtests=disabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/lib" -name 'libfreetype*.so*' -type f -exec llvm-strip --strip-unneeded {} ';' 2>/dev/null || true
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "zlib", "bzip2", "libpng"]
+build = ["clang", "meson", "samurai", "pkgconf", "zlib", "bzip2", "libpng"]

@@ -1,0 +1,45 @@
+# foot — fast, lightweight Wayland-native terminal emulator (dnkl).
+# Cairo-free; uses pixman + fcft for all rendering.  MIT throughout.
+
+[package]
+name = "foot"
+version = "1.27.0"
+license = "MIT"
+description = "Fast, lightweight Wayland-native terminal emulator. Cairo-free (pixman + fcft); footclient daemon mode"
+
+[source]
+url = "https://codeberg.org/dnkl/foot/archive/1.27.0.tar.gz"
+# Codeberg regenerates tag archives, so the byte hash can change while
+# the contents do not.  This hash is of the copy vendored in sources/,
+# whose tree matches upstream's GPG-signed 1.27.0 tag exactly.
+sha256 = "f5917cad2d7b723b99873e53d78fd10ea202923d189aed5086591fc53b70b7e3"
+
+[build]
+system = "custom"
+configure = """
+set -e
+export CFLAGS="-Os -pipe -fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-Wl,-z,relro,-z,now -pie --rtlib=compiler-rt --unwindlib=libunwind -fuse-ld=lld"
+
+CC=clang CXX=clang++ AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip \
+meson setup build \
+  --prefix=/ \
+  --libdir=lib \
+  --buildtype=release \
+  -Dterminfo=enabled \
+  -Dime=true \
+  -Dgrapheme-clustering=disabled \
+  -Dthemes=false \
+  -Ddocs=disabled
+"""
+build = "samu -C build"
+install = """set -e
+DESTDIR=$DESTDIR samu -C build install
+if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
+if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
+find "$DESTDIR/bin" -type f -exec llvm-strip --strip-all {} ';' 2>/dev/null || true
+"""
+
+[depends]
+runtime = ["musl", "wayland", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz", "ncurses"]
+build = ["clang", "meson", "samurai", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "fcft", "pixman", "freetype", "fontconfig", "harfbuzz", "ncurses", "jonerix-headers"]

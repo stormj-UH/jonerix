@@ -1,0 +1,76 @@
+#!/bin/openrc-run
+# Load the Pi 5 display and GPU modules in the only safe order:
+# i2c_brcmstb, then vc4, then v3d.
+#
+# jonerix has no udev, so nothing autoloads the DRM stack at boot.
+# Loading vc4 without i2c_brcmstb first wedges the box: vc4's HDMI
+# binding hangs reading EDID from an I2C bus whose adapter driver is
+# absent, the console falls back to "colour dummy device 80x25", and the
+# system stops responding to anything that touches the framebuffer.
+# i2c_brcmstb provides the DDC adapter; v3d is the render node Mesa uses.
+#
+# Not in any runlevel by default, so headless Pis never load vc4.  The
+# seatd service `want`s it, so installing the Wayland stack (which pulls
+# in seatd) is what turns it on.  It can also be enabled on its own with
+# `rc-update add pi5-drm-modules default`.  This packages the service
+# tormenta has run by hand since 2026-05-17 under the same name.
+#
+# Same toybox-modprobe reasoning as init.d/netfilter-nft-modules: OpenRC's
+# stock modules service passes kmod-only options, so load them here.
+#
+# Part of jonerix-raspi5-fixups - 0BSD License
+
+description="Load Pi 5 DRM modules (i2c_brcmstb, vc4, v3d) in the safe order"
+
+extra_started_commands="reload"
+
+modules="i2c_brcmstb vc4 v3d"
+
+depend() {
+    need modules
+    before seatd
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+_is_pi5() {
+    [ -r /proc/device-tree/model ] &&
+        grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null
+}
+
+_modprobe() {
+    if command -v modprobe >/dev/null 2>&1; then
+        command -v modprobe
+        return 0
+    fi
+    if [ -x /bin/modprobe-shim ]; then
+        echo /bin/modprobe-shim
+        return 0
+    fi
+    return 1
+}
+
+load_drm_modules() {
+    if ! _is_pi5; then
+        einfo "not a Raspberry Pi 5; not loading vc4/v3d"
+        return 0
+    fi
+    mp=$(_modprobe) || {
+        eerror "no modprobe implementation found"
+        return 1
+    }
+    rc=0
+    for m in $modules; do
+        ebegin "Loading module $m"
+        "$mp" "$m"
+        eend $? || rc=$?
+    done
+    return $rc
+}
+
+start() {
+    load_drm_modules
+}
+
+reload() {
+    load_drm_modules
+}

@@ -1,0 +1,70 @@
+# hwdata-stub — drop-in replacement for the GPL-2+ hwdata package.
+# Provides the file structure + pkg-config metadata that wlroots's
+# DRM backend (and other consumers like libdrm's modetest, libpci's
+# lspci) expect, but ships EMPTY data files.  Runtime effect: monitor
+# vendor names show as "Unknown" instead of "Acer Inc." etc. — fine
+# for headless / single-monitor / kiosk use.  Upstream hwdata is GPL
+# because the upstream developer asserted GPL on the aggregated
+# database; the raw PNP / PCI / USB ID assignments themselves are
+# public-domain registry data (IEEE / USB-IF / Microsoft PNP db).
+#
+# This package contains zero copied content from upstream hwdata —
+# just empty placeholder files and a meson-style .pc declaration.
+# 0BSD-licensed since it's almost entirely metadata.
+
+[package]
+name = "hwdata-stub"
+version = "0.1.0"
+license = "0BSD"
+description = "GPL-free stub for hwdata.  Provides empty /share/hwdata/{pnp,pci,usb}.ids + hwdata.pc.  wlroots/libpci/etc. link cleanly; vendor-name lookups return Unknown."
+
+# No [source] — local-only build.
+
+[build]
+system = "custom"
+build = "echo 'no build phase — pure data + .pc'"
+install = """set -e
+install -dm755 "$DESTDIR/share/hwdata"
+install -dm755 "$DESTDIR/share/pkgconfig"
+install -dm755 "$DESTDIR/lib/pkgconfig"
+
+# Empty data files — same names upstream ships, no content beyond
+# a header comment that explains the placeholder.
+for f in pnp.ids pci.ids usb.ids oui.txt iab.txt; do
+    cat > "$DESTDIR/share/hwdata/$f" <<HDR
+# jonerix hwdata-stub placeholder — vendor/device lookups
+# against this file return empty.  Replace with the upstream
+# GPL-licensed hwdata package if you want real vendor names.
+HDR
+done
+
+# pkg-config metadata — exposes `pnpids`, `pciids`, `usbids`
+# variables that consumers query via pkg-config --variable=...
+cat > "$DESTDIR/share/pkgconfig/hwdata.pc" <<PC
+prefix=/
+datarootdir=\${prefix}/share
+pkgdatadir=\${datarootdir}/hwdata
+datadir=\${pkgdatadir}
+pnpids=\${pkgdatadir}/pnp.ids
+pciids=\${pkgdatadir}/pci.ids
+usbids=\${pkgdatadir}/usb.ids
+ouitxt=\${pkgdatadir}/oui.txt
+iabtxt=\${pkgdatadir}/iab.txt
+
+Name: hwdata
+Description: jonerix hwdata-stub (empty data files; GPL-free placeholder)
+Version: 0.1.0
+PC
+
+# Also drop the .pc in /lib/pkgconfig — meson's `native: true`
+# dependency probes use a different pc_path than the cross-build
+# path, and wlroots' backend/drm/meson.build:8 declares hwdata as
+# native: true.  Without the lib/pkgconfig copy, meson falls
+# through to wrap-based subproject and fails with
+# "Automatic wrap-based subproject downloading is disabled".
+cp "$DESTDIR/share/pkgconfig/hwdata.pc" "$DESTDIR/lib/pkgconfig/hwdata.pc"
+"""
+
+[depends]
+runtime = []
+build = []

@@ -125,7 +125,7 @@ install_cached_pkg_if_available() {
     echo "=== Installing cached ${pkg}: $(basename "$cached_pkg") ==="
     hdr_len=$(od -An -v -tu4 -N4 -j8 "$cached_pkg" | tr -d ' ')
     skip=$((12 + hdr_len))
-    tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | tar xf - -C /
+    tail -c +$((skip + 1)) "$cached_pkg" | zstd -dc | bsdtar xpf - -C /
     return 0
 }
 
@@ -136,11 +136,31 @@ jpkg_version_key() {
     esac
 }
 
+# First-character class a cached package's version must start with: a
+# digit, plus the first letter of the recipe's own version for the few
+# packages whose versions are not numeric (mksh R59c).  Used by
+# latest_cached_jpkg so `wayland` does not also match
+# wayland-protocols-*.jpkg (or `llvm` match llvm-extra-*.jpkg).
+cached_version_class() {
+    first=$(sed -n 's/^version[ 	]*=[ 	]*"\(.\).*/\1/p' \
+        /workspace/packages/*/"$1"/recipe.toml 2>/dev/null | head -n 1)
+    case "$first" in
+        ''|[0-9]) printf '%s\n' '[0-9]' ;;
+        *)        printf '[0-9%s]\n' "$first" ;;
+    esac
+}
+
 latest_cached_jpkg() {
     pkg="$1"
     arch="$2"
-    for f in /var/cache/jpkg/${pkg}-*-"${arch}".jpkg \
-             /var/cache/jpkg-published/${pkg}-*-"${arch}".jpkg; do
+    # The version must start with a digit (or the recipe's own leading
+    # letter, see cached_version_class) so `latest_cached_jpkg wayland`
+    # does not also match wayland-protocols-*.jpkg; otherwise the
+    # alphabetically-last name wins and the wrong package gets installed
+    # as a build-dep (foot/wlroots builds, 2026-05-16).
+    vclass=$(cached_version_class "$pkg")
+    for f in /var/cache/jpkg/${pkg}-${vclass}*-"${arch}".jpkg \
+             /var/cache/jpkg-published/${pkg}-${vclass}*-"${arch}".jpkg; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
         rest=${base#${pkg}-}
