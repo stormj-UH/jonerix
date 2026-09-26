@@ -45,7 +45,9 @@ SNOOZE=${SNOOZE_BIN:-/bin/snooze}
 pgrp_of() {
     _pg=
     _st=
-    read -r _st < "/proc/$1/stat" 2>/dev/null || return 1
+    # 2>/dev/null first: a process that exited since the /proc glob
+    # must not leave "can't open" noise in the dispatcher's log.
+    read -r _st 2>/dev/null < "/proc/$1/stat" || return 1
     set -- ${_st##*") "}
     _pg=${3:-}
 }
