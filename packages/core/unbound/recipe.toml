@@ -1,20 +1,21 @@
 [package]
 name = "unbound"
-version = "1.22.0-r4"
+version = "1.22.0-r5"
 license = "BSD-3-Clause"
 description = "Validating, recursive, and caching DNS resolver"
 # DNS role takeover. jonerix has no other resolver daemon — by default
 # /etc/resolv.conf points at whatever dhcpcd's 20-resolv.conf hook
-# wrote (the upstream from the DHCP server). Installing unbound
-# redirects that to 127.0.0.1, disables dhcpcd's resolv.conf hook so
-# the next lease doesn't undo us, and brings the service up in the
-# default runlevel. post_remove reverses every step. There's no
-# package whose files we inherit, so we don't declare `replaces` —
-# the takeover is a runtime config edit, not a file-ownership
-# transfer. The post_install respects an /etc/unbound/no-takeover
-# sentinel so images like jonerix:core can install the package
-# without stealing DNS; the router image deliberately does NOT create
-# that sentinel and gets the full takeover.
+# wrote (the upstream from the DHCP server). On a running OpenRC
+# system, installing unbound starts the service and, once it answers,
+# points /etc/resolv.conf at 127.0.0.1, tells dhcpcd not to rewrite
+# it, and enables the service in the default runlevel. Image builds
+# and chroots (no live OpenRC) only enable the service: the image
+# decides what /etc/resolv.conf says. post_remove undoes only what
+# the hook recorded doing. There's no package whose files we inherit,
+# so we don't declare `replaces` — the takeover is a runtime config
+# edit, not a file-ownership transfer. An /etc/unbound/no-takeover
+# sentinel keeps the package on disk without enabling the service or
+# touching DNS (tormenta has one).
 
 [source]
 url = "https://nlnetlabs.nl/downloads/unbound/unbound-1.22.0.tar.gz"
@@ -32,6 +33,37 @@ system = "autoconf"
 # still sitting on disk (jpkg upgrade doesn't remove files the new
 # package stopped tracking). r3 rebuilt the daemon properly; r4 adds
 # the DNS-takeover hooks and ships an init.d + default unbound.conf.
+# r5: r4's hooks never did the DNS takeover: jpkg keeps triple-quoted
+# bodies literal, so each `\\`-newline ended the command early, the
+# resolv.conf and dhcpcd.conf checks ran those files as commands, and
+# both edits were dead code. r5 is the first revision whose hook can
+# take over DNS, so it does so only on a running OpenRC system, after
+# unbound has started and resolved the root zone through 127.0.0.1.
+# Getting there needed the rest of r5:
+#   - The hook creates the unbound system user itself. adduser-safe
+#     answers -S with its usage text and exits 0, so Pi hosts never got
+#     the user; the check reads /etc/passwd, not getent(1).
+#   - configure gets --sysconfdir=/etc. With only --prefix=/, the
+#     compiled-in chroot and directory were "//etc/unbound", which does
+#     not prefix-match "/etc/unbound/...", so unbound-checkconf rejected
+#     the shipped default config.
+#   - The trust anchor moves to /etc/unbound/db/root.key, owned by
+#     unbound: the daemon rewrites it as that user and exited on the
+#     first query when it could not. post_install seeds it offline from
+#     the builtin root DS.
+#   - upstream's example.conf is no longer shipped as the live
+#     /etc/unbound/unbound.conf (every upgrade overwrote it); a
+#     customised one survives the upgrade that drops the path.
+#   - Removal stops and disables the service in pre_remove: r4 did it
+#     in post_remove, after jpkg had deleted /etc/init.d/unbound, so the
+#     daemon kept running. post_remove restores /etc/resolv.conf only
+#     if the hook took it over (r4 deleted it whenever no backup
+#     existed) and removes its dhcpcd.conf line without awk.
+#   - The init script no longer chowns the pidfile's directory, /run
+#     itself, to the unbound user, and refreshes the anchor the config
+#     actually names.
+#   - The OpenSSL 3 DT_NEEDED guard regex had doubled backslashes and
+#     could never match; it now uses bracket expressions.
 #
 #   1. Pre-configure: verify clang's -lssl and -lcrypto resolve
 #      to jonerix's libressl, not to an OpenSSL 3 lib the builder
@@ -46,8 +78,9 @@ system = "autoconf"
 #      DT_NEEDED and refuse to produce the .jpkg if any is found.
 #      The r2 version of this check had a doubled-backslash bug
 #      (\\.so\\.3 in the TOML survived as literal backslashes into
-#      single-quoted awk, which then matched nothing) — fixed by
-#      using grep -E instead of awk for the regex.
+#      single-quoted awk, which then matched nothing). r3 moved it to
+#      grep -E but kept the doubled backslashes; r5 matches the dots
+#      with bracket expressions, which need no backslash at all.
 configure = """# Step 1 — confirm the linker sees libressl for -lssl and -lcrypto.
 # If either resolves to libssl.so.3 / libcrypto.so.3, fail BEFORE
 # autoconf can bake the wrong SONAMEs into Makefile recipes.
@@ -70,6 +103,7 @@ LDFLAGS="-L/lib -Wl,-rpath,/lib" \
 LIBS="-l:libssl.so.58 -l:libcrypto.so.55" \
 PKG_CONFIG_PATH=/lib/pkgconfig \
 ./configure --prefix=/ --sbindir=/bin \
+    --sysconfdir=/etc \
     --with-ssl=/ \
     --with-pidfile=/run/unbound.pid \
     CC=clang"""
@@ -84,22 +118,28 @@ if [ -d "$DESTDIR/sbin" ]; then cp -a "$DESTDIR/sbin/." "$DESTDIR/bin/" && rm -r
 # /etc/unbound/unbound.conf.default — post_install copies it into
 # place only if /etc/unbound/unbound.conf is absent, so a locally
 # customised config (or an image-layer-provided one, e.g. the router
-# profile) is never clobbered.
+# profile) is never clobbered. `make install` also drops upstream's
+# example.conf at etc/unbound/unbound.conf; shipping it there made the
+# package own the live config and overwrite it on every upgrade, so it
+# moves to share/doc as documentation. post_install recognises r4's
+# untouched copy by its sha256 (its paths read //etc/unbound, so it
+# differs from this build's) and replaces only that one.
+mkdir -p "$DESTDIR/share/doc/unbound"
+mv "$DESTDIR/etc/unbound/unbound.conf" "$DESTDIR/share/doc/unbound/example.conf"
 install -Dm755 "$RECIPE_DIR/init.d/unbound" "$DESTDIR/etc/init.d/unbound"
 install -Dm644 "$RECIPE_DIR/etc/unbound/unbound.conf.default" \
     "$DESTDIR/etc/unbound/unbound.conf.default"
 
 # Post-install sanity. Iterate every file we're about to ship and use
-# grep -E (not awk, whose single-quoted regex receives doubled-backslash
-# input when triple-basic TOML relays it through shell) to flag any
-# OpenSSL-3 DT_NEEDED. Any hit refuses the package — better to fail the
-# build than to ship another daemon that won't start on the target.
+# grep -E to flag any OpenSSL-3 DT_NEEDED. Any hit refuses the package —
+# better to fail the build than to ship another daemon that won't start
+# on the target.
 failed=""
 for f in "$DESTDIR/bin"/unbound* "$DESTDIR/lib"/libunbound.so* "$DESTDIR/lib"/libunbound.a; do
     [ -f "$f" ] || continue
     # Static archive has no DT_NEEDED, skip it.
     case "$f" in *.a) continue ;; esac
-    bad=$(readelf -d "$f" 2>/dev/null | grep NEEDED | grep -E 'libssl\\.so\\.3|libcrypto\\.so\\.3' || true)
+    bad=$(readelf -d "$f" 2>/dev/null | grep NEEDED | grep -E 'libssl[.]so[.]3|libcrypto[.]so[.]3' || true)
     if [ -n "$bad" ]; then
         echo "unbound: $f links against OpenSSL 3 SONAMEs instead of libressl:" >&2
         echo "$bad" >&2
@@ -122,162 +162,298 @@ for f in "$DESTDIR"/lib/libunbound.so*; do
 done"""
 
 [hooks]
-# DNS takeover on install. Everything is idempotent and guarded so
-# re-install / upgrade doesn't double-edit any file. Opt-out via the
-# /etc/unbound/no-takeover sentinel — images or hosts that want
-# unbound on disk but NOT wired into the resolver path should touch
-# that file before installing.
+# DNS takeover on install. Every step is idempotent and guarded, so a
+# reinstall or upgrade never edits a file twice, and nothing points
+# DNS at 127.0.0.1 unless unbound answers there. Opt out with the
+# /etc/unbound/no-takeover sentinel: the package's files, the user and
+# the config are still installed, but the service is neither enabled
+# nor started and DNS is left alone.
+#
+# 1.22.0-r4 and earlier shipped upstream's example config as
+# /etc/unbound/unbound.conf, and jpkg deletes a path an upgrade stops
+# shipping. Keep a copy so post_install can put a customised one back.
+pre_install = """if [ -f /etc/unbound/unbound.conf ]; then
+    mkdir -p /etc/jpkg/unbound 2>/dev/null &&
+        cp -p /etc/unbound/unbound.conf /etc/jpkg/unbound/unbound.conf.keep 2>/dev/null
+fi
+exit 0
+"""
+
 post_install = """set -e
-# System user. unbound's default config drops to uid 'unbound', and
-# unbound-checkconf fails hard if the user doesn't exist. Prefer
-# adduser-safe (ships in jonerix-raspi5-fixups and clones, guaranteed
-# never to truncate /etc/passwd on error); fall back to toybox adduser
-# only if adduser-safe is absent. System accounts get no password,
-# no home dir, /bin/nologin shell.
-if ! getent passwd unbound >/dev/null 2>&1; then
-    if [ -x /bin/adduser-safe ]; then
-        /bin/adduser-safe -S -D -H -s /bin/nologin -g "unbound DNS daemon" unbound \\
-            2>/dev/null || true
-    elif command -v adduser >/dev/null 2>&1; then
-        adduser -S -D -H -s /bin/nologin unbound 2>/dev/null || true
+conf=/etc/unbound/unbound.conf
+state=/etc/jpkg/unbound
+note() { printf 'unbound: %s\n' "$*"; }
+# id_used FILE ID: true if some entry in FILE has ID in field 3.
+id_used() {
+    [ -f "$1" ] || return 1
+    while IFS=: read -r _n _p _i _rest || [ -n "$_n" ]; do
+        [ "$_i" = "$2" ] && return 0
+    done < "$1"
+    return 1
+}
+# end_line FILE: make sure an append to FILE starts on a new line.
+end_line() {
+    if [ -s "$1" ] && [ -n "$(tail -c 1 "$1")" ]; then printf '\n' >> "$1"; fi
+    return 0
+}
+mkdir -p "$state"
+
+# --- system user ---
+# unbound.conf sets `username: "unbound"`; unbound-checkconf and the
+# daemon both refuse to run without that account. Append it directly,
+# backups first, the way adduser-safe does: adduser-safe itself only
+# makes login users (uid >= 1000, mksh, a home) and answers -S with its
+# usage text, and toybox adduser can truncate /etc/passwd on failure.
+if ! grep -q '^unbound:' /etc/passwd 2>/dev/null; then
+    if [ -s /etc/passwd ] && grep -q '^root:' /etc/passwd; then
+        gid=$(grep '^unbound:' /etc/group 2>/dev/null | cut -d: -f3)
+        uid=388
+        while id_used /etc/passwd "$uid" || { [ -z "$gid" ] && id_used /etc/group "$uid"; }; do
+            uid=$((uid - 1))
+            if [ "$uid" -lt 100 ]; then uid=""; break; fi
+        done
+        if [ -n "$uid" ]; then
+            cp -p /etc/passwd /etc/passwd.pre-unbound
+            if [ -z "$gid" ]; then
+                gid=$uid
+                [ -f /etc/group ] && cp -p /etc/group /etc/group.pre-unbound
+                end_line /etc/group
+                printf 'unbound:x:%s:\n' "$gid" >> /etc/group
+            fi
+            end_line /etc/passwd
+            printf 'unbound:x:%s:%s:unbound DNS daemon:/var/empty:/bin/nologin\n' "$uid" "$gid" >> /etc/passwd
+            if [ -f /etc/shadow ] && ! grep -q '^unbound:' /etc/shadow; then
+                cp -p /etc/shadow /etc/shadow.pre-unbound
+                end_line /etc/shadow
+                printf 'unbound:!:::::::\n' >> /etc/shadow
+            fi
+            note "added system user unbound (uid $uid, gid $gid)"
+        else
+            note "no free uid between 100 and 388; not adding the unbound user"
+        fi
     else
-        # Last-resort: append minimal entries directly. Safer than no
-        # user at all (unbound refuses to start) and we keep backups.
-        cp /etc/passwd /etc/passwd.pre-unbound 2>/dev/null || true
-        cp /etc/group  /etc/group.pre-unbound  2>/dev/null || true
-        echo "unbound:x:388:388:unbound DNS daemon:/var/empty:/bin/nologin" >> /etc/passwd
-        echo "unbound:x:388:" >> /etc/group
+        note "/etc/passwd is empty or has no root entry; not adding the unbound user"
     fi
 fi
 
-# Seed unbound.conf if none is present. Image layers (e.g. the router
-# Dockerfile's COPY) may have put a custom one here already — leave
-# those alone.
-if [ ! -e /etc/unbound/unbound.conf ]; then
-    install -Dm644 /etc/unbound/unbound.conf.default /etc/unbound/unbound.conf
+# --- unbound.conf ---
+# Put back a customised config that the upgrade from r4 removed (see
+# pre_install). r4's untouched copy of upstream's example is replaced by
+# the jonerix default, which r4 shipped but never installed. A config
+# that is already present, e.g. the router profile's, is left alone.
+keep="$state/unbound.conf.keep"
+r4_example=f0071fcc60aaea5247433587a7dff7a19420e8084fd7c9f217e5b9b614e83604
+if [ ! -e "$conf" ] && [ -f "$keep" ]; then
+    if [ "$(sha256sum < "$keep" 2>/dev/null | cut -d' ' -f1)" = "$r4_example" ]; then
+        note "replacing upstream's example $conf with the jonerix default"
+    else
+        cp -p "$keep" "$conf"
+        note "kept the existing $conf"
+    fi
+fi
+rm -f "$keep"
+if [ ! -e "$conf" ]; then
+    mkdir -p /etc/unbound
+    cp /etc/unbound/unbound.conf.default "$conf"
+    chmod 644 "$conf"
+fi
+# r4 copied resolv.conf here before the takeover it never did; that
+# copy is stale.
+rm -f "$state/resolv.conf.prev"
+
+# The DNSSEC trust anchor. The default config tracks it in
+# /etc/unbound/db/root.key: unbound-checkconf and the daemon need the
+# file to exist, and the daemon, running as unbound, rewrites it
+# through a temporary file in the same directory and exits if it
+# cannot. Seed it with the builtin root DS, the text `unbound-anchor -a`
+# writes for a missing file, without going to the network; the init
+# script's start_pre refreshes it with unbound-anchor on every start.
+anchor=/etc/unbound/db/root.key
+mkdir -p /etc/unbound/db
+if [ ! -s "$anchor" ] && [ -x /bin/unbound-anchor ]; then
+    /bin/unbound-anchor -l 2>/dev/null | while IFS= read -r l; do
+        case "$l" in -----BEGIN*) break ;; esac
+        printf '%s\n' "$l"
+    done > "$anchor.new" || true
+    if grep -q ' DS ' "$anchor.new" 2>/dev/null; then
+        mv "$anchor.new" "$anchor"
+        chmod 644 "$anchor"
+    else
+        rm -f "$anchor.new"
+    fi
+fi
+if grep -q '^unbound:' /etc/passwd 2>/dev/null; then
+    chown unbound:unbound /etc/unbound/db 2>/dev/null || true
+    [ -e "$anchor" ] && chown unbound:unbound "$anchor" 2>/dev/null || true
 fi
 
-# Breadcrumb dir for post_remove. We stash anything we modify so
-# uninstall can put the system back the way we found it.
-mkdir -p /etc/jpkg/unbound
-
-# Check-out: respect /etc/unbound/no-takeover. We still install the
-# files, create the user, and seed the config — what we skip is the
-# resolv.conf / dhcpcd edits and the runlevel enable. This is the
-# switch Dockerfile.core uses to install unbound-as-a-library without
-# unbound-as-a-resolver.
 if [ -e /etc/unbound/no-takeover ]; then
-    echo "unbound: /etc/unbound/no-takeover present — skipping DNS takeover"
+    note "/etc/unbound/no-takeover present; not enabling unbound or touching DNS"
     exit 0
 fi
 
-# --- resolv.conf takeover ---
-# Save the current file (once; never overwrite an existing backup) so
-# post_remove has something to restore.
-if [ ! -e /etc/jpkg/unbound/resolv.conf.prev ] && [ -e /etc/resolv.conf ]; then
-    cp /etc/resolv.conf /etc/jpkg/unbound/resolv.conf.prev 2>/dev/null || true
-fi
-# Write our own only if it doesn't already point at 127.0.0.1.
-if ! grep -qE '^[[:space:]]*nameserver[[:space:]]+127\\.0\\.0\\.1' \\
-        /etc/resolv.conf 2>/dev/null; then
-    {
-        echo "# /etc/resolv.conf — managed by the unbound jpkg post_install hook."
-        echo "# Uninstalling the unbound package restores the prior file from"
-        echo "# /etc/jpkg/unbound/resolv.conf.prev."
-        echo "nameserver 127.0.0.1"
-        echo "nameserver ::1"
-    } > /etc/resolv.conf
+if ! out=$(/bin/unbound-checkconf "$conf" 2>&1); then
+    note "unbound-checkconf rejected $conf; not enabling unbound or touching DNS:"
+    printf '%s\n' "$out"
+    exit 0
 fi
 
-# --- dhcpcd nohook ---
-# Stop dhcpcd's 20-resolv.conf hook from rewriting /etc/resolv.conf on
-# every lease. We do NOT remove the hook file — that's dhcpcd's to own
-# — we just tell dhcpcd's config to skip it. Breadcrumb the edit so
-# post_remove only undoes what WE added.
-if [ -f /etc/dhcpcd.conf ]; then
-    if ! grep -qE '^[[:space:]]*nohook[[:space:]]+resolv\\.conf' \\
-            /etc/dhcpcd.conf 2>/dev/null; then
-        {
-            echo ""
-            echo "# Added by the unbound jpkg post_install — unbound owns /etc/resolv.conf."
-            echo "nohook resolv.conf"
-        } >> /etc/dhcpcd.conf
-        echo "jonerix-unbound-added-nohook" > /etc/jpkg/unbound/dhcpcd.edit
+# --- no running OpenRC (image build, chroot, WSL) ---
+# Nothing can prove unbound works here, so only enable it; whoever
+# builds the image decides what /etc/resolv.conf says. (BuildKit also
+# mounts /etc/resolv.conf read-only during `docker build`.)
+if [ ! -f /run/openrc/softlevel ] || ! command -v rc-service >/dev/null 2>&1; then
+    if command -v rc-update >/dev/null 2>&1; then
+        rc-update add unbound default >/dev/null 2>&1 || true
+        note "enabled in the default runlevel; OpenRC is not running, so DNS was left alone"
+    fi
+    exit 0
+fi
+
+# --- running system: start, then take over DNS ---
+rc-service unbound start >/dev/null 2>&1 || true
+if ! rc-service unbound status >/dev/null 2>&1; then
+    note "unbound did not start; DNS left alone. Fix it, then reinstall unbound"
+    exit 0
+fi
+# Running is not enough: ask it for the root zone's name servers, which
+# also exercises DNSSEC validation and the trust-anchor rewrite. Go
+# through 127.0.0.1, the address resolv.conf is about to name.
+probe="$state/probe.conf"
+printf 'server:\n    module-config: "iterator"\n    do-not-query-localhost: no\nforward-zone:\n    name: "."\n    forward-addr: 127.0.0.1\n' > "$probe"
+answer=$(timeout 30 /bin/unbound-host -C "$probe" -t NS . 2>&1 || true)
+rm -f "$probe"
+sleep 1
+if ! printf '%s\n' "$answer" | grep -q ' has NS record ' ||
+        ! rc-service unbound status >/dev/null 2>&1; then
+    note "unbound is running but did not resolve the root zone through 127.0.0.1; DNS left alone."
+    note "Check the network and unbound's log, then reinstall unbound"
+    exit 0
+fi
+rc-update add unbound default >/dev/null 2>&1 || true
+
+# resolv.conf: record what we replaced so post_remove can put it back.
+local_dns=""
+if [ -L /etc/resolv.conf ]; then
+    note "/etc/resolv.conf is a symlink owned by another tool; left alone"
+elif grep -q 'generated by tailscale' /etc/resolv.conf 2>/dev/null; then
+    note "tailscale manages /etc/resolv.conf; left alone"
+elif grep -Eq '^[[:space:]]*nameserver[[:space:]]+127[.]0[.]0[.]1([[:space:]]|$)' /etc/resolv.conf 2>/dev/null; then
+    local_dns=1
+elif ! { rm -f "$state/resolv.conf.orig" &&
+        { [ ! -e /etc/resolv.conf ] || cp -p /etc/resolv.conf "$state/resolv.conf.orig"; }; }; then
+    note "cannot back up /etc/resolv.conf; left alone"
+else
+    # The subshell keeps the shell's own "can't create" off the terminal
+    # when the file is read-only (a bind mount, BuildKit).
+    if ( {
+        printf '# /etc/resolv.conf: managed by the unbound jpkg post_install hook.\n'
+        printf '# Removing the unbound package restores the previous file.\n'
+        printf 'nameserver 127.0.0.1\n'
+        printf 'nameserver ::1\n'
+    } > /etc/resolv.conf ) 2>/dev/null; then
+        printf 'jonerix-unbound\n' > "$state/resolv.conf.edit"
+        local_dns=1
+        note "/etc/resolv.conf now points at 127.0.0.1"
+    else
+        rm -f "$state/resolv.conf.orig"
+        note "cannot write /etc/resolv.conf; left alone"
     fi
 fi
 
-# --- runlevel + start ---
-# Enable in default if OpenRC is present. The rc-update command is
-# idempotent — re-adding an existing service is a harmless warning.
-if command -v rc-update >/dev/null 2>&1; then
-    rc-update add unbound default 2>/dev/null || true
-fi
-
-# Start the service only when OpenRC is actually running (i.e. we're
-# not inside a `docker build` layer). The /run/openrc/softlevel file
-# only exists once /sbin/openrc has brought the system up.
-if [ -f /run/openrc/softlevel ] && command -v rc-service >/dev/null 2>&1; then
-    # Fetch / refresh the DNSSEC trust anchor before start so the
-    # first resolution doesn't SERVFAIL on missing root.key.
-    if [ -x /bin/unbound-anchor ]; then
-        /bin/unbound-anchor -a /etc/unbound/root.key 2>/dev/null || true
-    fi
-    rc-service unbound start 2>/dev/null || true
-    # Kick dhcpcd so it re-reads dhcpcd.conf and stops clobbering
-    # resolv.conf on the next event.
-    if [ -f /run/dhcpcd.pid ] || command -v dhcpcd >/dev/null 2>&1; then
-        dhcpcd --rebind 2>/dev/null || true
+# dhcpcd: keep its 20-resolv.conf hook from rewriting resolv.conf on
+# the next lease. The hook file is dhcpcd's; we only add `nohook` and
+# a breadcrumb so post_remove takes out just our line.
+if [ -n "$local_dns" ] && [ -f /etc/dhcpcd.conf ] &&
+        ! grep -Eq '^[[:space:]]*nohook[[:space:]]+resolv[.]conf' /etc/dhcpcd.conf; then
+    end_line /etc/dhcpcd.conf
+    if ( {
+        printf '# Added by the unbound jpkg post_install: unbound owns /etc/resolv.conf.\n'
+        printf 'nohook resolv.conf\n'
+    } >> /etc/dhcpcd.conf ) 2>/dev/null; then
+        printf 'jonerix-unbound-added-nohook\n' > "$state/dhcpcd.edit"
+        # A running dhcpcd re-reads dhcpcd.conf on rebind. Without a
+        # running one, --rebind would start a new daemon, so skip it.
+        if { [ -f /run/dhcpcd.pid ] || [ -f /run/dhcpcd/pid ]; } && command -v dhcpcd >/dev/null 2>&1; then
+            dhcpcd --rebind >/dev/null 2>&1 || true
+        fi
     fi
 fi
 """
 
-post_remove = """set -e
-# Stop + disable the service first so nothing is listening on :53 while
-# we put the resolver config back.
-if command -v rc-service >/dev/null 2>&1 && [ -f /run/openrc/softlevel ]; then
-    rc-service unbound stop 2>/dev/null || true
+# Stop and disable the service while /etc/init.d/unbound still exists:
+# jpkg runs post_remove after deleting the package's files, when
+# rc-service can no longer find the service and would leave the daemon
+# running on :53.
+pre_remove = """if command -v rc-service >/dev/null 2>&1 && [ -f /run/openrc/softlevel ]; then
+    rc-service unbound stop >/dev/null 2>&1 || true
 fi
 if command -v rc-update >/dev/null 2>&1; then
-    rc-update del unbound default 2>/dev/null || true
+    rc-update del unbound default >/dev/null 2>&1 || true
 fi
+exit 0
+"""
+
+post_remove = """set -e
+state=/etc/jpkg/unbound
+note() { printf 'unbound: %s\n' "$*"; }
 
 # --- dhcpcd: undo the nohook edit we added ---
-# Only touch dhcpcd.conf if our breadcrumb says we edited it (users
-# may have added `nohook resolv.conf` themselves for their own
-# reasons; don't rip that out).
-if [ -e /etc/jpkg/unbound/dhcpcd.edit ] && [ -f /etc/dhcpcd.conf ]; then
-    # Remove our marker line and the comment above it. sed -i works on
-    # toybox sed; use a temp file for portability with BSD sed too.
-    tmp=$(mktemp /tmp/dhcpcd.conf.XXXXXX)
-    awk '
-        /^# Added by the unbound jpkg post_install/ { skip = 2; next }
-        skip > 0 { skip--; next }
-        { print }
-    ' /etc/dhcpcd.conf > "$tmp" && mv "$tmp" /etc/dhcpcd.conf
-    rm -f /etc/jpkg/unbound/dhcpcd.edit
+# Only when our breadcrumb says we added it (users may have added
+# `nohook resolv.conf` themselves). Drop our comment line and the
+# nohook line after it. Plain sh, since awk is not in every image;
+# rewrite in place so dhcpcd.conf keeps its owner and mode.
+rebind=""
+if [ -e "$state/dhcpcd.edit" ] && [ -f /etc/dhcpcd.conf ]; then
+    tmp="$state/dhcpcd.conf.tmp"
+    skip=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ -n "$skip" ]; then
+            skip=""
+            [ "$line" = "nohook resolv.conf" ] && continue
+        fi
+        case "$line" in
+            "# Added by the unbound jpkg post_install"*) skip=1; continue ;;
+        esac
+        printf '%s\n' "$line"
+    done < /etc/dhcpcd.conf > "$tmp"
+    cat "$tmp" > /etc/dhcpcd.conf
+    rm -f "$tmp"
+    rebind=1
 fi
+rm -f "$state/dhcpcd.edit"
 
-# --- resolv.conf: restore or remove ---
-if [ -e /etc/jpkg/unbound/resolv.conf.prev ]; then
-    mv /etc/jpkg/unbound/resolv.conf.prev /etc/resolv.conf
-else
-    # No backup — /etc/resolv.conf didn't exist before us. Remove our
-    # file so dhcpcd can re-create it from scratch on the next event.
-    rm -f /etc/resolv.conf
+# --- resolv.conf: restore only what we took over ---
+# Only when our breadcrumb says the hook wrote it, and only while it is
+# still our file; another tool may have rewritten it since.
+if [ -e "$state/resolv.conf.edit" ]; then
+    if grep -q 'managed by the unbound jpkg post_install hook' /etc/resolv.conf 2>/dev/null; then
+        if [ -f "$state/resolv.conf.orig" ]; then
+            cat "$state/resolv.conf.orig" > /etc/resolv.conf
+        else
+            # There was no resolv.conf before; dhcpcd writes a new one.
+            rm -f /etc/resolv.conf
+        fi
+    else
+        note "/etc/resolv.conf changed after unbound took it over; left alone"
+    fi
 fi
+rm -f "$state/resolv.conf.edit" "$state/resolv.conf.orig" "$state/resolv.conf.prev"
 
-# Prod dhcpcd to re-run its hooks; this rewrites /etc/resolv.conf from
-# the current lease(s) now that `nohook resolv.conf` is gone.
-if [ -f /run/dhcpcd.pid ] && command -v dhcpcd >/dev/null 2>&1; then
-    dhcpcd --rebind 2>/dev/null || true
+# Prod a running dhcpcd to re-read dhcpcd.conf and rewrite resolv.conf
+# from its leases now that `nohook resolv.conf` is gone.
+if [ -n "$rebind" ] && { [ -f /run/dhcpcd.pid ] || [ -f /run/dhcpcd/pid ]; } &&
+        command -v dhcpcd >/dev/null 2>&1; then
+    dhcpcd --rebind >/dev/null 2>&1 || true
 fi
 
 # Breadcrumb dir — take it with us if empty.
-rmdir /etc/jpkg/unbound 2>/dev/null || true
+rmdir "$state" 2>/dev/null || true
 
-# We deliberately leave the 'unbound' user in /etc/passwd. Nothing
-# here needs it anymore, but cleaning it up risks hitting the classic
-# deluser-race-against-busy-files bug on shutdown.
+# We deliberately leave the 'unbound' user in /etc/passwd and the
+# config in /etc/unbound. Nothing here needs the user anymore, but
+# cleaning it up risks hitting the classic deluser-race-against-busy-
+# files bug on shutdown.
 """
 
 [depends]

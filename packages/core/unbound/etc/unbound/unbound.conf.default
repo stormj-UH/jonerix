@@ -38,6 +38,10 @@ server:
     cache-max-ttl: 86400
     prefetch: yes
 
-    # DNSSEC trust anchor — auto-refreshed by start_pre in the init.d
-    # script and by unbound itself via RFC5011.
-    auto-trust-anchor-file: "/etc/unbound/root.key"
+    # DNSSEC trust anchor — refreshed by start_pre in the init.d script
+    # and by unbound itself via RFC5011. unbound rewrites the file as
+    # the unbound user (through a temporary file next to it) and exits
+    # if it cannot, so it lives in /etc/unbound/db, which belongs to
+    # unbound, and not in /etc/unbound, which holds this root-owned
+    # config.
+    auto-trust-anchor-file: "/etc/unbound/db/root.key"

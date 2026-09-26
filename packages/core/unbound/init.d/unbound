@@ -25,18 +25,30 @@ depend() {
 }
 
 start_pre() {
-    # unbound's smallapp code path opens the pidfile as its dedicated
-    # 'unbound' user, so both the file and its parent dir have to be
-    # writable by that uid. Do this every start so a missing /run
-    # after a tmpfs remount heals itself.
-    checkpath -d -m 0755 -o unbound:unbound "$(dirname "${UNBOUND_PIDFILE}")" \
-        2>/dev/null || true
-    # Fetch (or refresh) the DNSSEC root anchor. Best-effort: if the
-    # network is still coming up we just log and continue; unbound will
-    # fall back to the shipped root.key.
-    if [ -x /bin/unbound-anchor ]; then
-        /bin/unbound-anchor -a /etc/unbound/root.key 2>/dev/null || true
-    fi
+    # unbound writes its pidfile while still root, before it chroots
+    # and drops to the 'unbound' user, so the directory only has to
+    # exist. Never hand it to 'unbound': with the default pidfile that
+    # directory is /run itself.
+    checkpath -d "$(dirname "${UNBOUND_PIDFILE}")" 2>/dev/null || true
+    # unbound keeps its RFC 5011 trust-anchor state in /etc/unbound/db
+    # (see unbound.conf.default) and must be able to rewrite it.
+    checkpath -d -m 0755 -o unbound:unbound /etc/unbound/db 2>/dev/null || true
+    # Fetch (or refresh) each DNSSEC anchor the config tracks.
+    # Best-effort: if the network is still coming up, unbound-anchor
+    # keeps the file it has, or writes the builtin anchor.
+    for _anchor in $(/bin/unbound-checkconf -o auto-trust-anchor-file \
+            "${UNBOUND_CONF}" 2>/dev/null); do
+        if [ -x /bin/unbound-anchor ]; then
+            /bin/unbound-anchor -a "${_anchor}" >/dev/null 2>&1 || true
+        fi
+        chown unbound:unbound "${_anchor}" 2>/dev/null || true
+        # unbound exits on its first RFC 5011 update if it cannot write
+        # a temporary file next to the anchor.
+        if [ "$(stat -c %U "$(dirname "${_anchor}")" 2>/dev/null)" != unbound ]; then
+            ewarn "unbound cannot write next to ${_anchor}; move"
+            ewarn "auto-trust-anchor-file into /etc/unbound/db"
+        fi
+    done
 }
 
 start_post() {
