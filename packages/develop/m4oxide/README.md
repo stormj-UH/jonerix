@@ -18,7 +18,7 @@ Or with options:
 sh install.sh                               # default: $PREFIX/bin/m4oxide only
 sh install.sh --prefix "$HOME/.local"
 sh install.sh --make-default                # also link $PREFIX/bin/m4 → m4oxide
-sh install.sh --version 0.1.2-r0 --arch x86_64
+sh install.sh --version 0.1.3-r0 --arch x86_64
 sh install.sh --help
 ```
 
@@ -26,7 +26,7 @@ Flags:
 
 | Flag                   | Default       | Meaning                                              |
 |------------------------|---------------|------------------------------------------------------|
-| `--version VER`        | `0.1.2-r0`    | Published `.jpkg` version to fetch                    |
+| `--version VER`        | `0.1.3-r0`    | Published `.jpkg` version to fetch                    |
 | `--prefix DIR`         | `/usr/local`  | Install root                                          |
 | `--arch ARCH`          | `uname -m`    | `aarch64` or `x86_64`                                 |
 | `--make-default`       | off           | Also symlink `$PREFIX/bin/m4 → m4oxide`               |

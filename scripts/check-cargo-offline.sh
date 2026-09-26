@@ -178,9 +178,8 @@ is_lfs_pointer() {
 #   $pkg-$version.tar.gz          (with -rN)
 #   $pkg-$base_version.tar.gz     (without -rN)
 #   $pkg-v$base_version.tar.gz    (v-prefixed, e.g. jmake)
-#   <recipe url basename>         (commit-hash-pinned, e.g.
-#                                  m4oxide-40573c872ea5f076a70a78c51946d938ed80ae9c.tar.gz,
-#                                  or suffixed, e.g. gitredoxide-1.0.23-vendored.tar.gz)
+#   <recipe url basename>         (commit-hash-pinned, or suffixed, e.g.
+#                                  gitredoxide-1.0.23-vendored.tar.gz)
 # When none exists, prints the name jpkg's cache lookup matches first (the
 # URL basename) so the "missing" message names the file to vendor.
 find_source_tarball() {

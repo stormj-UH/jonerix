@@ -16,7 +16,7 @@
 
 set -eu
 
-VERSION="0.1.2-r0"
+VERSION="0.1.3-r0"
 PREFIX="/usr/local"
 ARCH=""
 MAKE_DEFAULT=0           # 0=unset, 1=yes, -1=explicit no
