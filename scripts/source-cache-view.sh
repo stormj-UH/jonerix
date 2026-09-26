@@ -9,11 +9,12 @@
 # build host with no git-lfs) has ~130-byte pointer files in sources/ in
 # place of the LFS-tracked tarballs. jpkg's cache lookup would copy such a
 # pointer and then abort on the sha256 check, so the pointers must not be
-# visible in the cache. SRC_DIR is usually the host checkout bind-mounted
-# read-write into the builder container (scripts/local-build-*.sh), so it
-# is never modified: VIEW_DIR is recreated as a directory of symlinks to
-# every regular file in SRC_DIR except the LFS pointers. jpkg's
-# fs::copy() and the recipes' `[ -f ]` lookups both follow symlinks.
+# visible in the cache. SRC_DIR is usually a host checkout bind-mounted
+# into the builder container (scripts/local-build-*.sh), so it is never
+# modified: VIEW_DIR (created if needed; it may only ever hold symlinks) is
+# refilled with a symlink to every regular file in SRC_DIR except the LFS
+# pointers. jpkg's fs::copy() and the recipes' `[ -f ]` lookups both follow
+# symlinks.
 #
 # Prints VIEW_DIR on stdout; progress goes to stderr.
 #
@@ -41,10 +42,15 @@ if [ "$src_dir" = "$view_dir" ]; then
 fi
 
 # Start from an empty view so files dropped from SRC_DIR since the last run
-# do not linger as dangling links.
+# do not linger as dangling links. A view holds only symlinks, so anything
+# else means VIEW_DIR is some other directory: stop rather than delete it.
 for old in "$view_dir"/* "$view_dir"/.[!.]*; do
-    if [ -L "$old" ] || [ -e "$old" ]; then
-        rm -rf "$old"
+    if [ -L "$old" ]; then
+        rm -f "$old"
+    elif [ -e "$old" ]; then
+        printf '%s: %s holds %s, which is not a symlink; refusing to reuse it as a source-cache view\n' \
+            "$label" "$view_dir" "${old##*/}" >&2
+        exit 2
     fi
 done
 
