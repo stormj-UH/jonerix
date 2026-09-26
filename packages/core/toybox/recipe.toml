@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r14"
+version = "0.8.11-r15"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -34,6 +34,51 @@ description = "BSD-licensed coreutils replacement"
 # 0.8.11-r9: make post_install/post_remove honor JPKG_ROOT when hooks run
 # outside a chroot, as happens for alternate-root installs before /bin/sh is
 # present in the target root.
+#
+# 0.8.11-r15: one release for the 2026-09 tormenta triage.
+#  - patches/0004: backport upstream 8cee68231f.  dirtree called
+#    closedir(NULL), which segfaults on musl, so find/du/grep -r/tar/cp -r
+#    run by a normal user crashed at the first unreadable directory.
+#  - patches/0005+0006, init.d/syslogd, conf.d/syslogd: syslogd had been
+#    dead on every OpenRC boot since bootmisc made /var/run -> /run: the
+#    init script gave supervise-daemon pidfile=/run/syslogd.pid, toybox
+#    wrote /var/run/syslogd.pid (the same file) even under -n, found the
+#    supervisor's live pid and exited.  The init script drops pidfile=,
+#    syslogd writes a pidfile only when it daemonizes itself (which also
+#    stops SIGHUP from killing it), records are stamped with local receive
+#    time and always end in a newline, and SYSLOGD_OPTS="-s 1024 -b 5"
+#    turns on rotation (toybox never rotates without -s/-b).
+#  - patches/0007: mount.  OpenRC localmount's `mount -a -O no_netdev`
+#    matched no fstab entry, so /boot, /tmp and tracefs were never
+#    mounted; the root service's `fstabinfo --remount /` compared
+#    /dev/sda2 against /proc/mounts' /dev/root and then double-freed, so
+#    noatime/errors=remount-ro never applied.  -O now has util-linux
+#    semantics, -a skips / and anything already mounted, remount matches
+#    the mountpoint, noauto is honored, fstab-only options (nofail,
+#    _netdev, x-*) no longer reach the kernel, and LABEL=/PARTUUID=/
+#    PARTLABEL= resolve like UUID= (via toybox's own blkid: reforger's
+#    blkid has no -U/-L).
+#  - patches/0008: grep sends BRE \| \+ \? to regcomp (musl implements
+#    them) instead of matching them literally.
+#  - patches/0009: host NULL-terminates its nameserver list.
+#  - patches/0010: blkid -U/-L print only the device (LABEL= got junk).
+#  - patches/0011: unshare -r makes a user namespace with nsenter off.
+#  - sysctl.d/50-ping-group-range.conf: toybox ping only opens
+#    SOCK_DGRAM ICMP sockets, so ship net.ipv4.ping_group_range =
+#    0 2147483647 (the kernel default "1 0" lets nobody, not even root,
+#    ping).
+#  - toybox.config: re-enable flock, unshare, uuidgen, fallocate, cal and
+#    host (default-y, outside pending/), plus root-only traceroute.
+#  - Hooks: the yield loop also matches the absolute `/bin/X` paths that
+#    C jpkg wrote (uutils r1), pre_install keeps a copy of other packages'
+#    real /bin files that toybox links are about to overwrite (bsdtar tar,
+#    ncurses clear, jonerix-util hwclock/ionice) so post_install can put
+#    them back without /var/cache/jpkg, and post_install removes /bin and
+#    /sbin links to toybox for applets this toybox doesn't have (the
+#    2026-04-13 bootstrap rootfs left ~68: wget, host, flock, init ...)
+#    unless another package owns them.  On a running OpenRC system it also
+#    applies the ping sysctl if still at the kernel default and starts
+#    syslogd if it is enabled but not running.
 #
 # 0.8.11-r14: extend the skip list to cover all 11 jonerix-netutils
 # 0.2.0 applets — adds arp, arping, ifconfig, route, iptunnel, tunctl,
@@ -211,14 +256,67 @@ done < /tmp/_applets.txt
 rm -f /tmp/_instlist /tmp/_applets.txt
 install -Dm755 "$RECIPE_DIR/init.d/syslogd" "$DESTDIR/etc/init.d/syslogd"
 install -Dm644 "$RECIPE_DIR/conf.d/syslogd" "$DESTDIR/etc/conf.d/syslogd"
+install -Dm644 "$RECIPE_DIR/sysctl.d/50-ping-group-range.conf" "$DESTDIR/etc/sysctl.d/50-ping-group-range.conf"
 """
 
 [hooks]
-post_install = """_root=${JPKG_ROOT:-}
+pre_install = """_root=${JPKG_ROOT:-}
+case "$_root" in
+    /) _root= ;;
+esac
+# r15: this archive is about to lay /bin/<applet> -> toybox over every
+# applet name, including real files other packages own there (bsdtar's
+# tar, ncurses' clear, jonerix-util's hwclock and ionice).  Keep a copy so
+# post_install can put them back: its older fallback needs the owner's
+# .jpkg in /var/cache/jpkg, which is usually empty.  Only names the
+# installed toybox provides (plus the applets r15 adds) are considered,
+# so this copies a handful of small files at most.  No awk: the core
+# image doesn't have one.
+_stash="$_root/var/cache/jpkg/toybox-yield"
+rm -rf "$_stash"
+[ -x "$_root/bin/toybox" ] || exit 0
+mkdir -p "$_stash" || exit 0
+"$_root/bin/toybox" 2>/dev/null | tr ' ' '\n' > "$_stash/.applets"
+printf '%s\n' cal fallocate flock host traceroute traceroute6 unshare uuidgen >> "$_stash/.applets"
+grep -qxF ls "$_stash/.applets" || { rm -rf "$_stash"; exit 0; }
+for _mfst in "$_root"/var/db/jpkg/installed/*/files; do
+    [ -f "$_mfst" ] || continue
+    _owner=${_mfst%/files}
+    _owner=${_owner##*/}
+    [ "$_owner" = "toybox" ] && continue
+    # "<sha256> <mode> bin/X" (no " -> target"): a regular file.  C jpkg
+    # 1.x manifests spell the path /bin/X.  Save whatever is there now
+    # (-P: a symlink stays a symlink) unless it already points at toybox.
+    grep -E '^[^ ]+ [^ ]+ /?bin/[^ /]+$' "$_mfst" > "$_stash/.claims" 2>/dev/null || continue
+    while read -r _sum _mode _raw; do
+        _n=${_raw#/}
+        _n=${_n#bin/}
+        grep -qxF -- "$_n" "$_stash/.applets" || continue
+        _p="$_root/bin/$_n"
+        [ -e "$_p" ] || [ -L "$_p" ] || continue
+        [ "$(readlink "$_p" 2>/dev/null)" = "toybox" ] && continue
+        cp -Pp "$_p" "$_stash/$_n" && echo "toybox: saved /bin/$_n (owner: $_owner)"
+    done < "$_stash/.claims"
+done
+rm -f "$_stash/.applets" "$_stash/.claims"
+exit 0
+"""
+post_install = """# jpkg runs this hook with /bin/sh, and the archive just replaced /bin/sh
+# with toybox's own (pending-quality) sh; mksh gets it back below.  Run the
+# work under mksh when this is the live root (or a chroot) and it's there.
+_sh=/bin/sh
+case "${JPKG_ROOT:-/}" in
+    /) [ -x /bin/mksh ] && _sh=/bin/mksh ;;
+esac
+"$_sh" -s <<'__TOYBOX_POST_INSTALL__'
+_root=${JPKG_ROOT:-}
 case "$_root" in
     /) _root= ;;
 esac
 _tar_root=${_root:-/}
+_stash="$_root/var/cache/jpkg/toybox-yield"
+mkdir -p "$_stash"
+_tmp="$_stash/.lines"
 
 mkdir -p "$_root/etc/runlevels/default"
 [ -f "$_root/etc/init.d/syslogd" ] && ln -sf /etc/init.d/syslogd "$_root/etc/runlevels/default/syslogd" 2>/dev/null || true
@@ -234,76 +332,66 @@ mkdir -p "$_root/etc/runlevels/default"
 #  (a) `replaces=["toybox"]` semantics — the other package ships
 #      `/bin/<cmd> -> <owner>` (a symlink to its own multicall
 #      binary). Pattern: uutils (Rust GNU-coreutils rewrite),
-#      exproxide (POSIX-strict expr), shadow (passwd/login etc).
-#      We re-create the symlink directly.
+#      exproxide (POSIX-strict expr), shadow (passwd/login etc),
+#      mksh (/bin/sh).  We re-create the symlink directly.
 #
 #  (b) Real-binary conflict — the other package ships /bin/<cmd>
-#      as an ELF binary (no `->` field). Pattern: iproute-go
-#      (which owns /bin/ip and /bin/iproute as Go-built ELF). The
-#      symlink we just laid down OVERWROTE the real binary, so we
-#      can't restore from disk; we have to force-reinstall the
-#      conflicting package. Reproduced 2026-05-09 on tormenta —
-#      `ip a` returned "Invalid link." because /bin/ip was the
-#      toybox symlink, and `jpkg verify iproute-go` confirmed the
-#      manifest hash mismatch. `jpkg install -f iproute-go`
-#      restored it.
+#      as a regular file (no `->` field). Pattern: bsdtar (bin/tar),
+#      ncurses (bin/clear), jonerix-util (bin/hwclock, bin/ionice).
+#      The symlink we just laid down OVERWROTE that file.  r15's
+#      pre_install kept a copy, which we put back; failing that, the
+#      owner's payload is re-extracted from /var/cache/jpkg.  We can't
+#      call `jpkg install -f` here: jpkg's install lock is held.
 #
 # The loop is generic so any future replaces-toybox or owns-/bin/X
 # package is honored without recipe changes here.
 #
-# IMPORTANT: jpkg's manifest stores paths as RELATIVE (no leading
-# slash) — `bin/ip`, not `/bin/ip`. The previous version of this loop
-# matched `^\/bin\//` which never matched anything in any real
-# manifest, so the "yield" loop was a no-op for years. We strip-or-add
-# the leading slash deliberately when constructing $_path for
-# readlink/ln, and prefix the target root when hooks run outside chroot.
+# Manifest lines are "<sha256> <mode> <path>" or "... <path> -> <target>".
+# Rust jpkg writes the path RELATIVE (`bin/sort`), but C jpkg 1.x wrote it
+# ABSOLUTE (`/bin/sort`) and such manifests are still installed (uutils
+# 0.7.0-r1 on tormenta: r12's `^bin/` match skipped all 104 of its links,
+# so 79 stayed toybox).  Match both spellings, and prefix the target root
+# for readlink/ln when hooks run outside a chroot.  No awk here: the
+# jonerix core image doesn't ship one, which left r5-r14's loop a no-op
+# there (and /bin/sh toybox's after an upgrade).
 for _mfst in "$_root"/var/db/jpkg/installed/*/files; do
     [ -f "$_mfst" ] || continue
-    _owner=$(basename "$(dirname "$_mfst")")
+    _owner=${_mfst%/files}
+    _owner=${_owner##*/}
     [ "$_owner" = "toybox" ] && continue
     _need_reinstall=""
-    # Collect all bin/* paths this package's manifest claims (whether
-    # symlink or regular file). Manifest paths have NO leading slash.
-    _claims=$(awk '$3 ~ /^bin\// { print $3 }' "$_mfst" 2>/dev/null)
-    [ -z "$_claims" ] && continue
-    for _rel in $_claims; do
+    grep -E '^[^ ]+ [^ ]+ /?bin/[^ /]+( |$)' "$_mfst" > "$_tmp" 2>/dev/null || continue
+    while read -r _sum _mode _raw _arrow _target; do
+        _rel=${_raw#/}
         _path="$_root/$_rel"
-        _curr=$(readlink "$_path" 2>/dev/null || echo "")
-        [ "$_curr" = "toybox" ] || continue
-        # Look at this manifest line — is the entry a symlink (->X)
-        # or a regular file?
-        _line=$(awk -v p="$_rel" '$3 == p { print; exit }' "$_mfst")
-        case "$_line" in
-            *" -> "*)
-                # (a) Symlink case: re-link to the named target.
-                # Targets may be either RELATIVE (e.g. `addgroup-safe`,
-                # which the loader resolves under the link's parent
-                # /bin) or ABSOLUTE (e.g. `/usr/local/bin/reboot-openrc`
-                # for raspi5-fixups' /bin/reboot). Test for both
-                # before recreating.
-                _target=$(printf '%s\n' "$_line" | awk '
-                    { for(i=1;i<=NF;i++) if($i=="->") { print $(i+1); exit } }
-                ')
-                if [ -z "$_target" ]; then
-                    continue
-                fi
-                case "$_target" in
-                    /*)  _target_abs="$_root$_target" ;;     # already absolute
-                    *)   _target_abs="$_root/bin/$_target" ;;  # resolve under /bin
-                esac
-                if [ -e "$_target_abs" ]; then
-                    ln -sf "$_target" "$_path" 2>/dev/null
-                    echo "toybox-yield: restored $_path -> $_target (owner: $_owner)"
-                fi
-                ;;
-            *)
-                # (b) Real-binary case: needs reinstall to restore.
-                # Mark and act once per owner at end of loop, since
-                # `jpkg install -f` reinstalls the whole package.
+        [ "$(readlink "$_path" 2>/dev/null)" = "toybox" ] || continue
+        if [ "$_arrow" = "->" ]; then
+            # (a) Symlink case: re-link to the named target.
+            # Targets may be either RELATIVE (e.g. `addgroup-safe`,
+            # which the loader resolves under the link's parent
+            # /bin) or ABSOLUTE (e.g. `/usr/local/bin/reboot-openrc`
+            # for raspi5-fixups' /bin/reboot). Test for both
+            # before recreating.
+            [ -n "$_target" ] || continue
+            case "$_target" in
+                /*)  _target_abs="$_root$_target" ;;     # already absolute
+                *)   _target_abs="$_root/bin/$_target" ;;  # resolve under /bin
+            esac
+            if [ -e "$_target_abs" ]; then
+                ln -sf "$_target" "$_path" 2>/dev/null
+                echo "toybox-yield: restored $_path -> $_target (owner: $_owner)"
+            fi
+        else
+            # (b) Real-binary case: put back pre_install's copy, else
+            # mark the owner for re-extraction from the cache below.
+            _n=${_rel#bin/}
+            if { [ -e "$_stash/$_n" ] || [ -L "$_stash/$_n" ]; } && rm -f "$_path" && cp -Pp "$_stash/$_n" "$_path"; then
+                echo "toybox-yield: restored $_path (owner: $_owner)"
+            else
                 _need_reinstall="yes"
-                ;;
-        esac
-    done
+            fi
+        fi
+    done < "$_tmp"
     if [ -n "$_need_reinstall" ]; then
         # Real-binary case: extract the conflicting package's payload
         # directly from its cached .jpkg.  We CANNOT call `jpkg install
@@ -318,7 +406,7 @@ for _mfst in "$_root"/var/db/jpkg/installed/*/files; do
         if [ -n "$_ver" ] && [ -f "$_root/var/cache/jpkg/${_owner}-${_ver}-${_arch}.jpkg" ]; then
             _cached="$_root/var/cache/jpkg/${_owner}-${_ver}-${_arch}.jpkg"
         else
-            for _cand in "$_root"/var/cache/jpkg/${_owner}-*-"$_arch".jpkg; do
+            for _cand in "$_root/var/cache/jpkg/$_owner"-*-"$_arch".jpkg; do
                 [ -f "$_cand" ] || continue
                 _cached=$_cand
             done
@@ -327,10 +415,8 @@ for _mfst in "$_root"/var/db/jpkg/installed/*/files; do
             _hdr=$(od -An -v -tu4 -N4 -j8 "$_cached" 2>/dev/null | tr -d ' ')
             if [ -n "$_hdr" ]; then
                 _skip=$((12 + _hdr))
-                if tail -c +$((_skip + 1)) "$_cached" | zstd -dc 2>/dev/null \
-                    | tar xpf - -C "$_tar_root" 2>/dev/null
-                then
-                    echo "toybox-yield: restored $_owner from $(basename "$_cached") (real-binary)"
+                if tail -c +$((_skip + 1)) "$_cached" | zstd -dc 2>/dev/null | tar xpf - -C "$_tar_root" 2>/dev/null; then
+                    echo "toybox-yield: restored $_owner from ${_cached##*/} (real-binary)"
                     continue
                 fi
             fi
@@ -338,6 +424,62 @@ for _mfst in "$_root"/var/db/jpkg/installed/*/files; do
         echo "toybox-yield: WARN could not auto-restore $_owner — run 'sudo jpkg install -f $_owner'"
     fi
 done
+
+# r15: remove /bin and /sbin links to toybox for applets this toybox does
+# not have.  The 2026-04-13 bootstrap rootfs (toybox `make install`, so
+# X -> ../../bin/toybox) and early toybox packages left ~68 of them (wget,
+# host, flock, uuidgen, lspci, w, init ...) that no manifest records, so
+# jpkg never removes them: `command -v wget` succeeds, then wget exits
+# 127.  Links any installed manifest claims are left alone (so are the
+# skip-listed applets, e.g. reboot, which this toybox still has), and
+# nothing is removed unless this toybox runs here and lists its applets.
+"$_root/bin/toybox" 2>/dev/null | tr ' ' '\n' > "$_stash/.applets"
+if grep -qxF ls "$_stash/.applets" && grep -qxF mount "$_stash/.applets"; then
+    cat "$_root"/var/db/jpkg/installed/*/files 2>/dev/null | sed -nE 's#^[^ ]+ [^ ]+ /?(s?bin/[^ ]+).*#\1#p' > "$_stash/.owned"
+    for _d in bin sbin; do
+        [ -d "$_root/$_d" ] || continue
+        [ -L "$_root/$_d" ] && continue
+        for _p in "$_root/$_d"/*; do
+            [ -L "$_p" ] || continue
+            case "$(readlink "$_p")" in
+                toybox|../bin/toybox|../../bin/toybox|/bin/toybox|/usr/bin/toybox) ;;
+                *) continue ;;
+            esac
+            _n=${_p##*/}
+            [ "$_n" = "toybox" ] && continue
+            grep -qxF -- "$_n" "$_stash/.applets" && continue
+            grep -qxF -- "$_d/$_n" "$_stash/.owned" && continue
+            rm -f "$_p" && echo "toybox: removed /$_d/$_n (links to toybox, which has no $_n applet)"
+        done
+    done
+fi
+rm -rf "$_stash"
+
+# r15: on a running OpenRC system (not an image build, alternate root or
+# container), apply the ping sysctl now if ping_group_range is still the
+# kernel default, and start syslogd if it is enabled but not running (it
+# died at every start until r15; see the notes at the top).
+if [ -z "$_root" ] && [ -d /run/openrc/started ]; then
+    _pgr=/proc/sys/net/ipv4/ping_group_range
+    if [ -w "$_pgr" ] && [ -f /etc/sysctl.d/50-ping-group-range.conf ]; then
+        case "$(tr -s ' \t' '  ' < "$_pgr" 2>/dev/null)" in
+            "1 0")
+                sysctl -p /etc/sysctl.d/50-ping-group-range.conf >/dev/null 2>&1 && echo "toybox: set net.ipv4.ping_group_range = 0 2147483647"
+                ;;
+        esac
+    fi
+    if [ -e /etc/runlevels/default/syslogd ] && command -v rc-service >/dev/null 2>&1; then
+        if ! rc-service syslogd status >/dev/null 2>&1; then
+            if rc-service syslogd restart >/dev/null 2>&1; then
+                echo "toybox: started syslogd"
+            else
+                echo "toybox: WARN syslogd did not start — run 'rc-service syslogd start'"
+            fi
+        fi
+    fi
+fi
+exit 0
+__TOYBOX_POST_INSTALL__
 exit 0
 """
 post_remove = """_root=${JPKG_ROOT:-}

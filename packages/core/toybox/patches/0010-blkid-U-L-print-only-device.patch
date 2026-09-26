@@ -1,0 +1,18 @@
+blkid: -U/-L print only the device.
+
+The SEC_TYPE tags (vfat "msdos", ext3/4 "ext2") went through show_tag()
+even under -U/-L, so "blkid -L LABEL" printed ' SEC_TYPE="msdos"' once
+per vfat filesystem it scanned before the matching device name, and
+mount's LABEL= lookup got that string as the device.
+
+--- a/toys/other/blkid.c
++++ b/toys/other/blkid.c
+@@ -85,6 +85,8 @@
+   int show = 0;
+   struct arg_list *al;
+ 
++  // -U and -L print only the matching device (flagshow), no tags
++  if (FLAG(U) || FLAG(L)) return;
+   if (TT.s) {
+     for (al = TT.s; al; al = al->next) if (!strcmp(key, al->arg)) show = 1;
+   } else show = 1;

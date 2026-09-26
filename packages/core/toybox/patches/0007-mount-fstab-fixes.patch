@@ -1,0 +1,365 @@
+mount: make "mount -a" and fstab remounts work the way OpenRC uses them.
+
+- -O: OpenRC's localmount runs "mount -a -t noproc,<netfs> -O no_netdev".
+  toybox treated -O as "the entry must carry this literal option", so no
+  fstab entry ever matched, mount -a mounted nothing and exited 0, and
+  /boot, /tmp and tracefs were never mounted.  Use util-linux semantics:
+  "noOPT" means OPT is absent, "+OPT" is literal, anything else present.
+- -a skips entries that are already mounted by comparing device numbers
+  as well as names, and always treats "/" as mounted: /proc/mounts calls
+  a kernel-mounted root "/dev/root", so the root entry was mounted again.
+- -o remount DEV DIR (OpenRC's "fstabinfo --remount") matches the
+  mountpoint instead of DEV against /proc/mounts' "/dev/root", so fstab
+  root options (noatime, errors=remount-ro) are applied.  The last of
+  noatime/relatime wins, since remount starts from /proc/mounts' options.
+- remount walks /proc/mounts as both lists; CONFIG_TOYBOX_FREE freed it
+  twice and crashed silently.
+- Resolve LABEL= as well as UUID= (with toybox's own blkid: reforger's
+  blkid on $PATH has no -U/-L), and PARTUUID=/PARTLABEL=.  There is no
+  udev, so PARTUUID= reads the MBR disk signature or the GPT partition
+  GUID of the parent disk found via /sys/class/block.
+- "noauto" was never recognized (comma_scan() reads it as no+"auto"), and
+  fstab-only options (noauto, nofail, _netdev, users, x-*, comment=) went
+  to the kernel, which rejects them with EINVAL.
+- -t "noproc,nfs,...": later list items compared only len-2 characters,
+  so "nfs" excluded every type starting with "n" (ntfs, ntfs3, nilfs2).
+- A swap entry was swapon'ed and then also handed to mount(2); stop there.
+
+--- a/lib/portability.c
++++ b/lib/portability.c
+@@ -113,9 +113,10 @@
+   for (;;) {
+     if (!(t = comma_iterate(&typelist, &len))) break;
+     if (!skip) {
+-      // later "no" after first are ignored
+-      strstart(&t, "no");
+-      if (!strncmp(t, ml->type, len-2)) {
++      // later "no" after first are ignored (and don't shorten the match:
++      // "noproc,nfs" used to compare only "n", skipping ntfs too)
++      if (strstart(&t, "no")) len -= 2;
++      if (!strncmp(t, ml->type, len) && !ml->type[len]) {
+         skip = 1;
+         break;
+       }
+--- a/toys/lsb/mount.c
++++ b/toys/lsb/mount.c
+@@ -24,7 +24,7 @@
+     mounts.
+ 
+     -a	Mount all entries in /etc/fstab (with -t, only entries of that TYPE)
+-    -O	Only mount -a entries that have this option
++    -O	Only mount -a entries with these options (noOPT: entries without OPT)
+     -f	Fake it (don't actually mount)
+     -r	Read only (same as -o ro)
+     -w	Read/write (default, same as -o rw)
+@@ -37,7 +37,7 @@
+     Autodetects loopback mounts (a file on a directory) and bind mounts (file
+     on file, directory on directory), so you don't need to say --bind or --loop.
+     You can also "mount -a /path" to mount everything in /etc/fstab under /path,
+-    even if it's noauto. DEVICE starting with UUID= is identified by blkid -U.
++    even if it's noauto. DEVICE may be UUID=, LABEL=, PARTUUID= or PARTLABEL=.
+ 
+ #config SMBMOUNT
+ #  bool "smbmount"
+@@ -96,6 +96,8 @@
+     long flags;
+   } opts[] = {
+     {"loop", 0}, {"defaults", 0}, {"quiet", 0}, // NOPs
++    // fstab-only: filesystems reject these with EINVAL
++    {"auto", 0}, {"noauto", 0}, {"nofail", 0}, {"_netdev", 0}, {"users", 0},
+     {"user", 0}, {"nouser", 0}, // checked in fstab, ignored in -o
+     {"bind", MS_REC}, {"rbind", ~MS_REC}, // Autodetected but override defaults
+     {"ro", MS_RDONLY}, {"rw", ~MS_RDONLY},
+@@ -127,10 +129,17 @@
+ 
+       if (ll < 0) flags &= ll;
+       else flags |= ll;
++      // A remount starts from /proc/mounts' options (usually "relatime"),
++      // and the kernel lets noatime beat relatime, so the last one must win.
++      if (ll == MS_NOATIME) flags &= ~MS_RELATIME;
++      if (ll == MS_RELATIME) flags &= ~MS_NOATIME;
+ 
+       break;
+     }
+ 
++    // x-* and comment= are for userspace (fstab tools), not the kernel
++    if (!strncmp(new, "x-", 2) || !strncmp(new, "comment=", 8)) i = 0;
++
+     // If we didn't recognize it, keep string version
+     if (more && i == ARRAY_LEN(opts)) {
+       i = *more ? strlen(*more) : 0;
+@@ -145,6 +154,124 @@
+   }
+ 
+   return flags;
++}
++
++// Copy KEY's value out of sysfs uevent text UE into OUT (LEN bytes).
++static char *mount_ueget(char *ue, char *key, char *out, int len)
++{
++  int klen = strlen(key), i;
++  char *s = ue;
++
++  while (s && *s) {
++    if (!strncmp(s, key, klen) && s[klen] == '=') {
++      for (s += klen+1, i = 0; i<len-1 && s[i] && s[i] != '\n'; i++)
++        out[i] = s[i];
++      out[i] = 0;
++
++      return out;
++    }
++    if ((s = strchr(s, '\n'))) s++;
++  }
++
++  return 0;
++}
++
++// Write the PARTUUID of partition PART of whole disk DISK into OUT (37+
++// bytes): the MBR disk signature plus partition number ("1234abcd-02"),
++// or the GPT unique partition GUID. Returns 0 if there's no such table.
++static int mount_partuuid(char *disk, int part, char *out)
++{
++  char buf[512], *s = xmprintf("/dev/%s", disk);
++  int fd = open(s, O_RDONLY), ss = 512, gpt = 0, rc = 0, i;
++  long long lba, cnt, esz;
++
++  free(s);
++  if (fd == -1) return 0;
++  if (ioctl(fd, BLKSSZGET, &ss) || ss<512 || ss>65536) ss = 512;
++  if (512 == pread(fd, buf, 512, 0) && buf[510] == 0x55
++      && (buf[511]&255) == 0xaa)
++  {
++    for (i = 0; i<4; i++) if ((buf[446+16*i+4]&255) == 0xee) gpt++;
++    if (!gpt) {
++      sprintf(out, "%08x-%02x", (unsigned)peek_le(buf+440, 4), part);
++      rc = 1;
++    } else if (92 == pread(fd, buf, 92, ss) && !memcmp(buf, "EFI PART", 8)) {
++      lba = peek_le(buf+72, 8);
++      cnt = peek_le(buf+80, 4);
++      esz = peek_le(buf+84, 4);
++      // Unique partition GUID is at +16; its first 3 fields are little endian
++      if (part<=cnt && esz>=128 && esz<=4096
++          && 16 == pread(fd, buf, 16, lba*ss+(part-1)*esz+16))
++      {
++        sprintf(out, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
++          (unsigned)peek_le(buf, 4), (unsigned)peek_le(buf+4, 2),
++          (unsigned)peek_le(buf+6, 2), buf[8]&255, buf[9]&255, buf[10]&255,
++          buf[11]&255, buf[12]&255, buf[13]&255, buf[14]&255, buf[15]&255);
++        // an all zero GUID is an unused entry
++        rc = strspn(out, "0-") != strlen(out);
++      }
++    }
++  }
++  close(fd);
++
++  return rc;
++}
++
++// Find the partition with PARTUUID (or with GPT name PARTLABEL, which the
++// kernel exports as PARTNAME) WANT. Without udev there's no
++// /dev/disk/by-partuuid, so walk /sys/class/block and read partition tables.
++static char *mount_findpart(char *want, int label)
++{
++  DIR *dp = opendir("/sys/class/block");
++  struct dirent *de;
++  char *found = 0, *s, ue[1024], name[256], disk[256], val[80];
++  int part;
++
++  while (dp && !found && (de = readdir(dp))) {
++    if (*de->d_name == '.') continue;
++    s = xmprintf("/sys/class/block/%s/uevent", de->d_name);
++    if (!readfile(s, ue, sizeof(ue))) *ue = 0;
++    free(s);
++    if (!mount_ueget(ue, "PARTN", val, sizeof(val)) || (part = atoi(val))<1
++        || !mount_ueget(ue, "DEVNAME", name, sizeof(name))) continue;
++    if (label) {
++      if (!mount_ueget(ue, "PARTNAME", val, sizeof(val)) || strcmp(val, want))
++        continue;
++    } else {
++      // A partition's parent directory in sysfs is its whole disk.
++      s = xmprintf("/sys/class/block/%s/../uevent", de->d_name);
++      if (!readfile(s, ue, sizeof(ue))) *ue = 0;
++      free(s);
++      if (!mount_ueget(ue, "DEVNAME", disk, sizeof(disk))
++          || !mount_partuuid(disk, part, val) || strcasecmp(val, want))
++        continue;
++    }
++    found = xmprintf("/dev/%s", name);
++  }
++  if (dp) closedir(dp);
++
++  return found;
++}
++
++// Turn UUID=, LABEL=, PARTUUID= or PARTLABEL= into a device path. Returns
++// DEV itself if it's none of those, else a malloced path, or 0 if not found.
++static char *mount_resolve(char *dev)
++{
++  char *s = dev, *flag;
++
++  if (strstart(&s, "UUID=")) flag = "-U";
++  else if (strstart(&s, "LABEL=")) flag = "-L";
++  else if (strstart(&s, "PARTUUID=")) return mount_findpart(s, 0);
++  else if (strstart(&s, "PARTLABEL=")) return mount_findpart(s, 1);
++  else return dev;
++  // toybox's own blkid: the one on $PATH may lack -U/-L (reforger's does)
++  s = chomp(xrunread((char *[]){"toybox", "blkid", flag, s, 0}, 0));
++  if (s && !*s) {
++    free(s);
++    s = 0;
++  }
++
++  return s;
+ }
+ 
+ static void mount_filesystem(char *dev, char *dir, char *type,
+@@ -152,7 +279,7 @@
+ {
+   FILE *fp = 0;
+   int rc = EINVAL;
+-  char *buf = 0;
++  char *buf = 0, *res;
+ 
+   if (FLAG(f)) return;
+ 
+@@ -165,12 +292,14 @@
+     }
+   }
+ 
+-  if (strstart(&dev, "UUID=")) {
+-    char *s = chomp(xrunread((char *[]){"blkid", "-U", dev, 0}, 0));
++  if (dev != (res = mount_resolve(dev))) {
++    if (!res || strlen(res)>=sizeof(toybuf)) {
++      free(res);
+ 
+-    if (!s || strlen(s)>=sizeof(toybuf)) return error_msg("No uuid %s", dev);
+-    strcpy(dev = toybuf, s);
+-    free(s);
++      return error_msg("No device %s", dev);
++    }
++    strcpy(dev = toybuf, res);
++    free(res);
+   }
+ 
+   // Autodetect bind mount or filesystem type
+@@ -190,9 +319,12 @@
+       flags |= MS_BIND;
+     } else fp = xfopen("/proc/filesystems", "r");
+   } else if (!strcmp(type, "ignore")) return;
+-  else if (!strcmp(type, "swap"))
++  else if (!strcmp(type, "swap")) {
+     toys.exitval |= xrun((char *[]){"swapon", "--", dev, 0});
+ 
++    return;
++  }
++
+   for (;;) {
+     int fd = -1, ro = 0;
+ 
+@@ -268,8 +400,60 @@
+     break;
+   }
+   if (fp) fclose(fp);
++}
++
++// Is option NAME (NLEN bytes, maybe with =value) in comma separated OPTS?
++static int mount_hasopt(char *opts, char *name, int nlen)
++{
++  char *s;
++  int len;
++
++  while ((s = comma_iterate(&opts, &len)))
++    if (len>=nlen && !strncmp(s, name, nlen) && (len==nlen || s[nlen]=='='))
++      return 1;
++
++  return 0;
++}
++
++// util-linux -O semantics: every item in WANT must match OPTS. "noOPT"
++// matches entries without OPT (OpenRC's localmount runs "mount -a -O
++// no_netdev" to skip _netdev entries), "+OPT" matches OPT literally, and
++// anything else must be present.
++static int mount_Omatch(char *opts, char *want)
++{
++  char *s;
++  int len, no;
++
++  while ((s = comma_iterate(&want, &len))) {
++    no = 0;
++    if (*s == '+') s++, len--;
++    else if (len>2 && !strncmp(s, "no", 2)) no = 1, s += 2, len -= 2;
++    if (mount_hasopt(opts, s, len) == no) return 0;
++  }
++
++  return 1;
+ }
+ 
++// Is fstab entry MM already mounted as /proc/mounts entry MMM? Same
++// directory, then same device by name or by device number: the kernel calls
++// a root it mounted itself "/dev/root", and fstab may say UUID= and so on.
++// "/" is always mounted by the time mount -a runs.
++static int mount_already(struct mtab_list *mm, struct mtab_list *mmm)
++{
++  struct stat st;
++  char *dev;
++  int same;
++
++  if (strcmp(mm->dir, mmm->dir)) return 0;
++  if (!strcmp(mm->dir, "/") || !strcmp(mm->device, mmm->device)) return 1;
++  if (!(dev = mount_resolve(mm->device))) return 0;
++  same = !stat(dev, &st) && S_ISBLK(st.st_mode)
++    && st.st_rdev == mmm->stat.st_dev;
++  if (dev != mm->device) free(dev);
++
++  return same;
++}
++
+ void mount_main(void)
+ {
+   char *opts = 0, *dev = 0, *dir = 0, **ss;
+@@ -327,7 +511,8 @@
+ 
+       // Check for noauto and get it out of the option list. (Unknown options
+       // that make it to the kernel give filesystem drivers indigestion.)
+-      noauto = comma_scan(mm->opts, "noauto", 1);
++      // (comma_scan() reads "noauto" as "no" + "auto", so never matched it)
++      noauto = comma_remove(mm->opts, "noauto");
+ 
+       if (FLAG(a)) {
+         // "mount -a /path" to mount all entries under /path
+@@ -336,19 +521,21 @@
+            if (strncmp(dev, mm->dir, len)
+                || (mm->dir[len] && mm->dir[len] != '/')) continue;
+         } else if (noauto) continue; // never present in the remount case
+-        if (!mountlist_istype(mm, TT.t) || !comma_scanall(mm->opts, TT.O))
++        if (!mountlist_istype(mm, TT.t) || !mount_Omatch(mm->opts, TT.O))
+           continue;
+       } else {
+         if (dir && strcmp(dir, mm->dir)) continue;
+-        if (strcmp(dev, mm->device) && (dir || strcmp(dev, mm->dir))) continue;
++        // Remount a mountpoint by its directory: /proc/mounts calls a root
++        // the kernel mounted "/dev/root", fstab says /dev/sda2 or PARTUUID=.
++        if (!(remount && dir) && strcmp(dev, mm->device)
++            && (dir || strcmp(dev, mm->dir))) continue;
+       }
+ 
+       // Don't overmount the same dev on the same directory
+       // (Unless root explicitly says to in non -a mode.)
+       if (mtl2 && !remount)
+         for (mmm = mtl2; mmm; mmm = mmm->next)
+-          if (!strcmp(mm->dir, mmm->dir) && !strcmp(mm->device, mmm->device))
+-            break;
++          if (mount_already(mm, mmm)) break;
+ 
+       // user only counts from fstab, not opts.
+       if (!mmm) {
+@@ -364,7 +551,8 @@
+     }
+     if (CFG_TOYBOX_FREE) {
+       llist_traverse(mtl, free);
+-      llist_traverse(mtl2, free);
++      // remount walks /proc/mounts itself (mtl == mtl2): don't free it twice
++      if (mtl2 != mtl) llist_traverse(mtl2, free);
+     }
+     if (!mm && !FLAG(a))
+       error_exit("'%s' not in %s", dir ? dir : dev,
