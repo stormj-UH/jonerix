@@ -207,7 +207,8 @@ jobs:
             gh release create "$TAG" \
               --repo "$GH_REPO" \
               --title "jonerix Pi 5 netboot payload ${TAG}" \
-              --notes "TFTP-ready payload tree for Raspberry Pi 5. See README.md inside the tarball."
+              --notes "TFTP-ready payload tree for Raspberry Pi 5. See README.md inside the tarball." \
+              --latest=false
           fi
           gh release upload "$TAG" --repo "$GH_REPO" --clobber \
             out/jonerix-pi5-netboot.tar.gz \

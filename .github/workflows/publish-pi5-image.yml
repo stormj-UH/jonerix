@@ -204,7 +204,8 @@ jobs:
             gh release create "$TAG" \
               --repo "$GH_REPO" \
               --title "jonerix Pi 5 image ${TAG}" \
-              --notes "Bootable Raspberry Pi 5 image built by image/pi5/build-image.py. Flash with: \`zstd -d < jonerix-pi5.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync\`"
+              --notes "Bootable Raspberry Pi 5 image built by image/pi5/build-image.py. Flash with: \`zstd -d < jonerix-pi5.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync\`" \
+              --latest=false
           fi
 
       - name: Upload release assets (tag push)

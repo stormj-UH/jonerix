@@ -28,6 +28,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The INDEX takes runtime depends and the arch/version cross-checks
+      # from the checked-out recipes, so only main may bless a release INDEX.
+      - name: Refuse to regenerate from a non-main ref
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::regen-tag-index only runs from refs/heads/main (this run: $REF)."
+            exit 1
+          fi
+
       - name: Install tools
         run: apk add --no-cache git github-cli zstd coreutils cargo rust python3
 
@@ -65,7 +76,9 @@ jobs:
           echo "INDEX.zst size: $(ls -lh "$INDEX_ZST" | awk '{print $5}')"
 
       - name: Delete stale (superseded) release assets
-        if: always()
+        # Only after gen-index succeeded: when it refuses the INDEX (a
+        # package newer than its recipe), its stale list is not trustworthy
+        # either, and the losers it names may be the builds main can make.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STALE_LIST: /var/cache/jpkg/.stale-assets

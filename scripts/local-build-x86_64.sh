@@ -97,6 +97,8 @@ Env knobs:
   RELEASE_TAG     default $RELEASE_TAG
   JOBS            default 3   (LLVM_BUILD_JOBS / BUILD_JOBS passed to recipe)
   REBUILD         set to 1 to rebuild even if $RELEASE_TAG already has the asset
+  ALLOW_NON_MAIN_UPLOAD  set to 1 to let `upload` publish to `packages` from a
+                  branch other than main (refused by default)
   JPKG_SIGN_KEY   optional path to a jpkg .sec key mounted read-only into the
                   builder so local artifacts are signed at build time
 
@@ -238,6 +240,18 @@ cmd_upload() {
     if ! command -v gh >/dev/null 2>&1; then
         echo "ERROR: gh CLI not found" >&2
         exit 1
+    fi
+
+    # The rolling `packages` release feeds every host, so only builds of
+    # main may land there (same rule as publish-packages.yml). Branch
+    # builds belong in workflow artifacts or a scratch release tag.
+    if [ "$RELEASE_TAG" = "packages" ] && [ "${ALLOW_NON_MAIN_UPLOAD:-0}" != "1" ]; then
+        _branch=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+        if [ "$_branch" != "main" ]; then
+            echo "ERROR: refusing to upload to '$RELEASE_TAG' from branch '$_branch'." >&2
+            echo "       Build from main, or set ALLOW_NON_MAIN_UPLOAD=1 if you really mean it." >&2
+            exit 1
+        fi
     fi
 
     count=0

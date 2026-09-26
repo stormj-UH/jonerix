@@ -108,7 +108,7 @@ everything is installed via jpkg.
 | cmake   | cmake       | BSD-3-Clause  | Build system generator         |
 | grep    | toybox      | 0BSD          | Pass GREP=/bin/grep for autoconf |
 | python  | python3     | PSF-2.0       | Needed by some build systems   |
-| perl    | perl        | Artistic-2.0  | Needed by autoconf/OpenSSL     |
+| perl    | perl        | Artistic-1.0-Perl OR GPL-1.0-or-later (Artistic side) | Needed by autoconf/OpenSSL |
 
 **Note on autoconf**: toybox grep is functional but autoconf's grep
 detection test fails to recognize it. Pass `GREP=/bin/grep` explicitly

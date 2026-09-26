@@ -291,7 +291,7 @@ impl Repo {
         // --- signature policy (from repos.conf or default) -----------------
         // Read `signature_policy = "warn|require|ignore"` from
         // `etc/jpkg/repos.conf` if it exists.  Fall back to the enum default
-        // (Warn) when absent — matches the Phase-0 rollout plan.
+        // (Require, since jpkg 2.2.0) when absent.
         let signature_policy = read_signature_policy_from_conf(&rootfs.join("etc/jpkg/repos.conf"));
 
         Ok(Self {
@@ -529,7 +529,7 @@ impl Repo {
 // ---------------------------------------------------------------------------
 
 /// Read `signature_policy = "warn|require|ignore"` from a repos.conf-style
-/// file.  Returns `SignaturePolicy::default()` (Warn) when the file is absent,
+/// file.  Returns `SignaturePolicy::default()` (Require) when the file is absent,
 /// the key is absent, or the value is unrecognised.
 fn read_signature_policy_from_conf(path: &Path) -> SignaturePolicy {
     let text = match std::fs::read_to_string(path) {

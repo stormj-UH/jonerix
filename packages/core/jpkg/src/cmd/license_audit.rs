@@ -45,7 +45,7 @@
 
 use crate::db::InstalledDb;
 use crate::repo::Repo;
-use crate::util::license_is_permissive;
+use crate::util::license_allowed;
 use std::path::Path;
 
 /// Run `jpkg license-audit [--verbose|-v] [--repo|-r]`.
@@ -122,7 +122,7 @@ fn audit_installed(rootfs: &Path, verbose: bool) -> i32 {
         let status = if license.is_empty() || license == "unknown" {
             unknown += 1;
             "UNKNOWN"
-        } else if license_is_permissive(license) {
+        } else if license_allowed(name, license) {
             "OK"
         } else {
             violations += 1;
@@ -195,7 +195,7 @@ fn audit_repo(rootfs: &Path, verbose: bool) -> i32 {
         let status = if license == "unknown" {
             unknown += 1;
             "UNKNOWN"
-        } else if license_is_permissive(license) {
+        } else if license_allowed(name, license) {
             "OK"
         } else {
             violations += 1;

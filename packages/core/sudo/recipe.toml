@@ -1,8 +1,13 @@
 [package]
 name = "sudo"
-version = "1.9.17p2-r2"
+version = "1.9.17p2-r4"
 license = "ISC"
 description = "Privilege escalation utility"
+# r3 (built from the unmerged lava-goat/dropbear-pq-kex branch) moved the
+# setuid chmod after llvm-strip so stripping can never drop the bit.
+# r4 lands that on main and adds a post_install chmod: jpkg releases up to
+# 2.2.9 extract with the tar crate's default mode mask (0o777) and would
+# otherwise install /bin/sudo without its setuid bit.
 
 [source]
 url = "https://www.sudo.ws/dist/sudo-1.9.17p2.tar.gz"
@@ -55,9 +60,31 @@ PYEOF
 fi
 rm -f "$ELF_LIST"
 
-chmod 4755 $DESTDIR/bin/sudo
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+# setuid last, after every step that may rewrite the binary.
+chmod 4755 "$DESTDIR/bin/sudo"
+"""
+
+[hooks]
+# Belt and braces for jpkg <= 2.2.9, whose extractor masks modes to 0o777:
+# re-apply the setuid bit the archive carries. Three ways the hook runs:
+#   - in place on /: JPKG_ROOT is unset or "/";
+#   - host-side for an alternate root (non-root jpkg, or no /bin/sh in the
+#     root yet): JPKG_ROOT names that root and the file is under it;
+#   - chrooted into the alternate root (root `jpkg --root X install`, the
+#     image builders' path): JPKG_ROOT is still exported as X, but inside
+#     the chroot the file is at /bin/sudo.
+# So use $JPKG_ROOT only when the binary is actually visible under it.
+post_install = """_root=${JPKG_ROOT:-}
+case "$_root" in
+    /) _root= ;;
+esac
+[ -e "$_root/bin/sudo" ] || _root=
+if [ -f "$_root/bin/sudo" ] && [ ! -L "$_root/bin/sudo" ]; then
+    chmod 4755 "$_root/bin/sudo" || echo "sudo: could not set the setuid bit on $_root/bin/sudo" >&2
+fi
+exit 0"""
 
 [depends]
 runtime = ["musl", "libressl"]

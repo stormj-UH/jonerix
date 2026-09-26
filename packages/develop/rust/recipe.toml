@@ -9,8 +9,9 @@ description = "Systems programming language (jonerix-linux-musl triple, no GNU r
 # verifies its sha256.
 # 1.95.0 dist tarballs are built by .github/workflows/rust-dist.yml,
 # uploaded to the source-rust-v1.95.0 release, and vendored into
-# sources/ for offline-CI consumption. Build config: link-shared LLVM
-# (libllvm jpkg), llvm-libunwind = system, -fuse-ld=lld,
+# sources/ for offline-CI consumption. Build config: link-shared in-tree
+# LLVM (rustc ships its own libLLVM.so.22.1-rust-1.95.0-stable; it does not
+# link the libllvm jpkg), llvm-libunwind = system, -fuse-ld=lld,
 # --rtlib=compiler-rt, --unwindlib=libunwind, -stdlib=libc++. Zero
 # GCC runtime dependency in the produced rustc/cargo. Developer tools that are
 # useful but not required for compiler-only installs are split into sibling

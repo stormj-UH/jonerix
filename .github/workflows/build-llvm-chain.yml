@@ -51,8 +51,24 @@ env:
   LLVM_BUILD_JOBS_X86_64: 2
 
 jobs:
+  # Both chains upload straight to the shared `packages` release, so they
+  # obey the same main-only rule as publish-packages.yml.
+  require-main:
+    name: Require main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse to publish from a non-main ref
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::build-llvm-chain uploads to the shared packages release and only runs from refs/heads/main (this run: $REF)."
+            exit 1
+          fi
+
   chain-x86_64:
     name: Chain build (x86_64)
+    needs: require-main
     if: ${{ inputs.arch == 'all' || inputs.arch == 'x86_64' }}
     runs-on: ubuntu-latest
     timeout-minutes: 720
@@ -251,6 +267,7 @@ jobs:
 
   chain-aarch64:
     name: Chain build (aarch64)
+    needs: require-main
     if: ${{ inputs.arch == 'all' || inputs.arch == 'aarch64' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 720
@@ -432,8 +449,8 @@ jobs:
   # has its own end-of-run `index` job, which we don't here).
   regen-index:
     name: Regenerate INDEX after chain
-    if: ${{ always() && (needs.chain-x86_64.result != 'cancelled' && needs.chain-aarch64.result != 'cancelled') }}
-    needs: [chain-x86_64, chain-aarch64]
+    if: ${{ always() && needs.require-main.result == 'success' && (needs.chain-x86_64.result != 'cancelled' && needs.chain-aarch64.result != 'cancelled') }}
+    needs: [require-main, chain-x86_64, chain-aarch64]
     runs-on: ubuntu-latest
     permissions:
       actions: write

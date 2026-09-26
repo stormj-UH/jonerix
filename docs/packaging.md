@@ -366,7 +366,36 @@ Packages must use one of these licenses to be included in jonerix:
 | zlib License | `Zlib` |
 | curl License | `curl` |
 | Unlicense | `Unlicense` |
+| Perl's Artistic License | `Artistic-1.0-Perl` |
+| Artistic License 2.0 | `Artistic-2.0` |
+| Python Software Foundation | `PSF-2.0` |
+| FreeType, HPND, Unicode, libpng | `FTL`, `HPND`, `Unicode-DFS-2016`, `Unicode-3.0`, `libpng-2.0` |
 
-**Explicitly forbidden**: GPL, LGPL, AGPL, SSPL, EUPL, or any copyleft license.
+The authoritative list is `PERMISSIVE_LICENSES` in
+`packages/core/jpkg/src/util.rs`; `jpkg build` refuses anything else. SPDX
+`OR` needs one permissive alternative, `AND` needs all.
 
-**Sole exception**: The Linux kernel (GPLv2), documented in DESIGN.md.
+**Explicitly forbidden**: GPL, LGPL, AGPL, SSPL, EUPL, MPL, or any other
+copyleft license, unless an `OR` alternative is permissive.
+
+**Per-package exceptions**: the Linux kernel (GPLv2) is built out of band,
+and `ca-certificates` may carry MPL-2.0 (the CA bundle is data). Both are
+documented in DESIGN.md.
+
+## Publishing
+
+Only `main` publishes to the rolling `packages` release:
+`.github/workflows/publish-packages.yml` and `build-llvm-chain.yml` refuse
+other refs, `scripts/local-build-*.sh upload` refuses other branches, and
+`scripts/gen-index.sh` fails when a package it would index is newer than its
+recipe. Run `sh scripts/check-index-drift.sh` to compare the live INDEX with
+the recipes in your tree.
+
+Source mirrors (`source-<pkg>-v<version>` releases) are created by hand.
+Create them with `--latest=false` so they never become the repository's
+"Latest" release:
+
+```sh
+gh release create source-foo-v1.2.3 sources/foo-1.2.3.tar.gz \
+  --repo stormj-UH/jonerix --title "foo 1.2.3 source" --latest=false
+```

@@ -594,10 +594,12 @@ impl Recipe {
     ///
     /// - `package.name` must be non-empty.
     /// - `package.version` must be non-empty.
-    /// - `package.license`, if present, must pass [`license_is_permissive`].
-    ///   (The field itself is optional at the recipe stage — the build command
-    ///   enforces it before creating the archive.  We mirror that lenience
-    ///   here: absent = no error; present-but-bad = error.)
+    /// - `package.license`, if present, must pass
+    ///   [`crate::util::license_allowed`] for `package.name` (the permissive
+    ///   whitelist plus per-package exceptions such as ca-certificates'
+    ///   MPL-2.0).  (The field itself is optional at the recipe stage — the
+    ///   build command enforces it before creating the archive.  We mirror
+    ///   that lenience here: absent = no error; present-but-bad = error.)
     pub fn validate(&self) -> Result<(), RecipeError> {
         match self.package.name.as_deref() {
             None | Some("") => return Err(RecipeError::Missing("package.name")),
@@ -610,7 +612,8 @@ impl Recipe {
             _ => {}
         }
         if let Some(lic) = &self.package.license {
-            if !license_is_permissive(lic) {
+            let name = self.package.name.as_deref().unwrap_or("");
+            if !crate::util::license_allowed(name, lic) {
                 return Err(RecipeError::BadLicense(lic.clone()));
             }
         }
@@ -1083,6 +1086,27 @@ build-depends = ["clang", "cmake", "samurai"]
                 "expected {lic:?} to be accepted but validate() returned error"
             );
         }
+    }
+
+    #[test]
+    fn validate_mpl_only_for_ca_certificates() {
+        let recipe = |name: &str, lic: &str| Recipe {
+            package: PackageSection {
+                name: Some(name.into()),
+                version: Some("1.0".into()),
+                license: Some(lic.into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(recipe("ca-certificates", "MPL-2.0").validate().is_ok());
+        assert!(matches!(
+            recipe("helix", "MPL-2.0").validate(),
+            Err(RecipeError::BadLicense(_))
+        ));
+        assert!(recipe("perl", "Artistic-1.0-Perl OR GPL-1.0-or-later")
+            .validate()
+            .is_ok());
     }
 
     #[test]

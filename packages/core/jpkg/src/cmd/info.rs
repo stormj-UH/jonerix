@@ -35,7 +35,7 @@
 
 use crate::db::InstalledDb;
 use crate::repo::Repo;
-use crate::util::license_is_permissive;
+use crate::util::{license_allowed, license_is_permissive};
 use std::path::Path;
 
 /// Run `jpkg info [--files|-f] <package>`.
@@ -142,10 +142,12 @@ pub fn run(args: &[String]) -> i32 {
             println!("Status:       not installed");
         }
 
-        // License OK line — mirrors C's license_is_permissive check.
+        // License OK line — the same gate `jpkg build` applies.
         if !entry.license.is_empty() {
             if license_is_permissive(&entry.license) {
                 println!("License OK:   yes (permissive)");
+            } else if license_allowed(pkg_name, &entry.license) {
+                println!("License OK:   yes (per-package exception)");
             } else {
                 println!("License OK:   WARNING - not recognized as permissive");
             }

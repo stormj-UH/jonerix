@@ -18,12 +18,14 @@
 //!    lexicographic ordering.
 //!
 //! 2. **License gate completeness**: [`license_is_permissive`] checks against
-//!    the `PERMISSIVE_LICENSES` whitelist compiled from `util.c`.  Any license
-//!    identifier not in that list (or not decomposable via SPDX `OR`/`AND`
-//!    operators into listed identifiers) returns `false`.  Adding a new license
-//!    to the project requires updating `PERMISSIVE_LICENSES` here AND in
-//!    `util.c`; a mismatch between the two lists will cause the Rust port to
-//!    reject recipes that the C tool accepts (or vice versa).
+//!    the `PERMISSIVE_LICENSES` whitelist.  Any license identifier not in that
+//!    list (or not decomposable via SPDX `OR`/`AND` operators into listed
+//!    identifiers) returns `false`.  [`license_allowed`] additionally honours
+//!    `LICENSE_EXCEPTIONS`, the per-package exceptions (the MPL-2.0 CA bundle
+//!    data in `ca-certificates`); every gate that knows the package name must
+//!    use it.  Adding a license requires updating `PERMISSIVE_LICENSES` here
+//!    AND `PERMISSIVE_LICENSES` in `scripts/license-audit.sh`, which audits
+//!    recipes and images with the same policy.
 //!
 //! 3. **Layout audit scope**: [`audit_layout_tree`] checks for banned paths
 //!    (`lib64/`, root-level `*.0` files) and banned string content (`/lib64`
@@ -318,7 +320,11 @@ pub fn version_compare(a: &str, b: &str) -> Ordering {
 
 // ── License gate ─────────────────────────────────────────────────────────────
 
-/// The exact permissive-license whitelist from `util.c`.
+/// The permissive-license whitelist, valid for every package.  Keep in sync
+/// with `PERMISSIVE_LICENSES` in `scripts/license-audit.sh`.
+///
+/// MPL-2.0 is deliberately NOT here: it is file-level copyleft, allowed only
+/// for the ca-certificates data bundle via [`LICENSE_EXCEPTIONS`].
 static PERMISSIVE_LICENSES: &[&str] = &[
     "MIT",
     "BSD-2-Clause",
@@ -342,11 +348,48 @@ static PERMISSIVE_LICENSES: &[&str] = &[
     "PSF-2.0",
     "BSL-1.0",
     "Artistic-2.0",
+    // Perl 5's "Artistic License" (the original 1.0 text shipped with perl).
+    // Perl is `Artistic-1.0-Perl OR GPL-1.0-or-later`; jonerix takes it
+    // under the Artistic side.
+    "Artistic-1.0-Perl",
     "Ruby",
-    "MPL-2.0",
     "Info-ZIP",
     "bzip2-1.0.6",
+    // FreeType Project License — BSD-style with attribution.  FSF Free; SPDX
+    // categorises as permissive.  Used by FreeType (dual-licensed with
+    // GPL-2.0-only; recipes select FTL).
+    "FTL",
+    // Historical Permission Notice and Disclaimer — pre-MIT permissive
+    // template (X11-style).  OSI-approved.  Used by fontconfig and libtiff.
+    "HPND",
+    // Unicode Data Files and Software licenses — MIT-style with a
+    // non-endorsement clause on the Unicode trademark.  ICU 60 through 75
+    // ship Unicode-DFS-2016; ICU 76+ moved to Unicode-3.0 (textual cleanup,
+    // not a substantive change).  Both are OSI-approved.
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    // libpng License v2 (2018-) — zlib-style permissive, OSI-approved.
+    "libpng-2.0",
 ];
+
+/// Per-package license exceptions: `(package, license)` pairs accepted even
+/// though `license` is not on [`PERMISSIVE_LICENSES`].  Keep in sync with
+/// `LICENSE_EXCEPTIONS` in `scripts/license-audit.sh`.
+///
+/// - `ca-certificates` / `MPL-2.0`: the Mozilla CA bundle is data, not code;
+///   there is no permissively licensed trust store to ship instead.
+static LICENSE_EXCEPTIONS: &[(&str, &str)] = &[("ca-certificates", "MPL-2.0")];
+
+/// Return `true` if package `pkg` may carry `license`: either the license is
+/// permissive for everyone ([`license_is_permissive`]) or `(pkg, license)` is
+/// a listed per-package exception (exact, case-insensitive match).
+pub fn license_allowed(pkg: &str, license: &str) -> bool {
+    let license = license.trim();
+    LICENSE_EXCEPTIONS
+        .iter()
+        .any(|(p, l)| pkg == *p && license.eq_ignore_ascii_case(l))
+        || license_is_permissive(license)
+}
 
 /// Return `true` if `license` is on the project's permissive whitelist.
 ///
@@ -371,9 +414,9 @@ pub fn license_is_permissive(license: &str) -> bool {
         }
     }
 
-    // Find a top-level " OR " or " AND " (i.e. not inside parentheses).
-    // We scan left-to-right tracking paren depth; an operator at depth 0
-    // is a genuine top-level split point.
+    // Split at a top-level (paren-depth 0) operator.  SPDX gives AND higher
+    // precedence than OR, so a top-level " OR " is split first:
+    // "A AND B OR C" is "(A AND B) OR C", not "A AND (B OR C)".
     if let Some((op, left, right)) = find_top_level_op(license) {
         return match op {
             TopOp::Or => license_is_permissive(left) || license_is_permissive(right),
@@ -419,45 +462,31 @@ enum TopOp {
     And,
 }
 
-/// Find the first top-level ` OR ` or ` AND ` (paren-depth == 0) in `s`.
-/// Returns `Some((op, left, right))` or `None`.
+/// Find the split point of `s` at paren-depth 0, honouring SPDX precedence
+/// (AND binds tighter than OR): the first top-level ` OR ` if there is one,
+/// otherwise the first top-level ` AND `.  Returns `Some((op, left, right))`
+/// or `None`.  Splitting at the first OR is safe because OR is associative.
 fn find_top_level_op(s: &str) -> Option<(TopOp, &str, &str)> {
     let bytes = s.as_bytes();
-    let n = bytes.len();
     let mut depth = 0i32;
-    let mut i = 0usize;
+    let mut first_and: Option<usize> = None;
 
-    while i < n {
-        match bytes[i] {
-            b'(' => {
-                depth += 1;
-                i += 1;
-            }
-            b')' => {
-                depth -= 1;
-                i += 1;
-            }
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
             b' ' if depth == 0 => {
-                // Try " OR " (4 bytes including leading space already consumed)
-                if i + 4 <= n && &bytes[i..i + 4] == b" OR " {
-                    let left = &s[..i];
-                    let right = &s[i + 4..];
-                    return Some((TopOp::Or, left, right));
+                if bytes[i..].starts_with(b" OR ") {
+                    return Some((TopOp::Or, &s[..i], &s[i + 4..]));
                 }
-                // Try " AND " (5 bytes)
-                if i + 5 <= n && &bytes[i..i + 5] == b" AND " {
-                    let left = &s[..i];
-                    let right = &s[i + 5..];
-                    return Some((TopOp::And, left, right));
+                if first_and.is_none() && bytes[i..].starts_with(b" AND ") {
+                    first_and = Some(i);
                 }
-                i += 1;
             }
-            _ => {
-                i += 1;
-            }
+            _ => {}
         }
     }
-    None
+    first_and.map(|i| (TopOp::And, &s[..i], &s[i + 5..]))
 }
 
 // ── Layout audit ─────────────────────────────────────────────────────────────
@@ -814,10 +843,45 @@ mod tests {
         assert!(license_is_permissive("zlib"));
         assert!(license_is_permissive("PSF-2.0"));
         assert!(license_is_permissive("Artistic-2.0"));
-        assert!(license_is_permissive("MPL-2.0"));
+        assert!(license_is_permissive("Artistic-1.0-Perl"));
         assert!(license_is_permissive("bzip2-1.0.6"));
         assert!(license_is_permissive("Public-Domain"));
         assert!(license_is_permissive("public domain"));
+        // Typography stack additions (freetype/fontconfig/icu/libpng).
+        assert!(license_is_permissive("FTL"));
+        assert!(license_is_permissive("HPND"));
+        assert!(license_is_permissive("Unicode-DFS-2016"));
+        assert!(license_is_permissive("Unicode-3.0"));
+        assert!(license_is_permissive("libpng-2.0"));
+        // Common dual-licensed forms used in recipe metadata.
+        assert!(license_is_permissive("FTL OR GPL-2.0-only"));
+        assert!(license_is_permissive("GPL-2.0-only OR FTL"));
+    }
+
+    #[test]
+    fn test_license_perl_dual_license() {
+        // perl 5 is dual-licensed; the Artistic side is the permissive one.
+        let perl = "Artistic-1.0-Perl OR GPL-1.0-or-later";
+        assert!(license_is_permissive(perl));
+        assert!(license_allowed("perl", perl));
+        // The GPL side alone is not acceptable.
+        assert!(!license_is_permissive("GPL-1.0-or-later"));
+    }
+
+    #[test]
+    fn test_license_mpl_is_a_per_package_exception() {
+        // MPL-2.0 is file-level copyleft: not permissive in general...
+        assert!(!license_is_permissive("MPL-2.0"));
+        assert!(!license_allowed("helix", "MPL-2.0"));
+        assert!(!license_allowed("pkg", "MIT AND MPL-2.0"));
+        // ...but accepted for the CA bundle data package only.
+        assert!(license_allowed("ca-certificates", "MPL-2.0"));
+        assert!(license_allowed("ca-certificates", " mpl-2.0 "));
+        // The exception does not widen what else ca-certificates may carry.
+        assert!(!license_allowed("ca-certificates", "GPL-2.0-only"));
+        // Permissive licenses are allowed for every package.
+        assert!(license_allowed("ca-certificates", "MIT"));
+        assert!(license_allowed("helix", "MIT"));
     }
 
     #[test]
@@ -855,6 +919,27 @@ mod tests {
         assert!(license_is_permissive("MIT AND Apache-2.0"));
         // One forbidden → false.
         assert!(!license_is_permissive("MIT AND GPL-2.0-only"));
+    }
+
+    #[test]
+    fn test_license_spdx_and_binds_tighter_than_or() {
+        // "(GPL AND MIT) OR Apache-2.0": the Apache-2.0 alternative is enough.
+        assert!(license_is_permissive("GPL-2.0-only AND MIT OR Apache-2.0"));
+        // "MIT OR (Apache-2.0 AND GPL-2.0-only)": MIT is enough.
+        assert!(license_is_permissive("MIT OR Apache-2.0 AND GPL-2.0-only"));
+        // "(MIT AND GPL-2.0-only) OR (GPL-3.0-only AND Apache-2.0)": no
+        // alternative is all-permissive.
+        assert!(!license_is_permissive(
+            "MIT AND GPL-2.0-only OR GPL-3.0-only AND Apache-2.0"
+        ));
+        // "(MIT AND ISC) OR (GPL-3.0-only AND Apache-2.0)": first alternative.
+        assert!(license_is_permissive(
+            "MIT AND ISC OR GPL-3.0-only AND Apache-2.0"
+        ));
+        // Parentheses still override precedence.
+        assert!(!license_is_permissive(
+            "GPL-2.0-only AND (MIT OR Apache-2.0)"
+        ));
     }
 
     #[test]

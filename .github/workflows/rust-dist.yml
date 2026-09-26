@@ -322,6 +322,7 @@ jobs:
           TAG="source-rust-v${RUST_VERSION}"
           gh release create "$TAG" --title "Rust ${RUST_VERSION} dist" \
             --notes "Self-built Rust ${RUST_VERSION} dist tarballs (jonerix-linux-musl triple)." \
+            --latest=false \
             2>/dev/null || true
           # Retry the upload — GITHUB_TOKEN's per-installation rate limit
           # has eaten 3-hour builds before (run 25591573031). Back off and
@@ -617,6 +618,7 @@ jobs:
           TAG="source-rust-v${RUST_VERSION}"
           gh release create "$TAG" --title "Rust ${RUST_VERSION} dist" \
             --notes "Self-built Rust ${RUST_VERSION} dist tarballs (jonerix-linux-musl triple)." \
+            --latest=false \
             2>/dev/null || true
           # Retry the upload — GITHUB_TOKEN's per-installation rate limit
           # has eaten 3-hour builds before (run 25591573031). Back off and

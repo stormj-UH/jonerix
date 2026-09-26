@@ -361,20 +361,17 @@ sed -n '
 # -exec sh -c per package (O(n^2) shell forks). Each line is "<name>\t<dir>".
 RECIPE_MAP="$OUT/recipe-map.tsv"
 : > "$RECIPE_MAP"
-# REVIEW: packages/jpkg/recipe.toml and packages/core/jpkg/recipe.toml both
-# declare name = "jpkg".  The glob below adds both to the map; the lookup in
-# the build loop returns whichever line appears first (i.e. glob order).
-# One of the two entries will be silently ignored.  Long-term fix: ensure only
-# one canonical location for each package, or deduplicate the map by name.
-for r in /workspace/packages/*/*/recipe.toml /workspace/packages/*/recipe.toml; do
+# Recipes live at packages/<core|develop|extra>/<name>/recipe.toml, one
+# per package name.
+for r in /workspace/packages/*/*/recipe.toml; do
     [ -f "$r" ] || continue
     name=$(package_name "$r")
     [ -n "$name" ] || continue
     printf '%s\t%s\n' "$name" "$(dirname "$r")" >> "$RECIPE_MAP"
 done
 
-# Append every recipe NOT already in the build order so we cover the tail.
-# build-order.txt covers ~46 packages; the repo has ~95 recipes total.
+# Append every recipe NOT already in the build order so we cover the tail
+# (build-order.txt lists most, but not all, of the recipes).
 #
 # NOTE: TRACKED was previously built with `TRACKED=$(cat "$ORDER_FILE")` and
 # tested via `case " $TRACKED " in *" $name "*) ...`.  That pattern never
