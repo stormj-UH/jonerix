@@ -15,7 +15,7 @@
 
 set -eu
 
-DEFAULT_VERSION="1.1.0"
+DEFAULT_VERSION="1.1.15"
 RELEASE_URL_BASE="https://github.com/stormj-UH/jonerix/releases/download/packages"
 
 VERSION="$DEFAULT_VERSION"

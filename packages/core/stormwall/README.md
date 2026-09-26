@@ -14,7 +14,7 @@ selected by the `argv[0]` basename of the invocation, so `/bin/iptables`
 `/bin/pfctl` speaks pfctl, and so on. There is no separate executable
 per dialect — just symlinks.
 
-**Version 1.1.11** | [Releases](https://castle.great-morpho.ts.net:3000/jonerik/stormwall/releases) | MIT license
+**Version 1.1.15** | [Releases](https://castle.great-morpho.ts.net:3000/jonerik/stormwall/releases) | MIT license
 
 ## Contents
 
@@ -74,7 +74,7 @@ missing. No root needed if you `--prefix` somewhere writable.
 | Flag                   | Default       | Effect                                                                  |
 |------------------------|---------------|-------------------------------------------------------------------------|
 | `--prefix DIR`         | `/usr/local`  | install under `$DIR/bin` and `$DIR/share`                                |
-| `--version VER`        | `1.1.11`      | published `.jpkg` version to fetch                                       |
+| `--version VER`        | `1.1.15`      | published `.jpkg` version to fetch                                       |
 | `--arch ARCH`          | `uname -m`    | override autodetect; `aarch64` or `x86_64`                              |
 | `--with-symlinks`      | off           | also create dispatch symlinks for `nft`, `iptables`, `iptables-save`, `iptables-restore`, `ip6tables`, `ip6tables-save`, `ip6tables-restore` under `$PREFIX/bin` |
 | `--no-symlinks`        | (default)     | explicit scriptable opt-out                                             |
@@ -90,7 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/packages/cor
 
 # Pin a specific version
 curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/packages/core/stormwall/install.sh \
-  | sh -s -- --version 1.1.11
+  | sh -s -- --version 1.1.15
 
 # Opt in to nft/iptables/... dispatch symlinks (no prompt)
 curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/packages/core/stormwall/install.sh \
@@ -491,7 +491,7 @@ sudo conntrack -F
 ```sh
 # Default — self-identify as stormwall
 stormwall --version
-# stormwall 1.1.11
+# stormwall 1.1.15
 
 # Extended — capability summary plus version
 stormwall -V
@@ -629,6 +629,13 @@ sudo iptables -P INPUT DROP
 
 ### Port-forward 80 → 8080 (Docker-style)
 
+**Refused by 1.1.13:** `REDIRECT`, with or without `--to-ports`, lowers
+to nft `redirect [to :PORT]`, which stormwall's nft parser cannot encode
+yet, so these commands fail with "internal nft synthesis failed" (1.1.12
+installed the match with no redirect). A `DNAT --to-destination
+127.0.0.1:8080` in `nat OUTPUT` / `PREROUTING` covers the same need.
+See [Known gaps](#known-gaps).
+
 ```sh
 sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
 sudo iptables -t nat -A OUTPUT -d 127.0.0.1 -p tcp --dport 80 -j REDIRECT --to-ports 8080
@@ -692,6 +699,12 @@ sudo ip6tables -A INPUT -m rpfilter --invert -j DROP
 
 ### TCP MSS clamp on outgoing forwards (tunnel use case)
 
+**Refused by 1.1.13:** `TCPMSS` (both `--clamp-mss-to-pmtu` and
+`--set-mss`) lowers to nft `tcp option maxseg size set ...`, which
+stormwall's nft parser cannot encode yet, so this command fails (1.1.12
+installed the rule without the MSS change). A wg-quick `PostUp` that
+runs it now fails, and wg-quick then takes the interface down again.
+
 ```sh
 sudo iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN \
     -j TCPMSS --clamp-mss-to-pmtu
@@ -706,6 +719,11 @@ sudo iptables -A INPUT -j DROP
 ```
 
 ### IPSec policy match (only allow ESP-protected traffic)
+
+**Refused by 1.1.14:** `-m policy` lowers to nft's `meta secpath`,
+which stormwall's nft parser has no key for, so the clause never
+reached the kernel. Up to 1.1.13 the first line below accepted *every*
+forwarded packet, with exit 0.
 
 ```sh
 sudo iptables -A FORWARD -m policy --dir in --pol ipsec --proto esp \
@@ -867,8 +885,9 @@ transparently when stormwall is symlinked as `/usr/sbin/nft`:
 
 ## iptables compatibility
 
-Highlights as of 1.1.11. The forward path (rule → kernel) is fully
-covered for everything in the tables below; the reverse path
+Highlights as of 1.1.15. The forward path (rule → kernel) covers
+everything in the tables below except the forms listed under Known
+gaps, which are refused rather than installed wrong; the reverse path
 (kernel → `iptables-save` text) is partially implemented (chain
 headers + `COMMIT`; the per-rule reverse-renderer is the largest
 remaining gap).
@@ -882,30 +901,71 @@ matching they need); use `-D <chain> <rulenum>` for now.
 ### Targets (~30)
 
 `ACCEPT`, `DROP`, `RETURN`, `REJECT` (with every documented
-`--reject-with` kind), `LOG`, `MASQUERADE`, `SNAT`, `DNAT`, `REDIRECT`,
-`MARK`, `CONNMARK` (incl. masked `--save-mark`/`--restore-mark` with
-`--nfmask`/`--ctmask`), `TPROXY`, `NFLOG`, `TRACE`, `NOTRACK`, `NFQUEUE`
-(incl. `--queue-num`, `--queue-balance`, `--queue-bypass`,
-`--queue-cpu-fanout`), `TCPMSS` (incl. `--clamp-mss-to-pmtu`), `CT`
-(incl. `--notrack`, `--helper`, `--zone`), `TOS`, `DSCP`, `TTL`, `HL`,
-`CLASSIFY`, `CHECKSUM`, `NETMAP`, `SET`, plus user-chain jumps and
-`--goto`. NAT targets accept `--random-fully` (modern NAT randomisation).
-`LOG` accepts `--log-tcp-sequence`, `--log-tcp-options`,
-`--log-ip-options`, `--log-uid`.
+`--reject-with` kind), `LOG` (`--log-prefix`, `--log-level` as 0-7 or
+a name, `--log-tcp-sequence`, `--log-tcp-options`, `--log-ip-options`,
+`--log-uid`, `--log-macdecode`), `NFLOG` (`--nflog-group`, default 0,
+`--nflog-prefix`, `--nflog-size`, `--nflog-threshold`), `MASQUERADE`
+(`--random`, `--random-fully`), `SNAT` and `DNAT` (an IPv4 address or
+address range, with at most one port), `MARK` and `CONNMARK`
+(`--set-mark`/`--set-xmark` with or without a mask,
+`--and-mark`/`--or-mark`/`--xor-mark`, and `--save-mark`/
+`--restore-mark` with `--nfmask`/`--ctmask`), `TPROXY`, `TRACE`,
+`NOTRACK`, `NFQUEUE` (`--queue-num` with `--queue-bypass` or
+`--queue-cpu-fanout`), `CT` (incl. `--notrack`, `--helper`, `--zone`),
+`TOS`, `DSCP`, `TTL --ttl-set`, `CLASSIFY`, `CHECKSUM`, `NETMAP`,
+`SET`, plus user-chain jumps and `--goto`. NAT targets accept
+`--random-fully` (modern NAT randomisation).
 
-### Match modules (~30)
+**Refused by 1.1.13** (parsed, but the nft parser cannot encode them
+yet, so the command fails instead of installing a different rule):
+`REDIRECT` in any form, `MASQUERADE --to-ports`, `SNAT`/`DNAT` with a
+port range, `ip6tables` `SNAT`/`DNAT` to an IPv6 address, `TCPMSS`
+(`--set-mss` and `--clamp-mss-to-pmtu`), `NFQUEUE --queue-balance`,
+`TTL --ttl-inc`/`--ttl-dec` and `HL` (all forms). Several match
+options are refused the same way. See [Known gaps](#known-gaps) for
+the full list and what 1.1.12 installed for each.
 
-`addrtype`, `comment`, `conntrack`/`state` (incl. all states + `--ctstatus`
-+ `--ctdir` + `--ctexpire`), `multiport`, `mark`, `connmark`, `physdev`,
-`owner`, `set`, `mac`, `string` (stub), `limit`, `tcp`/`udp`, `iprange`,
-`length`, `pkttype`, `tcpmss`, `tos`, `dscp`, `ttl`, `hl`, `statistic`
-(`--mode random` and `--mode nth`), `connlimit`, `helper`, `time`
-(`--timestart`/`--timestop`/`--weekdays`), `rpfilter`, `recent`
+**Refused, matching iptables' own argv checks:**
+`--to-destination`/`--to-source` with a port but no `-p tcp|udp|sctp|dccp`
+("Need TCP, UDP, SCTP or DCCP with port specification" — the rule would
+port-map ICMP too), and `-j NOTRACK` outside the raw table (1.1.14); an
+unknown `--reject-with` kind, or one belonging to the other family
+("unknown reject type"), and an unknown `--icmp-type`/`--icmpv6-type`
+name ("Unknown ICMP type"), and an unrecognised `--dscp-class` /
+`--set-dscp-class` ("Invalid DSCP value") (1.1.15).
+
+### Match modules
+
+Installed as asked: `addrtype`, `comment`, `conntrack`/`state`
+(`--ctstate`/`--state` with `NEW`, `ESTABLISHED`, `RELATED`, `INVALID`,
+`UNTRACKED`; `--ctstate DNAT`/`SNAT` and any other name are refused,
+see Known gaps. `--ctstatus`, `--ctdir`, `--ctexpire`, `--ctproto` and
+the `--ctorig*`/`--ctrepl*` address and port options are **not
+recognised at all** — the command fails with "unknown flag", exit 2),
+`multiport`,
+`mark`, `connmark`, `owner` (numeric ids), `set`, `mac`, `limit`,
+`tcp`/`udp` (incl. `--syn`, `! --syn`, `--tcp-flags`), `iprange`,
+`length`, `pkttype`, `tos`, `dscp`, `ttl` and `hl` (`--ttl-eq`/`--hl-eq`),
+`statistic` (`--mode random` and `--mode nth`), `helper`, `time`
+(`--timestart` **with** `--timestop`, and `--weekdays`), `recent`
 (`--set`/`--rcheck`/`--update`/`--remove` with `--seconds`/`--hitcount`/
-`--name`/`--rsource`/`--rdest`), `connbytes`, `hashlimit` (full flag
-suite incl. `--hashlimit-htable-*` and `--hashlimit-rate-*`), `policy`
-(IPsec match), `ah`, `esp`, `frag`, `hbh`, `mh`, `rt`, `dst`,
-`ipv6header`.
+`--name`/`--rsource`/`--rdest`), `hashlimit` (`--hashlimit-upto`/
+`--hashlimit-above` required; the htable and rate-match flags ride
+along as a comment marker), `ipv6header`.
+
+**Refused** — the command fails and installs nothing (1.1.14 unless
+noted):
+`-m connlimit`, `--ttl-lt`/`--ttl-gt`, `--hl-lt`/`--hl-gt`, `-m tcpmss`,
+`-m esp`, `-m ah`, `-m frag`, `-m hbh`, `-m mh`, `-m dst`, `-m rt`,
+`-m physdev`, `-m policy`, `-m socket`, `-m string`, `-m connbytes`,
+`-m rpfilter`, `-p sctp`/`-p dccp` with a port match, `-f`,
+`--ctstate DNAT`/`SNAT` and any `--ctstate`/`--state` name iptables does
+not know (1.1.15), the
+optionless form of every `-m <name>` (`-m hbh -j DROP`), and any
+`-m <name>` stormwall has no parser arm for at all (`-m u32`,
+`-m quota`, `-m bpf`, `-m nfacct`, `-m cluster`, …). See
+[Known gaps](#known-gaps) for what 1.1.13 and earlier installed
+instead.
 
 ---
 
@@ -1067,7 +1127,7 @@ sudo IPTABLES=/usr/sbin/iptables ./tests/iptables-soak.sh
 
 | Harness                          | What it tests                                                              | Result                |
 |----------------------------------|----------------------------------------------------------------------------|-----------------------|
-| `cargo test`                     | Unit tests (parser, output, lower, iptables)                               | **261 / 261**         |
+| `cargo test`                     | Unit tests (parser, output, lower, iptables), 1.1.15; 25 more need root    | **311 / 311**         |
 | `stormwall_test.sh`              | Core nft compatibility (file, JSON, round-trip, ct, meta, NAT)             | **25 / 25**           |
 | `monitor-diff.sh`                | 45 rulesets: monitor event parity vs upstream nft                          | **45 / 45**           |
 | `traffic-parity.sh`              | 16 ruleset shapes, real veth pair, accept/drop per rule                    | **16 / 16**           |
@@ -1171,10 +1231,10 @@ show 0.97–1.12×. See `tests/ct-state-perf-investigation.md`.
 
 ```sh
 # Get the source tarball from the GitHub release mirror
-curl -fsSL -o stormwall-1.1.11.tar.gz \
-    https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.11/stormwall-1.1.11.tar.gz
-tar xzf stormwall-1.1.11.tar.gz
-cd stormwall-1.1.11
+curl -fsSL -o stormwall-1.1.15.tar.gz \
+    https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.15/stormwall-1.1.15.tar.gz
+tar xzf stormwall-1.1.15.tar.gz
+cd stormwall-1.1.15
 
 # Build (vendored deps; no network needed)
 cargo build --release --bin stormwall --bin pfctl --offline --frozen
@@ -1214,10 +1274,170 @@ The build produces two binaries:
   spec → handle matching. `iptables -D <chain> <rulenum>` works.
 - **`-o` optimiser:** rule optimisation pass not implemented (`-o` is
   accepted and silently ignored).
-- **CONNLIMIT inline form:** install currently fails on jonerix kernel
-  configurations that require a stateful object for connlimit. The
-  inline form (`-m connlimit --connlimit-above N`) is parsed and lowered
-  but the kernel rejects it. Use named connlimit objects via nft instead.
+- **CONNMARK `--save-mark`/`--restore-mark` with masks:** lowered to
+  `ct mark set meta mark & M` / `meta mark set ct mark & M`, which also
+  clears the destination bits outside `M`. iptables keeps them
+  (`ctmark = (ctmark & ~ctmask) ^ (nfmark & nfmask)`); that needs a
+  bitwise between two registers. Identical for tailscale's
+  `0xff0000` slicing when nothing else uses the other mark bits.
+- **A name stormwall cannot encode is refused (1.1.15):** an unknown
+  `--ctstate`, `--icmp-type` or `--reject-with` name used to reach the
+  kernel as something else, with exit 0. `--ctstate BOGUS -j ACCEPT`
+  installed `ct state established,untracked accept` — the ASCII bytes
+  of the name read as the state bitmask, i.e. an ACCEPT of traffic
+  nobody asked for. `--icmp-type bogus` installed
+  `icmp type 626f67757300`, and `--reject-with bogus-thing` installed a
+  bare `reject` (ICMP port-unreachable). Each is now refused with
+  iptables' own wording (`Bad ctstate "BOGUS"`, ``Unknown ICMP type
+  `bogus'``, `unknown reject type "bogus-thing"`) and exit 2.
+  - `--ctstate DNAT` and `--ctstate SNAT` are refused. Real iptables
+    lowers them to `ct status dnat|snat`, a different conntrack field;
+    stormwall has no `ct status` matcher, and OR-ing one against a
+    `ct state` list is not a single nft expression. 1.1.14 installed
+    `--ctstate DNAT,SNAT` as `ct state 0x0` (a rule that matched
+    nothing) and silently dropped the `DNAT` out of
+    `RELATED,ESTABLISHED,DNAT`. The five states stormwall does encode
+    are unaffected.
+  - `--icmp-type` / `--icmpv6-type` now resolve through iptables' own
+    name table — which is not nft's — and lower to numbers. A name that
+    pins a code (`port-unreachable` is 3/3) lowers to
+    `icmp type 3 icmp code 3`, `--icmp-type 3/4` to
+    `icmp type 3 icmp code 4`, and `--icmp-type any` to the protocol
+    test alone. 1.1.14 passed the name straight through, so anything
+    outside the handful of names nft shares became the ASCII of the
+    name or a register-width error. An unambiguous prefix works, as it
+    does in iptables. A negated name that pins a code is refused: `not
+    (type 3 and code 3)` is not an AND of two nft clauses.
+  - `--reject-with` kinds are checked against iptables' list for the
+    family, so an ICMPv6 kind under `iptables` (or an ICMPv4 kind under
+    `ip6tables`) is refused instead of reaching the kernel.
+  - The native `nft` front-end has the same contract: an unknown
+    `ct state` name and an unknown `reject with` kind are unencodable
+    tokens, so `nft` refuses the rule.
+  - `-m dscp --dscp-class` and `-j DSCP --set-dscp-class` check the
+    class name. An unrecognised one became 0, so `--dscp-class bogus`
+    installed `ip dscp 0` — a match on unmarked traffic. Real iptables
+    says ``Invalid DSCP value `bogus'``.
+  - `nft list ruleset` now names the ICMPv6 header on an ip6 rule
+    (`icmpv6 type nd-neighbor-solicit`, not `icmp type …`), so the
+    listing feeds back through `nft -f` as the same rule.
+- **A match that lowers to no clause is refused (1.1.14):** 1.1.13's
+  refusal only fired when the lowered nft *text* held a token the nft
+  parser could not read. A match module that contributed no clause at
+  all — or only a `comment` — slipped past it and installed its verdict
+  on its own, i.e. applied to every packet, with exit 0:
+  `ip6tables -A C -m hbh -j DROP` dropped everything, and so did the
+  optionless form of `-m esp`, `-m ah`, `-m frag`, `-m dst`, `-m mh`,
+  `-m rt`, `-m ipv6header`, `-m socket`, `-m pkttype`, `-m physdev`,
+  `-m time`, `-m u32`, `-m quota` and every other `-m <name>`.
+  `-m hbh --hbh-opts 5`, `--dst-opts`, `--fraglast`, `--fragres`,
+  `--rt-0-res`, `--soft` and `-m string` did the same with a comment
+  attached. 1.1.14 refuses each of them: every `-m <name>` now has to
+  leave a real match clause behind, or the command fails and installs
+  nothing.
+  - `-m physdev` (`--physdev-in`, `--physdev-out`,
+    `--physdev-is-bridged`) is refused outright: nft's `meta ibrname`
+    names the bridge, not the member port iptables matches, and the
+    parser had no key for it — 1.1.13 installed a bare verdict, or
+    `meta length != 0` (always true) for `--physdev-is-bridged`.
+  - `-m policy` is refused: `meta secpath` is not a key the parser
+    knows, so `--pol ipsec -j ACCEPT` accepted every packet.
+  - `-m time` needs `--timestart` **and** `--timestop` (or
+    `--weekdays`); `--timestart` alone lowered to nothing.
+  - `-m connbytes` is refused: `ct packets`/`bytes`/`avgpkt` need the
+    ordered comparators the nft parser does not take yet. Up to 1.1.13
+    the key fell through to `ct state`.
+  - `-m hashlimit` needs `--hashlimit-upto` or `--hashlimit-above`, as
+    iptables does; a bare `-m hashlimit` used to install `limit rate
+    1/second`.
+  - `-m rt --rt-type`/`--rt-segsleft`/`--rt-len` is refused: those are
+    routing-*header* fields, and folding them onto nft's routing
+    metadata installed `rt classid`.
+  - `-m pkttype` and `-m ipv6header --header` now reach the kernel
+    correctly (they compared a name's ASCII against a one-byte field
+    before, so they never matched).
+- **Unknown `meta` and `ct` keys are refused (1.1.14):** the native
+  `nft` front-end had the same hole. `nft add rule ip t c meta ibrname
+  "eth0" drop` exited 0 and installed a bare `drop`, because an
+  unknown `meta` key fell through to `NFT_META_LEN` (and an unknown
+  `ct` key to `NFT_CT_STATE`, an unknown `rt` key to `rt classid`, an
+  unknown `socket` key to `socket transparent`). Each is now an
+  unencodable token, and `nft` (argv, `-f` and interactive) refuses a
+  rule that carries one, the way the iptables front-end already did.
+  `nft --pf` translation keeps its own looser contract.
+- **Rules the nft parser cannot encode yet are refused (1.1.13):** these
+  fail with "internal nft synthesis failed" (exit 1). Up to 1.1.12 each
+  installed a different rule without an error; found by running 298
+  common iptables/ip6tables commands through 1.1.11 and 1.1.13 against
+  a live kernel.
+  - `-j REDIRECT`, with or without `--to-ports`/`--random`: the match
+    with no redirect.
+  - `-j MASQUERADE --to-ports N-M` (libvirt's default network uses it
+    for TCP and UDP): the match with no masquerade.
+  - `-j SNAT`/`-j DNAT` with a port range (`--to-source 1.2.3.4:1024-2048`):
+    only the first port.
+  - `ip6tables -j SNAT`/`-j DNAT` to an IPv6 address (`fd00::2`,
+    `[fd00::2]:8080`, as dockerd uses for IPv6 port publishing):
+    `dnat to :0` / `snat to :0`.
+  - `-j TCPMSS` (`--set-mss`, `--clamp-mss-to-pmtu`): the match without
+    the MSS change.
+  - `-j NFQUEUE --queue-balance`, with or without `--queue-bypass`/
+    `--queue-cpu-fanout`: `queue to 0`.
+  - `-j TTL --ttl-inc`/`--ttl-dec`: `ip ttl set 6909952`. `ip6tables
+    -j HL` (`--hl-set`, `--hl-inc`, `--hl-dec`): a hop-limit match
+    instead of a set.
+  - `-m ttl --ttl-lt`/`--ttl-gt`, `-m hl --hl-lt`/`--hl-gt`: the
+    verdict for every IPv4 (IPv6) packet.
+  - `-m connlimit` (all forms): the verdict without the connection
+    count (`--connlimit-above 10 -j DROP` dropped every packet).
+  - `-m tcpmss`, `-p sctp`/`-p dccp` with `--dport`/`--sport`, and
+    `-f`: the verdict alone, for every packet.
+  - `-m esp --espspi`, `-m ah --ahspi`: the protocol match without the
+    SPI. The optionless `-m esp`/`-m ah` and every
+    `ip6tables -m frag`/`-m hbh`/`-m mh`/`-m dst`/`-m rt` form are
+    refused by the no-clause rule above; up to 1.1.13 they installed
+    the verdict alone.
+- **A `!` must be taken by the option after it (1.1.13):** `!` before
+  an option stormwall cannot invert (`-m owner ! --uid-owner`,
+  `-m physdev ! --physdev-*`, `-m string ! --string`, `! --limit`,
+  `! --probability`, `! --every`, `! --weekdays`, `! -f`, a trailing
+  `!`) is an error, as in iptables. Up to 1.1.12 the `!` was dropped
+  or moved onto the next option that takes one: `! --syn` lost its
+  `!`, and `-p tcp ! --syn -m state --state NEW -j DROP` installed
+  `ct state != new drop`. `! --syn` and `-m addrtype ! --src-type`/
+  `! --dst-type` now work.
+- **`iptables-restore` is all or nothing:** it applies the whole file
+  in one batch, so a single refused or rejected rule fails the restore
+  and none of that file's rules are installed. Check restore files
+  (and wg-quick `PostUp` lines) for the refused forms above before
+  upgrading from 1.1.12.
+- **Fixed in 1.1.13:** `-p PROTO` with no port match (`-p tcp -j DROP`,
+  `-p udp -j NOTRACK`) installed a rule with no protocol test and no
+  verdict; `--syn` and `--tcp-flags` installed a zero mask that never
+  matched; `-p gre`/`ah`/`udplite` stored the name's first byte as the
+  protocol number; `-m mac --mac-source 00:…` did not install; masked
+  `-m mark`/`-m connmark` matched `mark == 0x26`; `MARK`/`CONNMARK`
+  setters took the mark from whatever register 1 held;
+  `-j LOG --log-level` was dropped (and a named level read as 0),
+  `--log-tcp-*`/`--log-ip-options` were dropped, `--log-uid` became a
+  rule comment, and `-j NFLOG` without `--nflog-group` logged to the
+  kernel log instead of nfnetlink_log group 0. `--log-macdecode`,
+  `--nflog-size`, `--nflog-threshold` and `--nflog-range` (ignored,
+  with a warning) are accepted.
+- **CONNLIMIT inline form:** refused (see above); up to 1.1.12 it
+  installed the rule without the connection count. Use a named
+  connlimit object via nft instead.
+- **Accepted more loosely than iptables until 1.1.14:** a NAT
+  `--to-destination`/`--to-source` carrying a port with no
+  `-p tcp|udp|sctp|dccp` installed `dnat to ADDR:PORT`, which port-maps
+  ICMP and everything else; `-j NOTRACK` was taken in any table. Both
+  are now refused with iptables' own wording.
+- **Listing fidelity, unchanged in 1.1.15:** `nft list` prints
+  `meta length 0x00000064` where nft 1.0.9 prints `meta length 100`,
+  an `-m iprange` range as two integers, `ct helper` as hex, and
+  `queue to N` where nft prints `queue num N`. The rules in the kernel
+  are right; only the text differs. The soak tracks these as
+  `15.04`, `15.05`, `15.06` and `15.10`.
 
 ---
 

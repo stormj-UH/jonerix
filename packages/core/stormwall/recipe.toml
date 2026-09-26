@@ -1,12 +1,205 @@
 [package]
 name = "stormwall"
-version = "1.1.12"
+version = "1.1.15"
 license = "MIT"
 description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI dialects against the same in-kernel netfilter backend"
 
 [source]
-# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.11
+# Canonical source: castle.great-morpho.ts.net:3000/jonerik/stormwall tag v1.1.15
 # Mirrored to GitHub for CI (castle is behind Tailscale).
+#
+# 1.1.15: a state, ICMP type or reject kind stormwall cannot encode is
+#   refused instead of installed as another one.
+#   - `--ctstate`/`--state` names are checked. `--ctstate BOGUS -j
+#     ACCEPT` exited 0 on 1.1.14 and installed
+#     `ct state established,untracked accept` — the ASCII bytes of the
+#     name read as the state bitmask, i.e. an ACCEPT of traffic nobody
+#     asked for. The wording and exit code are iptables' own:
+#     `Bad ctstate "BOGUS"` / `Bad state "BOGUS"`, exit 2. A lowercase
+#     spelling is normalised so `iptables-save` prints it the way
+#     iptables does.
+#   - `--ctstate DNAT` and `--ctstate SNAT` are refused. Real iptables
+#     lowers them to `ct status dnat|snat`, a different conntrack
+#     field; stormwall has no `ct status` matcher, and OR-ing one
+#     against a `ct state` list is not a single nft expression. 1.1.14
+#     installed `DNAT,SNAT` as `ct state 0x0` (a rule that matched 0 of
+#     2 packets in a counter test) and silently dropped the `DNAT`
+#     element out of `RELATED,ESTABLISHED,DNAT`. The five states
+#     stormwall does encode are unaffected.
+#   - `--icmp-type`/`--icmpv6-type` resolve through iptables' own name
+#     table — which is not nft's — and lower to numbers:
+#     `port-unreachable` to `icmp type 3 icmp code 3`, `3/4` to
+#     `icmp type 3 icmp code 4`, `any` to the protocol test alone, and
+#     an unambiguous prefix (`echo-req`) the way iptables takes one.
+#     1.1.14 passed the name through, so `--icmp-type bogus` installed
+#     `icmp type 626f67757300`, `3/4` the ASCII of "3/4", `any` the
+#     ASCII of "any", and `port-unreachable` failed with a register
+#     width error. An unknown name is `Unknown ICMP type`, exit 2. A
+#     negated name that pins a code is refused: `not (type 3 and code
+#     3)` is not an AND of two nft clauses.
+#   - `--reject-with` kinds are checked against iptables' list for the
+#     family. `--reject-with bogus-thing` exited 0 on 1.1.14 and
+#     installed a bare `reject`, which the kernel answers with ICMP
+#     port-unreachable.
+#   - The native `nft` front-end had the mirror holes: an unknown
+#     `ct state` name OR'd in 0 or fell through to the raw-bytes path,
+#     and an unknown `reject with` kind became a bare reject. Both are
+#     unencodable tokens now, so `nft` refuses the rule.
+#   - `-m dscp --dscp-class` and `-j DSCP --set-dscp-class` check the
+#     class name. An unrecognised one became 0, so `--dscp-class
+#     bogus` installed `ip dscp 0` — a match on unmarked traffic.
+#   - `nft list ruleset` names the ICMPv6 header on an ip6 rule
+#     (`icmpv6 type nd-neighbor-solicit`, not `icmp type ...`), in text
+#     and JSON, so the listing feeds back through `nft -f` as the same
+#     rule instead of an ICMPv4 dependency.
+#   - 311 cargo tests (was 302).
+#   Re-run against a live kernel (aarch64, private netns) side by side
+#   with real iptables-nft 1.8.13 and real nft 1.1.6: every refusal
+#   above matches iptables' exit code and message, and every command
+#   that still installs reads back through the real nft as the rule
+#   iptables asks for. iptables-soak.sh: 170/178 in the jonerix builder
+#   container (section 18 is 28 new cases); the 8 failures are the same
+#   environment and listing gaps 1.1.14 documents.
+#
+# 1.1.14: a match that lowers to no nft clause is refused instead of
+#   installing its verdict alone.
+#   - 1.1.13 refused an iptables command only when the nft TEXT it
+#     lowered to held a token the nft parser could not read. A match
+#     module that emitted no clause at all, or only a `comment`, parsed
+#     cleanly and installed the verdict by itself: exit 0 and a `drop`
+#     or `accept` of every packet. `ip6tables -A C -m hbh -j DROP`,
+#     the optionless form of every other `-m <name>` (esp, ah, frag,
+#     dst, mh, rt, ipv6header, socket, pkttype, physdev, time, policy,
+#     u32, quota, …), and the comment-only options (`--hbh-opts`,
+#     `--dst-opts`, `--fraglast`, `--fragres`, `--rt-0-res`, `--soft`,
+#     `--ahlen`, `--ahres`, `-m string`) all did this. lower.rs now
+#     requires every `-m <name>` to leave a real match clause behind.
+#   - The native `nft` front-end had the mirror hole: an unknown `meta`
+#     key fell through to NFT_META_LEN (an unknown `ct` key to
+#     NFT_CT_STATE, `rt` to classid, `socket` to transparent), so
+#     `nft add rule ip t c meta ibrname "eth0" drop` exited 0 and
+#     installed a bare `drop`. Unknown keys are now unencodable tokens,
+#     and the `nft` CLI refuses a rule that carries one the way the
+#     iptables front-end already did (pf translation keeps its own
+#     looser contract). Added the keys that were missing: `ct avgpkt`,
+#     `ct secmark`.
+#   - Refused outright, each of which used to install a bare verdict or
+#     a test on the wrong field: `-m physdev` (nft's `meta ibrname` is
+#     the bridge, not the member port; `--physdev-is-bridged` installed
+#     `meta length != 0`, always true), `-m policy` (`meta secpath`),
+#     `-m time --timestart` with no `--timestop`, `-m rt --rt-type`
+#     (folded onto `rt classid`), `-m connbytes` (`ct packets` was not
+#     a key, and the ordered comparators are unsupported), a bare
+#     `-m hashlimit` (installed `limit rate 1/second`).
+#   - Now correct rather than newly refused: `-m pkttype --pkt-type`
+#     compares the one-byte PACKET_* code (it compared the name's
+#     ASCII), and `-m ipv6header --header` resolves header names to
+#     their IANA numbers (same bug). Both never matched before.
+#   - Two forms real iptables rejects are rejected now too:
+#     `--to-destination`/`--to-source` with a port and no
+#     `-p tcp|udp|sctp|dccp` ("Need TCP, UDP, SCTP or DCCP with port
+#     specification" — the rule port-mapped ICMP as well), and
+#     `-j NOTRACK` outside the raw table.
+#   - 302 cargo tests (was 296).
+#   Re-run against a live kernel (aarch64, private netns) with the
+#   optionless form of every `-m <name>` added to the corpus, plus the
+#   1.1.13 corpus: tailscale's ipt-default set, dockerd 27 and CNI
+#   replay unchanged.
+#   iptables-soak.sh: 142/150 as root in the jonerix builder container
+#   (was 106/119 on 1.1.13's script there, 103/119 as the reviewer ran
+#   it). Section 17 is 31 new cases; 3.05, 15.11 and 15.14-15.16 were
+#   converted to `expect_refused`, matching what 1.1.13 already did.
+#   The script no longer needs `sudo` when it is already uid 0. The 8
+#   remaining failures are environment or the documented listing gap:
+#   15.12 needs nf_conntrack_ftp; 10.01 (`-D <spec>`), 11.01 (`-C`) and
+#   14.01 (save/restore) need the inverse renderer; 15.04, 15.05, 15.06
+#   and 15.10 are `nft list` text differences (`meta length 0x00000064`
+#   for `100`, an iprange as two integers, `queue to N` for
+#   `queue num N`) over rules the kernel holds correctly.
+#
+# 1.1.13: mark rules reach the kernel as iptables asks.
+#   - `-m mark --mark V/M` lowered to `meta mark & M == V`, but the nft
+#     parser read the `&` as the compare value, so the kernel held
+#     `meta mark == 0x26` (same for `-m connmark`). Tailscale exit-node
+#     and subnet-router masquerade and forward accept, and CNI portmap
+#     hairpin masquerade, never matched. The parser now takes
+#     `& | ^` / `and or xor` after a meta or ct key.
+#   - `-j MARK --set-mark V/M` dropped the mask, and `meta mark set V`
+#     (also `ct mark set`, `ct zone set`, `meta nftrace set`,
+#     `meta priority set`) had no value source, so the kernel set the
+#     key from whatever register 1 held: tailscale's
+#     `-i tailscale0 -j MARK --set-mark 0x40000/0xff0000` marked
+#     packets 0x6c696174 ("tail"). Setters now load an immediate or a
+#     folded `and/or/xor` bitwise; --set-mark/--set-xmark masks and
+#     --or-mark/--xor-mark are encoded; CONNMARK --set-xmark is its
+#     own op. An iptables batch whose nft text does not parse fully is
+#     refused instead of installed with tokens dropped.
+#   - Listing matches nft 1.1: `meta mark & 0x00ff0000 == 0x00040000`,
+#     `meta mark set meta mark & 0xff04ffff | 0x00040000`, IPv6
+#     addresses in RFC 5952 form (were raw hex), JSON mangle/match
+#     forms as libnftables prints them.
+#   - `ip6 saddr X/N` keeps its prefix (was an exact match on X), and
+#     addresses whose first group is decimal (2001:db8::1) tokenize.
+#   - `-p PROTO` with no port match lowers to `meta l4proto tcp`, whose
+#     `tcp` the parser took for the start of a `tcp FIELD` match that
+#     also ate the verdict: `-p tcp -j DROP`, `-p udp -j NOTRACK` and
+#     `-p tcp -j REJECT --reject-with tcp-reset` installed rules with
+#     no protocol test and no verdict. `--syn` / `--tcp-flags` read
+#     `(fin|syn|rst|ack)` as one unknown word, so the mask was 0 and
+#     the rule never matched; `ALL` now expands and `!` gives `!=`.
+#     `-p gre|ah|udplite|...` stored the name's first byte as the
+#     protocol (gre became pim). `-m mac --mac-source 00:...` did not
+#     tokenize and now lists as `ether saddr`.
+#   - An unknown `ip|ip6|tcp|udp|icmp|th|ether` field is no longer
+#     skipped silently, so the refusal catches it (`-f -j DROP`
+#     installed a bare `drop` of every packet).
+#   - A `!` reaches the option after it or the command is refused, as
+#     in iptables. The `--syn` arm never took its `!` (hidden by the
+#     zero mask until now), so `-m conntrack --ctstate NEW ! --syn -j
+#     DROP` would have dropped every new connection, and in
+#     `! --syn -m state --state NEW` the `!` moved onto --state.
+#     `! --syn` and `-m addrtype ! --src-type/--dst-type` now encode
+#     `!=`; `!` before owner, physdev, string, limit, statistic and
+#     time options is refused. `-m owner` names and ranges are refused
+#     (they parsed as id 0, root).
+#   - The nft `log` statement takes `level`, `group`, `snaplen`,
+#     `queue-threshold` and `flags` (it took only `prefix`), so
+#     `-j LOG --log-level N|NAME` and `-j NFLOG --nflog-group N` install
+#     as asked (1.1.12 dropped the level, read named levels as 0 and
+#     logged NFLOG rules to the kernel log). `--log-tcp-*`,
+#     `--log-ip-options`, `--log-uid` and new `--log-macdecode` become
+#     `log flags ...`; NFLOG defaults to group 0 and takes
+#     `--nflog-size`/`--nflog-threshold` (and `--nflog-range`, ignored).
+#   - `snat to`/`dnat to` with an address the parser cannot encode
+#     (IPv6, a name, a map) or a port range is refused; ip6tables
+#     SNAT/DNAT to an IPv6 address installed `dnat to :0`. `snat ip to`
+#     is taken, and a port-only `dnat to :PORT` lists as nft prints it.
+#   - Refused with an error instead of installed wrong (each listed in
+#     IPTABLES_COMPAT.md with what 1.1.12 installed): REDIRECT (any
+#     form), MASQUERADE --to-ports, SNAT/DNAT port ranges and IPv6
+#     addresses, TCPMSS, NFQUEUE --queue-balance, TTL --ttl-inc/-dec,
+#     HL, -m connlimit, -m ttl/hl lt/gt, -m tcpmss, -p sctp/dccp with a
+#     port, -m esp/ah SPIs, ip6tables -m frag/hbh/mh/dst, -f. That is
+#     every command 1.1.12 accepted and 1.1.13 refuses in a 298-command
+#     corpus (firewall scripts, dockerd, CNI, kube-proxy, fail2ban, ufw,
+#     libvirt, wg-quick) run through both against a live kernel.
+#   - 296 cargo tests (was 261); the new ones lower each command,
+#     parse, encode to netlink attributes and render the listing.
+#   Kernel round-trip checked in a throwaway VM (Linux 6.8, private
+#   netns) against nft 1.0.9's listing and bytecode: tailscale's
+#   ipt-default rule set, dockerd 27's and CNI bridge/firewall/portmap
+#   rules, every LOG/NFLOG option (text and JSON listings identical),
+#   and packet tests for masked MARK/mark, --or-mark, -p udp, --syn,
+#   `! --syn` (a new connection passes the hardening rule
+#   `--ctstate NEW ! --syn -j DROP`; the SYN-ACK is what `! --syn`
+#   drops), addrtype and NFLOG (the packet arrives on the group).
+#   iptables-soak.sh: 105/119 as measured on a live jonerix box with
+#   sudo present and nf_conntrack_ftp loaded (1.1.11: 61/119). Without
+#   those preconditions the same script scored 103/119; see 1.1.14,
+#   which removes the sudo requirement.
+#
+# 1.1.12 (jonerix-only): repackaged 1.1.11 without the /sbin and
+# /usr/sbin compat symlinks (see [hooks]).
 #
 # 1.1.11: parallel-worker integration — three Sonnet subagents
 # implemented orthogonal feature additions in isolated worktrees, then
@@ -271,8 +464,8 @@ description = "Drop-in firewall front-end — accepts nft, pf and iptables CLI d
 # 1.1.3 (prior): jump-target user-chain auto-create + `ct state { … }`.
 # 1.1.2 (prior): user-chain auto-create on the operating chain.
 # 1.1.1 (prior): help-text refresh.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.11/stormwall-1.1.11.tar.gz"
-sha256 = "697a67812920665c6d467d5af135a452ffd3ec076f45c4e92179239c193c5aa7"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-stormwall-v1.1.15/stormwall-1.1.15.tar.gz"
+sha256 = "a3da828b2ee3c2b087daf3154f944f7d63fcf9e0e844099eefbac70b7096738d"
 
 [build]
 system = "custom"
