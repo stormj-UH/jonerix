@@ -5,7 +5,7 @@
 # POSIX, busybox/mksh edge cases, and shellcheck/shfmt parser parity.
 # Beats bash on 10/13 hot-path benchmarks (median across ITER=10).
 name = "brash"
-version = "1.0.25"
+version = "1.0.26"
 license = "MIT"
 description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # Brash provides /bin/bash and /bin/rash.  /bin/sh stays with mksh, which
@@ -21,14 +21,18 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # so the tarball is mirrored to a jonerix GH release tag for CI.
 #
 # Forgejo URL (primary, reachable from inside the jonerix network):
-#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.25.tar.gz
+#   https://castle.great-morpho.ts.net:3000/jonerik/brash/archive/v1.0.26.tar.gz
 #
 # The tarball here is `git archive --prefix=brash-X/` of the release commit
 # plus `cargo vendor --locked vendor` and a .cargo/config.toml that points
-# crates-io at vendor/, packed without macOS xattrs.  1.0.25 is Forgejo
-# commit 34c99e4; its Cargo.lock differs from 1.0.18's only in brash's own
+# crates-io at vendor/, packed without macOS xattrs.  1.0.26 is Forgejo
+# commit c4c02d4; its Cargo.lock differs from 1.0.18's only in brash's own
 # version, so vendor/ and .cargo/ are 1.0.18's, byte for byte.
 #
+# 1.0.26: `set -x` no longer traces the expansion of PS4 itself, so a
+# PS4 holding a command substitution prints one trace line instead of
+# recursing into hundreds.  1.0.25 is Forgejo commit 34c99e4; 1.0.26 is
+# c4c02d4, whose Cargo.lock differs only in brash's own version.
 # 1.0.25: an EXIT trap no longer replaces the exit status (`trap cleanup
 # EXIT; exit 3` exits 3, also under set -e, set -u, in ( ), $( ), & and
 # pipeline elements); `exit` keeps its status through if/while conditions,
@@ -79,8 +83,8 @@ description = "Clean-room Rust reimplementation of bash 5.3 (no GNU runtime)"
 # lists completions on the second consecutive Tab (matches readline's
 # show-all-if-unmodified=off default), instead of immediately prompting
 # "Display all N possibilities?" or dumping the whole command list.
-url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.25/brash-1.0.25.tar.gz"
-sha256 = "45f7ada1c1c9552c4960da4dda645a945a66fa0dd5185b6eadafbe2dacc2aabf"
+url = "https://github.com/stormj-UH/jonerix/releases/download/source-brash-v1.0.26/brash-1.0.26.tar.gz"
+sha256 = "52335df617f44eacd10c386aafe70faae1d4f07030d6f5453f9ae7c492b85db5"
 
 [build]
 system = "custom"
