@@ -75,8 +75,8 @@ precedence:
 |--------|-------|----------|
 | `10-`  | distro baseline, shipped by a package | openrc: `10-jonerix-fs-protected.conf`, `10-jonerix-kptr-restrict.conf`, `10-jonerix-net-redirects.conf`, `10-jonerix-rp-filter.conf` |
 | `40-`  | profile workload tuning | builder: `40-workload.conf` |
-| `50-`  | package feature defaults | toybox: ping group range; jonerix-raspi5-fixups: Pi 5 dual-homing |
-| `60-`  | image profile | `60-builder*.conf`, `60-minimal*.conf`, `60-router*.conf` |
+| `50-`  | package feature defaults | toybox: `50-ping-group-range.conf` |
+| `60-`  | image profile or board package | `60-builder*.conf`, `60-minimal*.conf`, `60-router*.conf`; jonerix-raspi5-fixups: `60-pi5-dualhome.conf` |
 | `90-`  | local administrator | anything you add by hand |
 
 Package-owned files are replaced on upgrade (jpkg has no conffile
