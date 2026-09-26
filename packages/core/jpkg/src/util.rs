@@ -414,9 +414,9 @@ pub fn license_is_permissive(license: &str) -> bool {
         }
     }
 
-    // Find a top-level " OR " or " AND " (i.e. not inside parentheses).
-    // We scan left-to-right tracking paren depth; an operator at depth 0
-    // is a genuine top-level split point.
+    // Split at a top-level (paren-depth 0) operator.  SPDX gives AND higher
+    // precedence than OR, so a top-level " OR " is split first:
+    // "A AND B OR C" is "(A AND B) OR C", not "A AND (B OR C)".
     if let Some((op, left, right)) = find_top_level_op(license) {
         return match op {
             TopOp::Or => license_is_permissive(left) || license_is_permissive(right),
@@ -462,45 +462,31 @@ enum TopOp {
     And,
 }
 
-/// Find the first top-level ` OR ` or ` AND ` (paren-depth == 0) in `s`.
-/// Returns `Some((op, left, right))` or `None`.
+/// Find the split point of `s` at paren-depth 0, honouring SPDX precedence
+/// (AND binds tighter than OR): the first top-level ` OR ` if there is one,
+/// otherwise the first top-level ` AND `.  Returns `Some((op, left, right))`
+/// or `None`.  Splitting at the first OR is safe because OR is associative.
 fn find_top_level_op(s: &str) -> Option<(TopOp, &str, &str)> {
     let bytes = s.as_bytes();
-    let n = bytes.len();
     let mut depth = 0i32;
-    let mut i = 0usize;
+    let mut first_and: Option<usize> = None;
 
-    while i < n {
-        match bytes[i] {
-            b'(' => {
-                depth += 1;
-                i += 1;
-            }
-            b')' => {
-                depth -= 1;
-                i += 1;
-            }
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
             b' ' if depth == 0 => {
-                // Try " OR " (4 bytes including leading space already consumed)
-                if i + 4 <= n && &bytes[i..i + 4] == b" OR " {
-                    let left = &s[..i];
-                    let right = &s[i + 4..];
-                    return Some((TopOp::Or, left, right));
+                if bytes[i..].starts_with(b" OR ") {
+                    return Some((TopOp::Or, &s[..i], &s[i + 4..]));
                 }
-                // Try " AND " (5 bytes)
-                if i + 5 <= n && &bytes[i..i + 5] == b" AND " {
-                    let left = &s[..i];
-                    let right = &s[i + 5..];
-                    return Some((TopOp::And, left, right));
+                if first_and.is_none() && bytes[i..].starts_with(b" AND ") {
+                    first_and = Some(i);
                 }
-                i += 1;
             }
-            _ => {
-                i += 1;
-            }
+            _ => {}
         }
     }
-    None
+    first_and.map(|i| (TopOp::And, &s[..i], &s[i + 5..]))
 }
 
 // ── Layout audit ─────────────────────────────────────────────────────────────
@@ -933,6 +919,27 @@ mod tests {
         assert!(license_is_permissive("MIT AND Apache-2.0"));
         // One forbidden → false.
         assert!(!license_is_permissive("MIT AND GPL-2.0-only"));
+    }
+
+    #[test]
+    fn test_license_spdx_and_binds_tighter_than_or() {
+        // "(GPL AND MIT) OR Apache-2.0": the Apache-2.0 alternative is enough.
+        assert!(license_is_permissive("GPL-2.0-only AND MIT OR Apache-2.0"));
+        // "MIT OR (Apache-2.0 AND GPL-2.0-only)": MIT is enough.
+        assert!(license_is_permissive("MIT OR Apache-2.0 AND GPL-2.0-only"));
+        // "(MIT AND GPL-2.0-only) OR (GPL-3.0-only AND Apache-2.0)": no
+        // alternative is all-permissive.
+        assert!(!license_is_permissive(
+            "MIT AND GPL-2.0-only OR GPL-3.0-only AND Apache-2.0"
+        ));
+        // "(MIT AND ISC) OR (GPL-3.0-only AND Apache-2.0)": first alternative.
+        assert!(license_is_permissive(
+            "MIT AND ISC OR GPL-3.0-only AND Apache-2.0"
+        ));
+        // Parentheses still override precedence.
+        assert!(!license_is_permissive(
+            "GPL-2.0-only AND (MIT OR Apache-2.0)"
+        ));
     }
 
     #[test]

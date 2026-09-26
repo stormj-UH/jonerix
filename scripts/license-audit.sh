@@ -50,12 +50,8 @@ BSD-2-Clause
 BSD-3-Clause
 BSD-3-Clause-flex
 BSD-2-Clause-Patent
-BSD-2
-BSD-3
-BSD
 ISC
 Apache-2.0
-Apache
 0BSD
 CC0-1.0
 CC0
@@ -69,7 +65,6 @@ MirOS
 OpenSSL
 SSLeay
 Unlicense
-WTFPL
 PSF-2.0
 BSL-1.0
 Artistic-2.0
