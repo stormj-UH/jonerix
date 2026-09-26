@@ -47,7 +47,6 @@ snooze
 pigz
 lz4
 # Tier 2: depends on musl only (small)
-mandoc
 bc
 getent
 dhcpcd
@@ -76,6 +75,7 @@ jonerix-autotools-vendor
 # (toybox was here pre-2026-04-26; moved to Tier 11 so it can build under
 # /bin/bash → brash and skip the local mksh-compat patch.)
 zlib
+mandoc
 xz
 zstd
 libressl
