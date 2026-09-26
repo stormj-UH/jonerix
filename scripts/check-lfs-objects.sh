@@ -6,8 +6,11 @@
 #   sh scripts/check-lfs-objects.sh [REPO_ROOT]
 #
 # Env:
-#   LFS_URL   LFS endpoint (default: `git lfs env`'s Endpoint, else the
-#             origin remote's https URL + .git/info/lfs)
+#   LFS_URL   LFS endpoint(s) to ask first, space-separated. The checkout's
+#             own endpoint (`git lfs env`'s Endpoint, else the origin
+#             remote's https URL + .git/info/lfs) is always asked after
+#             them, so a pull request can name its head repository here
+#             and objects already on the base repository still count.
 #
 # Catches the two ways a vendored LFS tarball silently goes missing:
 #   * the file was committed without git-lfs installed, so the full archive
@@ -21,6 +24,8 @@
 # SPDX-License-Identifier: MIT
 
 set -eu
+# Nothing below needs pathname expansion; URLs and paths split literally.
+set -f
 
 ROOT=${1:-.}
 cd "$ROOT"
@@ -33,11 +38,7 @@ fail() {
     failures=$((failures + 1))
 }
 
-lfs_endpoint() {
-    if [ -n "${LFS_URL:-}" ]; then
-        printf '%s\n' "$LFS_URL"
-        return 0
-    fi
+default_endpoint() {
     if git lfs version >/dev/null 2>&1; then
         endpoint=$(git lfs env 2>/dev/null |
             sed -n 's/^Endpoint=\([^ ]*\).*/\1/p' | head -n 1)
@@ -70,10 +71,17 @@ lfs_endpoint() {
     printf '%s/info/lfs\n' "$remote"
 }
 
-endpoint=$(lfs_endpoint) || {
+endpoints=
+for ep in ${LFS_URL:-} $(default_endpoint || true); do
+    case " $endpoints " in
+        *" $ep "*) ;;
+        *) endpoints="${endpoints:+$endpoints }$ep" ;;
+    esac
+done
+if [ -z "$endpoints" ]; then
     printf 'LFS: cannot determine the LFS endpoint; set LFS_URL\n' >&2
     exit 1
-}
+fi
 
 paths=$(git ls-files ':(attr:filter=lfs)')
 if [ -z "$paths" ]; then
@@ -81,8 +89,7 @@ if [ -z "$paths" ]; then
     exit 0
 fi
 
-# Paths under sources/ contain no whitespace; -f keeps the split literal.
-set -f
+# LFS-tracked paths (sources/) contain no whitespace.
 checked=0
 for path in $paths; do
     pointer=$(git cat-file blob ":$path" 2>/dev/null | dd bs=512 count=1 2>/dev/null || true)
@@ -99,24 +106,35 @@ for path in $paths; do
     fi
 
     body="{\"operation\":\"download\",\"transfers\":[\"basic\"],\"objects\":[{\"oid\":\"$oid\",\"size\":$size}]}"
-    if ! reply=$(curl -fsS --retry 3 --retry-delay 2 \
-            -H 'Accept: application/vnd.git-lfs+json' \
-            -H 'Content-Type: application/vnd.git-lfs+json' \
-            -d "$body" "$endpoint/objects/batch"); then
-        fail "LFS: batch request for $path failed ($endpoint)"
-        continue
+    found=
+    problem=
+    for ep in $endpoints; do
+        if ! reply=$(curl -fsS --retry 3 --retry-delay 2 \
+                -H 'Accept: application/vnd.git-lfs+json' \
+                -H 'Content-Type: application/vnd.git-lfs+json' \
+                -d "$body" "$ep/objects/batch"); then
+            problem="batch request failed at $ep"
+            continue
+        fi
+        case "$reply" in
+            *'"error"'*)
+                ;;
+            *'"download"'*)
+                found=$ep
+                break
+                ;;
+            *)
+                problem="unexpected batch reply from $ep: $reply"
+                ;;
+        esac
+    done
+    if [ -n "$found" ]; then
+        checked=$((checked + 1))
+    elif [ -n "$problem" ]; then
+        fail "LFS: cannot confirm the object for $path (oid $oid): $problem"
+    else
+        fail "LFS: object for $path (oid $oid) is not on the server: push it with \`git lfs push --object-id origin $oid\`"
     fi
-    case "$reply" in
-        *'"error"'*)
-            fail "LFS: object for $path (oid $oid) is not on the server: push it with \`git lfs push --object-id origin $oid\`"
-            ;;
-        *'"download"'*)
-            checked=$((checked + 1))
-            ;;
-        *)
-            fail "LFS: unexpected batch reply for $path: $reply"
-            ;;
-    esac
 done
 
 if [ "$failures" -ne 0 ]; then
@@ -124,4 +142,4 @@ if [ "$failures" -ne 0 ]; then
     exit 1
 fi
 
-printf 'LFS object check passed: %s object(s) present at %s\n' "$checked" "$endpoint"
+printf 'LFS object check passed: %s object(s) present (%s)\n' "$checked" "$endpoints"

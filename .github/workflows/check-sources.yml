@@ -71,6 +71,7 @@ jobs:
       - name: Check LFS-tracked sources exist on the LFS server
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         env:
-          # A PR's LFS objects live in the repository it was pushed from.
-          LFS_URL: ${{ github.event_name == 'pull_request' && format('{0}/info/lfs', github.event.pull_request.head.repo.clone_url) || '' }}
+          # A PR's new LFS objects live in the repository it was pushed
+          # from; the script also asks the checkout's own (base) endpoint.
+          LFS_URL: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.clone_url && format('{0}/info/lfs', github.event.pull_request.head.repo.clone_url) || '' }}
         run: sh scripts/check-lfs-objects.sh
