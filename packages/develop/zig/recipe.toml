@@ -1,6 +1,6 @@
 [package]
 name = "zig"
-version = "0.16.0"
+version = "0.16.0-r1"
 license = "MIT"
 description = "Zig compiler toolchain built against the system LLVM 21 stack"
 
@@ -37,11 +37,32 @@ cmake -S . -B build -G Ninja \
 """
 build = """
 set -e
-samu -C build -j${BUILD_JOBS:-1}
+# `env -u DESTDIR`: the `stage3` target in zig's CMakeLists is part of `all`
+# and runs `zig2 build --prefix <builddir>/stage3` with an ABSOLUTE prefix.
+# zig's build runner honours DESTDIR by string-joining it onto that prefix
+# instead of ignoring it, so with DESTDIR exported the whole 200 MiB stage3
+# tree lands in $DESTDIR/tmp/<jpkg workdir>/... and gets packaged — zig
+# 0.16.0 shipped 19543 such files, half the archive. jpkg exports DESTDIR
+# into every step, so the build step has to drop it explicitly.
+env -u DESTDIR samu -C build -j${BUILD_JOBS:-1}
 """
 install = """
 set -e
+# Satisfy ninja's implicit `all` dependency of the install target first, with
+# DESTDIR still unset, so stage3 cannot re-run under DESTDIR (see build step).
+env -u DESTDIR samu -C build
+# install.cmake runs `zig build --prefix /`, which genuinely needs DESTDIR.
 DESTDIR="$DESTDIR" samu -C build install
+# Belt and braces: nothing but the merged-usr roots may reach the archive.
+rm -rf "$DESTDIR/tmp"
+for _d in "$DESTDIR"/*; do
+    [ -e "$_d" ] || continue
+    case "${_d##*/}" in
+        bin|lib|libexec|include|share|etc) ;;
+        usr|lib64) ;;
+        *) printf '%s\n' "FATAL: zig install leaked '${_d##*/}' into DESTDIR" >&2; exit 1 ;;
+    esac
+done
 if [ -d "$DESTDIR/usr" ]; then
     cp -pR "$DESTDIR/usr/." "$DESTDIR/"
     rm -rf "$DESTDIR/usr"

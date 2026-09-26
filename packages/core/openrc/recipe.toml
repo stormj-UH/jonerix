@@ -1,6 +1,6 @@
 [package]
 name = "openrc"
-version = "0.54-r8"
+version = "0.54-r9"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
 
@@ -410,6 +410,13 @@ done
 # strips them on Pi hosts, but every openrc reinstall put them back,
 # and `jpkg upgrade` installs openrc after the fixups package.
 rm -f "$DESTDIR/etc/runlevels/boot/keymaps" "$DESTDIR/etc/runlevels/boot/save-keymaps" "$DESTDIR/etc/runlevels/boot/save-termencoding"
+# Same story for boot/modules and default/local, which jonerix-raspi5-fixups
+# removes unconditionally in its post_install. Shipping a link another
+# package always deletes made `jpkg verify openrc` report two missing files
+# on every Pi. Neither is a loss: this recipe also seeds
+# sysinit/modules (where the modules service actually runs from), and
+# /etc/local.d ships nothing but a README, so default/local starts nothing.
+rm -f "$DESTDIR/etc/runlevels/boot/modules" "$DESTDIR/etc/runlevels/default/local"
 # Guard: every regular file in etc/init.d must start with exactly
 # #!/bin/openrc-run. gendepends.sh silently drops a script with any
 # other first line from the deptree (the sysctl bug above), and

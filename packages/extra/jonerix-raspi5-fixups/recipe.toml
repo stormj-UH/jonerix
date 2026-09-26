@@ -706,6 +706,12 @@ fi
 
 # --- Pi 5 hardware fixups (only on a live Pi 5) ---
 mkdir -p /etc/runlevels/boot /etc/runlevels/default /etc/runlevels/shutdown
+# boot/modules and default/local are shipped by openrc. Deleting another
+# package's files made `jpkg verify openrc` report them missing on every Pi,
+# so openrc 0.54-r9 stops shipping them (modules runs from sysinit/modules,
+# /etc/local.d holds only a README). These two lines stay only to clean up
+# hosts installed against openrc r8 or earlier; devfs and dhcpcd were never
+# in openrc's manifest.
 rm -f /etc/runlevels/boot/devfs /etc/runlevels/boot/modules
 rm -f /etc/runlevels/default/dhcpcd /etc/runlevels/default/local
 # OpenRC's upstream install symlinks keymaps + save-keymaps +
