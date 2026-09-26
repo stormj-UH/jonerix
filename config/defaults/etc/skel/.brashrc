@@ -59,7 +59,12 @@ export PATH
 
 # ── Editor ────────────────────────────────────────────────────────────────
 export EDITOR="${EDITOR:-vim}"
-export PAGER="${PAGER:-less}"
+# less where it is installed, else more: a PAGER that does not exist
+# leaves man(1) with nothing to show the page in.
+if [ -z "${PAGER:-}" ]; then
+    if command -v less >/dev/null 2>&1; then PAGER=less; else PAGER=more; fi
+fi
+export PAGER
 export LESS='-R -i -M -W -z-2'
 
 # ── Locale ────────────────────────────────────────────────────────────────
