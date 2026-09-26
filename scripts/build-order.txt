@@ -76,6 +76,7 @@ jonerix-autotools-vendor
 # /bin/bash → brash and skip the local mksh-compat patch.)
 zlib
 mandoc
+onetrueawk
 xz
 zstd
 libressl

@@ -494,4 +494,4 @@ runtime = ["musl"]
 # brash is best-effort: install_target_build_deps WARNs and continues if
 # brash isn't yet built (first-pass bootstrap), so the recipe falls back
 # to mksh+patch via the build-time check above.
-build = ["clang", "brash", "jonerix-headers"]
+build = ["clang", "brash", "jonerix-headers", "onetrueawk"]
