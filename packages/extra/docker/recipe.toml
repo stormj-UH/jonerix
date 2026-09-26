@@ -1,6 +1,6 @@
 [package]
 name = "docker"
-version = "27.5.1-r3"
+version = "27.5.1-r4"
 license = "Apache-2.0"
 description = "Docker daemon (dockerd) — industry-standard container engine using containerd as the runtime backend"
 replaces = []
@@ -210,13 +210,24 @@ fi
 # path "etc/runlevels/<name>", so running from any other cwd (e.g.
 # jpkg's install temp dir) makes rc-update reject every runlevel name
 # as "not a valid runlevel".
+# r4: first drop a dangling /etc/runlevels/default/docker. openrc <=
+# 0.54-r6 wrote runlevel links relative (`etc/init.d/docker`), which
+# dangle; librc skips them at boot and `rc-update add` then fails with
+# EEXIST instead of repairing them.
+_l=/etc/runlevels/default/docker
+if [ -L "$_l" ] && [ ! -e "$_l" ]; then
+    rm -f "$_l"
+    echo "docker: removed dangling runlevel link $_l"
+fi
 if command -v rc-update >/dev/null 2>&1; then
     if (cd / && rc-update add docker default) >/dev/null 2>&1; then
         echo "docker: registered with OpenRC (boot runlevel: default)."
         echo "docker: start now with: rc-service docker start"
+    elif [ -L "$_l" ] && [ -e "$_l" ]; then
+        echo "docker: already registered with OpenRC (boot runlevel: default)."
     else
         echo "docker: WARNING: rc-update add failed — register manually:"
-        echo "docker:   cd / && rc-update add docker default"
+        echo "docker:   ln -sfn /etc/init.d/docker $_l"
     fi
 fi
 """

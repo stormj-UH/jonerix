@@ -1,6 +1,6 @@
 [package]
 name = "containerd"
-version = "2.2.2-r1"
+version = "2.2.2-r2"
 license = "Apache-2.0"
 description = "Industry-standard container runtime"
 
@@ -68,14 +68,30 @@ done"""
 # relative path "etc/runlevels/<name>", so running from any other cwd
 # (e.g. jpkg's build/install temp dir) makes rc-update reject every
 # runlevel name as "not a valid runlevel".
+#
+# r2: drop a dangling /etc/runlevels/default/containerd before
+# rc-update. openrc <= 0.54-r6 wrote it as `etc/init.d/containerd`
+# (relative, so it resolves under /etc/runlevels/default/ and dangles).
+# librc skips it at boot without a message, and `rc-update add` then
+# fails with EEXIST because it stat()s the link as "not in the
+# runlevel" but cannot create it. Seen on tormenta: containerd never
+# started at boot. The manual fallback printed below is `ln -sfn`,
+# which works in that state; the old `rc-update add` hint did not.
 post_install = """set -e
+_l=/etc/runlevels/default/containerd
+if [ -L "$_l" ] && [ ! -e "$_l" ]; then
+    rm -f "$_l"
+    echo "containerd: removed dangling runlevel link $_l"
+fi
 if command -v rc-update >/dev/null 2>&1; then
     if (cd / && rc-update add containerd default) >/dev/null 2>&1; then
         echo "containerd: registered with OpenRC (boot runlevel: default)."
         echo "containerd: start now with: rc-service containerd start"
+    elif [ -L "$_l" ] && [ -e "$_l" ]; then
+        echo "containerd: already registered with OpenRC (boot runlevel: default)."
     else
         echo "containerd: WARNING: rc-update add failed — register manually:"
-        echo "containerd:   cd / && rc-update add containerd default"
+        echo "containerd:   ln -sfn /etc/init.d/containerd $_l"
     fi
 elif [ -d /etc/init.d ] && [ -d /etc/runlevels/default ]; then
     # OpenRC seems present (runlevel dir exists) but rc-update isn't on PATH.

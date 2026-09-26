@@ -1,0 +1,79 @@
+From: jonerix
+Subject: [PATCH] librc, gendepends: ignore backup copies in init.d
+
+Hand edits and package hooks leave copies such as dhcpcd.bak.1776925820,
+syslogd.pre-fix-20260428224022 or shadow-login.pre-raspi5-fixups next
+to the live scripts in /etc/init.d.  They keep the exec bit and the
+openrc-run shebang, so gendepends.sh parsed each of them as a service
+(a stale syslogd copy even declared `provide logger`), and librc's
+ls_dir() listed them in rc-status, rc-update show and rc-service -l.
+
+Skip names matching *~, *.bak, *.bak.*, *.pre-*, *.orig and *.rej in
+both places.  Multiplexed service names (net.eth0, agetty.tty1,
+shadow-login.tty2) do not match these patterns and are unaffected.
+
+---
+--- a/sh/gendepends.sh.in	2026-09-25 12:25:45
++++ b/sh/gendepends.sh.in	2026-09-25 12:25:45
+@@ -72,6 +72,13 @@
+ 	for RC_SERVICE in *; do
+ 		[ -x "$RC_SERVICE" -a -f "$RC_SERVICE" ] || continue
+ 
++		# jonerix: skip backup copies left next to real scripts
++		# (foo~, foo.bak, foo.bak.N, foo.pre-X, foo.orig, foo.rej);
++		# librc's ls_dir() skips the same names.
++		case "$RC_SERVICE" in
++			*~|*.bak|*.bak.*|*.pre-*|*.orig|*.rej) continue ;;
++		esac
++
+ 		# Only generate dependencies for OpenRC scripts
+ 		read one two three <"$RC_SERVICE"
+ 		case "$one" in
+--- a/src/librc/librc.c	2026-09-25 12:25:45
++++ b/src/librc/librc.c	2026-09-25 12:25:45
+@@ -20,6 +20,7 @@
+ #include <dirent.h>
+ #include <errno.h>
+ #include <fcntl.h>
++#include <fnmatch.h>
+ #include <libgen.h>
+ #include <limits.h>
+ #include <regex.h>
+@@ -71,6 +72,27 @@
+ 
+ #define LS_INITD	0x01
+ #define LS_DIR		0x02
++
++/* jonerix: backup copies that admins and packages leave next to a
++ * real script (foo~, foo.bak, foo.bak.N, foo.pre-X, foo.orig, foo.rej)
++ * are not services.  Listing them made rc-status, rc-update and
++ * rc-service -l show stale copies as services.  Multiplexed names
++ * such as net.eth0 or agetty.tty1 do not match and are kept. */
++static const char *const backup_patterns[] = {
++	"*~", "*.bak", "*.bak.*", "*.pre-*", "*.orig", "*.rej", NULL
++};
++
++static bool
++is_backup_name(const char *name)
++{
++	const char *const *p;
++
++	for (p = backup_patterns; *p; p++)
++		if (fnmatch(*p, name, 0) == 0)
++			return true;
++	return false;
++}
++
+ static RC_STRINGLIST *
+ ls_dir(const char *dir, int options)
+ {
+@@ -103,6 +125,9 @@
+ 				    d->d_name[l - 2] == 's' &&
+ 				    d->d_name[l - 1] == 'h')
+ 					continue;
++
++				if (is_backup_name(d->d_name))
++					continue;
+ 			}
+ 			if (options & LS_DIR) {
+ 				snprintf(file, sizeof(file), "%s/%s",

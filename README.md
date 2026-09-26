@@ -286,6 +286,7 @@ Source and recipe checks:
 ```sh
 sh scripts/check-vendored-sources.sh
 sh scripts/check-cargo-offline.sh
+sh scripts/check-init-shebangs.sh
 sh scripts/license-audit.sh
 ```
 
@@ -337,6 +338,7 @@ The full architecture and packaging model is documented in [DESIGN.md](DESIGN.md
 | [scripts/check-vendored-sources.sh](scripts/check-vendored-sources.sh) | Ensures every recipe source has the expected local source input. |
 | [scripts/check-cargo-offline.sh](scripts/check-cargo-offline.sh) | Ensures Rust packages can build without surprise network fetches. |
 | [scripts/license-audit.sh](scripts/license-audit.sh) | Recipe/userland license audit. |
+| [scripts/check-init-shebangs.sh](scripts/check-init-shebangs.sh) | Ensures every OpenRC service the repo ships or generates starts with `#!/bin/openrc-run`. |
 | [PACKAGES.md](PACKAGES.md) | Generated package inventory and image/package mapping. |
 | [DESIGN.md](DESIGN.md) | Architecture, policy, recipe format, and POSIX discipline. |
 | [.github/workflows/](.github/workflows) | Package, image, Pi, WSL, Rust dist, and bootstrap CI. |

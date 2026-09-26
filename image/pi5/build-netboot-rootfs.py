@@ -186,8 +186,11 @@ tmpfs      /tmp         tmpfs       defaults,size=512M                0 0
 """)
 
     # OpenRC service that parses the cmdline and mounts /var/state.
+    # The shebang must be exactly #!/bin/openrc-run: jonerix folds sbin
+    # into /bin, so a /sbin shebang fails to exec (ENOENT) even though
+    # gendepends.sh accepts it (scripts/check-init-shebangs.sh).
     svc = root / "etc" / "init.d" / "pi5-state"
-    svc.write_text("""#!/sbin/openrc-run
+    svc.write_text("""#!/bin/openrc-run
 # pi5-state — mount /var/state with size driven by kernel cmdline.
 #
 # Parses /proc/cmdline for `jonerix.state_size=<value>` and mounts a
@@ -240,11 +243,16 @@ def install_menu_and_init(root: pathlib.Path, release_tag: str):
     if not menu_src.exists():
         DIE(f"missing {menu_src}")
 
-    # The menu script
+    # The menu script itself lives in /bin, not /etc/init.d: every file
+    # in init.d is listed by librc as a service, and this one is a plain
+    # mksh script. netboot-menu.sh runs main_menu when invoked under any
+    # name matching pi5-netboot-menu*.
+    body_dst = root / "bin" / "pi5-netboot-menu"
+    body_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(menu_src, body_dst)
+    body_dst.chmod(0o755)
     menu_dst = root / "etc" / "init.d" / "pi5-netboot-menu"
     menu_dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(menu_src, menu_dst)
-    menu_dst.chmod(0o755)
 
     # The pi5-install.sh script the menu's mode-A path execs
     pi5_install_src = repo_root / "install" / "pi5-install.sh"
@@ -277,7 +285,7 @@ def install_menu_and_init(root: pathlib.Path, release_tag: str):
     # Drop the OpenRC service-script header so init.d/pi5-netboot-menu
     # passes `rc-service ... start` correctly. The actual menu logic
     # is the body of netboot-menu.sh; we wrap it.
-    wrapper = """#!/sbin/openrc-run
+    wrapper = """#!/bin/openrc-run
 # pi5-netboot-menu — wraps image/pi5/netboot-menu.sh as an OpenRC
 # service that owns tty1 at first netboot. supervise-daemon respawns
 # it if the user picks "drop to shell" and exits.
@@ -294,7 +302,7 @@ depend() {
 
 start() {
     ebegin "Launching netboot menu on tty1"
-    setsid /bin/mksh /etc/init.d/pi5-netboot-menu.body \
+    setsid /bin/mksh /bin/pi5-netboot-menu \
         </dev/tty1 >/dev/tty1 2>&1 &
     echo $! > /run/pi5-netboot-menu.pid
     eend 0
@@ -309,13 +317,8 @@ stop() {
     eend 0
 }
 """
-    # Move the menu body to a sibling file so the OpenRC wrapper can
-    # `exec` it without recursing on its own service header.
-    body_dst = root / "etc" / "init.d" / "pi5-netboot-menu.body"
-    shutil.move(str(menu_dst), str(body_dst))
     menu_dst.write_text(wrapper)
     menu_dst.chmod(0o755)
-    body_dst.chmod(0o755)
 
 
 def build(args):

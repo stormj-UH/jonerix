@@ -1,8 +1,32 @@
 [package]
 name = "openrc"
-version = "0.54-r7"
+version = "0.54-r8"
 license = "BSD-2-Clause"
 description = "Dependency-based init system for Unix-like systems"
+
+# r8:
+#   - /etc/init.d/sysctl starts with #!/bin/openrc-run again. Since r5
+#     it started with a mksh shebang, so gendepends.sh never put it in
+#     the deptree and no sysctl.d value was applied on any host. It now
+#     applies one key per `sysctl -w`, logs each failure, reads
+#     /etc, /run and /lib sysctl.d like procps --system, and applies
+#     /etc/sysctl.conf last.
+#   - Build fails if any regular file in etc/init.d does not start with
+#     exactly #!/bin/openrc-run (see also scripts/check-init-shebangs.sh).
+#   - -Dpkg_prefix=/usr/pkg: meson's Linux default is /usr, and on
+#     merged-usr /usr/etc/init.d is /etc/init.d, so gendepends.sh
+#     sourced every script twice and rc-update/rc-service listed every
+#     service twice.
+#   - patches/0002: gendepends.sh and librc ignore backup copies in
+#     init.d (foo~, foo.bak, foo.bak.N, foo.pre-X, foo.orig, foo.rej).
+#   - openrc now owns a jonerix-compatible /etc/init.d/hwclock (used to
+#     be overwritten by jonerix-raspi5-fixups).
+#   - post_install repairs relative runlevel links left by r6, drops
+#     runlevel links whose script is gone, and re-execs openrc-init when
+#     pid 1 still maps replaced files.
+#   - keymaps, save-keymaps and save-termencoding are no longer linked
+#     into the boot runlevel (no GNU kbd tools on jonerix).
+#   - The llvm-strip calls run again (`\\;` never reached find as `;`).
 
 [source]
 url = "https://github.com/OpenRC/openrc/archive/refs/tags/0.54.tar.gz"
@@ -31,9 +55,19 @@ sed -i 's/ seedrng / /g; s/ seedrng"/"/g' tools/meson_runlevels.sh
 # absolute, fixing both at the source. Reproduced 2026-05-09 — every
 # recipe in the tree that calls rc-update from a post_install hook
 # had to be wrapped `(cd / && rc-update …)` as a workaround; this
-# recipe change removes that need (the wrappers stay in place as
-# belt-and-suspenders for older openrc).
-meson setup build --prefix=/ --libdir=lib --bindir=bin --sbindir=bin --sysconfdir=/etc --localstatedir=/var -Dbuildtype=release -Dpam=false -Dselinux=disabled"""
+# recipe change removes that need. The wrappers are harmless on r7+,
+# but on r6 and older `cd / && rc-update add` is what wrote relative
+# runlevel links (`etc/init.d/<svc>`, dangling under
+# /etc/runlevels/<rl>/); the post_install hook below repairs those.
+#
+# -Dpkg_prefix=/usr/pkg: meson defaults pkg_prefix to /usr on Linux.
+# gendepends.sh then scans /usr/etc/init.d and librc compiles in
+# RC_PKG_INITDIR=/usr/etc/init.d. On merged-usr (/usr -> /) that is
+# /etc/init.d again, so every script was sourced twice per deptree
+# rebuild and rc-update show / rc-service -l printed each service
+# twice (seen on tormenta). /usr/pkg resolves to /pkg, which nothing
+# creates. Do not pass an empty value: meson falls back to /usr.
+meson setup build --prefix=/ --libdir=lib --bindir=bin --sbindir=bin --sysconfdir=/etc --localstatedir=/var -Dpkg_prefix=/usr/pkg -Dbuildtype=release -Dpam=false -Dselinux=disabled"""
 build = "samu -C build -j$(nproc)"
 install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
@@ -77,36 +111,245 @@ if [ -f "$DESTDIR/etc/init.d/network" ]; then
 fi
 # toybox sysctl compatibility: OpenRC's /etc/init.d/sysctl calls
 #   sysctl --system
-# on Linux. Toybox sysctl only supports -p [FILE] — --system errors
-# with "Unknown option 'system'". BSD_sysctl's `sysctl -w "$var"` path
-# also fails since toybox -w requires strict key=value with no spaces.
-# Replace start() with a simple per-file `sysctl -p` loop that works
-# with both toybox and procps-ng sysctl. Reproduced 2026-04-16 on
-# jonerix-tormenta: sysctl service errored during boot runlevel,
-# non-critical but pollutes the log and blocks dependents.
+# on Linux. Toybox sysctl has no --system ("Unknown option 'system'"),
+# and `sysctl -p FILE` is no substitute: toybox write_key() uses
+# xwrite(), which exits on the first value the kernel rejects, so one
+# bad line silently drops every later line of that file. Replace the
+# script with one that applies each assignment with its own
+# `sysctl -q -w key=value` (works with toybox and procps-ng), logs each
+# failure with ewarn, and follows procps --system order: *.conf names
+# from /etc/sysctl.d, /run/sysctl.d and /lib/sysctl.d merged and sorted
+# (a name in an earlier directory masks the same name in a later one),
+# then /etc/sysctl.conf last. A leading `-` on a key means "ignore
+# failure", as in sysctl.d(5).
+#
+# The first line MUST stay #!/bin/openrc-run. gendepends.sh only puts
+# scripts whose shebang ends in /openrc-run (or /runscript) into the
+# deptree; anything else is skipped without a message. From r5 to r7
+# this heredoc started with a mksh shebang, so the service was linked
+# into the boot runlevel but never ran, and no sysctl setting
+# (net.ipv4.ping_group_range included, which toybox ping needs) was
+# applied on any host. The guard at the end of this step enforces it.
 if [ -f "$DESTDIR/etc/init.d/sysctl" ]; then
     cat > "$DESTDIR/etc/init.d/sysctl" <<'SYSCTL_INIT'
-#!/bin/mksh
-# Rewritten by jonerix openrc jpkg — toybox sysctl only supports
-# `-p [FILE]`; --system and strict -w fail. See recipe.toml for context.
+#!/bin/openrc-run
+# Copyright (c) 2007-2015 The OpenRC Authors.
+# See the Authors file at the top-level directory of this distribution and
+# https://github.com/OpenRC/openrc/blob/HEAD/AUTHORS
+#
+# This file is part of OpenRC. It is subject to the license terms in
+# the LICENSE file found in the top-level directory of this
+# distribution and at https://github.com/OpenRC/openrc/blob/HEAD/LICENSE
+# This file may not be copied, modified, propagated, or distributed
+# except according to the terms contained in the LICENSE file.
+#
+# Modified for jonerix by the openrc package (see its recipe.toml):
+# toybox sysctl has no --system, and its -p stops at the first
+# rejected value.
 
-depend() {
-    after clock
-    before bootmisc logger
-    keyword -prefix -systemd-nspawn -vserver
+description="Configures kernel parameters from sysctl.d and sysctl.conf"
+
+depend()
+{
+	after clock
+	before bootmisc logger
+	keyword -prefix -systemd-nspawn -vserver
 }
 
-start() {
-    local rc=0 conf
-    ebegin "Configuring kernel parameters"
-    for conf in /etc/sysctl.conf /etc/sysctl.d/*.conf; do
-        [ -r "$conf" ] || continue
-        sysctl -p "$conf" >/dev/null 2>&1 || rc=1
-    done
-    eend $rc "Unable to configure some kernel parameters"
+# Apply one file, one `sysctl -w` per assignment, so a rejected value
+# only loses that line. Blank lines and lines starting with # or ; are
+# comments. Returns non-zero if any assignment failed.
+_sysctl_apply_file()
+{
+	local file="$1" line key val err ignore rc=0
+
+	while IFS= read -r line || [ -n "$line" ]; do
+		line=${line#"${line%%[![:space:]]*}"}
+		case "$line" in
+			''|'#'*|';'*) continue ;;
+			*=*) ;;
+			*)
+				ewarn "$file: not key=value: $line"
+				rc=1
+				continue
+				;;
+		esac
+		key=${line%%=*}
+		val=${line#*=}
+		key=${key%"${key##*[![:space:]]}"}
+		val=${val#"${val%%[![:space:]]*}"}
+		val=${val%"${val##*[![:space:]]}"}
+		ignore=
+		case "$key" in
+			-*)
+				key=${key#-}
+				key=${key#"${key%%[![:space:]]*}"}
+				ignore=1
+				;;
+		esac
+		[ -n "$key" ] || continue
+		err=$(sysctl -q -w "$key=$val" 2>&1 >/dev/null) && continue
+		[ -n "$ignore" ] && continue
+		ewarn "$file: $key: ${err:-write failed}"
+		rc=1
+	done < "$file"
+	return $rc
+}
+
+start()
+{
+	local rc=0 d f b names=
+
+	ebegin "Configuring kernel parameters"
+	for d in /etc/sysctl.d /run/sysctl.d /lib/sysctl.d; do
+		for f in "$d"/*.conf; do
+			[ -e "$f" ] || [ -L "$f" ] || continue
+			names="$names${f##*/}
+"
+		done
+	done
+	while IFS= read -r b; do
+		[ -n "$b" ] || continue
+		for d in /etc/sysctl.d /run/sysctl.d /lib/sysctl.d; do
+			[ -e "$d/$b" ] || [ -L "$d/$b" ] || continue
+			# The first directory with this name wins. A non-regular
+			# entry there (e.g. a link to /dev/null) masks the rest.
+			if [ -f "$d/$b" ]; then
+				_sysctl_apply_file "$d/$b" || rc=1
+			fi
+			break
+		done
+	done <<EOF
+$(printf '%s' "$names" | sort -u)
+EOF
+	if [ -f /etc/sysctl.conf ]; then
+		_sysctl_apply_file /etc/sysctl.conf || rc=1
+	fi
+	eend $rc "Unable to configure some kernel parameters"
 }
 SYSCTL_INIT
     chmod 755 "$DESTDIR/etc/init.d/sysctl"
+fi
+# hwclock: openrc owns /etc/init.d/hwclock (jonerix-raspi5-fixups
+# stopped overwriting it in 1.6.33). Upstream's script runs
+# `hwclock --systz`, which jonerix-util's hwclock rejects ("unknown
+# option"), and probes --noadjfile/--adjust, which neither toybox nor
+# jonerix-util implement. This version passes only flags both accept
+# (--hctosys/--systohc/--show with --utc/--localtime) and runs --systz
+# only when the installed hwclock lists it in --help (toybox does).
+if [ -f "$DESTDIR/etc/init.d/hwclock" ]; then
+    cat > "$DESTDIR/etc/init.d/hwclock" <<'HWCLOCK_INIT'
+#!/bin/openrc-run
+# Copyright (c) 2007-2015 The OpenRC Authors.
+# See the Authors file at the top-level directory of this distribution and
+# https://github.com/OpenRC/openrc/blob/HEAD/AUTHORS
+#
+# This file is part of OpenRC. It is subject to the license terms in
+# the LICENSE file found in the top-level directory of this
+# distribution and at https://github.com/OpenRC/openrc/blob/HEAD/LICENSE
+# This file may not be copied, modified, propagated, or distributed
+# except according to the terms contained in the LICENSE file.
+#
+# Modified for jonerix by the openrc package (see its recipe.toml) so
+# it works with both toybox hwclock and jonerix-util hwclock.
+
+extra_commands="save show"
+
+description="Sets the system clock from the hardware clock (RTC)."
+description_save="Saves the current system time to the RTC."
+description_show="Displays the current RTC time."
+
+: ${clock_args:=${CLOCK_OPTS}}
+: ${clock_systohc:=${CLOCK_SYSTOHC}}
+: ${clock:=${CLOCK:-UTC}}
+if [ "$clock" = "UTC" ]; then
+	utc="UTC"
+	utc_cmd="--utc"
+else
+	utc="Local Time"
+	utc_cmd="--localtime"
+fi
+
+depend()
+{
+	provide clock
+	want modules
+	keyword -docker -lxc -openvz -prefix -systemd-nspawn -uml -vserver -xenu
+}
+
+# hwclock doesn't always return non-zero on error
+_hwclock()
+{
+	local err
+	err="$(hwclock "$@" 2>&1 >/dev/null)"
+	[ -z "$err" ] && return 0
+	echo "$err" >&2
+	return 1
+}
+
+rtc_exists()
+{
+	local rtc=
+	for rtc in /dev/rtc /dev/rtc[0-9]*; do
+		[ -e "$rtc" ] && break
+	done
+	[ -e "$rtc" ]
+}
+
+start()
+{
+	local retval=0 modname=
+
+	ebegin "Setting system clock using the hardware clock [$utc]"
+	if [ -e /proc/modules ]; then
+		if ! rtc_exists; then
+			for x in rtc-cmos rtc genrtc; do
+				modprobe -q $x && rtc_exists && modname="$x" && break
+			done
+			[ -n "$modname" ] && ewarn "The $modname module needs to be configured in ${RC_SERVICE%/*/*}/conf.d/modules or built in."
+		fi
+	fi
+
+	# Set the kernel's time zone where the hwclock implementation
+	# supports it (toybox: yes, jonerix-util: no).
+	if hwclock --help 2>&1 | grep -q -e --systz; then
+		_hwclock --systz $utc_cmd $clock_args
+		: $(( retval += $? ))
+	fi
+
+	if yesno ${clock_hctosys:-YES}; then
+		_hwclock --hctosys $utc_cmd $clock_args
+		: $(( retval += $? ))
+	fi
+
+	eend $retval "Failed to set the system clock"
+
+	return 0
+}
+
+stop()
+{
+	# Don't tweak the hardware clock on LiveCD halt.
+	[ -n "$CDBOOT" ] && return 0
+	yesno ${clock_systohc:-YES} || return 0
+
+	ebegin "Setting hardware clock using the system clock [$utc]"
+	_hwclock --systohc $utc_cmd $clock_args
+	eend $? "Failed to sync clocks"
+}
+
+save()
+{
+	clock_systohc=yes
+	stop
+}
+
+show()
+{
+	hwclock --show $utc_cmd $clock_args
+}
+HWCLOCK_INIT
+    chmod 755 "$DESTDIR/etc/init.d/hwclock"
 fi
 # gendepends.sh relative-path fix: upstream hard-codes `etc/init.d` (no
 # leading slash) as the first init-script dir, then does `cd "$_dir"`
@@ -146,8 +389,125 @@ for svc in killprocs mount-ro savecache; do
         ln -sf "/etc/init.d/$svc" "$DESTDIR/etc/runlevels/shutdown/$svc"
     fi
 done
-find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \\; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \\; 2>/dev/null || true"""
+# Upstream's meson_runlevels.sh also links keymaps, save-keymaps and
+# save-termencoding into boot. They need kbd_mode/loadkeys/dumpkeys
+# from GNU kbd, which jonerix does not ship, so they fail on every boot
+# (termencoding itself works and stays). jonerix-raspi5-fixups 1.6.32
+# strips them on Pi hosts, but every openrc reinstall put them back,
+# and `jpkg upgrade` installs openrc after the fixups package.
+rm -f "$DESTDIR/etc/runlevels/boot/keymaps" "$DESTDIR/etc/runlevels/boot/save-keymaps" "$DESTDIR/etc/runlevels/boot/save-termencoding"
+# Guard: every regular file in etc/init.d must start with exactly
+# #!/bin/openrc-run. gendepends.sh silently drops a script with any
+# other first line from the deptree (the sysctl bug above), and
+# jonerix has no /sbin/openrc-run for a /sbin shebang to exec.
+# Symlinks (functions.sh -> /lib/rc/sh/functions.sh) are not services.
+bad=0
+for f in "$DESTDIR"/etc/init.d/*; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    first=$(head -n 1 "$f")
+    if [ "$first" != "#!/bin/openrc-run" ]; then
+        echo "openrc: ${f#"$DESTDIR"}: first line is '$first', want '#!/bin/openrc-run'" >&2
+        bad=1
+    fi
+done
+[ "$bad" = 0 ] || exit 1
+# Guard: pkg_prefix must not alias /etc on merged-usr (see configure).
+if grep -q '^/usr/etc/init\.d' "$DESTDIR/lib/rc/sh/gendepends.sh" || grep -q '/usr/etc/init\.d' "$DESTDIR/lib/librc.so.1"; then
+    echo "openrc: pkg_prefix still points at /usr, which aliases /etc on merged-usr" >&2
+    exit 1
+fi
+# Strip. Inside jpkg's triple-quoted strings a backslash reaches the
+# shell as written, so this must be a single backslash before `;` (the
+# old doubled form left find without its terminator and nothing was
+# stripped). llvm-strip refuses non-ELF files (rc-sstat, on_ac_power)
+# without touching them.
+find "$DESTDIR/bin" "$DESTDIR/lib/rc/bin" "$DESTDIR/lib/rc/sbin" -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
+find "$DESTDIR/lib" -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+
+[hooks]
+# 1. Runlevel links. openrc <= 0.54-r6 had a relative sysconfdir, so
+#    `rc-update add` wrote /etc/runlevels/<rl>/<svc> -> etc/init.d/<svc>,
+#    which resolves under /etc/runlevels/<rl>/ and dangles. librc's
+#    ls_dir() stat()s each entry and skips dangling ones without a
+#    word, and a later `rc-update add` fails with EEXIST instead of
+#    repairing the link (tormenta: default/containerd never started at
+#    boot). Re-point a dangling relative link at /etc/init.d/<svc> when
+#    that script exists; drop any other runlevel link whose script is
+#    gone (tormenta: default/ntp-bootstrap after its package left).
+# 2. On the running system, rebuild the dependency cache now so the
+#    fixed sysctl script, the single init.d scan and the backup-name
+#    filter are in effect before the next boot. Nothing is started.
+# 3. pid 1 re-exec. jpkg replaces files by unlink + copy, so after an
+#    openrc (or musl) upgrade openrc-init still maps the old, deleted
+#    inodes. The kernel then refuses to remount / read-only at halt
+#    (EBUSY while an unlinked inode is still referenced), mount-ro
+#    fails and the next boot replays the journal. When pid 1 is
+#    openrc-init and maps deleted files, ask it to re-exec itself
+#    (openrc-shutdown --reexec; openrc-init execs argv[0] "reexec" and
+#    skips sysinit/boot). Only on the live root: in jpkg's chroot hook
+#    /run/openrc/init.ctl does not exist and / is not pid 1's root.
+#    The new binary is test-run first: run as a non-init process it
+#    must reach main() and exit 1, else the re-exec is skipped.
+post_install = """# toybox sh is /bin/sh for a moment while an image is bootstrapped
+# (Dockerfile.core) and mis-runs the loop below; a fresh root has no
+# stale links to repair and no openrc-init to re-exec, so skip it.
+case "$(readlink /proc/$$/exe 2>/dev/null)" in
+    */toybox) exit 0 ;;
+esac
+# _r is the target root as a path prefix; empty means the live root.
+# The chroot hook path keeps the host-side JPKG_ROOT in the environment;
+# that path does not exist inside the chroot, where "/" is the target.
+_r=${JPKG_ROOT:-}
+[ "$_r" = / ] && _r=
+[ -z "$_r" ] || [ -d "$_r/etc" ] || _r=
+
+for _l in "$_r"/etc/runlevels/*/*; do
+    [ -L "$_l" ] || continue
+    _t=$(readlink "$_l") || continue
+    case "$_t" in
+        /*)
+            { [ -e "$_r$_t" ] || [ -L "$_r$_t" ]; } && continue
+            rm -f "$_l" && echo "openrc: removed runlevel link ${_l#"$_r"} (target $_t is missing)"
+            ;;
+        *)
+            [ -e "$_l" ] && continue
+            _svc=${_t##*/}
+            if [ -n "$_svc" ] && { [ -e "$_r/etc/init.d/$_svc" ] || [ -L "$_r/etc/init.d/$_svc" ]; }; then
+                rm -f "$_l" && ln -s "/etc/init.d/$_svc" "$_l" && echo "openrc: repaired runlevel link ${_l#"$_r"} -> /etc/init.d/$_svc (was $_t)"
+            else
+                rm -f "$_l" && echo "openrc: removed runlevel link ${_l#"$_r"} (target $_t is missing)"
+            fi
+            ;;
+    esac
+done
+
+[ -z "$_r" ] || exit 0
+[ -d /run/openrc ] || exit 0
+_p1=$(stat -L -c %d:%i /proc/1/root/ 2>/dev/null)
+[ -n "$_p1" ] && [ "$_p1" = "$(stat -L -c %d:%i / 2>/dev/null)" ] || exit 0
+
+if [ -x /bin/rc-update ]; then
+    (cd / && /bin/rc-update -u) >/dev/null 2>&1 || echo "openrc: rc-update -u failed; the dependency cache is rebuilt at next boot"
+fi
+
+case "$(readlink /proc/1/exe 2>/dev/null)" in
+    */openrc-init|*"/openrc-init (deleted)") ;;
+    *) exit 0 ;;
+esac
+[ -p /run/openrc/init.ctl ] || exit 0
+grep -q ' (deleted)$' /proc/1/maps 2>/dev/null || exit 0
+/bin/openrc-init >/dev/null 2>&1
+if [ $? -ne 1 ]; then
+    echo "openrc: WARNING: /bin/openrc-init does not run; not re-executing pid 1. Reboot to finish the upgrade."
+    exit 0
+fi
+echo "openrc: pid 1 still maps replaced files; asking openrc-init to re-exec"
+if command -v timeout >/dev/null 2>&1; then
+    timeout 10 /bin/openrc-shutdown --reexec >/dev/null 2>&1
+else
+    /bin/openrc-shutdown --reexec >/dev/null 2>&1
+fi || echo "openrc: WARNING: re-exec request failed; / may stay read-write at the next halt until you reboot"
+exit 0"""
 
 [depends]
 # mksh: OpenRC's shell scripts are rewritten at install time to use
