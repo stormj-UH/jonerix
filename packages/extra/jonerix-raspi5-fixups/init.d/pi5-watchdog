@@ -1,0 +1,59 @@
+#!/bin/openrc-run
+# pi5-watchdog — feed the hardware watchdog (bcm2835-wdt, 15 s) so a hung
+# board resets itself instead of sitting dead until someone pulls the power.
+# tormenta hard-hung on 2026-10-02 and stayed down ~44 h; kernel.panic=10
+# (61-pi5-panic-reboot.conf) only covers panics, not a wedged kernel.
+#
+# Also lowers the RCU CPU stall report to $rcu_stall_timeout s (kernel
+# default 21): the reset comes 15 s after the last feed (10-15 s after a hang
+# starts) and this kernel has no soft-lockup detector, so a stall report sent over netconsole (see
+# init.d/netconsole) must go out before the reset to be seen at all.
+#
+# Stops after containerd/tailscaled/netmount, so a kernel wedge while they stop
+# still resets the board; a stop() that merely blocks in userspace keeps the
+# feeder scheduled, so such a hung reboot is NOT reset. Disarmed cleanly on
+# stop (magic close). Enabled once per install: post_install links it into
+# the default runlevel the first time only, so `rc-update del` sticks. Settings in
+# /etc/conf.d/pi5-watchdog: interval= (1-7 s, default 5), device=,
+# rcu_stall_timeout= (0 leaves the kernel default).
+#
+# Part of jonerix-raspi5-fixups — 0BSD License
+
+description="Feed the hardware watchdog so a hung board resets itself"
+
+: "${device:=/dev/watchdog}"
+: "${interval:=5}"
+: "${rcu_stall_timeout:=7}"
+
+supervisor="supervise-daemon"
+command="/bin/pi5-watchdog"
+command_args="${device} ${interval}"
+pidfile="/run/pi5-watchdog.pid"
+respawn_delay=2
+# A crash loop ends in a reset rather than respawning for ever (each unclean
+# close pings the watchdog). >= 5: one unclean exit can cost 2-3 respawns
+# while the old sleeper still holds the device (EBUSY).
+respawn_max=5
+respawn_period=60
+
+depend() {
+    need localmount
+    after boot-trace pi5-heartbeat
+    before containerd tailscaled tailscale-up netmount
+    keyword -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+start_pre() {
+    [ -c "$device" ] || { eerror "$device not found (bcm2835-wdt not loaded?)"; return 1; }
+    case $interval in ''|*[!0-9]*) eerror "interval must be whole seconds"; return 1 ;; esac
+    [ "$interval" -ge 1 ] && [ "$interval" -le 7 ] || { eerror "interval must be 1-7 s (timeout is 15 s)"; return 1; }
+    p=/sys/module/rcupdate/parameters/rcu_cpu_stall_timeout
+    case $rcu_stall_timeout in
+        ''|0) ;;
+        *[!0-9]*) ewarn "rcu_stall_timeout must be whole seconds; leaving the kernel default" ;;
+        *) [ "$rcu_stall_timeout" -lt $((15 - interval)) ] ||
+               ewarn "rcu_stall_timeout=${rcu_stall_timeout}s is not below 15 - interval: a stall report can lose the race with the reset"
+           [ -w "$p" ] && echo "$rcu_stall_timeout" > "$p" ;;
+    esac
+    return 0
+}

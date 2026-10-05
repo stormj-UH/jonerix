@@ -1,0 +1,105 @@
+#!/bin/openrc-run
+# netconsole — stream every kernel message to another host over UDP, so a
+# panic or lockup leaves its last words somewhere even when the root disk or
+# syslogd never gets to write them (the Pi 5 has no pstore backend).
+#
+# NOT enabled by default: the target is site-specific. Configure
+# /etc/conf.d/netconsole, then `rc-update add netconsole default`:
+#   nc_target_ip=10.0.0.2            # required: the receiving host
+#   nc_target_mac=70:85:c2:93:06:e6  # required: its MAC (no ARP at panic time)
+#   nc_target_port=6666              # default 6666
+#   nc_dev=eth0                      # default eth0
+#   nc_src_ip=10.0.0.8               # default: the first non-link-local IPv4
+#                                    # on nc_dev once one appears
+#   nc_src_port=6665                 # default 6665
+#   nc_wait=30                       # seconds to wait for the source address
+# Any UDP listener works as the receiver (e.g. `nc -lu 6666`); messages use
+# the extended format (`+`: level, sequence and timestamp on every line).
+#
+# - The source address is fixed at load: netpoll reads it once, and dhcpcd's
+#   IPv4LL 169.254.x.y can be on the link before the DHCP lease.
+# - "Every message" needs ignore_loglevel on the kernel cmdline: OpenRC's
+#   dmesg service sets console_loglevel to 1, which leaves only level 0.
+# - Stays loaded through shutdown/reboot (keyword -shutdown), so a hanging
+#   reboot still leaves lines on the receiver.
+# - Loaded with xz + insmod: the modules ship as .ko.xz, and toybox modprobe
+#   and /bin/modprobe-shim both drop module parameters.
+# - A (re)load replays the whole dmesg ring buffer to the receiver.
+#
+# Part of jonerix-raspi5-fixups — 0BSD License
+
+description="Stream kernel messages to another host over UDP (netconsole)"
+
+: "${nc_dev:=eth0}"
+: "${nc_src_ip:=}"
+: "${nc_src_port:=6665}"
+: "${nc_target_ip:=}"
+: "${nc_target_port:=6666}"
+: "${nc_target_mac:=}"
+: "${nc_wait:=30}"
+
+depend() {
+    need localmount
+    use dhcpcd net-online
+    after dhcpcd net-online
+    keyword -shutdown -docker -jail -lxc -openvz -prefix -systemd-nspawn -vserver
+}
+
+_first_ipv4() {
+    ip -4 -o addr show dev "$nc_dev" 2>/dev/null | while read -r _i _d _f a _r; do
+        case $a in 169.254.*) ;; */*) echo "${a%/*}"; break ;; esac
+    done
+}
+
+start() {
+    if [ -z "$nc_target_ip" ] || [ -z "$nc_target_mac" ]; then
+        eerror "set nc_target_ip and nc_target_mac in /etc/conf.d/netconsole"
+        return 1
+    fi
+    [ "$(cat /sys/module/printk/parameters/ignore_loglevel 2>/dev/null)" = Y ] ||
+        ewarn "ignore_loglevel is off: only levels below $(cut -f1 /proc/sys/kernel/printk) are sent"
+    if grep -q "^netconsole " /proc/modules 2>/dev/null; then
+        einfo "netconsole is already loaded"
+        return 0
+    fi
+    ebegin "Waiting for ${nc_src_ip:-an IPv4 address} on ${nc_dev}"
+    i=0
+    while :; do
+        if [ -n "$nc_src_ip" ]; then
+            ip -4 -o addr show dev "$nc_dev" 2>/dev/null | grep -qF " inet ${nc_src_ip}/" && break
+        else
+            src=$(_first_ipv4) && [ -n "$src" ] && { nc_src_ip=$src; break; }
+        fi
+        if [ "$i" -ge "$nc_wait" ]; then
+            if [ -z "$nc_src_ip" ]; then eend 1 "no IPv4 address on ${nc_dev} after ${nc_wait}s"; return 1; fi
+            ewarn "${nc_src_ip} not on ${nc_dev} after ${nc_wait}s; loading anyway"
+            break
+        fi
+        sleep 1; i=$((i + 1))
+    done
+    eend 0
+    ko=/lib/modules/$(uname -r)/kernel/drivers/net/netconsole.ko
+    ebegin "Loading netconsole: ${nc_src_ip}/${nc_dev} -> ${nc_target_ip}:${nc_target_port} (${nc_target_mac})"
+    if [ -f "$ko.xz" ]; then
+        if ! xz -dc "$ko.xz" > /run/netconsole.ko; then
+            rm -f /run/netconsole.ko
+            eend 1 "cannot decompress $ko.xz (is xz installed?)"
+            return 1
+        fi
+        ko=/run/netconsole.ko
+    fi
+    insmod "$ko" "netconsole=+${nc_src_port}@${nc_src_ip}/${nc_dev},${nc_target_port}@${nc_target_ip}/${nc_target_mac}"
+    rc=$?
+    rm -f /run/netconsole.ko
+    eend $rc
+}
+
+stop() {
+    if yesno "$RC_GOINGDOWN"; then
+        einfo "Leaving netconsole loaded for the shutdown/reboot messages"
+        return 0
+    fi
+    ebegin "Unloading netconsole"
+    rmmod netconsole
+    eend $?
+}

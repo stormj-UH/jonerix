@@ -1,9 +1,42 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.33"
+version = "1.6.34"
 arch = "aarch64"
 license = "0BSD"
-description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor, reset-cause boot traces + heartbeat, under-voltage hwmon, serial login) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor, reset-cause boot traces + heartbeat, under-voltage hwmon, serial login, hardware watchdog, netconsole) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.34: hang recovery and remote kernel logs.
+#   - new pi5-watchdog service (default runlevel) + /bin/pi5-watchdog:
+#     feeds bcm2835-wdt (15 s) from an mksh loop that execs nothing per
+#     feed, so only a kernel that stops scheduling userspace misses one;
+#     the board then resets itself. tormenta hard-hung 2026-10-02 and sat
+#     dead ~44 h: kernel.panic=10 covers panics, not a wedged kernel.
+#     It never exits while armed (an unclean close PINGS the hardware and
+#     a respawn would reopen it, keeping a broken board up for ever),
+#     disarms with the magic 'V' on stop, respawns at most 5 times a
+#     minute, stops after containerd/tailscaled/netmount, records
+#     armed/disarmed in /var/log/reboot-trace/watchdog, and lowers the RCU
+#     CPU stall report to 7 s so it is sent before the reset. Tested on
+#     tormenta: SIGSTOP on the feeder -> reset at +16 s, back at +36 s.
+#     Enabled ONCE per install and only on a Pi 5 (or an image build):
+#     a later `rc-update del pi5-watchdog default` survives upgrades.
+#     post_install retires the hand-made hw-watchdog tormenta ran from
+#     2026-10-04 (two feeders cannot share /dev/watchdog) into
+#     /etc/jpkg/raspi5-fixups/retired/, checking that it really stopped;
+#     pre_install keeps a copy of an unowned /etc/init.d/netconsole there.
+#   - new netconsole service (NOT enabled by default; configure
+#     /etc/conf.d/netconsole): extended-format netconsole to a receiver,
+#     fixed source address (dhcpcd's IPv4LL can be first), target MAC
+#     (no ARP at panic time), xz + insmod (no modprobe passes module
+#     parameters here), stays loaded through shutdown. Takes over
+#     tormenta's hand-made service of the same name.
+#   - boot-trace: PM_RSTS 0x1020 (HADPOR + HADWRF) is what both a cold
+#     `reboot` and a watchdog expiry leave on a Pi 5, and 0x1000 alone is
+#     a pulled plug (tormenta, 2026-10-04). Test the PM watchdog bits
+#     before HADPOR, so a reset through the watchdog is no longer called a
+#     power loss; [previous boot] shows whether pi5-watchdog was armed when
+#     the previous boot ended. watchdog_bootstatus is always 0 on
+#     bcm2835-wdt; say so.
+#
 # 1.6.33: reboot diagnostics, module loading and ownership cleanup.
 #   - boot-trace records why the board came up: PM_RSTS and the PMIC
 #     power_reset word from /proc/device-tree/chosen, whether the
@@ -323,6 +356,11 @@ install -Dm755 init.d/reboot-trace-shutdown $DESTDIR/etc/init.d/reboot-trace-shu
 # Reboot diagnostics: last-alive heartbeat, read back by boot-trace.
 install -Dm755 bin/pi5-heartbeat $DESTDIR/bin/pi5-heartbeat
 install -Dm755 init.d/pi5-heartbeat $DESTDIR/etc/init.d/pi5-heartbeat
+# Hardware watchdog feeder (1.6.34, default runlevel).
+install -Dm755 bin/pi5-watchdog $DESTDIR/bin/pi5-watchdog
+install -Dm755 init.d/pi5-watchdog $DESTDIR/etc/init.d/pi5-watchdog
+# netconsole to a receiver (1.6.34; not enabled: needs /etc/conf.d/netconsole).
+install -Dm755 init.d/netconsole $DESTDIR/etc/init.d/netconsole
 # Under-voltage / throttling alarms: nothing coldplugs raspberrypi-hwmon.
 install -Dm755 init.d/pi5-hwmon $DESTDIR/etc/init.d/pi5-hwmon
 # Serial console login (debug UART by default; not enabled by default).
@@ -491,6 +529,12 @@ install = ""
 pre_install = """if [ -f /etc/init.d/hwclock ] && [ ! -L /etc/init.d/hwclock ]; then
     mkdir -p /etc/jpkg/raspi5-fixups
     cp -p /etc/init.d/hwclock /etc/jpkg/raspi5-fixups/hwclock.keep 2>/dev/null || true
+fi
+# 1.6.34 ships /etc/init.d/netconsole. Keep a copy of a hand-made one
+# (tormenta, 2026-10-04) before the install overwrites it.
+if [ -f /etc/init.d/netconsole ] && ! grep -q " etc/init.d/netconsole$" /var/db/jpkg/installed/jonerix-raspi5-fixups/files 2>/dev/null; then
+    mkdir -p /etc/jpkg/raspi5-fixups/retired
+    cp -p /etc/init.d/netconsole /etc/jpkg/raspi5-fixups/retired/init.d-netconsole 2>/dev/null || true
 fi
 exit 0"""
 
@@ -735,6 +779,37 @@ for svc in ntp-bootstrap ntpd shadow-login syslogd snooze-crond wpa_supplicant_w
 done
 [ -f /etc/init.d/reboot-trace-shutdown ] && ln -sf /etc/init.d/reboot-trace-shutdown /etc/runlevels/shutdown/reboot-trace-shutdown 2>/dev/null || true
 
+# --- pi5-watchdog (1.6.34) ---
+# First retire the hand-made hw-watchdog tormenta ran from 2026-10-04: two
+# feeders cannot share /dev/watchdog (the second open gets EBUSY). A clean
+# stop disarms it; if it will not stop, its feeder keeps the board fed from
+# memory until the next boot and pi5-watchdog is not started now.
+_wd_old_running=
+if [ -f /etc/init.d/hw-watchdog ]; then
+    command -v rc-service >/dev/null 2>&1 && rc-service hw-watchdog stop >/dev/null 2>&1
+    if [ -f /run/hw-watchdog.pid ] && kill -0 "$(cat /run/hw-watchdog.pid)" 2>/dev/null; then
+        kill -TERM "$(cat /run/hw-watchdog.pid)" 2>/dev/null; sleep 2
+        kill -0 "$(cat /run/hw-watchdog.pid)" 2>/dev/null && _wd_old_running=1
+    fi
+    rm -f /etc/runlevels/boot/hw-watchdog /etc/runlevels/default/hw-watchdog 2>/dev/null
+    mkdir -p /etc/jpkg/raspi5-fixups/retired
+    [ -e /etc/init.d/hw-watchdog ] && mv -f /etc/init.d/hw-watchdog /etc/jpkg/raspi5-fixups/retired/init.d-hw-watchdog 2>/dev/null
+    [ -e /etc/conf.d/hw-watchdog ] && mv -f /etc/conf.d/hw-watchdog /etc/jpkg/raspi5-fixups/retired/conf.d-hw-watchdog 2>/dev/null
+    [ -e /usr/local/sbin/hw-watchdog ] && mv -f /usr/local/sbin/hw-watchdog /etc/jpkg/raspi5-fixups/retired/sbin-hw-watchdog 2>/dev/null
+    rm -f /var/log/reboot-trace/hw-watchdog /var/log/reboot-trace/hw-watchdog.prev 2>/dev/null
+fi
+# Enable it ONCE, on a Pi 5 or in an image build (no device tree to read),
+# so a later `rc-update del pi5-watchdog default` survives upgrades.
+if [ -f /etc/init.d/pi5-watchdog ] && [ ! -e /etc/jpkg/raspi5-fixups/pi5-watchdog.enabled ]; then
+    if [ ! -r /proc/device-tree/model ] || grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
+        ln -sf /etc/init.d/pi5-watchdog /etc/runlevels/default/pi5-watchdog 2>/dev/null &&
+            { mkdir -p /etc/jpkg/raspi5-fixups; true > /etc/jpkg/raspi5-fixups/pi5-watchdog.enabled; }
+    fi
+fi
+if grep -q '^[[:space:]]*nc_rcu_stall_timeout=' /etc/conf.d/netconsole 2>/dev/null; then
+    echo "raspi5-fixups: nc_rcu_stall_timeout in /etc/conf.d/netconsole is ignored from 1.6.34; pi5-watchdog sets the RCU stall timeout (rcu_stall_timeout= in /etc/conf.d/pi5-watchdog)"
+fi
+
 # --- shadow login defaults ---
 # shadow owns /etc/init.d/shadow-login and /etc/login.defs. Keep ownership
 # there, but normalize Pi images away from the one-minute idle timeout
@@ -825,6 +900,14 @@ if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi 5" /proc/device-tree/
         rc-service pi5-heartbeat start 2>/dev/null || true
     fi
 
+    # 1.6.34: start pi5-watchdog now if it is enabled (see the runlevel
+    # section above), unless the retired hw-watchdog would not stop.
+    if [ -n "$_wd_old_running" ]; then
+        echo "raspi5-fixups: the old hw-watchdog would not stop; pi5-watchdog starts at the next boot" >&2
+    elif [ -L /etc/runlevels/default/pi5-watchdog ] && command -v rc-service >/dev/null 2>&1; then
+        rc-service pi5-watchdog start 2>/dev/null || true
+    fi
+
     # Apply this package's sysctl drop-ins now instead of at next boot.
     # Only these two files: re-running every sysctl.d file live is the
     # sysctl service's job.
@@ -888,6 +971,12 @@ exit 0"""
 # (jpkg removes manifest-owned files automatically; these symlinks are dynamic.)
 # Also restore the original /bin/adduser symlink if we have a record of it.
 post_remove = """rm -f /etc/runlevels/boot/pi5-drm-modules /etc/runlevels/default/pi5-drm-modules
+# pi5-watchdog (1.6.34): its init script is gone by now, but the feeder may
+# still run from memory. TERM its supervisor: the clean stop disarms the
+# watchdog. Leaving it armed with nothing feeding it would reset the board.
+[ -f /run/pi5-watchdog.pid ] && kill -TERM "$(cat /run/pi5-watchdog.pid)" 2>/dev/null || true
+rm -f /etc/runlevels/default/pi5-watchdog /etc/runlevels/default/netconsole
+rm -f /etc/jpkg/raspi5-fixups/pi5-watchdog.enabled
 rm -f /etc/runlevels/boot/boot-trace /etc/runlevels/boot/disable-eee /etc/runlevels/boot/fan-control /etc/runlevels/boot/netfilter-nft-modules /etc/runlevels/boot/pi5-hwmon /etc/runlevels/boot/pi5-wifi /etc/runlevels/boot/pi5-cold-reboot /etc/runlevels/default/tty1-console /etc/runlevels/default/wpa_supplicant_wlan0 /etc/runlevels/default/snooze-crond /etc/runlevels/default/disable-eee-late /etc/runlevels/default/pi5-heartbeat /etc/runlevels/default/serial-login /etc/runlevels/shutdown/reboot-trace-shutdown
 # hwclock's boot link and /etc/init.d/hwclock are openrc's (1.6.33); leave them.
 # The shadow-login backup is stale by now: shadow owns the live script, so
@@ -989,5 +1078,5 @@ exit 0"""
 [depends]
 # pi5-wake-on-power is a Python 3 stdlib script — no pip deps.
 # python3 itself is PSF-2.0, on jonerix's permissive allowlist.
-runtime = ["musl", "openrc", "python3", "shadow", "toybox"]
+runtime = ["musl", "mksh", "openrc", "python3", "shadow", "toybox"]
 build = ["rust"]

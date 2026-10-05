@@ -1,0 +1,57 @@
+#!/bin/mksh
+# pi5-watchdog -- feed the hardware watchdog while the kernel still schedules us.
+#
+# Usage: pi5-watchdog [device] [interval-seconds]   (default /dev/watchdog 5)
+#
+# Opening the device arms it (Pi 5 bcm2835-wdt: 15 s, the hardware maximum).
+# Every $interval s we write one byte with mksh's builtin `print` and wait on
+# mksh's builtin `sleep` (a forked subshell). Nothing is exec'd per feed, so
+# memory pressure or a slow USB disk cannot delay a feed: what stops the
+# feeding is the kernel itself no longer scheduling userspace -- a hard hang
+# or a wedged scheduler. Root-disk loss is NOT detected (the shell is in page
+# cache).
+#
+# Never exit while armed. An unclean close does not let the timer run out:
+# the kernel logs "watchdog left running" and PINGS the hardware, and
+# supervise-daemon would reopen the device 2 s later -- a broken feeder would
+# keep the board alive for ever. So a failed feed parks the script holding
+# the device and feeding nothing; the board resets within 15 s.
+#
+# A deliberate stop (TERM/INT/HUP: openrc, shutdown) writes the magic 'V' and
+# closes the device, which disarms it. /var/log/reboot-trace/watchdog records
+# armed/disarmed with the boot id; boot-trace reads it before this service
+# starts, and at start the old marker is kept as watchdog.prev.
+#
+# Tested on tormenta 2026-10-04: SIGSTOP on the feeder -> reset at +16 s,
+# back at +36 s. An expiry leaves PM_RSTS 0x1020 (HADPOR + HADWRF), the same
+# as a cold `reboot`; a pulled plug leaves 0x1000. boot-trace tells them
+# apart with [previous boot] (clean/UNCLEAN) and this marker.
+#
+# Part of jonerix-raspi5-fixups — 0BSD License
+dev=${1:-/dev/watchdog}
+interval=${2:-5}
+marker=/var/log/reboot-trace/watchdog
+s=
+
+[ -c "$dev" ] || { print -u2 "pi5-watchdog: $dev is not a character device"; exit 1; }
+bid=; read -r bid </proc/sys/kernel/random/boot_id
+# The trap goes in right after the open, before anything forks: a TERM that
+# arrived while the device was armed and no trap was set would close it
+# without the magic 'V' and the board would reset 15 s later (a poweroff
+# racing a respawn would become a reboot).
+exec 3>"$dev" || exit 1
+trap '[ -n "$s" ] && kill "$s" 2>/dev/null; print -n V >&3; exec 3>&-; print "disarmed boot_id=$bid" >"$marker" 2>/dev/null; exit 0' TERM INT HUP
+mkdir -p "${marker%/*}" 2>/dev/null
+[ -e "$marker" ] && mv -f "$marker" "$marker.prev" 2>/dev/null
+print "armed boot_id=$bid since=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) interval=${interval}s" >"$marker" 2>/dev/null
+
+while :; do
+    print -n . >&3 || break
+    sleep "$interval" &
+    s=$!
+    wait "$s"              # non-zero only if the sleeper was killed: just feed again
+    s=
+done
+# A feed failed: hold the device and stop feeding (see above).
+print "feed failed, letting the watchdog expire boot_id=$bid" >"$marker" 2>/dev/null
+while :; do sleep 3600 & s=$!; wait "$s"; s=; done

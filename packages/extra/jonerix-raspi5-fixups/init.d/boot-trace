@@ -8,7 +8,8 @@
 #                    firmware's /chosen device-tree node.
 #   [previous boot]  whether the previous boot left a shutdown trace
 #                    (clean) or not (unclean), the last heartbeat that
-#                    pi5-heartbeat wrote before the reset, and whether
+#                    pi5-heartbeat wrote before the reset, whether
+#                    pi5-watchdog was armed when it ended, and whether
 #                    ext4 had to replay its journal.
 #   [ext4]           per-filesystem errors_count from /sys/fs/ext4.
 # The directory keeps the newest $keep boot and shutdown traces.
@@ -24,7 +25,7 @@ description="Capture early jonerix boot diagnostics"
 depend() {
     need procfs sysfs root
     after localmount
-    before dhcpcd network ntpd tailscaled tailscale-up sshd pi5-heartbeat
+    before dhcpcd network ntpd tailscaled tailscale-up sshd pi5-heartbeat pi5-watchdog
 }
 
 # First line after a "[boot id]" header in a trace file. Plain sh: jonerix
@@ -84,14 +85,17 @@ _reset_cause() {
             ''|*[!0-9a-f]*) v=0 ;;
         esac
         v=$((0x$v))
-        # PM_RSTS bits: 0x1000 HADPOR (power-on reset; on a Pi 5 this
-        # also covers reboot=c cold reboots, so read it together with
-        # [previous boot] below), 0x10/0x20/0x40 watchdog quick/full/hard
-        # reset (a warm reboot or a watchdog expiry).
-        if [ $((v & 0x1000)) -ne 0 ]; then
-            echo "rsts decode: power-on reset (power loss, PSU brown-out, or a cold reboot)"
-        elif [ $((v & 0x70)) -ne 0 ]; then
-            echo "rsts decode: watchdog reset (warm reboot or watchdog expiry)"
+        # PM_RSTS bits: 0x1000 HADPOR (power-on reset), 0x10/0x20/0x40
+        # watchdog quick/full/hard reset. Measured on tormenta 2026-10-04:
+        # a cold `reboot` and a pi5-watchdog expiry both leave 0x1020
+        # (HADPOR + HADWRF: every Pi 5 reset through the PM watchdog also
+        # sets HADPOR), a pulled plug leaves 0x1000 alone. So the watchdog
+        # bits decide, and [previous boot] tells a reboot (clean) from an
+        # expiry or kernel.panic reboot (UNCLEAN).
+        if [ $((v & 0x70)) -ne 0 ]; then
+            echo "rsts decode: reset through the PM watchdog: a reboot, a kernel.panic reboot or a pi5-watchdog expiry ([previous boot] clean = reboot, UNCLEAN = expiry or panic)"
+        elif [ $((v & 0x1000)) -ne 0 ]; then
+            echo "rsts decode: power-on reset only (power lost, pulled or browned out)"
         else
             echo "rsts decode: no known reset bit set"
         fi
@@ -100,10 +104,11 @@ _reset_cause() {
     fi
     printf 'watchdog_bootstatus='
     cat /sys/class/watchdog/watchdog0/bootstatus 2>/dev/null || echo '?'
+    echo "(bcm2835-wdt never sets bootstatus: always 0; see the watchdog line under [previous boot])"
 }
 
 _previous_boot() {
-    local d pb sb hb
+    local d pb sb hb wd
     d=$1
     pb=$(_trace_boot_id "$d/latest-boot.log")
     sb=$(_trace_boot_id "$d/latest-shutdown.log")
@@ -123,6 +128,27 @@ _previous_boot() {
         esac
     else
         echo "last heartbeat: none recorded"
+    fi
+    # pi5-watchdog's marker, read before pi5-watchdog starts and rotates it.
+    if [ -r "$d/watchdog" ]; then
+        wd=$(cat "$d/watchdog" 2>/dev/null)
+        # "disarmed/feed failed ... boot_id=X" end at the id; "armed
+        # boot_id=X since=..." does not: match both.
+        if [ -z "$pb" ]; then
+            echo "watchdog marker: $wd"
+        else
+            case "$wd" in
+                *"boot_id=$pb"|*"boot_id=$pb "*)
+                    echo "watchdog at the end of the previous boot: $wd" ;;
+                *)  echo "watchdog at the end of the previous boot: not running (newest record is from an older boot: $wd)" ;;
+            esac
+        fi
+        case "$wd" in
+            armed*"boot_id=$pb "*) [ -n "$pb" ] && [ "$pb" != "$sb" ] &&
+                echo "note: pi5-watchdog was feeding when boot_id $pb ended uncleanly: a PM-watchdog rsts means a watchdog expiry (hang) or a kernel.panic reboot" ;;
+        esac
+    else
+        echo "watchdog at the end of the previous boot: no record (pi5-watchdog not running)"
     fi
     if dmesg 2>/dev/null | grep -q 'EXT4-fs .*recovery complete'; then
         echo "ext4 journal recovery this boot: yes (the filesystem was not unmounted cleanly)"
