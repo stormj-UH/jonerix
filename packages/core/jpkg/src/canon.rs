@@ -168,6 +168,70 @@ mod tests {
         [0u8; 32]
     }
 
+    // ── 0. Tripwire: canonical bytes are frozen at their 2.2.10 shape ─────────
+    //
+    // A host verifies a package by re-serialising the Metadata IT parsed.
+    // Nothing uses deny_unknown_fields, so an older jpkg silently drops a
+    // field it does not know, re-serialises without it, gets different
+    // bytes, and rejects the signature -- of every package, including the
+    // jpkg upgrade that would fix it.  The digest below was captured by
+    // running this exact test body against the unmodified 2.2.10 tree
+    // (commit f63d5c37) in builder-arm64.  If it changes, a field was added,
+    // removed or reordered, or the toml crate changed its output: do not
+    // re-pin it without bumping CANON_VERSION and planning the rollout.
+    //
+    // The fixture sets every field, and one hook carries a backslash so the
+    // serialiser's literal-string ('''...''') form is pinned too.
+    const GOLDEN_SHA256_2_2_10: &str =
+        "90c11be012c8d176ef42d8feda956c4997935421d0ae73c670a3fcd302321118";
+
+    fn golden_fixture() -> Metadata {
+        Metadata {
+            package: PackageSection {
+                name: Some("goldenpkg".to_owned()),
+                version: Some("1.2.3-r4".to_owned()),
+                license: Some("BSD-2-Clause".to_owned()),
+                description: Some("canonical-bytes tripwire fixture".to_owned()),
+                arch: Some("aarch64".to_owned()),
+                replaces: vec!["oldpkg".to_owned()],
+                conflicts: vec!["rivalpkg".to_owned()],
+            },
+            depends: DependsSection {
+                runtime: vec!["musl".to_owned(), "mksh".to_owned()],
+                build: vec!["clang".to_owned()],
+            },
+            hooks: HooksSection {
+                pre_install: Some("exit 0".to_owned()),
+                post_install: Some("printf '%s\\n' \"done\"\nexit 0".to_owned()),
+                pre_remove: Some("true".to_owned()),
+                post_remove: Some("rm -f /etc/goldenpkg.conf\nexit 0".to_owned()),
+            },
+            files: FilesSection {
+                sha256: Some(
+                    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".to_owned(),
+                ),
+                size: Some(4096),
+            },
+            signature: Some(Signature {
+                algorithm: "ed25519".to_owned(),
+                key_id: "jonerix-2026".to_owned(),
+                sig: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_owned(),
+            }),
+        }
+    }
+
+    #[test]
+    fn canonical_bytes_match_2_2_10_golden() {
+        let bytes = canonical_bytes(&golden_fixture(), &[0x5au8; 32]);
+        let digest = hex::encode(Sha256::digest(&bytes));
+        let body = String::from_utf8_lossy(&bytes[CANON_PREFIX.len() + 1 + 32..]);
+        assert_eq!(
+            digest, GOLDEN_SHA256_2_2_10,
+            "canonical bytes changed; signed packages would no longer verify on \
+             older hosts.\n--- canonical TOML body ---\n{body}"
+        );
+    }
+
     fn ones_sha256() -> [u8; 32] {
         [1u8; 32]
     }
