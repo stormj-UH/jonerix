@@ -1,6 +1,6 @@
 [package]
 name = "dhcpcd"
-version = "10.1.0-r10"
+version = "10.1.0-r11"
 license = "BSD-2-Clause"
 description = "RFC2131-compliant DHCP client daemon"
 # r10: /etc/init.d/dhcpcd uses #!/bin/openrc-run (jonerix has no
@@ -12,7 +12,15 @@ description = "RFC2131-compliant DHCP client daemon"
 # skips it as already published, so no host is pushed a reinstall, and
 # jpkg (<= 2.2.10) has no config protection: a reinstall would overwrite
 # a locally edited /etc/dhcpcd.conf (tormenta's `nohook resolv.conf`).
-# Bump the revision only when the payload really changes.
+#
+# r11 removes that hazard, so the revision is free to move again: the
+# package no longer owns /etc/dhcpcd.conf. Upstream's default ships as
+# /share/dhcpcd/dhcpcd.conf, post_install seeds /etc only when the file is
+# absent, and pre_install/post_install carry a live file across the r10->r11
+# upgrade (jpkg's upgrade-clean would otherwise delete it, since the new
+# manifest does not list it). r11 also adds `denyinterfaces tailscale0`
+# when the config lacks it -- dhcpcd watching tailscale0 raced a tailscaled
+# restart on tormenta and exited, leaving every lease unrenewed.
 
 [source]
 url = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.1.0/dhcpcd-10.1.0.tar.xz"
@@ -150,7 +158,22 @@ cat > $DESTDIR/etc/conf.d/dhcpcd <<'CONFD'
 # Uncomment and edit to pass extra flags to dhcpcd(8):
 #   dhcpcd_args="-w -q eth0"
 CONFD
-chmod 644 $DESTDIR/etc/conf.d/dhcpcd"""
+chmod 644 $DESTDIR/etc/conf.d/dhcpcd
+
+# /etc/dhcpcd.conf is the admin's file from r11 on. jpkg has no config
+# protection, so while the package owned that path every reinstall
+# overwrote local edits -- which is why r10 was deliberately frozen at the
+# published payload rather than fixed (see the header). Ship upstream's
+# default under /share instead and let post_install seed /etc/dhcpcd.conf
+# only when it is absent, so the revision is free to move again.
+if [ ! -f "$DESTDIR/etc/dhcpcd.conf" ]; then
+    printf '%s\\n' "dhcpcd: make install did not produce etc/dhcpcd.conf" >&2
+    exit 1
+fi
+mkdir -p "$DESTDIR/share/dhcpcd"
+mv "$DESTDIR/etc/dhcpcd.conf" "$DESTDIR/share/dhcpcd/dhcpcd.conf"
+chmod 644 "$DESTDIR/share/dhcpcd/dhcpcd.conf"
+"""
 
 [hooks]
 # Register dhcpcd with OpenRC's boot runlevel on install (idempotent).
@@ -162,7 +185,93 @@ chmod 644 $DESTDIR/etc/conf.d/dhcpcd"""
 # from pre-jonerix bootstrap images that launched its own dhcpcd and
 # raced with this service). Only removes it if it's not owned by any
 # installed jpkg -- packaged scripts are left alone.
-post_install = """# Register in boot runlevel
+#
+# r11 stops shipping /etc/dhcpcd.conf. jpkg's clean_old_files_for_upgrade
+# deletes a path the old manifest listed and the new one does not, and it
+# runs inside extract_and_register -- after pre_install, before
+# post_install -- so pre_install keeps the live file and post_install puts
+# it back. pre_install must exit 0: a non-zero pre_install aborts the
+# install (InstallError::HookFailed), unlike post_install which only warns.
+pre_install = """if [ -f /etc/dhcpcd.conf ] && [ ! -L /etc/dhcpcd.conf ]; then
+    mkdir -p /etc/jpkg/dhcpcd
+    cp -p /etc/dhcpcd.conf /etc/jpkg/dhcpcd/dhcpcd.conf.keep 2>/dev/null || true
+fi
+exit 0"""
+
+post_install = """# --- /etc/dhcpcd.conf belongs to the admin (r11) ---
+_conf=/etc/dhcpcd.conf
+_keep=/etc/jpkg/dhcpcd/dhcpcd.conf.keep
+if [ -f "$_keep" ]; then
+    if [ ! -e "$_conf" ]; then
+        mv "$_keep" "$_conf"
+        printf '%s\\n' "dhcpcd: kept your /etc/dhcpcd.conf (no longer package-owned; the shipped default is /share/dhcpcd/dhcpcd.conf)"
+    else
+        rm -f "$_keep"
+    fi
+fi
+if [ ! -e "$_conf" ] && [ -f /share/dhcpcd/dhcpcd.conf ]; then
+    cp /share/dhcpcd/dhcpcd.conf "$_conf"
+    chmod 644 "$_conf"
+fi
+
+# --- leave tailscale0 to tailscaled ---
+# dhcpcd watching tailscale0 raced a `rc-service tailscaled restart` on
+# tormenta (2026-09-26): dhcpcd logged "tailscale0: pid -211055585 deleted
+# IP address 100.108.18.1/32", then exited, leaving the eth0/wlan0 leases
+# unrenewed while OpenRC still reported the service started.
+#
+# dhcpcd.conf facts this relies on (10.1.0 src/if-options.c, verified):
+#   - "denyinterfaces" is option 'Z' (:118) and is IGNORED inside an
+#     interface/ssid/profile block, because case 'Z' (:1291) is guarded by
+#     !IN_CONFIG_BLOCK -- so the line must go ABOVE the first such block.
+#   - splitv() (:428) APPENDS to ctx->ifdv, so repeated denyinterfaces
+#     lines accumulate; adding one never drops a router's existing deny.
+#   - patterns are space- or comma-separated and matched with fnmatch(3),
+#     so an existing "tail*" or "*" already covers us -- hence the glob
+#     test below rather than a string compare.
+if [ -f "$_conf" ]; then
+    _block=0 _covered=0 _n=0
+    set -f
+    while IFS= read -r _l || [ -n "$_l" ]; do
+        _n=$((_n + 1))
+        _oifs=$IFS
+        IFS=' \t,'
+        set -- $_l
+        IFS=$_oifs
+        case "${1:-}" in
+            interface|ssid|profile) _block=$_n; break ;;
+            denyinterfaces)
+                shift
+                for _p in "$@"; do
+                    case tailscale0 in $_p) _covered=1 ;; esac
+                done ;;
+        esac
+    done < "$_conf"
+    set +f
+    if [ "$_covered" = 0 ]; then
+        _tmp="$_conf.jpkg-new.$$"
+        _i=0 _put=0
+        if {
+            while IFS= read -r _l || [ -n "$_l" ]; do
+                _i=$((_i + 1))
+                if [ "$_i" = "$_block" ] && [ "$_put" = 0 ]; then
+                    printf '%s\\n' "# tailscaled owns tailscale0's address (added by the dhcpcd package)" "denyinterfaces tailscale0" ""
+                    _put=1
+                fi
+                printf '%s\\n' "$_l"
+            done < "$_conf"
+            if [ "$_put" = 0 ]; then
+                printf '\\n%s\\n%s\\n' "# tailscaled owns tailscale0's address (added by the dhcpcd package)" "denyinterfaces tailscale0"
+            fi
+        } > "$_tmp"; then
+            cat "$_tmp" > "$_conf"
+            printf '%s\\n' "dhcpcd: added 'denyinterfaces tailscale0' to /etc/dhcpcd.conf (effective when dhcpcd next starts)"
+        fi
+        rm -f "$_tmp"
+    fi
+fi
+
+# Register in boot runlevel
 rm -f /etc/runlevels/default/dhcpcd
 if [ -d /etc/runlevels/boot ]; then
     ln -sf /etc/init.d/dhcpcd /etc/runlevels/boot/dhcpcd
