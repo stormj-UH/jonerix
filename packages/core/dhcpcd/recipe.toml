@@ -167,7 +167,7 @@ chmod 644 $DESTDIR/etc/conf.d/dhcpcd
 # default under /share instead and let post_install seed /etc/dhcpcd.conf
 # only when it is absent, so the revision is free to move again.
 if [ ! -f "$DESTDIR/etc/dhcpcd.conf" ]; then
-    printf '%s\\n' "dhcpcd: make install did not produce etc/dhcpcd.conf" >&2
+    printf '%s\n' "dhcpcd: make install did not produce etc/dhcpcd.conf" >&2
     exit 1
 fi
 mkdir -p "$DESTDIR/share/dhcpcd"
@@ -204,7 +204,7 @@ _keep=/etc/jpkg/dhcpcd/dhcpcd.conf.keep
 if [ -f "$_keep" ]; then
     if [ ! -e "$_conf" ]; then
         mv "$_keep" "$_conf"
-        printf '%s\\n' "dhcpcd: kept your /etc/dhcpcd.conf (no longer package-owned; the shipped default is /share/dhcpcd/dhcpcd.conf)"
+        printf '%s\n' "dhcpcd: kept your /etc/dhcpcd.conf (no longer package-owned; the shipped default is /share/dhcpcd/dhcpcd.conf)"
     else
         rm -f "$_keep"
     fi
@@ -230,12 +230,17 @@ fi
 #     so an existing "tail*" or "*" already covers us -- hence the glob
 #     test below rather than a string compare.
 if [ -f "$_conf" ]; then
+    # A real tab. Recipe bodies reach the shell byte-for-byte (recipe.rs
+    # sanitize_legacy_escapes), so a literal IFS=' \t,' would put the LETTER t
+    # in IFS and split "interface" into "in"/"erface". printf does interpret
+    # the escape, so build the character instead of spelling it.
+    _TAB=$(printf '\t')
     _block=0 _covered=0 _n=0
     set -f
     while IFS= read -r _l || [ -n "$_l" ]; do
         _n=$((_n + 1))
         _oifs=$IFS
-        IFS=' \t,'
+        IFS=" $_TAB,"
         set -- $_l
         IFS=$_oifs
         case "${1:-}" in
@@ -255,17 +260,17 @@ if [ -f "$_conf" ]; then
             while IFS= read -r _l || [ -n "$_l" ]; do
                 _i=$((_i + 1))
                 if [ "$_i" = "$_block" ] && [ "$_put" = 0 ]; then
-                    printf '%s\\n' "# tailscaled owns tailscale0's address (added by the dhcpcd package)" "denyinterfaces tailscale0" ""
+                    printf '%s\n' "# tailscaled owns tailscale0's address (added by the dhcpcd package)" "denyinterfaces tailscale0" ""
                     _put=1
                 fi
-                printf '%s\\n' "$_l"
+                printf '%s\n' "$_l"
             done < "$_conf"
             if [ "$_put" = 0 ]; then
-                printf '\\n%s\\n%s\\n' "# tailscaled owns tailscale0's address (added by the dhcpcd package)" "denyinterfaces tailscale0"
+                printf '\n%s\n%s\n' "# tailscaled owns tailscale0's address (added by the dhcpcd package)" "denyinterfaces tailscale0"
             fi
         } > "$_tmp"; then
             cat "$_tmp" > "$_conf"
-            printf '%s\\n' "dhcpcd: added 'denyinterfaces tailscale0' to /etc/dhcpcd.conf (effective when dhcpcd next starts)"
+            printf '%s\n' "dhcpcd: added 'denyinterfaces tailscale0' to /etc/dhcpcd.conf (effective when dhcpcd next starts)"
         fi
         rm -f "$_tmp"
     fi
