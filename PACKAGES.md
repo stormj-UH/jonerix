@@ -1,6 +1,6 @@
 # jonerix package inventory
 
-Generated from tracked `packages/**/recipe.toml` -- **146 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
+Generated from tracked `packages/**/recipe.toml` -- **145 recipes**. All jonerix-built userland packages are permissively licensed (MIT / BSD / Apache-2.0 / ISC / 0BSD / Zlib / PSF-2.0 / MirOS). The sole exception is `linux` (GPL-2.0-only), which is explicitly blocked by jpkg's license gate and built out-of-band via `scripts/build-kernel.sh`.
 
 ## Folders
 
@@ -167,7 +167,6 @@ Generated from tracked `packages/**/recipe.toml` -- **146 recipes**. All jonerix
 | **`wpa_supplicant`** | `extra` | 2.11-r2 | BSD-3-Clause | any | `musl`, `libressl`, `nloxide` | `clang`, `jmake`, `jonerix-headers`, `libressl`, `nloxide` | WPA/WPA2/WPA3 supplicant for wireless network authentication |
 | **`xkeyboard-config`** | `extra` | 2.47 | MIT | any | - | `clang`, `meson`, `samurai`, `pkgconf`, `python3` | Keyboard layout database for libxkbcommon (XKB rules, models, variants, options) |
 | **`xz`** | `core` | 5.8.2-r2 | 0BSD | any | `musl` | `clang`, `cmake`, `samurai` | XZ compression utilities and liblzma (with development headers) |
-| **`zig`** | `develop` | 0.16.0 | MIT | any | `musl`, `llvm`, `libcxx` | `cmake`, `samurai`, `llvm`, `python3`, `zlib`, `zstd`, `libcxx` | Zig compiler toolchain built against the system LLVM 21 stack |
 | **`zlib`** | `core` | 1.3.2-r1 | Zlib | any | `musl` | `clang`, `make` | General-purpose compression library |
 | **`zsh`** | `extra` | 5.9-r16 | MIT | any | `musl`, `ncurses` | `clang`, `make` | Z shell — feature-rich interactive shell |
 | **`zstd`** | `core` | 1.5.6 | BSD-3-Clause | any | `musl` | `clang`, `cmake`, `samurai` | Zstandard compression library and tool |
