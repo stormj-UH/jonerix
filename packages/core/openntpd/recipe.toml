@@ -1,9 +1,20 @@
 [package]
 name = "openntpd"
-version = "7.9p1"
+version = "7.9p1-r1"
 license = "ISC"
 description = "OpenBSD NTP daemon — lightweight, secure time synchronization"
 
+# r1: the no-shadow fallback in post_install appended the _ntp group and
+# user with printf and a doubled backslash, which reaches the shell as two
+# characters: a literal backslash-n and no line terminator. The published
+# builder-arm64 image has exactly that, and shadow's groupadd/useradd refuse
+# an unterminated file outright, so other packages' accounts silently
+# failed to appear. post_install now appends on a line of its own,
+# terminates the last line before any account tool runs, reports (but does
+# not rewrite) lines an older release damaged, and warns if _ntp still
+# cannot be created. It also drops an adduser-safe call that only ever
+# printed usage. The helpers are shared verbatim with docker.
+#
 # 7.9p1 (was 6.8p1-r5).  6.8p1's Linux ntpd_adjtime() slewed with
 # adjtimex(ADJ_OFFSET_SINGLESHOT | ADJ_STATUS).  ADJ_OFFSET_SINGLESHOT
 # includes ADJ_ADJTIME, and the kernel's ADJ_ADJTIME branch ignores
@@ -126,7 +137,52 @@ chmod 755 $DESTDIR/etc/init.d/ntpd"""
 # prepare the state dirs, link the service into the default runlevel, and
 # start it on live systems. Guard all file-touching so chroot/alt-root
 # installs (jpkg --root /mnt/rootfs ...) stay idempotent.
-post_install = """# 1) _ntp privsep user + group. openntpd drops privileges to this uid
+post_install = """_who=openntpd
+# >>> acct-helpers: identical in openntpd and docker post_install
+# Account-file helpers. KEEP IDENTICAL in openntpd and docker post_install.
+# Requires $_who (package name, for messages). Toybox-sh-safe on purpose:
+# /bin/sh is toybox for a moment while an image is bootstrapped, so flat
+# if/fi only -- no read loops, no traps, no nested quoting.
+#
+# Up to openntpd 7.9p1 and docker 27.5.1-r4 the no-shadow fallbacks wrote
+# their records with printf and a doubled backslash, which reaches the shell
+# as two characters: a literal backslash-n and NO line terminator. shadow's
+# groupadd/useradd then refuse the whole file ("cannot open /etc/group"), and
+# the next raw append glues onto the damaged line, where libc cannot see it.
+# Terminating the last line is all shadow needs; appending on a line of its
+# own stops the gluing. Existing damage is REPORTED, never rewritten: a
+# script cannot tell a hidden record from one an admin has since re-created,
+# and restoring one by name can hand a reused UID or GID to the wrong account.
+
+# Terminate an unterminated last line (best effort: never fatal under set -e).
+_end_line() {
+    if [ -f "$1" ] && [ -s "$1" ] && [ -n "$(tail -c 1 "$1")" ]; then
+        printf '\n' >> "$1" 2>/dev/null || true
+    fi
+}
+
+# Append one record on a line of its own.
+_append_record() {
+    _end_line "$2"
+    printf '%s\n' "$1" >> "$2"
+}
+
+# Report lines an older fallback damaged; change nothing.
+_acct_check() {
+    if [ -f "$1" ] && grep -qF -e '_ntp:x:123:\n' -e '_ntp:x:123:123:openntpd:/var/empty:/bin/false\n' -e 'docker:x:998:\n' "$1" 2>/dev/null; then
+        echo "$_who: WARNING: $1 has records damaged by an older openntpd or docker (a literal backslash-n, perhaps with another record glued after it):"
+        grep -nF -e '_ntp:x:123:\n' -e '_ntp:x:123:123:openntpd:/var/empty:/bin/false\n' -e 'docker:x:998:\n' "$1"
+        echo "$_who: fix $1 by hand: delete each backslash-n and put what follows it on its own line, keeping only accounts you still want (check their IDs are not reused)."
+    fi
+}
+# <<< acct-helpers
+_acct_check /etc/group
+_acct_check /etc/passwd
+# shadow's groupadd/useradd refuse an unterminated last line, whoever left it.
+_end_line /etc/group
+_end_line /etc/passwd
+
+# 1) _ntp privsep user + group. openntpd drops privileges to this uid
 # before doing anything unprivileged. Shell structure is kept flat
 # (no line-continued || chains) because toybox sh parses those
 # unreliably — reproduced on jonerix-tormenta 2026-04-16 where the
@@ -139,21 +195,23 @@ if ! grep -q "^_ntp:" /etc/group 2>/dev/null; then
     if command -v groupadd >/dev/null 2>&1; then
         groupadd -r _ntp 2>/dev/null
     else
-        printf '_ntp:x:123:\\n' >> /etc/group
+        _append_record '_ntp:x:123:' /etc/group
     fi
+    grep -q "^_ntp:" /etc/group 2>/dev/null || echo "openntpd: WARNING: could not create group _ntp; ntpd will not start"
 fi
 if ! grep -q "^_ntp:" /etc/passwd 2>/dev/null; then
     # toybox adduser shares the same lookup-then-rewrite truncation
     # hazard as toybox addgroup. Prefer shadow's useradd (atomic) when
-    # available; fall back to the legacy adduser-safe wrapper or a
-    # direct /etc/passwd append if neither is installed.
+    # available; otherwise append directly. (Up to 7.9p1 an adduser-safe
+    # branch sat here, but adduser-safe's usage is USERNAME [UID] and it
+    # treats a leading "-" as a request for usage: it printed that and
+    # exited 0, so on Pi hosts without shadow _ntp was never created.)
     if command -v useradd >/dev/null 2>&1; then
         useradd -r -d /var/empty -s /bin/false -g _ntp _ntp 2>/dev/null
-    elif [ -x /bin/adduser-safe ]; then
-        /bin/adduser-safe -S -D -H -h /var/empty -s /bin/false -G _ntp _ntp 2>/dev/null
     else
-        printf '_ntp:x:123:123:openntpd:/var/empty:/bin/false\\n' >> /etc/passwd
+        _append_record '_ntp:x:123:123:openntpd:/var/empty:/bin/false' /etc/passwd
     fi
+    grep -q "^_ntp:" /etc/passwd 2>/dev/null || echo "openntpd: WARNING: could not create user _ntp; ntpd will not start"
 fi
 
 # 2) /var/db (drift file, and jpkg's database) — root-owned, 0755.

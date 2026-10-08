@@ -1,9 +1,15 @@
 [package]
 name = "jonerix-os-info"
-version = "1.0.0"
+version = "1.0.0-r1"
 license = "0BSD"
 description = "Legacy distro-marker files (/etc/lsb-release, /etc/jonerix-release, /etc/system-release{,-cpe}, /etc/issue, /etc/issue.net) regenerated from /etc/os-release"
 
+# r1: post_remove never removed anything. It fed each state line through
+# printf with a doubled backslash before the n -- which reaches the shell as
+# two characters -- so every parsed path ended in a literal backslash-n and
+# matched no file. It now parses with read and needs no awk, which toybox
+# does not ship. regen.sh still needs awk, now declared (onetrueawk).
+#
 # WHAT THIS PACKAGE DOES
 # ----------------------
 # /etc/os-release is the canonical "what distro is this" file (systemd
@@ -95,17 +101,23 @@ post_remove = """STATE=/var/lib/jonerix-os-info/shipped.sha256
 
 sha256_of() {
     if [ ! -f "$1" ]; then printf ''; return 0; fi
+    # Parameter expansion, not awk: toybox ships no awk, and a remove hook
+    # must not depend on a package the admin may already have removed.
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$1" | awk '{print $1}'
+        _sum=$(sha256sum "$1")
+        printf '%s' "${_sum%% *}"
     else
-        openssl dgst -sha256 "$1" | awk '{print $NF}'
+        _sum=$(openssl dgst -sha256 "$1")
+        printf '%s' "${_sum##* }"
     fi
 }
 
-while IFS= read -r line; do
+# read splits on runs of blanks exactly as awk's $1/$2 did. The old
+# printf|awk wrote a literal backslash-n onto every path (a doubled backslash
+# in a recipe body reaches the shell as two characters), so no shipped file
+# ever matched and nothing was ever removed.
+while read -r hash path _rest || [ -n "$hash" ]; do
     # Each line is `HASH  PATH` or `symlink:TARGET  PATH`.
-    hash=$(printf '%s\\n' "$line" | awk '{print $1}')
-    path=$(printf '%s\\n' "$line" | awk '{print $2}')
     [ -n "$path" ] || continue
     case "$hash" in
         symlink:*)
@@ -133,9 +145,10 @@ rmdir /var/lib/jonerix-os-info 2>/dev/null || true
 exit 0"""
 
 [depends]
-# regen.sh uses /bin/sh (mksh on jonerix), awk (toybox or onetrueawk),
-# sha256sum (toybox; openssl is the documented fallback inside the
-# script).  All three are part of the base set; listing toybox here
-# pins the dependency for hosts that strip down further.
-runtime = ["toybox"]
+# regen.sh uses /bin/sh (mksh on jonerix), awk, and sha256sum (toybox;
+# openssl is the documented fallback inside the script). toybox ships NO
+# awk applet, so onetrueawk is a real runtime dependency: without it
+# regen.sh exits 127 and post_install silently does nothing. post_remove
+# needs no awk (r1).
+runtime = ["toybox", "onetrueawk"]
 build = []
