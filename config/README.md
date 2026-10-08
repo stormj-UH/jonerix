@@ -79,9 +79,11 @@ precedence:
 | `60-`  | image profile or board package | `60-builder*.conf`, `60-minimal*.conf`, `60-router*.conf`; jonerix-raspi5-fixups: `60-pi5-dualhome.conf` |
 | `90-`  | local administrator | anything you add by hand |
 
-Package-owned files are replaced on upgrade (jpkg has no conffile
-handling), so override a value in a later-sorting file of your own
-instead of editing theirs.
+Since jpkg 2.2.11 an edited package file under /etc is kept on upgrade
+(the packaged version lands beside it as `<file>.jpkg-new`; see
+docs/packaging.md, "Config files"). Overriding a value in a
+later-sorting file of your own is still the better habit: it keeps the
+package's file pristine, so its fixes keep arriving without a merge.
 
 Two toybox `sysctl -p` rules shape the files: comments go on their own
 line (an inline `# ...` is written as part of the value), and a key the

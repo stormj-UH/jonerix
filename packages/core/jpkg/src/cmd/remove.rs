@@ -172,6 +172,12 @@ pub fn run(args: &[String]) -> i32 {
                 stats.kept
             );
         }
+        if stats.config_kept > 0 {
+            log::warn!(
+                "jpkg: kept {} locally changed config file(s) of {pkg_name}; no package owns them now",
+                stats.config_kept
+            );
+        }
 
         // Remove DB record.
         if let Err(e) = db.remove(pkg_name) {
@@ -223,6 +229,9 @@ pub(crate) struct RemoveStats {
     pub kept: usize,
     /// Unlink failures other than "already absent".
     pub errors: usize,
+    /// Config files left in place, unowned, because they were changed
+    /// locally or could not be checked (2.2.11).
+    pub config_kept: usize,
 }
 
 /// Delete `pkg`'s files from `rootfs`, skipping every path that `others`
@@ -264,7 +273,16 @@ pub(crate) fn remove_package_files(
                 log::debug!("jpkg: file already absent: {}", entry.path);
             }
             Ok(m) => {
-                if m.is_dir() && !m.file_type().is_symlink() {
+                if crate::config::keep_on_disk(rootfs, entry) {
+                    // 2.2.11: checked before anything else, so not even an
+                    // (empty) directory the admin put at a config path is
+                    // removed.  The file is now owned by no package.
+                    log::warn!(
+                        "jpkg: kept /{} (changed locally; no package owns it now)",
+                        entry.path
+                    );
+                    stats.config_kept += 1;
+                } else if m.is_dir() && !m.file_type().is_symlink() {
                     // Only remove directory if empty (mirrors C rmdir call).
                     if let Err(e) = fs::remove_dir(&full) {
                         log::debug!("jpkg: leaving non-empty dir {}: {e}", entry.path);
@@ -275,6 +293,15 @@ pub(crate) fn remove_package_files(
                 } else {
                     stats.removed += 1;
                 }
+            }
+        }
+        if crate::config::is_config(entry) {
+            // A <path>.jpkg-new holding exactly this package's copy goes
+            // with it; the admin's own .jpkg-new edits stay.
+            if let Err(e) =
+                crate::config::drop_stale_new(rootfs, &entry.path, &[entry.sha256.as_str()])
+            {
+                log::warn!("jpkg: could not check /{}{}: {e}", entry.path, crate::config::NEW_SUFFIX);
             }
         }
     }
@@ -463,5 +490,104 @@ mod tests {
             !rootfs.join("bin").exists(),
             "empty unshared dir is removed"
         );
+    }
+
+    fn conf_root(tmp: &TempDir) -> (std::path::PathBuf, InstalledDb) {
+        let rootfs = tmp.path().join("rootfs");
+        fs::create_dir_all(&rootfs).unwrap();
+        let db = InstalledDb::open(&rootfs).unwrap();
+        (rootfs, db)
+    }
+
+    #[test]
+    fn remove_keeps_changed_config_and_deletes_unchanged_one() {
+        use crate::cmd::common::tests::{build_jpkg_tree, Node};
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = conf_root(&tmp);
+        let _lock = db.lock().unwrap();
+        let j = build_jpkg_tree(
+            tmp.path(),
+            "confpkg",
+            "1",
+            &[],
+            &[
+                ("etc/edited.conf", Node::File(b"stock\n", 0o644)),
+                ("etc/pristine.conf", Node::File(b"stock\n", 0o644)),
+            ],
+        );
+        extract_and_register(&JpkgArchive::open(&j).unwrap(), &rootfs, &db).unwrap();
+        fs::write(rootfs.join("etc/edited.conf"), b"mine\n").unwrap();
+        let pkg = db.get("confpkg").unwrap().unwrap();
+        let others = db.path_owners(None, Some("confpkg")).unwrap();
+        let stats = remove_package_files(&rootfs, &pkg, &others);
+        assert_eq!(stats.config_kept, 1);
+        assert_eq!(stats.errors, 0);
+        assert_eq!(
+            fs::read(rootfs.join("etc/edited.conf")).unwrap(),
+            b"mine\n",
+            "a changed config file stays in place"
+        );
+        assert!(!rootfs.join("etc/edited.conf.jpkg-save").exists(), "no rename on remove");
+        assert!(!rootfs.join("etc/pristine.conf").exists());
+    }
+
+    #[test]
+    fn remove_deletes_jpkg_new_equal_to_package_content() {
+        use crate::cmd::common::tests::{build_jpkg_tree, Node};
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = conf_root(&tmp);
+        let _lock = db.lock().unwrap();
+        let j = build_jpkg_tree(
+            tmp.path(),
+            "confpkg",
+            "1",
+            &[],
+            &[
+                ("etc/a.conf", Node::File(b"pkg\n", 0o644)),
+                ("etc/b.conf", Node::File(b"pkg\n", 0o644)),
+            ],
+        );
+        extract_and_register(&JpkgArchive::open(&j).unwrap(), &rootfs, &db).unwrap();
+        fs::write(rootfs.join("etc/a.conf"), b"mine\n").unwrap();
+        fs::write(rootfs.join("etc/a.conf.jpkg-new"), b"pkg\n").unwrap(); // package content
+        fs::write(rootfs.join("etc/b.conf"), b"mine\n").unwrap();
+        fs::write(rootfs.join("etc/b.conf.jpkg-new"), b"admin tweaked the new one\n").unwrap();
+        let pkg = db.get("confpkg").unwrap().unwrap();
+        let others = db.path_owners(None, Some("confpkg")).unwrap();
+        remove_package_files(&rootfs, &pkg, &others);
+        assert!(!rootfs.join("etc/a.conf.jpkg-new").exists(), "package content goes");
+        assert_eq!(
+            fs::read(rootfs.join("etc/b.conf.jpkg-new")).unwrap(),
+            b"admin tweaked the new one\n",
+            "anything else stays"
+        );
+    }
+
+    #[test]
+    fn remove_keeps_a_file_the_admin_put_in_place_of_a_packaged_link() {
+        use crate::cmd::common::tests::{build_jpkg_tree, Node};
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = conf_root(&tmp);
+        let _lock = db.lock().unwrap();
+        let j = build_jpkg_tree(
+            tmp.path(),
+            "ca",
+            "1",
+            &[],
+            &[
+                ("etc/ssl/certs/ca.crt", Node::File(b"ca\n", 0o644)),
+                ("etc/ssl/cert.pem", Node::Link("certs/ca.crt")),
+                ("etc/ssl/ca.pem", Node::Link("certs/ca.crt")),
+            ],
+        );
+        extract_and_register(&JpkgArchive::open(&j).unwrap(), &rootfs, &db).unwrap();
+        fs::remove_file(rootfs.join("etc/ssl/cert.pem")).unwrap();
+        fs::write(rootfs.join("etc/ssl/cert.pem"), b"private CA\n").unwrap();
+        let pkg = db.get("ca").unwrap().unwrap();
+        let others = db.path_owners(None, Some("ca")).unwrap();
+        let stats = remove_package_files(&rootfs, &pkg, &others);
+        assert_eq!(stats.config_kept, 1);
+        assert_eq!(fs::read(rootfs.join("etc/ssl/cert.pem")).unwrap(), b"private CA\n");
+        assert!(rootfs.join("etc/ssl/ca.pem").symlink_metadata().is_err(), "jpkg's own link goes");
     }
 }

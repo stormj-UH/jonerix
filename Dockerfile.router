@@ -45,6 +45,18 @@ RUN jpkg update && \
     sh /usr/local/sbin/image-slim && \
     rm /usr/local/sbin/image-slim
 
+# jpkg 2.2.11 never overwrites a config file it did not record: it keeps it
+# and puts the package's copy beside it as *.jpkg-new, or moves it aside as
+# *.jpkg-save.  An image build has no admin to merge them, so one appearing
+# here means an earlier layer pre-seeds a path a package ships.  Fail rather
+# than ship a stale config.  (Deliberate overlays are COPY'd after this.)
+RUN leftover=$(find / -xdev \( -name '*.jpkg-new' -o -name '*.jpkg-save' \) 2>/dev/null || true); \
+    if [ -n "$leftover" ]; then \
+      echo "image build: an earlier layer pre-seeds paths packages ship; jpkg left these beside them:" >&2; \
+      echo "$leftover" >&2; \
+      exit 1; \
+    fi
+
 # Router profile overlay. Keep this as a whole-profile copy so new
 # config/profile/router files land in the image without stale per-file COPY
 # paths.

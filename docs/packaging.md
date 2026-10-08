@@ -273,6 +273,75 @@ install:
 	$(MAKE) -C $(SRC_DIR) PREFIX=/ DESTDIR=$(DESTDIR) install
 ```
 
+## Config files
+
+Since jpkg 2.2.11, a **config file** is any regular file a package ships
+under `etc/`, except under `etc/init.d/` and `etc/cron.d/` (OpenRC and
+snooze-crond run every file there, so those are treated as code and always
+replaced). Recipes declare nothing: the class comes from the path, worked
+out on the installing host, and no archive, INDEX or manifest format
+changed.
+
+jpkg overwrites or deletes what is at a config path only when it is
+**pristine** — missing, or a regular file or symlink jpkg recorded there.
+Anything else is yours: never followed, opened, overwritten or deleted. The
+most jpkg does to it is move it aside to `<file>.jpkg-save` (see the table).
+
+| Situation | What jpkg does |
+|---|---|
+| file unchanged, package ships a new version | replaces it |
+| file changed locally, package's copy unchanged | keeps yours, says nothing new |
+| file changed locally, package's copy changed | keeps yours, writes the packaged version to `<file>.jpkg-new`, warns |
+| `<file>.jpkg-new` already there | replaced only if it is an untouched earlier packaged copy; if you edited it, it is left alone, the new packaged version is not written, and jpkg warns |
+| you deleted the file | puts the package's copy back (empty the file to disable it) |
+| an upgrade stops shipping a changed file | leaves it in place, owned by no package, warns |
+| `jpkg remove` of a package with a changed file | same: left in place, unowned |
+| a package puts a symlink or directory where a changed file (its own, another package's) or your own symlink, FIFO or directory sits | moves that to `<file>.jpkg-save` first; refuses the install rather than overwrite an existing `.jpkg-save` |
+| a symlink, directory, FIFO or device you put where a package ships a file | never followed, opened, overwritten or deleted; the packaged version goes to `<file>.jpkg-new` |
+
+The installed manifest records the hash the package shipped, also for a
+kept file, so the next upgrade compares against that. Every decision is
+checked again just before the files are copied, so an edit made while an
+upgrade runs is kept too. `jpkg verify` does not count a changed config
+file as a failure (a missing one still is); `jpkg verify <package>` lists
+each one and any pending `.jpkg-new`. After an upgrade:
+
+```sh
+find /etc -name '*.jpkg-new' -o -name '*.jpkg-save'   # waiting for you
+```
+
+`/etc/skel` is config too: after you edit a skeleton file and a package
+updates it, `useradd -m` also copies the `.jpkg-new` into the new home
+until you merge it.
+
+### For recipe authors: moving a default into `etc/`
+
+Many recipes ship their default under `share/`, seed `/etc` from
+`post_install`, and carry the live file across upgrades in
+`pre_install`/`post_install` (dhcpcd, for one). Shipping the default
+straight into `etc/` makes all of that unnecessary, but only under two
+conditions:
+
+1. **Every host runs jpkg 2.2.11 or later first.** An older jpkg installs a
+   file under `etc/` like any other file and overwrites the admin's seeded
+   copy. Until 2.2.11 is everywhere, keep the carry, guarded so that it is
+   skipped where jpkg protects the file itself (hooks see
+   `JPKG_CONFFILES=1` under 2.2.11 and later):
+
+   ```sh
+   [ -n "${JPKG_CONFFILES:-}" ] || { legacy_carry; }
+   ```
+
+2. **The first revision that ships the file in `etc/` ships exactly the
+   bytes the old hook seeded.** jpkg has no record of a file the package
+   never shipped, so it adopts a seeded copy only when it is identical to
+   the package's. Change the default in a later revision, once jpkg has
+   recorded it; otherwise every untouched seeded copy looks locally changed
+   and is never updated again.
+
+Prefer a drop-in directory (`foo.d/*.conf`) for anything an admin is
+likely to tune: their file stays theirs and yours stays pristine.
+
 ## Repository Layout
 
 A jpkg repository is a static HTTPS directory. No database server required.

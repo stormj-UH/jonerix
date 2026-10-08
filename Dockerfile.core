@@ -142,6 +142,18 @@ RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     # nor the `command` builtin, both of which mksh handles correctly.
     /bin/toybox ln -sf mksh /bin/sh
 
+# jpkg 2.2.11 never overwrites a config file it did not record: it keeps it
+# and puts the package's copy beside it as *.jpkg-new, or moves it aside as
+# *.jpkg-save.  An image build has no admin to merge them, so one appearing
+# here means an earlier layer pre-seeds a path a package ships.  Fail rather
+# than ship a stale config.  (Deliberate overlays are COPY'd after this.)
+RUN leftover=$(find / -xdev \( -name '*.jpkg-new' -o -name '*.jpkg-save' \) 2>/dev/null || true); \
+    if [ -n "$leftover" ]; then \
+      echo "image build: an earlier layer pre-seeds paths packages ship; jpkg left these beside them:" >&2; \
+      echo "$leftover" >&2; \
+      exit 1; \
+    fi
+
 # Set SUID bits on login utilities (required for multi-user auth).
 # /bin/passwd + /bin/login are symlinks into /bin/shadow-passwd and
 # /bin/shadow-login after shadow's post_install runs; chmod on the

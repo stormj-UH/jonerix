@@ -99,7 +99,7 @@ COPY --from=jpkg-builder /lib/libzstd.so.1     /lib/libzstd.so.1
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl zlib toybox mksh dropbear openrc libressl curl zstd
+        musl zlib toybox mksh dropbear openrc libressl ca-certificates curl zstd
 
 # Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \
@@ -116,10 +116,10 @@ RUN ln -sf mksh /jonerix/bin/sh && \
     ln -sf toybox /jonerix/bin/tar && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
-# CA certificates (downloaded from curl.se)
-RUN curl -fsSL -o /jonerix/etc/ssl/certs/ca-certificates.crt \
-        https://curl.se/ca/cacert.pem && \
-    ln -sf certs/ca-certificates.crt /jonerix/etc/ssl/cert.pem
+# CA certificates come from the ca-certificates package above, not a
+# download: since jpkg 2.2.11 an unowned file at a packaged config path is
+# kept, so a curl'd bundle here would stop every later image from ever
+# receiving the package's CA updates.
 
 # --- Default config files ---
 COPY config/defaults/etc/hostname     /jonerix/etc/hostname
@@ -129,9 +129,7 @@ COPY config/defaults/etc/group        /jonerix/etc/group
 COPY config/defaults/etc/shadow       /jonerix/etc/shadow
 COPY config/defaults/etc/shells       /jonerix/etc/shells
 COPY config/defaults/etc/profile      /jonerix/etc/profile
-COPY config/defaults/etc/zshrc        /jonerix/etc/zshrc
 COPY config/defaults/etc/os-release   /jonerix/etc/os-release
-COPY config/defaults/etc/fastfetch/   /jonerix/etc/fastfetch/
 COPY config/defaults/etc/securetty    /jonerix/etc/securetty
 COPY config/openrc/init.d/            /jonerix/etc/init.d/
 RUN chmod 755 /jonerix/etc/init.d/* 2>/dev/null || true && \

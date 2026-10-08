@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "jpkg"
-version = "2.2.10"
+version = "2.2.11"
 dependencies = [
  "assert_cmd",
  "base64",

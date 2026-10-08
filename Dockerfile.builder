@@ -73,12 +73,18 @@ RUN echo "cachebust=$CACHEBUST" && \
     sh /usr/local/sbin/image-slim && \
     rm /usr/local/sbin/image-slim
 
-# Compiler wrappers and tool symlinks
-#
-# CLANG_CONFIG_FILE_SYSTEM_DIR is a compile-time CMake option, not a
-# runtime env var. Alpine/jonerix clang doesn't have it set, so the
-# config file at /etc/clang/<triple>.cfg is never auto-loaded.
-# We create wrapper scripts that pass --config explicitly.
+# jpkg 2.2.11 never overwrites a config file it did not record: it keeps it
+# and puts the package's copy beside it as *.jpkg-new, or moves it aside as
+# *.jpkg-save.  An image build has no admin to merge them, so one appearing
+# here means an earlier layer pre-seeds a path a package ships.  Fail rather
+# than ship a stale config.  (Deliberate overlays are COPY'd after this.)
+RUN leftover=$(find / -xdev \( -name '*.jpkg-new' -o -name '*.jpkg-save' \) 2>/dev/null || true); \
+    if [ -n "$leftover" ]; then \
+      echo "image build: an earlier layer pre-seeds paths packages ship; jpkg left these beside them:" >&2; \
+      echo "$leftover" >&2; \
+      exit 1; \
+    fi
+
 # Fixup: bsdtar sometimes extracts the uutils multicall binary into a
 # GNUSparseFile.0/ subdirectory. Move it to the correct path so coreutils
 # symlinks (rm, printf, chmod, ln, etc.) work.

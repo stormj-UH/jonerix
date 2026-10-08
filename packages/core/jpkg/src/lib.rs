@@ -39,6 +39,7 @@
 
 pub mod archive;
 pub mod canon;
+pub mod config;
 pub mod recipe;
 pub mod sign;
 pub mod types;

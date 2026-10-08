@@ -1,8 +1,32 @@
 [package]
 name = "jpkg"
-version = "2.2.10"
+version = "2.2.11"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.11 — config files survive upgrades.
+#   * A regular file a package ships under etc/ (except etc/init.d/ and
+#     etc/cron.d/, whose files are run) is a config file.  The class is a
+#     pure function of the path on the installing host: no metadata, INDEX
+#     or manifest format changes, so 2.2.10 hosts verify and install every
+#     2.2.11-built package (pinned by a golden canonical-bytes test).
+#   * jpkg overwrites or deletes what is at a config path only when it is
+#     pristine: missing, or a file or symlink jpkg recorded there.  A
+#     changed file is kept; if the package's copy is new, it lands beside
+#     it as <file>.jpkg-new (only over nothing or an untouched earlier
+#     offer) with a warning.  A changed file an upgrade stops shipping, or a
+#     removed package's, stays in place, unowned.  Where a package puts a
+#     symlink or directory over something not pristine (its own changed
+#     file, another package's, the admin's link), that goes to
+#     <file>.jpkg-save first.  Symlinks, directories and FIFOs are never
+#     followed or opened; what cannot be checked is kept; every decision is
+#     taken again just before the copy.
+#   * verify reports a changed config file instead of failing on it.
+#   * Hooks see JPKG_CONFFILES=1, so a recipe can skip a hand-rolled carry
+#     (see docs/packaging.md before moving a default into etc/).
+#   * Images: rebuild minimal before core, builder and router.  Those now
+#     fail the build on any *.jpkg-new / *.jpkg-save, which an old minimal
+#     (curl'd cert bundle) would leave.
+#
 # 2.2.10 — file modes and cross-package ownership.
 #   * Keep setuid/setgid/sticky bits: extraction enables tar's
 #     preserve_permissions and install_files re-applies `mode & 0o7777`

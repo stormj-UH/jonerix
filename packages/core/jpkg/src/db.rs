@@ -373,6 +373,10 @@ pub struct PathClaim {
     pub owner: String,
     /// True when that manifest records the path as a directory.
     pub is_dir: bool,
+    /// The sha256 that manifest records (empty for symlinks).
+    pub sha256: String,
+    /// The symlink target that manifest records, for a symlink entry.
+    pub symlink_target: Option<String>,
 }
 
 /// Which installed packages claim which paths.
@@ -715,6 +719,8 @@ impl InstalledDb {
                 own.claims.entry(e.path).or_default().push(PathClaim {
                     owner: name.clone(),
                     is_dir: e.is_dir,
+                    sha256: e.sha256,
+                    symlink_target: e.symlink_target,
                 });
             }
         }
@@ -1214,5 +1220,38 @@ mod tests {
         assert_eq!(owners, vec!["legacy", "openrc"]);
         assert!(!others.is_claimed("bin/pi5"));
         assert!(!others.is_claimed("etc"));
+    }
+
+    #[test]
+    fn path_owners_records_sha_and_target() {
+        let tmp = TempDir::new().unwrap();
+        let db = InstalledDb::open(tmp.path()).unwrap();
+        db.insert(&InstalledPkg {
+            metadata: make_metadata("ca-certificates", "1"),
+            files: vec![
+                FileEntry {
+                    path: "etc/ssl/certs/ca-certificates.crt".into(),
+                    sha256: "b".repeat(64),
+                    size: 1,
+                    mode: 0o100644,
+                    symlink_target: None,
+                    is_dir: false,
+                },
+                FileEntry {
+                    path: "etc/ssl/cert.pem".into(),
+                    sha256: String::new(),
+                    size: 0,
+                    mode: 0o120777,
+                    symlink_target: Some("certs/ca-certificates.crt".into()),
+                    is_dir: false,
+                },
+            ],
+        })
+        .unwrap();
+        let own = db.path_owners(None, None).unwrap();
+        let f = &own.owners_of("etc/ssl/certs/ca-certificates.crt")[0];
+        assert_eq!((f.sha256.as_str(), f.symlink_target.as_deref()), ("b".repeat(64).as_str(), None));
+        let l = &own.owners_of("etc/ssl/cert.pem")[0];
+        assert_eq!(l.symlink_target.as_deref(), Some("certs/ca-certificates.crt"));
     }
 }

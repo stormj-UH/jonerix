@@ -220,6 +220,57 @@ mod tests {
         }
     }
 
+    /// The digest only pins what the fixture serialises, and most fields are
+    /// skip_serializing_if: a new field left empty here would vanish from the
+    /// bytes and pass.  This exhaustive destructure (no `..`) stops compiling
+    /// when a field is added; set the new field non-empty in the fixture and
+    /// add it below -- the digest test then fails, as it must.
+    #[test]
+    fn golden_fixture_sets_every_field() {
+        let Metadata {
+            package:
+                PackageSection {
+                    name,
+                    version,
+                    license,
+                    description,
+                    arch,
+                    replaces,
+                    conflicts,
+                },
+            depends: DependsSection { runtime, build },
+            hooks:
+                HooksSection {
+                    pre_install,
+                    post_install,
+                    pre_remove,
+                    post_remove,
+                },
+            files: FilesSection { sha256, size },
+            signature,
+        } = golden_fixture();
+        for (field, set) in [
+            ("name", name.is_some()),
+            ("version", version.is_some()),
+            ("license", license.is_some()),
+            ("description", description.is_some()),
+            ("arch", arch.is_some()),
+            ("replaces", !replaces.is_empty()),
+            ("conflicts", !conflicts.is_empty()),
+            ("runtime", !runtime.is_empty()),
+            ("build", !build.is_empty()),
+            ("pre_install", pre_install.is_some()),
+            ("post_install", post_install.is_some()),
+            ("pre_remove", pre_remove.is_some()),
+            ("post_remove", post_remove.is_some()),
+            ("sha256", sha256.is_some()),
+            ("size", size.is_some()),
+            ("signature", signature.is_some()),
+        ] {
+            assert!(set, "golden fixture leaves {field} empty");
+        }
+    }
+
     #[test]
     fn canonical_bytes_match_2_2_10_golden() {
         let bytes = canonical_bytes(&golden_fixture(), &[0x5au8; 32]);

@@ -276,12 +276,17 @@ fn run_installed_verify(args: &[String]) -> i32 {
 
         total_mismatches += result.mismatches;
 
+        let note = if result.config_changed > 0 {
+            format!(" ({} config file(s) changed locally)", result.config_changed)
+        } else {
+            String::new()
+        };
         if result.mismatches == 0 {
             packages_ok += 1;
             if single {
-                println!("  OK: all files verified");
+                println!("  OK: all files verified{note}");
             } else if verbose {
-                println!(" OK");
+                println!(" OK{note}");
             }
         } else {
             packages_bad += 1;
@@ -326,6 +331,8 @@ struct VerifyResult {
     missing: usize,
     modified: usize,
     errors: usize,
+    /// Config files changed locally (2.2.11): reported, not a failure.
+    config_changed: usize,
 }
 
 /// Verify all files in `pkg` against `rootfs`.
@@ -341,6 +348,7 @@ fn verify_package(
         missing: 0,
         modified: 0,
         errors: 0,
+        config_changed: 0,
     };
 
     for fe in &pkg.files {
@@ -353,6 +361,41 @@ fn verify_package(
         // since the DB stores it without a leading slash, e.g. "bin/foo").
         let rel = fe.path.trim_start_matches('/');
         let abs = rootfs.join(rel);
+
+        if crate::config::is_config(fe) {
+            // 2.2.11: never follow a symlink or open anything but a regular
+            // file at a config path.  A changed config file is reported, not
+            // counted as a failure; a missing one still is.
+            match crate::config::on_disk(rootfs, rel) {
+                Ok(crate::config::OnDisk::File(h)) if h == fe.sha256 => {}
+                Ok(crate::config::OnDisk::Missing) => {
+                    result.mismatches += 1;
+                    result.missing += 1;
+                    if print_detail {
+                        println!("{}:{}  expected={}  got=(missing)", pkg_name, fe.path, fe.sha256);
+                    }
+                }
+                Ok(_) => {
+                    result.config_changed += 1;
+                    if print_detail {
+                        let pending = if crate::config::has_pending_new(rootfs, rel) {
+                            format!(" (packaged version: /{}{})", fe.path, crate::config::NEW_SUFFIX)
+                        } else {
+                            String::new()
+                        };
+                        println!("{pkg_name}:{}  config, changed locally{pending}", fe.path);
+                    }
+                }
+                Err(_) => {
+                    result.mismatches += 1;
+                    result.errors += 1;
+                    if print_detail {
+                        println!("{}:{}  expected={}  got=(error)", pkg_name, fe.path, fe.sha256);
+                    }
+                }
+            }
+            continue;
+        }
 
         if let Some(ref expected_target) = fe.symlink_target {
             // Symlink check: read_link and compare.
@@ -643,5 +686,62 @@ mod tests {
 
         let rc = run(&["symlinkpkg".to_string()]);
         assert_eq!(rc, 1, "wrong symlink target should give exit 1");
+    }
+
+    #[test]
+    fn verify_changed_config_is_informational_but_missing_config_fails() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path();
+        std::fs::create_dir_all(rootfs.join("etc")).unwrap();
+        std::fs::write(rootfs.join("etc/x.conf"), b"edited by the admin").unwrap();
+        let db = InstalledDb::open(rootfs).unwrap();
+        db.insert(&make_pkg_with_file("confpkg", "etc/x.conf", &"ab".repeat(32)))
+            .unwrap();
+        std::env::set_var("JPKG_ROOT", rootfs.as_os_str());
+        assert_eq!(run(&["confpkg".to_string()]), 0, "changed config is not a failure");
+
+        std::fs::remove_file(rootfs.join("etc/x.conf")).unwrap();
+        assert_eq!(run(&["confpkg".to_string()]), 1, "missing config still fails");
+    }
+
+    #[test]
+    fn verify_reports_pending_jpkg_new() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path();
+        std::fs::create_dir_all(rootfs.join("etc")).unwrap();
+        std::fs::write(rootfs.join("etc/x.conf"), b"edited by the admin").unwrap();
+        std::fs::write(rootfs.join("etc/x.conf.jpkg-new"), b"packaged").unwrap();
+        let pkg = make_pkg_with_file("confpkg", "etc/x.conf", &"ab".repeat(32));
+        let r = verify_package(&pkg, rootfs, "confpkg", false);
+        assert_eq!((r.mismatches, r.config_changed), (0, 1));
+        assert!(crate::config::has_pending_new(rootfs, "etc/x.conf"));
+    }
+
+    /// Following the link would find matching content and say OK; the
+    /// right answer is "changed locally", because the admin made a link.
+    #[test]
+    fn verify_does_not_follow_symlink_at_config_path() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path();
+        std::fs::create_dir_all(rootfs.join("etc")).unwrap();
+        std::fs::write(rootfs.join("shipped-bytes"), b"the package's copy").unwrap();
+        let sha = sha256_file(&rootfs.join("shipped-bytes")).unwrap();
+        std::os::unix::fs::symlink(rootfs.join("shipped-bytes"), rootfs.join("etc/x.conf")).unwrap();
+        let pkg = make_pkg_with_file("confpkg", "etc/x.conf", &sha);
+        let r = verify_package(&pkg, rootfs, "confpkg", false);
+        assert_eq!((r.mismatches, r.config_changed), (0, 1), "a link is not the file");
+    }
+
+    /// Opening a FIFO would block this test forever.
+    #[test]
+    fn verify_never_opens_a_fifo_at_config_path() {
+        let tmp = TempDir::new().unwrap();
+        let rootfs = tmp.path();
+        std::fs::create_dir_all(rootfs.join("etc")).unwrap();
+        nix::unistd::mkfifo(&rootfs.join("etc/x.conf"), nix::sys::stat::Mode::from_bits_truncate(0o644))
+            .unwrap();
+        let pkg = make_pkg_with_file("confpkg", "etc/x.conf", &"ab".repeat(32));
+        let r = verify_package(&pkg, rootfs, "confpkg", false);
+        assert_eq!((r.mismatches, r.config_changed), (0, 1));
     }
 }
