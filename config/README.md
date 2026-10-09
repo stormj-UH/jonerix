@@ -88,7 +88,7 @@ later-sorting file of your own is still the better habit: it keeps the
 package's file pristine, so its fixes keep arriving without a merge.
 The upgrade that installs 2.2.11 is still run by the old jpkg, so
 upgrade jpkg on its own first to have that run protect your edits too:
-`jpkg update && jpkg install --force jpkg && jpkg upgrade`.
+`jpkg update && jpkg install jpkg && jpkg upgrade jpkg && jpkg upgrade`.
 
 Two toybox `sysctl -p` rules shape the files: comments go on their own
 line (an inline `# ...` is written as part of the value), and a key the

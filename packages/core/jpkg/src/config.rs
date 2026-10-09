@@ -58,8 +58,11 @@
 //! package ships is merged into an existing directory and written through
 //! an admin's symlink that leads to a directory -- except, under `--root`,
 //! an absolute one, which would lead out of the root and is saved instead.
-//! jpkg's own link where its package now ships a directory is removed, and
-//! the files below it are installed as new.  Directories are only
+//! A package's own previous link where it now ships a directory is removed,
+//! and the files below it are installed as new -- after checking that the
+//! directory the link led to holds only that package's own pristine files
+//! (else the upgrade is refused before any write, naming the rest).  Another
+//! package's link is never removed to make room.  Directories are only
 //! ever removed when empty, except the old directory of a package that
 //! turns it into a symlink, which upgrade-clean removes only after checking
 //! that everything in it is the package's and pristine.
@@ -73,11 +76,12 @@
 //!   (an earlier offer).  If the admin is working in it, it is left alone
 //!   and the new packaged version is not written; once the admin clears
 //!   the slot, the next version that changes the file offers its copy.
-//! * an upgrade that stops shipping the file (or ships something else
-//!   there, or leaves it to a co-owner), or `jpkg remove`: a pristine file
-//!   is deleted; a changed one stays where it is, now owned by no package,
-//!   with a warning.  An offer holding package content goes either way, and
-//!   so does an interrupted install's `<file>.jpkg-tmp`.
+//! * an upgrade that stops shipping the file, or `jpkg remove`: a pristine
+//!   file is deleted; a changed one stays where it is, now owned by no
+//!   package, with a warning.  (Where the upgrade ships a symlink or a
+//!   directory there instead, see below; where a co-owner keeps the path,
+//!   it stays.)  An untouched offer goes in every one of these cases, and so
+//!   does an interrupted install's scratch file.
 //! * a symlink the package ships where it (or another package) shipped a
 //!   symlink before: an admin's change there -- another target, or a file
 //!   or directory in its place -- is kept, like a changed config file, and
@@ -259,7 +263,8 @@ pub enum Displace {
     /// place of a link), or put something where nothing was recorded: keep
     /// it, and do not write the package's link.
     Keep,
-    /// jpkg's own file or link where a directory goes: remove it first
+    /// The package's own previous link, jpkg's file, or another package's
+    /// link that leads nowhere, where a directory goes: remove it first
     /// (config files below it are then decided as if nothing were there).
     Remove,
     /// Anything else not pristine: move it to `<path>.jpkg-save` first.
@@ -268,8 +273,16 @@ pub enum Displace {
 
 /// Decide [`Displace`] for the object `disk` at `n.path`.  `link_to_dir`:
 /// `disk` is a symlink that leads (followed, as install_files would follow
-/// it) to a directory inside the root being installed into.
-pub fn displace(disk: &OnDisk, n: &FileEntry, rec: &Recorded<'_>, link_to_dir: bool) -> Displace {
+/// it) to a directory inside the root being installed into.  `own_link`:
+/// `disk` is exactly the symlink this package's previous version shipped
+/// there (another owner's link is never removed to make room).
+pub fn displace(
+    disk: &OnDisk,
+    n: &FileEntry,
+    rec: &Recorded<'_>,
+    link_to_dir: bool,
+    own_link: bool,
+) -> Displace {
     let nothing_recorded = rec.shas.is_empty() && rec.links.is_empty() && !rec.dir;
     match (disk, n.symlink_target.as_deref()) {
         (OnDisk::Missing, _) => Displace::Leave,
@@ -279,12 +292,15 @@ pub fn displace(disk: &OnDisk, n: &FileEntry, rec: &Recorded<'_>, link_to_dir: b
         (d, Some(_)) if is_pristine(d, rec) => Displace::Leave,
         (_, Some(_)) if !rec.links.is_empty() || nothing_recorded => Displace::Keep,
         (_, Some(_)) => Displace::Save,
-        // The package places a directory.  jpkg's own file or link there is
-        // removed (the package's layout changes); an admin's link that leads
-        // to a directory is followed, as it always was.
+        // The package places a directory.  Its own previous link there is
+        // removed (its layout changes; the caller checks what is below it),
+        // and so is jpkg's file there; another link that leads to a
+        // directory is followed, as it always was.
         (OnDisk::Dir, None) => Displace::Leave,
-        (OnDisk::File(_) | OnDisk::Link(_), None) if is_pristine(disk, rec) => Displace::Remove,
+        (OnDisk::Link(_), None) if own_link => Displace::Remove,
+        (OnDisk::File(_), None) if is_pristine(disk, rec) => Displace::Remove,
         (OnDisk::Link(_), None) if link_to_dir => Displace::Leave,
+        (OnDisk::Link(_), None) if is_pristine(disk, rec) => Displace::Remove,
         (_, None) => Displace::Save,
     }
 }
@@ -389,25 +405,32 @@ pub fn is_package_leftover(
         };
     }
     if let Some(base) = rel.strip_suffix(TMP_SUFFIX) {
+        // <path>.jpkg-tmp, or an offer's own scratch, <path>.jpkg-new.jpkg-tmp.
+        let base = base.strip_suffix(NEW_SUFFIX).unwrap_or(base);
         return owned.get(base).is_some_and(|e| is_config_path(&e.path))
             && matches!(on_disk(rootfs, rel), Ok(OnDisk::File(_) | OnDisk::Link(_)));
     }
     false
 }
 
-/// Remove `<path>.jpkg-tmp` when an interrupted install left one there (a
-/// regular file or symlink: jpkg's own scratch).  Returns whether it did.
+/// Remove what an interrupted install left next to `path`: `<path>.jpkg-tmp`
+/// and an offer's `<path>.jpkg-new.jpkg-tmp`, when they are a regular file or
+/// symlink (jpkg's own scratch).  Returns whether it removed anything.
 pub fn drop_scratch(rootfs: &Path, path: &str) -> io::Result<bool> {
-    let tmp = with_suffix(&rootfs.join(path), TMP_SUFFIX);
-    match tmp.symlink_metadata() {
-        Ok(m) if m.file_type().is_file() || m.file_type().is_symlink() => {
-            fs::remove_file(&tmp)?;
-            Ok(true)
+    let abs = rootfs.join(path);
+    let mut dropped = false;
+    for tmp in [with_suffix(&abs, TMP_SUFFIX), with_suffix(&with_suffix(&abs, NEW_SUFFIX), TMP_SUFFIX)] {
+        match tmp.symlink_metadata() {
+            Ok(m) if m.file_type().is_file() || m.file_type().is_symlink() => {
+                fs::remove_file(&tmp)?;
+                dropped = true;
+            }
+            Ok(_) => {}
+            Err(e) if matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => {}
+            Err(e) => return Err(e),
         }
-        Ok(_) => Ok(false),
-        Err(e) if matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => Ok(false),
-        Err(e) => Err(e),
     }
+    Ok(dropped)
 }
 
 /// True when `<path>.jpkg-new` exists as a regular file (never followed).
@@ -520,35 +543,37 @@ mod tests {
         link.symlink_target = Some("x.d/main".into());
         let mut dir = file("etc/x.conf", "");
         dir.is_dir = true;
-        // (on disk, new entry, recorded, link leads to a dir) → what happens first
-        let rows: Vec<(OnDisk, &FileEntry, Recorded<'_>, bool, Displace)> = vec![
+        // (on disk, new entry, recorded, link leads to a dir, this package's own old link) → what happens first
+        let rows: Vec<(OnDisk, &FileEntry, Recorded<'_>, bool, bool, Displace)> = vec![
             // The package places a symlink.
-            (OnDisk::Missing, &link, rec(&[], &[], false), false, Leave),
-            (f("O"), &link, rec(&["O"], &[], false), false, Leave),      // jpkg's file: replaced
-            (f("D"), &link, rec(&["O"], &[], false), false, Save),       // changed file, kind changes
-            (l("x.d/main"), &link, rec(&[], &[], false), false, Leave),  // already that link
-            (l("old"), &link, rec(&[], &["old"], false), false, Leave),  // jpkg's old link
-            (l("/data/x"), &link, rec(&[], &["old"], false), false, Keep), // the admin retargeted it
-            (f("D"), &link, rec(&[], &["old"], false), false, Keep),     // a file in place of the link
-            (OnDisk::Dir, &link, rec(&[], &["old"], false), false, Keep),
-            (l("/data/x"), &link, rec(&[], &[], false), false, Keep),    // nothing recorded: the admin's
-            (f("D"), &link, rec(&[], &[], false), false, Keep),
-            (l("/data/x"), &link, rec(&["O"], &[], false), false, Save), // admin link over a packaged file
-            (OnDisk::Dir, &link, rec(&[], &[], true), false, Leave),     // upgrade-clean's case
-            (OnDisk::Other, &link, rec(&["O"], &[], false), false, Save),
+            (OnDisk::Missing, &link, rec(&[], &[], false), false, false, Leave),
+            (f("O"), &link, rec(&["O"], &[], false), false, false, Leave),      // jpkg's file: replaced
+            (f("D"), &link, rec(&["O"], &[], false), false, false, Save),       // changed file, kind changes
+            (l("x.d/main"), &link, rec(&[], &[], false), false, false, Leave),  // already that link
+            (l("old"), &link, rec(&[], &["old"], false), false, false, Leave),  // jpkg's old link
+            (l("/data/x"), &link, rec(&[], &["old"], false), false, false, Keep), // the admin retargeted it
+            (f("D"), &link, rec(&[], &["old"], false), false, false, Keep),     // a file in place of the link
+            (OnDisk::Dir, &link, rec(&[], &["old"], false), false, false, Keep),
+            (l("/data/x"), &link, rec(&[], &[], false), false, false, Keep),    // nothing recorded: the admin's
+            (f("D"), &link, rec(&[], &[], false), false, false, Keep),
+            (l("/data/x"), &link, rec(&["O"], &[], false), false, false, Save), // admin link over a packaged file
+            (OnDisk::Dir, &link, rec(&[], &[], true), false, false, Leave),     // upgrade-clean's case
+            (OnDisk::Other, &link, rec(&["O"], &[], false), false, false, Save),
             // The package places a directory.
-            (OnDisk::Missing, &dir, rec(&[], &[], false), false, Leave),
-            (OnDisk::Dir, &dir, rec(&[], &[], false), false, Leave),     // merged into, as always
-            (l("/data/x.d"), &dir, rec(&[], &[], false), true, Leave),   // followed, as always
-            (l("/data/gone"), &dir, rec(&[], &[], false), false, Save),  // cannot be followed
-            (l("old"), &dir, rec(&[], &["old"], false), false, Remove),  // jpkg's dead link
-            (l("old"), &dir, rec(&[], &["old"], false), true, Remove),   // jpkg's link to a dir: not followed
-            (f("O"), &dir, rec(&["O"], &[], false), false, Remove),      // jpkg's file in the way
-            (f("D"), &dir, rec(&["O"], &[], false), false, Save),
-            (OnDisk::Other, &dir, rec(&[], &[], false), false, Save),
+            (OnDisk::Missing, &dir, rec(&[], &[], false), false, false, Leave),
+            (OnDisk::Dir, &dir, rec(&[], &[], false), false, false, Leave),     // merged into, as always
+            (l("/data/x.d"), &dir, rec(&[], &[], false), true, false, Leave),   // followed, as always
+            (l("/data/gone"), &dir, rec(&[], &[], false), false, false, Save),  // cannot be followed
+            (l("old"), &dir, rec(&[], &["old"], false), false, false, Remove),  // jpkg's dead link
+            (l("old"), &dir, rec(&[], &["old"], false), true, true, Remove),    // its own link to a dir: removed
+            (l("old"), &dir, rec(&[], &["old"], false), true, false, Leave),    // another's link to a dir: followed
+            (l("old"), &dir, rec(&[], &["old"], false), false, true, Remove),   // its own dead link
+            (f("O"), &dir, rec(&["O"], &[], false), false, false, Remove),      // jpkg's file in the way
+            (f("D"), &dir, rec(&["O"], &[], false), false, false, Save),
+            (OnDisk::Other, &dir, rec(&[], &[], false), false, false, Save),
         ];
-        for (disk, n, rec, to_dir, want) in &rows {
-            assert_eq!(displace(disk, n, rec, *to_dir), *want, "{disk:?} new={n:?} rec={rec:?} to_dir={to_dir}");
+        for (disk, n, rec, to_dir, own, want) in &rows {
+            assert_eq!(displace(disk, n, rec, *to_dir, *own), *want, "{disk:?} new={n:?} rec={rec:?} to_dir={to_dir} own={own}");
         }
     }
 

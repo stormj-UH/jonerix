@@ -294,8 +294,11 @@ it back, and package files are written, and on removal pristine ones
 deleted, through the link), and a directory a package ships is merged into
 an existing directory, or written through your symlink when it leads to a
 directory (under `--root`, an absolute link is not followed out of the
-root: it is moved to `.jpkg-save`). A link jpkg itself shipped where the
-package now ships a directory is removed and the directory created.
+root: it is moved to `.jpkg-save`). Where a package now ships a directory
+in place of a link its previous version shipped, the link is removed and
+the directory created -- unless the directory the link led to holds
+anything but that package's own unchanged files, in which case the upgrade
+is refused before anything is written, naming them.
 
 | Situation | What jpkg does |
 |---|---|
@@ -311,6 +314,7 @@ package now ships a directory is removed and the directory created.
 | a package turns a config file (its own or another package's) into a symlink or a directory, and the file was changed | moves the changed file to `<file>.jpkg-save` first; refuses the install rather than overwrite an existing `.jpkg-save` |
 | a package puts a directory where your own FIFO, file, or symlink to something that is not a directory sits | moves that to `<file>.jpkg-save` first |
 | a package turns a directory into a symlink and you changed a config file in it | refuses the upgrade, naming your file; move it out of the directory (or take the packaged copy back) and retry |
+| a package turns its symlink into a directory, and the directory the link led to holds your files or another package's | same: refused, naming them |
 
 The installed manifest records what the package shipped, also for a kept
 file, so the next upgrade compares against that. Files and links at config
@@ -344,10 +348,14 @@ file as a config file, or is removed.
 updates it, `useradd -m` also copies the `.jpkg-new` into new homes until
 you delete it.
 
-jonerix has no local CA store: the trust store is the package's. To trust
-a private CA, point the program at it (`SSL_CERT_FILE`, `SSL_CERT_DIR` for
-Go programs, or the program's own CA option); an edit inside
-`/etc/ssl/certs/` or to `/etc/ssl/cert.pem` is undone by the next update.
+jonerix has no local CA store: the trust store is the package's, and an
+edit inside `/etc/ssl/certs/` or to `/etc/ssl/cert.pem` is undone by the
+next update. To trust a private CA, point the program at it: Go programs
+and the curl command read `SSL_CERT_FILE` and `SSL_CERT_DIR` (which replace
+the default bundle, so give them a file holding the bundle plus your CA,
+kept outside `/etc/ssl`); LibreSSL itself ignores both, so a program using
+libssl or libtls (python3 among them) needs its own CA option (`--cacert`,
+`cafile=`, …).
 
 ### Upgrading to 2.2.11
 
@@ -355,12 +363,15 @@ The upgrade that installs 2.2.11 is still run by the jpkg it replaces,
 which overwrites edited files as before. Upgrade jpkg on its own first:
 
 ```sh
-jpkg update && jpkg install --force jpkg && jpkg upgrade
+jpkg update && jpkg install jpkg && jpkg upgrade jpkg && jpkg upgrade
 ```
 
-(`jpkg install --force` rather than `jpkg upgrade jpkg`: on hosts made
-from the minimal, core or router images jpkg is not a registered package,
-so `jpkg upgrade` never touches it. This registers it.)
+(On hosts made from the minimal, core or router images jpkg is not a
+registered package, so `jpkg upgrade` alone never touches it: `jpkg install
+jpkg` registers it there and does nothing where it is registered; `jpkg
+upgrade jpkg` then upgrades jpkg and nothing else. Do not use `jpkg install
+--force jpkg`: it makes the old jpkg reinstall musl, toybox and mksh too,
+overwriting their edited config files.)
 
 Hosts installed from an image or WSL rootfs made before 2.2.11 can hold
 the image's copy of a packaged file (`/etc/zshrc` on WSL and on hosts from
@@ -378,8 +389,9 @@ it adopts r2 without an offer.
   locally and your updates to it stop landing. Bake the edit into the
   shipped copy. Do not seed or edit other packages' `etc/` files either.
 - Do not ship defaults into a directory whose reader loads every file
-  (the trust store, or any `foo.d/` read without a name filter): a
-  `.jpkg-new` there would be read too.
+  (any `foo.d/` read without a name filter): a `.jpkg-new` there would be
+  read too. (init.d, cron.d and the trust store are not config, so they
+  never get one.)
 - Prefer a drop-in directory (`foo.d/*.conf`) for anything an admin is
   likely to tune: their file stays theirs and yours stays pristine.
 - Recipes that ship a default outside `etc/` and seed `/etc` from a hook

@@ -24,10 +24,11 @@ description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5
 #     taken again; a failure before that leaves the recorded copies.
 #   * verify reports a changed config file or link instead of failing on it.
 #   * Hooks see JPKG_CONFFILES=1.
-#   * Upgrade jpkg on its own first: jpkg update && jpkg install --force
-#     jpkg && jpkg upgrade (the run that installs 2.2.11 is performed by the
-#     old jpkg; on image-built hosts jpkg is not a registered package, so
-#     plain `jpkg upgrade` never reaches it).
+#   * Upgrade jpkg on its own first: jpkg update && jpkg install jpkg &&
+#     jpkg upgrade jpkg && jpkg upgrade (the run that installs 2.2.11 is
+#     performed by the old jpkg; on image-built hosts jpkg is not a
+#     registered package, so plain `jpkg upgrade` never reaches it; never
+#     `install --force jpkg`, which reinstalls its whole runtime closure).
 #   * Shipped with fastfetch 2.36.1-r2 (ships the banner the images used to
 #     overlay, so hosts holding it adopt r2 silently), shadow 4.19.4-r11 and
 #     jonerix-raspi5-fixups 1.6.35 (their hooks no longer rewrite

@@ -262,7 +262,7 @@ pub(crate) fn remove_package_files(
                 log::warn!("jpkg: could not check /{}{}: {e}", entry.path, crate::config::NEW_SUFFIX);
             }
         }
-        if crate::config::is_config_path(&entry.path) && !entry.is_dir {
+        if crate::config::is_config_path(&entry.path) {
             if let Err(e) = crate::config::drop_scratch(rootfs, &entry.path) {
                 log::warn!("jpkg: could not check /{}{}: {e}", entry.path, crate::config::TMP_SUFFIX);
             }
