@@ -176,6 +176,18 @@ if [ "$failures" -ne 0 ]; then
     exit 1
 fi
 
+# jpkg 2.2.11 never overwrites a config file it did not record: it keeps it
+# and puts the package's copy beside it as *.jpkg-new (or moves it aside as
+# *.jpkg-save).  A fresh rootfs has no admin to merge them, so one here
+# means something pre-seeded a path a package ships.  Nothing copied after
+# this point may overwrite a packaged config file under /etc either.
+leftover=$(find "${STAGING}" -xdev \( -name '*.jpkg-new' -o -name '*.jpkg-save' \) 2>/dev/null || true)
+if [ -n "$leftover" ]; then
+    echo "rootfs build: something pre-seeds paths packages ship; jpkg left these beside them:" >&2
+    echo "$leftover" >&2
+    exit 1
+fi
+
 # mandoc's post_install indexed only the man pages installed before it;
 # index them all now so man(1) stops warning "outdated mandoc.db".
 if [ -x "${STAGING}/bin/makewhatis" ]; then

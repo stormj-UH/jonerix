@@ -1,9 +1,13 @@
 [package]
 name = "jonerix-raspi5-fixups"
-version = "1.6.34"
+version = "1.6.35"
 arch = "aarch64"
 license = "0BSD"
 description = "Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot+poweroff, cold-reboot, wake-on-power, RTC coin-cell monitor, reset-cause boot traces + heartbeat, under-voltage hwmon, serial login, hardware watchdog, netconsole) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro"
+# 1.6.35: login.defs is shadow's file and the operator's.  shadow ships it
+#   with LOGIN_TIMEOUT 0 (4.19.4-r11 stops rewriting it from a hook), so
+#   this package no longer seds it or keeps a .pre-raspi5-fixups copy to
+#   restore over it on removal; a leftover copy is deleted.
 # 1.6.34: hang recovery and remote kernel logs.
 #   - new pi5-watchdog service (default runlevel) + /bin/pi5-watchdog:
 #     feeds bcm2835-wdt (15 s) from an mksh loop that execs nothing per
@@ -811,19 +815,10 @@ if grep -q '^[[:space:]]*nc_rcu_stall_timeout=' /etc/conf.d/netconsole 2>/dev/nu
 fi
 
 # --- shadow login defaults ---
-# shadow owns /etc/init.d/shadow-login and /etc/login.defs. Keep ownership
-# there, but normalize Pi images away from the one-minute idle timeout
-# loop that spammed logs on jonerix-tormenta.
-if [ -f /etc/login.defs ]; then
-    if [ ! -e /etc/login.defs.pre-raspi5-fixups ]; then
-        cp -p /etc/login.defs /etc/login.defs.pre-raspi5-fixups 2>/dev/null || true
-    fi
-    if grep -q '^[[:space:]]*LOGIN_TIMEOUT[[:space:]]' /etc/login.defs 2>/dev/null; then
-        sed -i 's/^[[:space:]]*LOGIN_TIMEOUT[[:space:]].*/LOGIN_TIMEOUT	0/' /etc/login.defs
-    else
-        echo 'LOGIN_TIMEOUT	0' >> /etc/login.defs
-    fi
-fi
+# shadow owns /etc/login.defs and ships it with LOGIN_TIMEOUT 0 (no more
+# one-minute idle timeout loop on HDMI).  An edited copy is the operator's;
+# do not touch it.  Up to 1.6.34 this hook rewrote it and parked a copy.
+rm -f /etc/login.defs.pre-raspi5-fixups
 # Up to 1.6.32 this package copied an identical shadow-login over shadow's
 # and parked the original as /etc/init.d/shadow-login.pre-raspi5-fixups,
 # which OpenRC parsed as a second service. 1.6.33 leaves shadow's script
@@ -982,10 +977,7 @@ rm -f /etc/runlevels/boot/boot-trace /etc/runlevels/boot/disable-eee /etc/runlev
 # The shadow-login backup is stale by now: shadow owns the live script, so
 # do not copy the backup over it. Just drop it.
 rm -f /etc/jpkg/raspi5-fixups/shadow-login.pre-raspi5-fixups /etc/init.d/shadow-login.pre-raspi5-fixups
-if [ -f /etc/login.defs.pre-raspi5-fixups ]; then
-    cp -p /etc/login.defs.pre-raspi5-fixups /etc/login.defs
-    rm -f /etc/login.defs.pre-raspi5-fixups
-fi
+rm -f /etc/login.defs.pre-raspi5-fixups
 if [ -f /etc/jpkg/raspi5-fixups/adduser.prev ]; then
     prev=$(cat /etc/jpkg/raspi5-fixups/adduser.prev)
     [ -n "$prev" ] && ln -sf "$prev" /bin/adduser

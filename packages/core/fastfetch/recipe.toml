@@ -1,6 +1,10 @@
 [package]
 name = "fastfetch"
 version = "2.36.1-r2"
+# r2 ships config.jsonc and logo.txt byte for byte as the images used to
+# overlay them (config/defaults/etc/fastfetch, removed), so hosts built from
+# those images adopt r2 silently under jpkg 2.2.11.  Change them only in a
+# later revision.
 license = "MIT"
 description = "Feature-rich system information tool"
 

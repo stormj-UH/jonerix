@@ -117,9 +117,9 @@ RUN ln -sf mksh /jonerix/bin/sh && \
     ln -sf dbclient /jonerix/bin/ssh 2>/dev/null || true
 
 # CA certificates come from the ca-certificates package above, not a
-# download: since jpkg 2.2.11 an unowned file at a packaged config path is
-# kept, so a curl'd bundle here would stop every later image from ever
-# receiving the package's CA updates.
+# download: a curl'd bundle would be unowned, drift from the package's, and
+# leave every host built from this image on a snapshot until ca-certificates
+# is installed there.
 
 # --- Default config files ---
 COPY config/defaults/etc/hostname     /jonerix/etc/hostname

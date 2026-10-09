@@ -1,6 +1,6 @@
 [package]
 name = "shadow"
-version = "4.19.4-r10"
+version = "4.19.4-r11"
 license = "BSD-3-Clause"
 # REPLACES toybox for the user-management + login surface.
 # Installing this package redirects these /bin entries away from
@@ -300,18 +300,9 @@ if [ -L /bin/chsh ] && [ "$(readlink /bin/chsh 2>/dev/null)" = "shadow-chsh" ]; 
 fi
 rm -f "$backup_dir/chsh" "$backup_dir/chsh.bin"
 
-# login.defs: ship if the system doesn't already have one, but
-# never clobber the operator's edited copy.
-if [ ! -f /etc/login.defs ] && [ -f /etc/default/useradd ]; then
-    : # configure-installed
-fi
-if [ -f /etc/login.defs ]; then
-    if grep -q '^[[:space:]]*LOGIN_TIMEOUT[[:space:]]' /etc/login.defs 2>/dev/null; then
-        sed -i 's/^[[:space:]]*LOGIN_TIMEOUT[[:space:]].*/LOGIN_TIMEOUT	0/' /etc/login.defs
-    else
-        echo 'LOGIN_TIMEOUT	0' >> /etc/login.defs
-    fi
-fi
+# login.defs ships with LOGIN_TIMEOUT 0 already set (install step).  jpkg
+# replaces an untouched copy and, from 2.2.11, keeps one the operator
+# edited, so this hook leaves the file alone.
 
 # --- shadow-login OpenRC service wiring ---
 # Put /etc/init.d/shadow-login in the default runlevel so a fresh

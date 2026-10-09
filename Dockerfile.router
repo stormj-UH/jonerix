@@ -49,10 +49,10 @@ RUN jpkg update && \
 # and puts the package's copy beside it as *.jpkg-new, or moves it aside as
 # *.jpkg-save.  An image build has no admin to merge them, so one appearing
 # here means an earlier layer pre-seeds a path a package ships.  Fail rather
-# than ship a stale config.  Anything COPY'd or written after this check
-# must only target paths no package ships: an overlay over a packaged
-# config file is kept as a local change on every host built from the image,
-# so the package's own updates to it never land.
+# than ship a stale config.  Nothing COPY'd or written after this check
+# may overwrite a packaged config file under /etc: it would be kept as a
+# local change on every host built from the image, so the package's own
+# updates to it would never land.
 RUN leftover=$(find / -xdev \( -name '*.jpkg-new' -o -name '*.jpkg-save' \) 2>/dev/null || true); \
     if [ -n "$leftover" ]; then \
       echo "image build: an earlier layer pre-seeds paths packages ship; jpkg left these beside them:" >&2; \

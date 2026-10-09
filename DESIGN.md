@@ -466,7 +466,7 @@ jonerix/
 │   │   └── etc/             ← unbound, hostapd, interfaces, sysctl
 │   └── defaults/
 │       └── etc/             ← hostname, passwd, group, shadow, profile,
-│                               securetty, os-release, fastfetch/
+│                               securetty, os-release
 │
 ├── scripts/
 │   ├── build-local.sh       ← build images locally (mirrors CI chain)
