@@ -5,12 +5,12 @@ license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
 # 2.2.11 — config files survive upgrades.
 #   * A regular file a package ships under etc/ is a config file, except
-#     under etc/init.d/ and etc/cron.d/ (run as code) and etc/ssl/certs/
-#     (the trust store, read whole by Go; CA updates must land).  The class
-#     is a pure function of the path on the installing host: no metadata,
-#     INDEX or manifest format changes, so 2.2.10 hosts verify and install
-#     every 2.2.11-built package (pinned by two golden canonical-bytes
-#     tests captured on 2.2.10).
+#     under etc/init.d/ and etc/cron.d/ (run as code) and the trust store,
+#     etc/ssl/certs/ and etc/ssl/cert.pem (read whole by Go; CA updates must
+#     land).  The class is a pure function of the path on the installing
+#     host: no metadata, INDEX or manifest format changes, so 2.2.10 hosts
+#     verify and install every 2.2.11-built package (pinned by three golden
+#     canonical-bytes tests captured on 2.2.10).
 #   * jpkg overwrites or deletes a file or link at a config path only when
 #     it is pristine: missing, or a file or symlink jpkg recorded there.  A
 #     changed file is kept; if the package's copy is new, it lands beside
@@ -19,19 +19,22 @@ description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5
 #     removed package's, stays in place, unowned.  An admin's change to a
 #     packaged symlink is kept the same way.  Where a package turns a config
 #     file into a symlink or directory, a changed one goes to
-#     <file>.jpkg-save first.  What cannot be checked is kept; every
-#     decision is taken again just before the copy; config files are copied
-#     last, via a temporary name and rename, so a failed install leaves the
-#     recorded copies.
+#     <file>.jpkg-save first.  Files and links at config paths are written
+#     last, each via a temporary name and rename, after every decision is
+#     taken again; a failure before that leaves the recorded copies.
 #   * verify reports a changed config file or link instead of failing on it.
 #   * Hooks see JPKG_CONFFILES=1.
-#   * Upgrade jpkg on its own first (jpkg update && jpkg upgrade jpkg &&
-#     jpkg upgrade): the run that installs 2.2.11 is performed by the old
-#     jpkg.  Shipped with fastfetch 2.36.1-r2, which ships the banner the
-#     images used to overlay, so image-built hosts adopt it silently.
-#   * Images: rebuild minimal before core, builder and router.  Those now
-#     fail the build on any *.jpkg-new / *.jpkg-save, and no image overlays
-#     a packaged config file any more.
+#   * Upgrade jpkg on its own first: jpkg update && jpkg install --force
+#     jpkg && jpkg upgrade (the run that installs 2.2.11 is performed by the
+#     old jpkg; on image-built hosts jpkg is not a registered package, so
+#     plain `jpkg upgrade` never reaches it).
+#   * Shipped with fastfetch 2.36.1-r2 (ships the banner the images used to
+#     overlay, so hosts holding it adopt r2 silently), shadow 4.19.4-r11 and
+#     jonerix-raspi5-fixups 1.6.35 (their hooks no longer rewrite
+#     login.defs).
+#   * Images: rebuild minimal before core, builder and router.  Those, and
+#     the WSL rootfs, now fail the build on any *.jpkg-new / *.jpkg-save,
+#     and no image overlays a packaged config file any more.
 #
 # 2.2.10 — file modes and cross-package ownership.
 #   * Keep setuid/setgid/sticky bits: extraction enables tar's

@@ -289,11 +289,14 @@ mod tests {
     const GOLDEN_SHAPES_SHA256_2_2_10: &str =
         "506bdff4d198fe1ceba06200f7898ff7cafe66c4f0b40e7b59b34e597fda433a";
 
-    /// Every string form the toml serializer picks, so a dependency bump
-    /// that changes any one of them trips a golden test: non-ASCII, a
-    /// single-line literal, quotes plus a backslash, a trailing single
-    /// quote, control characters, a tab, and multiline hooks with a tab and
-    /// a backslash, a tab and no backslash, and ''' plus a backslash.
+    /// String forms the toml serializer picks, so a dependency bump that
+    /// changes one of them trips a golden test (golden_more_shapes_fixture
+    /// has the rest): non-ASCII, a single-line literal, quotes plus a
+    /// backslash, control characters, a tab, and multiline hooks with a tab
+    /// and a backslash, a tab and no backslash, and ''' plus a backslash.
+    /// The last two do not survive jpkg's own parse (sanitize_legacy_escapes
+    /// doubles backslashes inside """), so no package can ship them intact;
+    /// they are pinned for the serializer's sake only.
     fn golden_shapes_fixture() -> crate::recipe::Metadata {
         use crate::recipe::{DependsSection, FilesSection, HooksSection, Metadata, PackageSection};
         Metadata {
@@ -331,6 +334,58 @@ mod tests {
         assert_eq!(
             hex::encode(Sha256::digest(&bytes)),
             GOLDEN_SHAPES_SHA256_2_2_10,
+            "the serializer's string forms changed; signed packages would no longer verify \
+             on older hosts.\n--- canonical TOML body ---\n{body}"
+        );
+    }
+
+    // Captured on the unmodified 2.2.10 tree (f63d5c37) in builder-arm64,
+    // like the two above.
+    const GOLDEN_MORE_SHAPES_SHA256_2_2_10: &str =
+        "62c68227455f3b90137563c942799cafc6888d4d120b7dc36797c4561e9e973b";
+
+    /// The string forms golden_shapes_fixture leaves out, first among them
+    /// the most common hook in the tree: a multi-line basic string with raw
+    /// double quotes and no backslash.  Also: a single-line string with both
+    /// quote kinds, a double quote next to a control character, \b, \f and
+    /// ESC, and a multi-line literal body ending in a single quote.
+    fn golden_more_shapes_fixture() -> crate::recipe::Metadata {
+        use crate::recipe::{DependsSection, FilesSection, HooksSection, Metadata, PackageSection};
+        Metadata {
+            package: PackageSection {
+                name: Some("more-shapes".to_owned()),
+                version: Some("0.0.2-r1".to_owned()),
+                license: Some("0BSD".to_owned()),
+                description: Some("it's \"quoted\"".to_owned()),
+                arch: Some("aarch64".to_owned()),
+                replaces: vec!["say \"hi\"\u{1}".to_owned()],
+                conflicts: vec!["bs\u{8}ff\u{c}esc\u{1b}".to_owned()],
+            },
+            depends: DependsSection {
+                runtime: vec!["x=\"\"".to_owned()],
+                build: vec!["'single'".to_owned()],
+            },
+            hooks: HooksSection {
+                pre_install: Some("case \"${JPKG_ROOT:-/}\" in\n  /) ;;\nesac\nx=\"\"\necho \"".to_owned()),
+                post_install: Some("printf '%s\\n' x\necho 'end'".to_owned()),
+                pre_remove: Some("echo \"a\"\necho \"\"\n".to_owned()),
+                post_remove: Some("rc-update del \"$svc\" default\n".to_owned()),
+            },
+            files: FilesSection {
+                sha256: Some("cd".repeat(32)),
+                size: Some(2),
+            },
+            signature: None,
+        }
+    }
+
+    #[test]
+    fn canonical_bytes_of_the_remaining_string_forms_match_2_2_10_golden() {
+        let bytes = canonical_bytes(&golden_more_shapes_fixture(), &[0x5au8; 32]);
+        let body = String::from_utf8_lossy(&bytes[CANON_PREFIX.len() + 1 + 32..]);
+        assert_eq!(
+            hex::encode(Sha256::digest(&bytes)),
+            GOLDEN_MORE_SHAPES_SHA256_2_2_10,
             "the serializer's string forms changed; signed packages would no longer verify \
              on older hosts.\n--- canonical TOML body ---\n{body}"
         );

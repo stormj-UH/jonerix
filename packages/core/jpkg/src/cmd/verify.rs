@@ -277,7 +277,7 @@ fn run_installed_verify(args: &[String]) -> i32 {
         total_mismatches += result.mismatches;
 
         let note = if result.config_changed > 0 {
-            format!(" ({} config file(s) changed locally)", result.config_changed)
+            format!(" ({} config path(s) changed locally)", result.config_changed)
         } else {
             String::new()
         };
@@ -385,10 +385,13 @@ fn verify_package(
                 Ok(_) => {
                     result.config_changed += 1;
                     if print_detail {
-                        let pending = if crate::config::has_pending_new(rootfs, rel) {
-                            format!(" (packaged version: /{}{})", fe.path, crate::config::NEW_SUFFIX)
-                        } else {
-                            String::new()
+                        let offer = format!("{rel}{}", crate::config::NEW_SUFFIX);
+                        let pending = match crate::config::on_disk(rootfs, &offer) {
+                            Ok(crate::config::OnDisk::File(h)) if h == fe.sha256 => {
+                                format!(" (packaged version: /{offer})")
+                            }
+                            Ok(crate::config::OnDisk::File(_)) => format!(" (/{offer} is there, edited)"),
+                            _ => String::new(),
                         };
                         println!("{pkg_name}:{}  config, changed locally{pending}", fe.path);
                     }

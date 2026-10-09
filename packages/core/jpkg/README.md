@@ -18,6 +18,7 @@ src/
 ├── sign.rs          Ed25519 keypair / sign / verify / PublicKeySet
 ├── canon.rs         Canonical-bytes construction for deterministic signing
 ├── db.rs            Installed-package database (fcntl-locked, C-format-compatible)
+├── config.rs        Config files under etc/: which they are, and when jpkg may touch one
 ├── fetch.rs         Synchronous HTTPS (ureq + rustls, webpki-roots, no system CAs)
 ├── repo.rs          INDEX management, mirror config, signature policy
 ├── deps.rs          Dependency resolution (topological sort, cycle detection)
@@ -56,6 +57,19 @@ Byte-compatible with C jpkg 1.1.5.  Existing installed-package databases
 (`/var/db/jpkg/installed/`) are read as-is; manifests C jpkg wrote with
 absolute paths (`/bin/x`) are rewritten to the relative form (`bin/x`) the
 first time a mutating verb takes the database lock.
+
+## Config files (2.2.11)
+
+A regular file a package ships under `etc/` is a config file (except under
+`etc/init.d/`, `etc/cron.d/` and the trust store).  jpkg replaces or
+deletes one only while it is pristine, i.e. what jpkg recorded; one the
+admin changed is kept, and a new packaged version lands beside it as
+`<file>.jpkg-new`.  The rule, its limits and what admins and recipe
+authors need to know are in `src/config.rs` (module doc) and
+`docs/packaging.md`, "Config files".  Nothing about it is stored in
+archives, the INDEX or the database, so 2.2.10 and 2.2.11 verify and read
+each other's packages and databases (pinned by the golden tests in
+`src/canon.rs`).
 
 ## File modes and ownership (2.2.10)
 

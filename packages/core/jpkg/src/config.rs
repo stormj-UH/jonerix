@@ -7,14 +7,17 @@
 //! # The rule
 //!
 //! A **config file** is a regular file a package ships under `etc/`, except
-//! under `etc/init.d/`, `etc/cron.d/` and `etc/ssl/certs/`.  OpenRC treats
-//! every file in init.d as a service and snooze-crond sources every file in
-//! cron.d, so those files are code: a side-by-side `<file>.jpkg-new` there
-//! would run too, and package fixes to them must land.  etc/ssl/certs/ is
-//! the trust store: Go's crypto/x509 (and Node with --use-system-ca) loads
-//! every file in it, dotfiles included, so an offer there would be trusted;
-//! and CA removals must keep reaching every client, so it stays package
-//! data, replaced on every update as in 2.2.10.  The other reader
+//! under `etc/init.d/`, `etc/cron.d/` and `etc/ssl/certs/`, and except
+//! `etc/ssl/cert.pem`.  OpenRC treats every file in init.d as a service and
+//! snooze-crond sources every file in cron.d, so those files are code: a
+//! side-by-side `<file>.jpkg-new` there would run too, and package fixes to
+//! them must land.  etc/ssl/certs/ and cert.pem (LibreSSL's default CA
+//! file, a link into it once ca-certificates is installed) are the trust
+//! store: Go's crypto/x509 (and Node with --use-system-ca) loads every file
+//! in certs/, dotfiles included, so an offer there would be trusted; and CA
+//! removals must keep reaching every client, also on hosts whose image left
+//! its own bundle or link there, so they stay package data, replaced on
+//! every update as in 2.2.10.  The other reader
 //! directories jonerix ships into filter by name (profile.d `*.sh`,
 //! sysctl.d `*.conf`, sudoers.d skips names with a dot, conf.d is read by
 //! service name, fonts conf.d `[0-9]*.conf`, local.d `*.start`/`*.stop`).
@@ -44,7 +47,8 @@
 //! opened, overwritten or deleted.  The one thing jpkg may do to it is
 //! rename it to `<path>.jpkg-save`, when a package changes the KIND of
 //! object at that path (a file becoming a symlink or a directory) or puts
-//! a directory where it cannot be followed.  A probe error counts as
+//! a directory where it cannot be followed.  A probe error before anything
+//! is written aborts the install; after writing has started it counts as
 //! changed: what cannot be checked is kept.
 //!
 //! Two limits, both as in 2.2.10: a symlinked parent directory is followed
@@ -52,7 +56,10 @@
 //! files written, and pristine ones removed, through the link; under
 //! `--root` an absolute link resolves on the host), and a directory a
 //! package ships is merged into an existing directory and written through
-//! an existing symlink that leads to a directory.  Directories are only
+//! an admin's symlink that leads to a directory -- except, under `--root`,
+//! an absolute one, which would lead out of the root and is saved instead.
+//! jpkg's own link where its package now ships a directory is removed, and
+//! the files below it are installed as new.  Directories are only
 //! ever removed when empty, except the old directory of a package that
 //! turns it into a symlink, which upgrade-clean removes only after checking
 //! that everything in it is the package's and pristine.
@@ -64,11 +71,13 @@
 //!   is written next to it as `<file>.jpkg-new` and a warning names it.
 //! * `<file>.jpkg-new` is written only over nothing or over package content
 //!   (an earlier offer).  If the admin is working in it, it is left alone
-//!   and the new packaged version is not written; it is offered again the
-//!   next time the package changes the file.
-//! * an upgrade that stops shipping the file, or `jpkg remove`: a pristine
-//!   file is deleted; a changed one stays where it is, now owned by no
-//!   package, with a warning.  An offer holding package content goes too.
+//!   and the new packaged version is not written; once the admin clears
+//!   the slot, the next version that changes the file offers its copy.
+//! * an upgrade that stops shipping the file (or ships something else
+//!   there, or leaves it to a co-owner), or `jpkg remove`: a pristine file
+//!   is deleted; a changed one stays where it is, now owned by no package,
+//!   with a warning.  An offer holding package content goes either way, and
+//!   so does an interrupted install's `<file>.jpkg-tmp`.
 //! * a symlink the package ships where it (or another package) shipped a
 //!   symlink before: an admin's change there -- another target, or a file
 //!   or directory in its place -- is kept, like a changed config file, and
@@ -80,12 +89,17 @@
 //! * a package turning a directory it recorded into a config file: the file
 //!   lands once upgrade-clean has emptied the directory; if anything is
 //!   left in it, the directory is kept like any changed object.
-//! * every decision is taken again just before the files are copied, which
-//!   keeps an edit made earlier in the upgrade.  The copy itself is not
-//!   guarded: an edit made while files are being copied can be lost.
-//! * config files are copied last, each to a temporary name and renamed
-//!   into place, so a failed or interrupted install leaves the old copies
-//!   (which the database still records) rather than half-written ones.
+//! * files and links at config paths are written last, after everything
+//!   else, each under `<file>.jpkg-tmp` and renamed into place; every
+//!   decision is taken again just before that, which keeps an edit made
+//!   earlier in the upgrade.  The writes themselves are not guarded: an
+//!   edit made while they run can be lost.
+//! * a failure before that last step leaves the copies the database still
+//!   records, and none is ever half-written.  A failure during it, or
+//!   before the database is updated, can leave some of the new version's
+//!   copies, which jpkg did not record: the next different version keeps
+//!   them as changed and offers its own copy (reinstalling the same
+//!   version repairs them).
 //! * verify: a changed config file (or a changed symlink at a config path)
 //!   is reported, not counted as a failure.  A missing one is a failure.
 
@@ -96,12 +110,16 @@ use std::path::{Path, PathBuf};
 use crate::db::FileEntry;
 use crate::util::sha256_file;
 
-/// Directories under `etc/` whose every file is executed, scheduled or
-/// trusted (see the module doc).
-const NOT_CONFIG: &[&str] = &["etc/init.d/", "etc/cron.d/", "etc/ssl/certs/"];
+/// Paths under `etc/` that are not config (see the module doc): a trailing
+/// `/` names a directory whose every file is executed, scheduled or
+/// trusted; anything else is one exact path.
+const NOT_CONFIG: &[&str] = &["etc/init.d/", "etc/cron.d/", "etc/ssl/certs/", "etc/ssl/cert.pem"];
 
 /// Suffix of the package's copy when a changed config file is kept.
 pub const NEW_SUFFIX: &str = ".jpkg-new";
+/// Suffix of the temporary name a config file (or config-path link) is
+/// written under before it is renamed into place.  jpkg's own scratch.
+pub const TMP_SUFFIX: &str = ".jpkg-tmp";
 /// Suffix of what is moved aside where a package places a symlink or a
 /// directory at a config path (see [`displace`]).
 pub const SAVE_SUFFIX: &str = ".jpkg-save";
@@ -109,7 +127,10 @@ pub const SAVE_SUFFIX: &str = ".jpkg-save";
 /// True for a manifest path (relative, no leading slash) that is a config
 /// path.  Callers must also check the entry is a regular file.
 pub fn is_config_path(path: &str) -> bool {
-    path.starts_with("etc/") && !NOT_CONFIG.iter().any(|d| path.starts_with(d))
+    path.starts_with("etc/")
+        && !NOT_CONFIG
+            .iter()
+            .any(|d| if d.ends_with('/') { path.starts_with(d) } else { path == *d })
 }
 
 /// True when `e` is a config file: a regular file at a config path.
@@ -238,8 +259,8 @@ pub enum Displace {
     /// place of a link), or put something where nothing was recorded: keep
     /// it, and do not write the package's link.
     Keep,
-    /// jpkg's own file, or its own link that does not lead to a directory,
-    /// where a directory goes: remove it first.
+    /// jpkg's own file or link where a directory goes: remove it first
+    /// (config files below it are then decided as if nothing were there).
     Remove,
     /// Anything else not pristine: move it to `<path>.jpkg-save` first.
     Save,
@@ -247,7 +268,7 @@ pub enum Displace {
 
 /// Decide [`Displace`] for the object `disk` at `n.path`.  `link_to_dir`:
 /// `disk` is a symlink that leads (followed, as install_files would follow
-/// it) to a directory.
+/// it) to a directory inside the root being installed into.
 pub fn displace(disk: &OnDisk, n: &FileEntry, rec: &Recorded<'_>, link_to_dir: bool) -> Displace {
     let nothing_recorded = rec.shas.is_empty() && rec.links.is_empty() && !rec.dir;
     match (disk, n.symlink_target.as_deref()) {
@@ -258,10 +279,12 @@ pub fn displace(disk: &OnDisk, n: &FileEntry, rec: &Recorded<'_>, link_to_dir: b
         (d, Some(_)) if is_pristine(d, rec) => Displace::Leave,
         (_, Some(_)) if !rec.links.is_empty() || nothing_recorded => Displace::Keep,
         (_, Some(_)) => Displace::Save,
-        // The package places a directory.
+        // The package places a directory.  jpkg's own file or link there is
+        // removed (the package's layout changes); an admin's link that leads
+        // to a directory is followed, as it always was.
         (OnDisk::Dir, None) => Displace::Leave,
-        (OnDisk::Link(_), None) if link_to_dir => Displace::Leave,
         (OnDisk::File(_) | OnDisk::Link(_), None) if is_pristine(disk, rec) => Displace::Remove,
+        (OnDisk::Link(_), None) if link_to_dir => Displace::Leave,
         (_, None) => Displace::Save,
     }
 }
@@ -308,7 +331,9 @@ pub fn keep_on_disk(rootfs: &Path, e: &FileEntry) -> bool {
 pub fn drop_stale_new(rootfs: &Path, path: &str, package_shas: &[&str]) -> io::Result<bool> {
     let new = with_suffix(&rootfs.join(path), NEW_SUFFIX);
     match new.symlink_metadata() {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) if matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => {
+            return Ok(false)
+        }
         Err(e) => return Err(e),
         Ok(m) if !m.file_type().is_file() => return Ok(false),
         Ok(_) => {}
@@ -345,22 +370,43 @@ pub fn is_empty_dir(rootfs: &Path, path: &str) -> io::Result<bool> {
     }
 }
 
-/// True when `rel` names an untouched offer jpkg wrote for an owned config
-/// file: `<path>.jpkg-new`, a regular file holding exactly the copy the
-/// manifest `owned` recorded for `<path>`.
-pub fn is_package_offer(
+/// True when `rel` is something jpkg itself left next to a path the
+/// manifest `owned` lists: an untouched offer (`<path>.jpkg-new`, a regular
+/// file holding exactly the copy recorded for `<path>`), or the scratch
+/// name a config path is written under (`<path>.jpkg-tmp`, a regular file
+/// or symlink an interrupted install left).
+pub fn is_package_leftover(
     rootfs: &Path,
     rel: &str,
     owned: &std::collections::HashMap<&str, &FileEntry>,
 ) -> bool {
-    let Some(base) = rel.strip_suffix(NEW_SUFFIX) else {
-        return false;
-    };
-    match owned.get(base) {
-        Some(e) if is_config(e) => {
-            matches!(on_disk(rootfs, rel), Ok(OnDisk::File(h)) if h == e.sha256)
+    if let Some(base) = rel.strip_suffix(NEW_SUFFIX) {
+        return match owned.get(base) {
+            Some(e) if is_config(e) => {
+                matches!(on_disk(rootfs, rel), Ok(OnDisk::File(h)) if h == e.sha256)
+            }
+            _ => false,
+        };
+    }
+    if let Some(base) = rel.strip_suffix(TMP_SUFFIX) {
+        return owned.get(base).is_some_and(|e| is_config_path(&e.path))
+            && matches!(on_disk(rootfs, rel), Ok(OnDisk::File(_) | OnDisk::Link(_)));
+    }
+    false
+}
+
+/// Remove `<path>.jpkg-tmp` when an interrupted install left one there (a
+/// regular file or symlink: jpkg's own scratch).  Returns whether it did.
+pub fn drop_scratch(rootfs: &Path, path: &str) -> io::Result<bool> {
+    let tmp = with_suffix(&rootfs.join(path), TMP_SUFFIX);
+    match tmp.symlink_metadata() {
+        Ok(m) if m.file_type().is_file() || m.file_type().is_symlink() => {
+            fs::remove_file(&tmp)?;
+            Ok(true)
         }
-        _ => false,
+        Ok(_) => Ok(false),
+        Err(e) if matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => Ok(false),
+        Err(e) => Err(e),
     }
 }
 
@@ -496,6 +542,7 @@ mod tests {
             (l("/data/x.d"), &dir, rec(&[], &[], false), true, Leave),   // followed, as always
             (l("/data/gone"), &dir, rec(&[], &[], false), false, Save),  // cannot be followed
             (l("old"), &dir, rec(&[], &["old"], false), false, Remove),  // jpkg's dead link
+            (l("old"), &dir, rec(&[], &["old"], false), true, Remove),   // jpkg's link to a dir: not followed
             (f("O"), &dir, rec(&["O"], &[], false), false, Remove),      // jpkg's file in the way
             (f("D"), &dir, rec(&["O"], &[], false), false, Save),
             (OnDisk::Other, &dir, rec(&[], &[], false), false, Save),
@@ -526,7 +573,8 @@ mod tests {
     fn trust_store_is_package_data() {
         assert!(!is_config(&file("etc/ssl/certs/ca-certificates.crt", "a")));
         assert!(is_config(&file("etc/ssl/openssl.cnf", "a")));
-        assert!(is_config_path("etc/ssl/cert.pem"));
+        assert!(!is_config_path("etc/ssl/cert.pem"), "LibreSSL's default CA file: package data");
+        assert!(is_config_path("etc/ssl/cert.pem.local"), "an exact path, not a prefix");
     }
 
     #[test]
@@ -569,13 +617,13 @@ mod tests {
     fn keep_on_disk_covers_symlinks_at_config_paths() {
         let t = tempfile::TempDir::new().unwrap();
         let r = t.path();
-        fs::create_dir_all(r.join("etc/ssl")).unwrap();
-        let mut link = file("etc/ssl/cert.pem", "");
+        fs::create_dir_all(r.join("etc/pki")).unwrap();
+        let mut link = file("etc/pki/default.pem", "");
         link.symlink_target = Some("certs/ca.crt".into());
-        std::os::unix::fs::symlink("certs/ca.crt", r.join("etc/ssl/cert.pem")).unwrap();
+        std::os::unix::fs::symlink("certs/ca.crt", r.join("etc/pki/default.pem")).unwrap();
         assert!(!keep_on_disk(r, &link), "jpkg's own link");
-        fs::remove_file(r.join("etc/ssl/cert.pem")).unwrap();
-        fs::write(r.join("etc/ssl/cert.pem"), b"private CA\n").unwrap();
+        fs::remove_file(r.join("etc/pki/default.pem")).unwrap();
+        fs::write(r.join("etc/pki/default.pem"), b"private CA\n").unwrap();
         assert!(keep_on_disk(r, &link), "the admin replaced the link with a file");
         let mut code = file("etc/init.d/svc", "O");
         code.symlink_target = None;

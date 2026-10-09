@@ -277,44 +277,53 @@ install:
 
 Since jpkg 2.2.11, a **config file** is any regular file a package ships
 under `etc/`, except under `etc/init.d/` and `etc/cron.d/` (OpenRC and
-snooze-crond run every file there: that is code, always replaced) and
-`etc/ssl/certs/` (the trust store: Go programs trust every file in it, and
-CA removals must reach every host, so it is replaced on every update as
-before; keep a private CA in a file of your own outside it). Recipes
-declare nothing: the class comes from the path, worked out on the
-installing host, and no archive, INDEX or manifest format changed.
+snooze-crond run every file there: that is code, always replaced), and
+except the trust store, `etc/ssl/certs/` and `etc/ssl/cert.pem` (Go
+programs trust every file in `certs/`, and CA removals must reach every
+host, so both are replaced on every update as before). Recipes declare
+nothing: the class comes from the path, worked out on the installing host,
+and no archive, INDEX or manifest format changed.
 
 jpkg overwrites or deletes a file or symlink at a config path only when it
 is **pristine** — missing, or a regular file or symlink jpkg recorded there.
 Anything else is yours: never opened, overwritten or deleted. The most jpkg
 does to it is move it aside to `<file>.jpkg-save`, when a package changes
-the kind of object at that path (see the table). Two things work as they
-always did: a symlinked parent directory is followed (move `/etc/foo`
-elsewhere and link it back, and package files are written, and on removal
-pristine ones deleted, through the link), and a directory a package ships
-is merged into an existing directory, or written through an existing
-symlink that leads to a directory.
+the kind of object at that path (see the table). As before 2.2.11, a
+symlinked parent directory is followed (move `/etc/foo` elsewhere and link
+it back, and package files are written, and on removal pristine ones
+deleted, through the link), and a directory a package ships is merged into
+an existing directory, or written through your symlink when it leads to a
+directory (under `--root`, an absolute link is not followed out of the
+root: it is moved to `.jpkg-save`). A link jpkg itself shipped where the
+package now ships a directory is removed and the directory created.
 
 | Situation | What jpkg does |
 |---|---|
 | file unchanged, package ships a new version | replaces it |
 | file changed locally, package's copy unchanged | keeps yours, says nothing new |
 | file changed locally (or there before the package was installed), package's copy differs | keeps yours, writes the packaged version to `<file>.jpkg-new`, warns |
-| `<file>.jpkg-new` already there | replaced only if it is an untouched earlier packaged copy; if you edited it, it is left alone and the new packaged version is not written (it is offered again the next time the package changes the file) |
+| a symlink, directory, FIFO or device you put where a package ships a file | same: never opened or replaced; the packaged version goes to `<file>.jpkg-new` |
+| `<file>.jpkg-new` already there | replaced only if it is an untouched earlier packaged copy; if you edited it, it is left alone and the new packaged version is not written (once you clear it, the next version that changes the file offers its copy) |
 | you deleted the file | puts the package's copy back (empty the file to disable it) |
 | an upgrade stops shipping a changed file | leaves it in place, owned by no package, warns |
 | `jpkg remove` of a package with a changed file | same: left in place, unowned |
 | a symlink the package ships, which you pointed elsewhere or replaced with a file or directory | keeps yours; the package's link is not written |
 | a package turns a config file (its own or another package's) into a symlink or a directory, and the file was changed | moves the changed file to `<file>.jpkg-save` first; refuses the install rather than overwrite an existing `.jpkg-save` |
 | a package puts a directory where your own FIFO, file, or symlink to something that is not a directory sits | moves that to `<file>.jpkg-save` first |
+| a package turns a directory into a symlink and you changed a config file in it | refuses the upgrade, naming your file; move it out of the directory (or take the packaged copy back) and retry |
 
 The installed manifest records what the package shipped, also for a kept
-file, so the next upgrade compares against that. Every decision is checked
-again just before jpkg starts copying files, so an edit made earlier in an
-upgrade is kept; the copy itself is not guarded, so do not edit a
-package's config files while it is being upgraded. Config files are copied
-last, each to a temporary name and renamed into place, so a failed or
-interrupted install leaves the old copies rather than half-written ones.
+file, so the next upgrade compares against that. Files and links at config
+paths are written last, after everything else, each under a temporary
+name (`<file>.jpkg-tmp`) and renamed into place, and every decision is
+checked again just before that: an edit made earlier in an upgrade is
+kept, but one made while those last writes run can be lost, so do not edit
+a package's config files while it is being upgraded. A failed or
+interrupted install never leaves a half-written config file. If it fails
+before that last step, the old copies are left; if it fails during it,
+some files may already hold the new version, which jpkg did not record:
+the next version keeps them as changed and offers its own copy, and
+reinstalling the same version repairs them.
 
 `jpkg verify` does not count a changed config file (or a changed symlink
 at a config path) as a failure; a missing one still is. `jpkg verify
@@ -328,12 +337,17 @@ find /etc -name '*.jpkg-new' -o -name '*.jpkg-save'   # waiting for you
 Once you have merged an offer, delete it. To take the packaged version as
 it is: `mv /etc/foo.conf.jpkg-new /etc/foo.conf`. jpkg deletes an offer by
 itself only at a later install or upgrade of the package, when your file
-is identical to a packaged version (or when the package stops shipping the
-file, or is removed).
+is identical to a packaged version, or when the package stops shipping the
+file as a config file, or is removed.
 
 `/etc/skel` is config too: after you edit a skeleton file and a package
 updates it, `useradd -m` also copies the `.jpkg-new` into new homes until
 you delete it.
+
+jonerix has no local CA store: the trust store is the package's. To trust
+a private CA, point the program at it (`SSL_CERT_FILE`, `SSL_CERT_DIR` for
+Go programs, or the program's own CA option); an edit inside
+`/etc/ssl/certs/` or to `/etc/ssl/cert.pem` is undone by the next update.
 
 ### Upgrading to 2.2.11
 
@@ -341,14 +355,20 @@ The upgrade that installs 2.2.11 is still run by the jpkg it replaces,
 which overwrites edited files as before. Upgrade jpkg on its own first:
 
 ```sh
-jpkg update && jpkg upgrade jpkg && jpkg upgrade
+jpkg update && jpkg install --force jpkg && jpkg upgrade
 ```
 
-Hosts installed from an older image or WSL rootfs can hold the image's
-copy of a packaged file (for example `/etc/zshrc` on WSL). 2.2.11 keeps
-such a copy as a local change and offers the package's version as
-`.jpkg-new` the next time the package changes it; take it with `mv` as
-above.
+(`jpkg install --force` rather than `jpkg upgrade jpkg`: on hosts made
+from the minimal, core or router images jpkg is not a registered package,
+so `jpkg upgrade` never touches it. This registers it.)
+
+Hosts installed from an image or WSL rootfs made before 2.2.11 can hold
+the image's copy of a packaged file (`/etc/zshrc` on WSL and on hosts from
+the minimal image, until zsh is upgraded). 2.2.11 keeps such a copy as a
+local change from then on, and offers the package's version as `.jpkg-new`
+whenever the package changes it; take it with `mv` as above. fastfetch
+2.36.1-r2 ships the banner those images copied in, so a host that holds
+it adopts r2 without an offer.
 
 ### For recipe authors
 
@@ -358,19 +378,25 @@ above.
   locally and your updates to it stop landing. Bake the edit into the
   shipped copy. Do not seed or edit other packages' `etc/` files either.
 - Do not ship defaults into a directory whose reader loads every file
-  (like `init.d/`): a `.jpkg-new` there would be read too.
+  (the trust store, or any `foo.d/` read without a name filter): a
+  `.jpkg-new` there would be read too.
 - Prefer a drop-in directory (`foo.d/*.conf`) for anything an admin is
   likely to tune: their file stays theirs and yours stays pristine.
-- Existing recipes that ship a default under `share/` and seed `/etc` from
-  a hook (dhcpcd, unbound, dropbear, jcarp) must **not** move it into
-  `etc/` yet. An older jpkg overwrites the admin's file the first time the
-  package ships it, and `jpkg upgrade` does not upgrade jpkg first, so a
-  host can install such a revision with 2.2.10 even after 2.2.11 is out.
-  These moves wait until every host runs 2.2.11 or later. The first
-  revision that ships the file in `etc/` must then ship exactly the bytes
-  an untouched host holds at that point, after every hook that edits it,
-  so untouched hosts adopt it silently; a host holding another variant
-  gets a one-time `.jpkg-new`.
+- Recipes that ship a default outside `etc/` and seed `/etc` from a hook
+  (dhcpcd's `share/dhcpcd/dhcpcd.conf`, dropbear's
+  `share/dropbear/conf.d/sshd`) must **not** move it into `etc/` yet. An
+  older jpkg overwrites the admin's file the first time the package ships
+  it, and `jpkg upgrade` does not upgrade jpkg first, so a host can install
+  such a revision with 2.2.10 even after 2.2.11 is out. These moves wait
+  until every host runs 2.2.11 or later and no image older than 2.2.11 is
+  still being installed. The first revision that ships the file in `etc/`
+  must then ship exactly the bytes an untouched host holds at that point,
+  after every hook that edits it (another package's too: unbound appends to
+  `/etc/dhcpcd.conf`), so untouched hosts adopt it silently. A host that
+  holds anything else, an older default included, keeps its file as a
+  local change from then on, with an offer whenever the package changes
+  it. (unbound and jcarp already ship `etc/…/*.conf.default` and seed the
+  live file from it; that live file is unowned and stays the admin's.)
 - Hooks run by 2.2.11 or later see `JPKG_CONFFILES=1`, for a hook that has
   to know whether jpkg protects config files.
 
