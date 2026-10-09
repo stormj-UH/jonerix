@@ -824,9 +824,21 @@ if [ -f /etc/login.defs.pre-raspi5-fixups ]; then
     if cmp -s /etc/login.defs.pre-raspi5-fixups /etc/login.defs 2>/dev/null; then
         rm -f /etc/login.defs.pre-raspi5-fixups
     else
+        # Never over an earlier parked copy: an identical one makes this one
+        # redundant, a different one keeps its name and this one gets .N.
+        _ld=/etc/jpkg/raspi5-fixups/login.defs.pre-raspi5-fixups
         mkdir -p /etc/jpkg/raspi5-fixups
-        mv -f /etc/login.defs.pre-raspi5-fixups /etc/jpkg/raspi5-fixups/login.defs.pre-raspi5-fixups
-        echo "raspi5-fixups: moved /etc/login.defs.pre-raspi5-fixups to /etc/jpkg/raspi5-fixups/ (not restored; compare it with /etc/login.defs)"
+        if [ -e "$_ld" ] && cmp -s /etc/login.defs.pre-raspi5-fixups "$_ld" 2>/dev/null; then
+            rm -f /etc/login.defs.pre-raspi5-fixups
+        else
+            _n=1
+            while [ -e "$_ld" ]; do _ld=/etc/jpkg/raspi5-fixups/login.defs.pre-raspi5-fixups.$_n; _n=$((_n + 1)); done
+            if mv /etc/login.defs.pre-raspi5-fixups "$_ld"; then
+                echo "raspi5-fixups: moved /etc/login.defs.pre-raspi5-fixups to $_ld (not restored; compare it with /etc/login.defs)"
+            else
+                echo "raspi5-fixups: WARNING: could not move /etc/login.defs.pre-raspi5-fixups; left it in place"
+            fi
+        fi
     fi
 fi
 # Up to 1.6.32 this package copied an identical shadow-login over shadow's
