@@ -167,7 +167,6 @@ COPY config/defaults/etc/shadow       /jonerix/etc/shadow
 COPY config/defaults/etc/shells       /jonerix/etc/shells
 COPY config/defaults/etc/profile      /jonerix/etc/profile
 COPY config/defaults/etc/os-release   /jonerix/etc/os-release
-COPY config/defaults/etc/fastfetch/   /jonerix/etc/fastfetch/
 COPY config/defaults/etc/securetty    /jonerix/etc/securetty
 COPY config/openrc/init.d/            /jonerix/etc/init.d/
 RUN chmod 755 /jonerix/etc/init.d/* 2>/dev/null || true && \

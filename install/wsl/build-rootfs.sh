@@ -231,18 +231,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DEFAULTS="${REPO_ROOT}/config/defaults/etc"
 
 echo "--- Copying default config files ---"
-for f in hostname passwd group shadow shells profile zshrc os-release securetty; do
+for f in hostname passwd group shadow shells profile os-release securetty; do
     if [ -f "${DEFAULTS}/${f}" ]; then
         cp "${DEFAULTS}/${f}" "${STAGING}/etc/${f}"
     fi
 done
 [ -f "${DEFAULTS}/shadow" ] && chmod 0600 "${STAGING}/etc/shadow"
-
-# fastfetch config tree
-if [ -d "${DEFAULTS}/fastfetch" ]; then
-    mkdir -p "${STAGING}/etc/fastfetch"
-    cp -a "${DEFAULTS}/fastfetch/." "${STAGING}/etc/fastfetch/"
-fi
 
 # sysctl.d (safe defaults; kernel may ignore some under WSL, harmless)
 if [ -d "${DEFAULTS}/sysctl.d" ]; then

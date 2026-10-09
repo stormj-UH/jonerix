@@ -19,7 +19,7 @@ config/
 ├── defaults/etc/                 baseline — every image gets these
 │   ├── os-release, passwd, group, shadow, securetty, services
 │   ├── hostname, hosts, host.conf, resolv.conf, gai.conf
-│   ├── profile, zshrc, inputrc, locale.conf, timezone
+│   ├── profile, inputrc, locale.conf, timezone
 │   ├── issue, issue.net, motd
 │   ├── shells, nanorc, protocols
 │   ├── dhcpcd.conf, conf.d/{hostname,net}
@@ -27,7 +27,6 @@ config/
 │   ├── local.d/README            doc for OpenRC drop-ins
 │   ├── skel/                     ~/.profile, .brashrc, .brash_profile, .zshrc
 │   ├── jpkg/keys/jonerix.pub     package signing key
-│   ├── fastfetch/                shell-greeting config
 │   └── ssl/                      placeholder for CA bundle
 ├── openrc/                       init system tuning
 │   ├── inittab
@@ -84,6 +83,9 @@ Since jpkg 2.2.11 an edited package file under /etc is kept on upgrade
 docs/packaging.md, "Config files"). Overriding a value in a
 later-sorting file of your own is still the better habit: it keeps the
 package's file pristine, so its fixes keep arriving without a merge.
+The upgrade that installs 2.2.11 is still run by the old jpkg, so
+upgrade jpkg on its own first to have that run protect your edits too:
+`jpkg update && jpkg upgrade jpkg && jpkg upgrade`.
 
 Two toybox `sysctl -p` rules shape the files: comments go on their own
 line (an inline `# ...` is written as part of the value), and a key the
@@ -99,11 +101,24 @@ the builder profile, not to Pi or desktop images.
 
 The merging is line-by-line file overlay (think `cp -a`), NOT a
 semantic merge of file contents.  An image-builder script (out of
-scope for this directory but standard pattern) does roughly:
+scope for this directory but standard pattern) copies, after the
+packages are installed, **only files no package ships**:
 
     rsync -a config/defaults/  $ROOTFS/
     rsync -a config/openrc/    $ROOTFS/etc/
     rsync -a config/profile/$P/  $ROOTFS/
+
+minus every path an installed package lists (`jpkg owns <path>`).
+Overlaying a packaged config file is never right: since jpkg 2.2.11
+the overlaid copy counts as a local change on every host built from
+the image, so the package's updates to it never land and each one
+leaves a `.jpkg-new`.  If an image needs a different default for a
+packaged file, change the package, or add a drop-in next to it.  Some
+files here duplicate package-owned ones and are reference copies only:
+`openrc/rc.conf`, `defaults/etc/conf.d/hostname` and
+`defaults/etc/local.d/README` (openrc), and
+`profile/builder/etc/docker/daemon.json` (docker).  The
+Dockerfiles and install/wsl/build-rootfs.sh copy only unowned files.
 
 For drop-in directories (`sysctl.d/`, `security/limits.d/`,
 `local.d/`, `cron.d/`, `init.d/`, `conf.d/`) the profile's file

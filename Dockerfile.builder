@@ -77,7 +77,10 @@ RUN echo "cachebust=$CACHEBUST" && \
 # and puts the package's copy beside it as *.jpkg-new, or moves it aside as
 # *.jpkg-save.  An image build has no admin to merge them, so one appearing
 # here means an earlier layer pre-seeds a path a package ships.  Fail rather
-# than ship a stale config.  (Deliberate overlays are COPY'd after this.)
+# than ship a stale config.  Anything COPY'd or written after this check
+# must only target paths no package ships: an overlay over a packaged
+# config file is kept as a local change on every host built from the image,
+# so the package's own updates to it never land.
 RUN leftover=$(find / -xdev \( -name '*.jpkg-new' -o -name '*.jpkg-save' \) 2>/dev/null || true); \
     if [ -n "$leftover" ]; then \
       echo "image build: an earlier layer pre-seeds paths packages ship; jpkg left these beside them:" >&2; \
@@ -99,11 +102,15 @@ RUN if [ -f /bin/GNUSparseFile.0/uutils ] && [ ! -f /bin/uutils ]; then \
 # CLANG_CONFIG_FILE_SYSTEM_DIR is a compile-time CMake option, not a
 # runtime env var. Alpine/jonerix clang doesn't have it set, so the
 # config file at /etc/clang/<triple>.cfg is never auto-loaded.
-# We create wrapper scripts that pass --config explicitly.
+# We create wrapper scripts that pass --config explicitly.  The clang
+# package ships /etc/clang/<triple>.cfg with these flags; it is written
+# here only when missing, because overwriting a packaged config file would
+# make jpkg keep it as a local change on every host built from this image.
 RUN TRIPLE=$(/bin/clang-21 -dumpmachine 2>/dev/null || echo "unknown") && \
     mkdir -p /etc/clang && \
-    printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' \
-      > "/etc/clang/${TRIPLE}.cfg" && \
+    { [ -f "/etc/clang/${TRIPLE}.cfg" ] || \
+      printf -- '--rtlib=compiler-rt\n--unwindlib=libunwind\n-fuse-ld=lld\n' \
+        > "/etc/clang/${TRIPLE}.cfg"; } && \
     rm -f /bin/clang /bin/clang++ && \
     printf '#!/bin/sh\nexec /bin/clang-21 --config="/etc/clang/%s.cfg" "$@"\n' "$TRIPLE" > /bin/clang && \
     printf '#!/bin/sh\nexec /bin/clang-21 --config="/etc/clang/%s.cfg" --unwindlib=libunwind -stdlib=libc++ -lc++ -lc++abi "$@"\n' "$TRIPLE" > /bin/clang++ && \

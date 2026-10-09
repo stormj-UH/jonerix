@@ -1,6 +1,6 @@
 [package]
 name = "fastfetch"
-version = "2.36.1-r1"
+version = "2.36.1-r2"
 license = "MIT"
 description = "Feature-rich system information tool"
 
