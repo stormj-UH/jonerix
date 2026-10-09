@@ -283,6 +283,59 @@ mod tests {
         );
     }
 
+    // Captured, like GOLDEN_SHA256_2_2_10, by running this fixture through
+    // canonical_bytes on the unmodified 2.2.10 tree (f63d5c37) in
+    // builder-arm64.  Same rules: do not re-pin without a rollout plan.
+    const GOLDEN_SHAPES_SHA256_2_2_10: &str =
+        "506bdff4d198fe1ceba06200f7898ff7cafe66c4f0b40e7b59b34e597fda433a";
+
+    /// Every string form the toml serializer picks, so a dependency bump
+    /// that changes any one of them trips a golden test: non-ASCII, a
+    /// single-line literal, quotes plus a backslash, a trailing single
+    /// quote, control characters, a tab, and multiline hooks with a tab and
+    /// a backslash, a tab and no backslash, and ''' plus a backslash.
+    fn golden_shapes_fixture() -> crate::recipe::Metadata {
+        use crate::recipe::{DependsSection, FilesSection, HooksSection, Metadata, PackageSection};
+        Metadata {
+            package: PackageSection {
+                name: Some("shapes".to_owned()),
+                version: Some("0.0.1-r1".to_owned()),
+                license: Some("0BSD".to_owned()),
+                description: Some("Rust 2.0 \u{2014} supersedes the C jpkg (\u{e9}, \u{65e5}\u{672c})".to_owned()),
+                arch: Some("x86_64".to_owned()),
+                replaces: vec!["ends in a quote '".to_owned()],
+                conflicts: vec!["cr\rbell\u{7}del\u{7f}".to_owned()],
+            },
+            depends: DependsSection {
+                runtime: vec!["echo \"hi\"".to_owned(), "tab\there".to_owned()],
+                build: vec!["it's \"q\" \\ x".to_owned()],
+            },
+            hooks: HooksSection {
+                pre_install: Some("printf '%s\\n' x\n\tindented with a tab\n".to_owned()),
+                post_install: Some("a\n\tb, no backslash\n".to_owned()),
+                pre_remove: Some("x='''y'''\nprintf '\\n'\n".to_owned()),
+                post_remove: Some("plain\nmultiline\n".to_owned()),
+            },
+            files: FilesSection {
+                sha256: Some("ab".repeat(32)),
+                size: Some(1),
+            },
+            signature: None,
+        }
+    }
+
+    #[test]
+    fn canonical_bytes_of_every_string_form_match_2_2_10_golden() {
+        let bytes = canonical_bytes(&golden_shapes_fixture(), &[0x5au8; 32]);
+        let body = String::from_utf8_lossy(&bytes[CANON_PREFIX.len() + 1 + 32..]);
+        assert_eq!(
+            hex::encode(Sha256::digest(&bytes)),
+            GOLDEN_SHAPES_SHA256_2_2_10,
+            "the serializer's string forms changed; signed packages would no longer verify \
+             on older hosts.\n--- canonical TOML body ---\n{body}"
+        );
+    }
+
     fn ones_sha256() -> [u8; 32] {
         [1u8; 32]
     }

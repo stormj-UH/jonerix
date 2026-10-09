@@ -249,8 +249,10 @@ pub(crate) fn remove_package_files(
     let mut files = pkg.files.clone();
     files.sort_by(|a, b| b.path.cmp(&a.path));
 
+    let pkg_name = pkg.metadata.package.name.as_deref().unwrap_or("?");
     for entry in &files {
         if others.is_claimed(&entry.path) {
+            crate::cmd::common::warn_left_for_co_owner(rootfs, pkg_name, entry, others);
             if !entry.is_dir {
                 log::debug!(
                     "jpkg: keeping /{} (still owned by {})",
@@ -589,5 +591,31 @@ mod tests {
         assert_eq!(stats.config_kept, 1);
         assert_eq!(fs::read(rootfs.join("etc/ssl/cert.pem")).unwrap(), b"private CA\n");
         assert!(rootfs.join("etc/ssl/ca.pem").symlink_metadata().is_err(), "jpkg's own link goes");
+    }
+
+    /// Review c3: the admin moved a packaged directory elsewhere and linked
+    /// it back.  The link is theirs; remove keeps it.
+    #[test]
+    fn remove_keeps_an_admin_link_where_the_package_recorded_a_directory() {
+        use crate::cmd::common::tests::{build_jpkg_tree, Node};
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = conf_root(&tmp);
+        let _lock = db.lock().unwrap();
+        let j = build_jpkg_tree(
+            tmp.path(),
+            "svcpkg",
+            "1",
+            &[],
+            &[("etc/svc", Node::Dir(0o755)), ("etc/svc/a.conf", Node::File(b"a\n", 0o644))],
+        );
+        extract_and_register(&JpkgArchive::open(&j).unwrap(), &rootfs, &db).unwrap();
+        fs::create_dir_all(rootfs.join("persist")).unwrap();
+        fs::rename(rootfs.join("etc/svc"), rootfs.join("persist/svc")).unwrap();
+        std::os::unix::fs::symlink("../persist/svc", rootfs.join("etc/svc")).unwrap();
+        let pkg = db.get("svcpkg").unwrap().unwrap();
+        let others = db.path_owners(None, Some("svcpkg")).unwrap();
+        let stats = remove_package_files(&rootfs, &pkg, &others);
+        assert!(rootfs.join("etc/svc").symlink_metadata().unwrap().file_type().is_symlink(), "the admin's link stays");
+        assert_eq!(stats.config_kept, 1);
     }
 }

@@ -7,24 +7,31 @@
 //! # The rule
 //!
 //! A **config file** is a regular file a package ships under `etc/`, except
-//! under `etc/init.d/` and `etc/cron.d/`.  OpenRC treats every file in
-//! init.d as a service and snooze-crond sources every file in cron.d, so a
-//! side-by-side `<file>.jpkg-new` there would run too; those files are code,
-//! and package fixes to them must land.  Every other reader directory jonerix
-//! ships filters by suffix (profile.d `*.sh`, sysctl.d `*.conf`, sudoers.d
-//! skips names with a dot, conf.d is read by service name).  The exception
-//! is etc/skel/: `useradd -m` copies everything in it, so after an edit and
-//! a package update a new user's home also gets the `<file>.jpkg-new`.  That
-//! is kept deliberately: losing an admin's skel edits is worse than one
-//! stray file.
+//! under `etc/init.d/`, `etc/cron.d/` and `etc/ssl/certs/`.  OpenRC treats
+//! every file in init.d as a service and snooze-crond sources every file in
+//! cron.d, so those files are code: a side-by-side `<file>.jpkg-new` there
+//! would run too, and package fixes to them must land.  etc/ssl/certs/ is
+//! the trust store: Go's crypto/x509 (and Node with --use-system-ca) loads
+//! every file in it, dotfiles included, so an offer there would be trusted;
+//! and CA removals must keep reaching every client, so it stays package
+//! data, replaced on every update as in 2.2.10.  The other reader
+//! directories jonerix ships into filter by name (profile.d `*.sh`,
+//! sysctl.d `*.conf`, sudoers.d skips names with a dot, conf.d is read by
+//! service name, fonts conf.d `[0-9]*.conf`, local.d `*.start`/`*.stop`).
+//! The exception is etc/skel/: `useradd -m` copies everything in it, so
+//! after an edit and a package update a new user's home also gets the
+//! `<file>.jpkg-new` until the admin deletes it.  That is kept deliberately:
+//! losing an admin's skel edits is worse than one stray file.  A package
+//! must not ship defaults into any other directory whose reader loads every
+//! entry.
 //!
 //! The class is a pure function of the manifest path, worked out on the
 //! installing host.  Nothing about it is stored in the archive metadata (so
-//! canonical bytes and signatures are unchanged -- see the golden test in
+//! canonical bytes and signatures are unchanged -- see the golden tests in
 //! `canon.rs`) or in the installed `files` manifest (so a 2.2.10 jpkg reads
-//! the same database after a downgrade).  The manifest keeps recording the
-//! hash of what the package SHIPPED, also for a file that was kept; that is
-//! the merge base for the next upgrade.
+//! the same database after a downgrade).  The manifest keeps recording what
+//! the package SHIPPED, also for a file that was kept; that is the merge
+//! base for the next upgrade.
 //!
 //! # The invariant
 //!
@@ -34,38 +41,53 @@
 //! installed package's), or a symlink whose target jpkg recorded.  Anything
 //! else -- a file with other content, an unrecorded symlink, a directory
 //! jpkg did not record, a FIFO or a device -- is the admin's: it is never
-//! opened, followed, overwritten or deleted.  The one thing jpkg may do to it
-//! is rename it to `<path>.jpkg-save`, when a package places a symlink or a
-//! directory at that path.  A probe error counts as changed: what cannot be
-//! checked is kept.  Directories are only ever removed when empty, except
-//! the old directory of a package that turns it into a symlink, which
-//! upgrade-clean removes only after checking that every file in it is the
-//! package's and pristine.
+//! opened, overwritten or deleted.  The one thing jpkg may do to it is
+//! rename it to `<path>.jpkg-save`, when a package changes the KIND of
+//! object at that path (a file becoming a symlink or a directory) or puts
+//! a directory where it cannot be followed.  A probe error counts as
+//! changed: what cannot be checked is kept.
+//!
+//! Two limits, both as in 2.2.10: a symlinked parent directory is followed
+//! (an admin who moves /etc/foo elsewhere and links it gets the package's
+//! files written, and pristine ones removed, through the link; under
+//! `--root` an absolute link resolves on the host), and a directory a
+//! package ships is merged into an existing directory and written through
+//! an existing symlink that leads to a directory.  Directories are only
+//! ever removed when empty, except the old directory of a package that
+//! turns it into a symlink, which upgrade-clean removes only after checking
+//! that everything in it is the package's and pristine.
 //!
 //! # What that means
 //!
 //! * install, upgrade, reinstall: a pristine file is replaced.  A changed
 //!   one is kept; if the package's copy differs from every recorded one, it
 //!   is written next to it as `<file>.jpkg-new` and a warning names it.
+//! * `<file>.jpkg-new` is written only over nothing or over package content
+//!   (an earlier offer).  If the admin is working in it, it is left alone
+//!   and the new packaged version is not written; it is offered again the
+//!   next time the package changes the file.
 //! * an upgrade that stops shipping the file, or `jpkg remove`: a pristine
 //!   file is deleted; a changed one stays where it is, now owned by no
-//!   package, with a warning.
-//! * a package placing a symlink or a directory where something changed
-//!   sits at a config path (its own old config file, another package's, or
-//!   the admin's own symlink): that object is moved to `<file>.jpkg-save`
-//!   first, never over an existing one (see [`displace`]).  A pristine file
-//!   in the way of a directory is removed.
+//!   package, with a warning.  An offer holding package content goes too.
+//! * a symlink the package ships where it (or another package) shipped a
+//!   symlink before: an admin's change there -- another target, or a file
+//!   or directory in its place -- is kept, like a changed config file, and
+//!   the package's link is not written.
+//! * a package changing the kind of object at a config path (a config file
+//!   becoming a symlink or a directory, its own or another package's): a
+//!   changed object there is moved to `<file>.jpkg-save` first, never over
+//!   an existing one; a pristine file is replaced (see [`displace`]).
 //! * a package turning a directory it recorded into a config file: the file
 //!   lands once upgrade-clean has emptied the directory; if anything is
 //!   left in it, the directory is kept like any changed object.
-//! * every decision is taken again just before the files are written, so an
-//!   edit made while an upgrade runs is kept too (the window is narrowed to
-//!   the copy itself, not closed).
-//! * `<file>.jpkg-new` is written only over nothing or over package content
-//!   (an earlier offer).  If the admin is working in it, it is left alone
-//!   and the new packaged version is not written.
-//! * verify: a changed config file is reported, not counted as a failure.
-//!   A missing one is still a failure.
+//! * every decision is taken again just before the files are copied, which
+//!   keeps an edit made earlier in the upgrade.  The copy itself is not
+//!   guarded: an edit made while files are being copied can be lost.
+//! * config files are copied last, each to a temporary name and renamed
+//!   into place, so a failed or interrupted install leaves the old copies
+//!   (which the database still records) rather than half-written ones.
+//! * verify: a changed config file (or a changed symlink at a config path)
+//!   is reported, not counted as a failure.  A missing one is a failure.
 
 use std::fs;
 use std::io;
@@ -74,8 +96,9 @@ use std::path::{Path, PathBuf};
 use crate::db::FileEntry;
 use crate::util::sha256_file;
 
-/// Directories under `etc/` whose every file is executed or scheduled.
-const NOT_CONFIG: &[&str] = &["etc/init.d/", "etc/cron.d/"];
+/// Directories under `etc/` whose every file is executed, scheduled or
+/// trusted (see the module doc).
+const NOT_CONFIG: &[&str] = &["etc/init.d/", "etc/cron.d/", "etc/ssl/certs/"];
 
 /// Suffix of the package's copy when a changed config file is kept.
 pub const NEW_SUFFIX: &str = ".jpkg-new";
@@ -207,25 +230,39 @@ pub fn action(disk: &OnDisk, new_sha: &str, rec: &Recorded<'_>) -> Action {
 pub enum Displace {
     /// Nothing to do, or nothing different from 2.2.10: install_files
     /// replaces jpkg's own object, merges into a directory, follows a
-    /// symlink where a directory goes, and upgrade-clean handles a
-    /// directory jpkg recorded becoming a symlink.
+    /// symlink that leads to a directory where a directory goes, and
+    /// upgrade-clean handles a directory jpkg recorded becoming a symlink.
     Leave,
-    /// A pristine regular file where a directory goes: remove it first.
+    /// The admin changed what the package ships here without the package
+    /// changing its kind (a retargeted link, or a file or directory in
+    /// place of a link), or put something where nothing was recorded: keep
+    /// it, and do not write the package's link.
+    Keep,
+    /// jpkg's own file, or its own link that does not lead to a directory,
+    /// where a directory goes: remove it first.
     Remove,
-    /// Anything not pristine: move it to `<path>.jpkg-save` first.
+    /// Anything else not pristine: move it to `<path>.jpkg-save` first.
     Save,
 }
 
-/// Decide [`Displace`] for the object `disk` at `n.path`.
-pub fn displace(disk: &OnDisk, n: &FileEntry, rec: &Recorded<'_>) -> Displace {
+/// Decide [`Displace`] for the object `disk` at `n.path`.  `link_to_dir`:
+/// `disk` is a symlink that leads (followed, as install_files would follow
+/// it) to a directory.
+pub fn displace(disk: &OnDisk, n: &FileEntry, rec: &Recorded<'_>, link_to_dir: bool) -> Displace {
+    let nothing_recorded = rec.shas.is_empty() && rec.links.is_empty() && !rec.dir;
     match (disk, n.symlink_target.as_deref()) {
         (OnDisk::Missing, _) => Displace::Leave,
+        // The package places a symlink.
         (OnDisk::Link(t), Some(new)) if t == new => Displace::Leave,
         (OnDisk::Dir, Some(_)) if rec.dir => Displace::Leave,
-        (OnDisk::Dir | OnDisk::Link(_), None) => Displace::Leave,
-        (OnDisk::File(_), None) if is_pristine(disk, rec) => Displace::Remove,
-        (d, _) if is_pristine(d, rec) => Displace::Leave,
-        _ => Displace::Save,
+        (d, Some(_)) if is_pristine(d, rec) => Displace::Leave,
+        (_, Some(_)) if !rec.links.is_empty() || nothing_recorded => Displace::Keep,
+        (_, Some(_)) => Displace::Save,
+        // The package places a directory.
+        (OnDisk::Dir, None) => Displace::Leave,
+        (OnDisk::Link(_), None) if link_to_dir => Displace::Leave,
+        (OnDisk::File(_) | OnDisk::Link(_), None) if is_pristine(disk, rec) => Displace::Remove,
+        (_, None) => Displace::Save,
     }
 }
 
@@ -246,16 +283,20 @@ pub fn keep_probe(probe: io::Result<OnDisk>, rec: &Recorded<'_>) -> bool {
 }
 
 /// For upgrade-clean and remove: true when the entry `e` of an installed
-/// manifest -- a file or a symlink at a config path -- must stay where it
-/// is because what is on disk is not what `e` recorded.  Directories and
-/// paths outside the config class are never kept here.
+/// manifest at a config path must stay where it is because what is on disk
+/// is not what `e` recorded.  For a directory entry that means anything but
+/// a directory (or nothing): an admin's symlink, file or FIFO there is
+/// kept.  Paths outside the config class are never kept here.
 pub fn keep_on_disk(rootfs: &Path, e: &FileEntry) -> bool {
-    if e.is_dir || !is_config_path(&e.path) {
+    if !is_config_path(&e.path) {
         return false;
     }
     let probe = on_disk(rootfs, &e.path);
     if let Err(ref err) = probe {
         log::warn!("jpkg: cannot check /{} ({err}); keeping it", e.path);
+    }
+    if e.is_dir {
+        return !matches!(probe, Ok(OnDisk::Missing | OnDisk::Dir));
     }
     keep_probe(probe, &Recorded::entry(e))
 }
@@ -301,6 +342,25 @@ pub fn is_empty_dir(rootfs: &Path, path: &str) -> io::Result<bool> {
         Ok(_) => Ok(false),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e),
+    }
+}
+
+/// True when `rel` names an untouched offer jpkg wrote for an owned config
+/// file: `<path>.jpkg-new`, a regular file holding exactly the copy the
+/// manifest `owned` recorded for `<path>`.
+pub fn is_package_offer(
+    rootfs: &Path,
+    rel: &str,
+    owned: &std::collections::HashMap<&str, &FileEntry>,
+) -> bool {
+    let Some(base) = rel.strip_suffix(NEW_SUFFIX) else {
+        return false;
+    };
+    match owned.get(base) {
+        Some(e) if is_config(e) => {
+            matches!(on_disk(rootfs, rel), Ok(OnDisk::File(h)) if h == e.sha256)
+        }
+        _ => false,
     }
 }
 
@@ -414,28 +474,59 @@ mod tests {
         link.symlink_target = Some("x.d/main".into());
         let mut dir = file("etc/x.conf", "");
         dir.is_dir = true;
-        // (on disk, new entry, recorded) → what happens first
-        let rows: Vec<(OnDisk, &FileEntry, Recorded<'_>, Displace)> = vec![
-            (OnDisk::Missing, &link, rec(&[], &[], false), Leave),
-            (f("O"), &link, rec(&["O"], &[], false), Leave),      // jpkg's file: replaced
-            (f("D"), &link, rec(&["O"], &[], false), Save),       // changed file
-            (f("D"), &link, rec(&[], &[], false), Save),          // the admin's own file
-            (l("x.d/main"), &link, rec(&[], &[], false), Leave),  // already that link
-            (l("old"), &link, rec(&[], &["old"], false), Leave),  // jpkg's old link
-            (l("/data/x"), &link, rec(&[], &["old"], false), Save), // the admin's link
-            (OnDisk::Dir, &link, rec(&[], &[], true), Leave),     // upgrade-clean's case
-            (OnDisk::Dir, &link, rec(&[], &[], false), Save),     // the admin's directory
-            (OnDisk::Other, &link, rec(&["O"], &[], false), Save),
-            (OnDisk::Missing, &dir, rec(&[], &[], false), Leave),
-            (OnDisk::Dir, &dir, rec(&[], &[], false), Leave),     // merged into, as always
-            (l("/data/x.d"), &dir, rec(&[], &[], false), Leave),  // followed, as always
-            (f("O"), &dir, rec(&["O"], &[], false), Remove),      // jpkg's file in the way
-            (f("D"), &dir, rec(&["O"], &[], false), Save),
-            (OnDisk::Other, &dir, rec(&[], &[], false), Save),
+        // (on disk, new entry, recorded, link leads to a dir) → what happens first
+        let rows: Vec<(OnDisk, &FileEntry, Recorded<'_>, bool, Displace)> = vec![
+            // The package places a symlink.
+            (OnDisk::Missing, &link, rec(&[], &[], false), false, Leave),
+            (f("O"), &link, rec(&["O"], &[], false), false, Leave),      // jpkg's file: replaced
+            (f("D"), &link, rec(&["O"], &[], false), false, Save),       // changed file, kind changes
+            (l("x.d/main"), &link, rec(&[], &[], false), false, Leave),  // already that link
+            (l("old"), &link, rec(&[], &["old"], false), false, Leave),  // jpkg's old link
+            (l("/data/x"), &link, rec(&[], &["old"], false), false, Keep), // the admin retargeted it
+            (f("D"), &link, rec(&[], &["old"], false), false, Keep),     // a file in place of the link
+            (OnDisk::Dir, &link, rec(&[], &["old"], false), false, Keep),
+            (l("/data/x"), &link, rec(&[], &[], false), false, Keep),    // nothing recorded: the admin's
+            (f("D"), &link, rec(&[], &[], false), false, Keep),
+            (l("/data/x"), &link, rec(&["O"], &[], false), false, Save), // admin link over a packaged file
+            (OnDisk::Dir, &link, rec(&[], &[], true), false, Leave),     // upgrade-clean's case
+            (OnDisk::Other, &link, rec(&["O"], &[], false), false, Save),
+            // The package places a directory.
+            (OnDisk::Missing, &dir, rec(&[], &[], false), false, Leave),
+            (OnDisk::Dir, &dir, rec(&[], &[], false), false, Leave),     // merged into, as always
+            (l("/data/x.d"), &dir, rec(&[], &[], false), true, Leave),   // followed, as always
+            (l("/data/gone"), &dir, rec(&[], &[], false), false, Save),  // cannot be followed
+            (l("old"), &dir, rec(&[], &["old"], false), false, Remove),  // jpkg's dead link
+            (f("O"), &dir, rec(&["O"], &[], false), false, Remove),      // jpkg's file in the way
+            (f("D"), &dir, rec(&["O"], &[], false), false, Save),
+            (OnDisk::Other, &dir, rec(&[], &[], false), false, Save),
         ];
-        for (disk, n, rec, want) in &rows {
-            assert_eq!(displace(disk, n, rec), *want, "{disk:?} new={n:?} rec={rec:?}");
+        for (disk, n, rec, to_dir, want) in &rows {
+            assert_eq!(displace(disk, n, rec, *to_dir), *want, "{disk:?} new={n:?} rec={rec:?} to_dir={to_dir}");
         }
+    }
+
+    #[test]
+    fn keep_on_disk_keeps_whatever_replaced_a_recorded_directory() {
+        let t = tempfile::TempDir::new().unwrap();
+        let r = t.path();
+        fs::create_dir_all(r.join("etc/svc")).unwrap();
+        let mut d = file("etc/svc", "");
+        d.is_dir = true;
+        assert!(!keep_on_disk(r, &d), "still a directory");
+        fs::remove_dir(r.join("etc/svc")).unwrap();
+        assert!(!keep_on_disk(r, &d), "gone");
+        std::os::unix::fs::symlink("../persist/svc", r.join("etc/svc")).unwrap();
+        assert!(keep_on_disk(r, &d), "the admin's link");
+        fs::remove_file(r.join("etc/svc")).unwrap();
+        fs::write(r.join("etc/svc"), b"x").unwrap();
+        assert!(keep_on_disk(r, &d), "the admin's file");
+    }
+
+    #[test]
+    fn trust_store_is_package_data() {
+        assert!(!is_config(&file("etc/ssl/certs/ca-certificates.crt", "a")));
+        assert!(is_config(&file("etc/ssl/openssl.cnf", "a")));
+        assert!(is_config_path("etc/ssl/cert.pem"));
     }
 
     #[test]

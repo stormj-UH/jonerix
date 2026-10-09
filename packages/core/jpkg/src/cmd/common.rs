@@ -431,7 +431,7 @@ fn wrap_io<T>(result: io::Result<T>, path: &Path, op: &'static str) -> Result<T,
 
 /// Copy all files from `stage_dir` into `rootfs`.
 ///
-/// Uses `WalkDir` + atomic per-file copy (regular files) / symlink recreation
+/// Uses `WalkDir` + per-file copy (regular files) / symlink recreation
 /// rather than shelling out to tar.  This avoids the toybox-symlink-follow bug
 /// documented in cmd_install.c:248-260 and the pipe deadlock with large packages
 /// (cmd_install.c:260-262).
@@ -450,6 +450,15 @@ fn wrap_io<T>(result: io::Result<T>, path: &Path, op: &'static str) -> Result<T,
 /// package that ships `tmp/` or `root/` at 0755 cannot re-mode `/tmp` (1777)
 /// or `/root` (0700).
 ///
+/// # Config files (2.2.11)
+///
+/// Regular files at config paths (see [`crate::config`]), offers included,
+/// are written after everything else, each to `<path>.jpkg-tmp`, fsynced and
+/// renamed into place.  A failure or crash part-way through an install then
+/// leaves the old config files -- the copies the database still records --
+/// instead of truncated or unrecorded ones that the next install would take
+/// for local edits.  Other files are copied in place, as before.
+///
 /// # Errors
 ///
 /// Returns [`InstallError::FileOp`] with the offending path on any filesystem
@@ -457,6 +466,7 @@ fn wrap_io<T>(result: io::Result<T>, path: &Path, op: &'static str) -> Result<T,
 /// with no path attached made triage of upgrade-time collisions impossible
 /// (see the 2.2.3 changelog: `symlinkat ... = -1 EEXIST` with no path).
 fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
+    let mut config_files: Vec<(PathBuf, PathBuf, u32)> = Vec::new();
     for entry in WalkDir::new(stage_dir).sort_by_file_name().into_iter() {
         let entry = entry.map_err(|e| {
             InstallError::Io(io::Error::new(
@@ -518,6 +528,8 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
                     "set directory mode",
                 )?;
             }
+        } else if crate::config::is_config_path(&rel.to_string_lossy()) {
+            config_files.push((abs.to_path_buf(), dest, m.mode()));
         } else {
             // Regular file — remove any existing symlink/file at dest first so
             // we do not inadvertently write through a symlink.  Tolerate
@@ -542,6 +554,43 @@ fn install_files(stage_dir: &Path, rootfs: &Path) -> Result<(), InstallError> {
                 "set file mode",
             )?;
         }
+    }
+    for (src, dest, mode) in &config_files {
+        install_config_file(src, dest, *mode)?;
+    }
+    Ok(())
+}
+
+/// Write one config file for [`install_files`]: copy to `<dest>.jpkg-tmp`,
+/// apply the mode (after the data, for the setuid reason above), fsync, and
+/// rename over `dest`, so `dest` holds either the old copy or the whole new
+/// one.
+fn install_config_file(src: &Path, dest: &Path, mode: u32) -> Result<(), InstallError> {
+    let tmp = crate::config::with_suffix(dest, ".jpkg-tmp");
+    if let Some(p) = dest.parent() {
+        wrap_io(fs::create_dir_all(p), p, "create parent directory")?;
+    }
+    // A leftover from an interrupted install is jpkg's own scratch.
+    if tmp.symlink_metadata().is_ok_and(|m| !m.is_dir()) {
+        wrap_io(fs::remove_file(&tmp), &tmp, "remove stale temporary file")?;
+    }
+    let written = fs::copy(src, &tmp)
+        .and_then(|_| fs::set_permissions(&tmp, fs::Permissions::from_mode(mode & 0o7777)))
+        .and_then(|()| fs::File::open(&tmp)?.sync_all());
+    if let Err(e) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(InstallError::FileOp { path: dest.to_path_buf(), op: "copy file", source: e });
+    }
+    if let Ok(dm) = dest.symlink_metadata() {
+        if dm.is_dir() && !dm.file_type().is_symlink() {
+            // Same constraint as for other files: only an empty directory
+            // goes; a populated one makes the rename fail with its path.
+            let _ = fs::remove_dir(dest);
+        }
+    }
+    if let Err(e) = fs::rename(&tmp, dest) {
+        let _ = fs::remove_file(&tmp);
+        return Err(InstallError::FileOp { path: dest.to_path_buf(), op: "rename file into place", source: e });
     }
     Ok(())
 }
@@ -676,11 +725,17 @@ fn stage_config_file(
     use crate::config::{self, Action};
     let staged = stage_dir.join(&e.path);
     let (p, s) = (&e.path, config::NEW_SUFFIX);
+    // Say "changed locally" only when jpkg recorded something here.
+    let why = if rec.shas.is_empty() && rec.links.is_empty() && !rec.dir {
+        "which no package installed"
+    } else {
+        "changed locally"
+    };
     match config::action(disk, &e.sha256, rec) {
         Action::Install => Ok(Staged::Install),
         Action::Keep => {
             wrap_io(fs::remove_file(&staged), &staged, "drop staged config file")?;
-            log::info!("jpkg: {pkg_name}: kept /{p} (changed locally)");
+            log::info!("jpkg: {pkg_name}: kept /{p} ({why})");
             Ok(Staged::Kept)
         }
         Action::KeepAndNew => {
@@ -692,14 +747,14 @@ fn stage_config_file(
                 });
             if free {
                 wrap_io(fs::rename(&staged, &new), &staged, "stage config .jpkg-new")?;
-                log::warn!("jpkg: {pkg_name}: kept /{p} (changed locally); the packaged version is /{p}{s}");
+                log::warn!("jpkg: {pkg_name}: kept /{p} ({why}); the packaged version is /{p}{s}");
                 Ok(Staged::Offered)
             } else {
                 wrap_io(fs::remove_file(&staged), &staged, "drop staged config file")?;
                 log::warn!(
-                    "jpkg: {pkg_name}: kept /{p} (changed locally); the packaged version was NOT \
-                     written, because /{p}{s} is not an earlier packaged copy (move it away and \
-                     reinstall to get it)"
+                    "jpkg: {pkg_name}: kept /{p} ({why}); the packaged version was NOT written: \
+                     /{p}{s} is not an earlier packaged copy, so it is left alone (the package \
+                     offers its copy again the next time it changes /{p})"
                 );
                 Ok(Staged::Kept)
             }
@@ -751,7 +806,11 @@ fn plan_config_files<'a>(
         let rec = recorded_for(&n.path, &old_by_path, others);
         let dest = rootfs.join(&n.path);
         let disk = wrap_io(config::on_disk(rootfs, &n.path), &dest, "check config path")?;
-        if config::displace(&disk, n, &rec) == Displace::Save {
+        let decision = config::displace(&disk, n, &rec, leads_to_dir(&disk, &dest));
+        if decision == Displace::Keep {
+            keep_admin_object(stage_dir, pkg_name, n)?;
+        }
+        if decision == Displace::Save {
             let save = config::with_suffix(&dest, config::SAVE_SUFFIX);
             let refuse = |why: &'static str, source: io::Error| InstallError::FileOp {
                 path: save.clone(),
@@ -781,12 +840,60 @@ fn plan_config_files<'a>(
     Ok(plan)
 }
 
+/// True when `disk` is a symlink at `abs` that leads (followed, as
+/// install_files' create_dir_all would follow it) to a directory.
+fn leads_to_dir(disk: &OnDisk, abs: &Path) -> bool {
+    matches!(disk, OnDisk::Link(_)) && abs.metadata().map(|m| m.is_dir()).unwrap_or(false)
+}
+
+/// [`crate::config::Displace::Keep`]: the admin's object stays, so the
+/// package's symlink is dropped from staging (it may already be gone when
+/// 6b repeats 5c's decision).
+fn keep_admin_object(stage_dir: &Path, pkg_name: &str, n: &FileEntry) -> Result<(), InstallError> {
+    let staged = stage_dir.join(&n.path);
+    if staged.symlink_metadata().is_ok() {
+        wrap_io(fs::remove_file(&staged), &staged, "drop staged symlink")?;
+        log::warn!(
+            "jpkg: {pkg_name}: kept /{} (changed locally); the package's link to {} was not written",
+            n.path,
+            n.symlink_target.as_deref().unwrap_or("?")
+        );
+    }
+    Ok(())
+}
+
+/// A config path this package is giving up (remove, or an upgrade that no
+/// longer ships it) stays because another package also lists it.  If what
+/// is there is this package's copy and no remaining owner recorded those
+/// bytes, the remaining owner will treat it as changed locally from now
+/// on: say so, and how to get the owner's own copy back.
+pub(crate) fn warn_left_for_co_owner(rootfs: &Path, pkg_name: &str, e: &FileEntry, others: &Ownership) {
+    if !crate::config::is_config(e) {
+        return;
+    }
+    let claims = others.owners_of(&e.path);
+    match crate::config::on_disk(rootfs, &e.path) {
+        Ok(OnDisk::File(h)) if h == e.sha256 && !claims.iter().any(|c| c.sha256 == h) => {
+            let owners: Vec<&str> = claims.iter().map(|c| c.owner.as_str()).collect();
+            log::warn!(
+                "jpkg: /{p} stays for {o}, but it holds {pkg_name}'s copy, which {o} will keep as \
+                 changed locally; to get {first}'s own copy: rm /{p} && jpkg install --force {first}",
+                p = e.path,
+                o = owners.join(", "),
+                first = owners.first().copied().unwrap_or("?"),
+            );
+        }
+        _ => {}
+    }
+}
+
 /// Step 6b.  Clear the way for the symlinks and directories the package
 /// places at config paths, deciding again on what is there now: a pristine
 /// file in the way of a directory is removed, anything not pristine is
 /// moved to `<path>.jpkg-save` (never over an existing one).
 fn displace_config_paths(
     rootfs: &Path,
+    stage_dir: &Path,
     pkg_name: &str,
     pkg_version: &str,
     plan: &ConfigPlan<'_>,
@@ -798,8 +905,9 @@ fn displace_config_paths(
             log::warn!("jpkg: cannot check /{} ({err}); treating it as changed", n.path);
             OnDisk::Other
         });
-        match config::displace(&disk, n, rec) {
+        match config::displace(&disk, n, rec, leads_to_dir(&disk, &from)) {
             Displace::Leave => {}
+            Displace::Keep => keep_admin_object(stage_dir, pkg_name, n)?,
             Displace::Remove => wrap_io(fs::remove_file(&from), &from, "remove packaged file in the way of a directory")?,
             Displace::Save => {
                 let to = config::with_suffix(&from, config::SAVE_SUFFIX);
@@ -1014,7 +1122,13 @@ fn clean_old_files_for_upgrade(
                 };
                 let is_dir = on_disk_md.is_dir() && !on_disk_md.file_type().is_symlink();
                 match old_owned.get(rel_str.as_ref()) {
-                    None if !is_dir => foreign.push(abs.to_path_buf()),
+                    // An untouched offer jpkg wrote for an owned config file
+                    // is package content, not the admin's.
+                    None if !is_dir
+                        && !crate::config::is_package_offer(rootfs, &rel_str, &old_owned) =>
+                    {
+                        foreign.push(abs.to_path_buf())
+                    }
                     None => {}
                     // 2.2.11: an owned file or link at a config path that the
                     // admin changed -- also into a directory -- is theirs now;
@@ -1054,6 +1168,7 @@ fn clean_old_files_for_upgrade(
             // Another installed package still lists this path (a shared
             // init script, a link a `replaces` package took over, …).  It
             // is theirs now; deleting it would break them.
+            warn_left_for_co_owner(rootfs, new_pkg_name, old, others);
             log::debug!(
                 "jpkg: upgrade-clean: keeping {} (still owned by {})",
                 old.path,
@@ -1066,18 +1181,22 @@ fn clean_old_files_for_upgrade(
             );
             continue;
         }
+        // 2.2.11: an untouched offer for a config file this version no
+        // longer ships is stale whatever happens to the file itself (as in
+        // remove); dropping it first also lets a directory holding one
+        // empty out.
+        if crate::config::is_config(old) {
+            if let Err(e) = crate::config::drop_stale_new(rootfs, &old.path, &[&old.sha256]) {
+                log::warn!("jpkg: could not check /{}{}: {e}", old.path, crate::config::NEW_SUFFIX);
+            }
+        }
         if crate::config::keep_on_disk(rootfs, old) {
             // 2.2.11: a config file the admin changed (or that cannot be
-            // checked) stays where it is and is theirs from now on.  An
-            // offer from an earlier upgrade is stale: no package will
-            // update it again.
+            // checked) stays where it is and is theirs from now on.
             log::warn!(
                 "jpkg: {new_pkg_name}-{new_pkg_version} no longer ships /{}; kept your locally changed copy (no package owns it now)",
                 old.path
             );
-            if let Err(e) = crate::config::drop_stale_new(rootfs, &old.path, &[&old.sha256]) {
-                log::warn!("jpkg: could not check /{}{}: {e}", old.path, crate::config::NEW_SUFFIX);
-            }
             continue;
         }
         let on_disk = rootfs.join(&old.path);
@@ -1303,7 +1422,7 @@ pub fn extract_and_register(
     //        pristine there goes to <path>.jpkg-save.  After upgrade-clean,
     //        whose validation can still refuse the upgrade, and which never
     //        touches a path the new version still lists.
-    displace_config_paths(rootfs, &pkg_name, &pkg_version, &config_plan)?;
+    displace_config_paths(rootfs, &stage_dir, &pkg_name, &pkg_version, &config_plan)?;
 
     // ── 6c. Config files (2.2.11): decide again right before writing.
     recheck_config_files(rootfs, &stage_dir, &pkg_name, &mut config_plan)?;
@@ -3025,16 +3144,173 @@ pub(crate) mod tests {
         assert!(!rootfs.join("etc/ssl/cert.pem.jpkg-save").exists());
     }
 
+    /// Nothing recorded at the path: the admin's link is theirs, like a
+    /// pre-existing different config file.
     #[test]
-    fn admin_symlink_where_package_places_a_symlink_is_saved() {
+    fn admin_symlink_where_package_first_places_a_symlink_is_kept() {
         let tmp = TempDir::new().unwrap();
         let (rootfs, db) = fresh_root(&tmp);
         let _lock = db.lock().unwrap();
         fs::create_dir_all(rootfs.join("etc")).unwrap();
         symlink("/data/x.conf", rootfs.join("etc/x.conf")).unwrap();
         install(&rootfs, &db, &file_then_link(tmp.path(), "1", true));
-        assert_eq!(fs::read_link(rootfs.join("etc/x.conf")).unwrap(), Path::new("x.d/main"));
-        assert_eq!(fs::read_link(rootfs.join("etc/x.conf.jpkg-save")).unwrap(), Path::new("/data/x.conf"));
+        assert_eq!(fs::read_link(rootfs.join("etc/x.conf")).unwrap(), Path::new("/data/x.conf"));
+        assert!(rootfs.join("etc/x.conf.jpkg-save").symlink_metadata().is_err());
+        assert!(manifest_has(&db, "confpkg", "etc/x.conf"), "the manifest still records the package's link");
+    }
+
+    fn ca_pkg(tmp: &Path, version: &str) -> PathBuf {
+        build_jpkg_tree(tmp, "ca", version, &[], &[
+            ("etc/ssl/certs/ca-certificates.crt", Node::File(version.as_bytes(), 0o644)),
+            ("etc/ssl/cert.pem", Node::Link("certs/ca-certificates.crt")),
+        ])
+    }
+
+    /// Review d0: an admin pointing cert.pem at their own bundle used to be
+    /// saved aside on every upgrade, and refused (aborting the whole run)
+    /// on the second.  Same kind of object, so it is kept like a config file.
+    #[test]
+    fn admin_retargeted_package_link_is_kept_on_every_upgrade() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &ca_pkg(tmp.path(), "1"));
+        fs::remove_file(rootfs.join("etc/ssl/cert.pem")).unwrap();
+        symlink("local/corp.pem", rootfs.join("etc/ssl/cert.pem")).unwrap();
+        let v3 = ca_pkg(tmp.path(), "3");
+        for (v, pkg) in [("2", ca_pkg(tmp.path(), "2")), ("3", v3.clone()), ("3 again", v3)] {
+            install(&rootfs, &db, &pkg);
+            assert_eq!(fs::read_link(rootfs.join("etc/ssl/cert.pem")).unwrap(), Path::new("local/corp.pem"), "v{v}");
+            assert!(rootfs.join("etc/ssl/cert.pem.jpkg-save").symlink_metadata().is_err(), "v{v}");
+        }
+        let r = crate::cmd::verify::verify_package_for_tests(&db.get("ca").unwrap().unwrap(), &rootfs);
+        assert_eq!(r, (0, 1), "reported as changed, not a failure");
+    }
+
+    /// Old minimal images left /etc/ssl/cert.pem as an unowned link to the
+    /// bundle, the same link ca-certificates ships, over libressl's
+    /// recorded file.  Identical: nothing to save.
+    #[test]
+    fn unowned_link_identical_to_the_package_link_is_adopted() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "ssl", "1", &[], &[("etc/ssl/cert.pem", Node::File(b"bundle\n", 0o644))]));
+        fs::remove_file(rootfs.join("etc/ssl/cert.pem")).unwrap();
+        symlink("certs/ca-certificates.crt", rootfs.join("etc/ssl/cert.pem")).unwrap();
+        install(&rootfs, &db, &ca_pkg(tmp.path(), "1"));
+        assert_eq!(fs::read_link(rootfs.join("etc/ssl/cert.pem")).unwrap(), Path::new("certs/ca-certificates.crt"));
+        assert!(rootfs.join("etc/ssl/cert.pem.jpkg-save").symlink_metadata().is_err());
+    }
+
+    /// Review c18/c20: the trust store is package data.  An edited or
+    /// image-seeded bundle is replaced, and nothing lands in etc/ssl/certs.
+    #[test]
+    fn trust_store_bundle_is_always_replaced_and_gets_no_offer() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        fs::create_dir_all(rootfs.join("etc/ssl/certs")).unwrap();
+        fs::write(rootfs.join("etc/ssl/certs/ca-certificates.crt"), b"curl.se extract from an old image\n").unwrap();
+        install(&rootfs, &db, &ca_pkg(tmp.path(), "1"));
+        assert_eq!(fs::read(rootfs.join("etc/ssl/certs/ca-certificates.crt")).unwrap(), b"1");
+        fs::write(rootfs.join("etc/ssl/certs/ca-certificates.crt"), b"edited\n").unwrap();
+        install(&rootfs, &db, &ca_pkg(tmp.path(), "2"));
+        assert_eq!(fs::read(rootfs.join("etc/ssl/certs/ca-certificates.crt")).unwrap(), b"2");
+        let names: Vec<_> = fs::read_dir(rootfs.join("etc/ssl/certs")).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("ca-certificates.crt")]);
+    }
+
+    /// Review c1: a package directory over the admin's link that does not
+    /// lead to a directory used to fail after upgrade-clean (EEXIST).
+    #[test]
+    fn package_directory_over_an_unfollowable_admin_link_saves_it() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &dir_then_file(tmp.path(), "1", true));
+        fs::remove_file(rootfs.join("etc/x.conf")).unwrap();
+        symlink("../data/x.conf", rootfs.join("etc/x.conf")).unwrap();
+        install(&rootfs, &db, &dir_then_file(tmp.path(), "2", false));
+        assert_eq!(fs::read(rootfs.join("etc/x.conf/a")).unwrap(), b"a\n");
+        assert_eq!(fs::read_link(rootfs.join("etc/x.conf.jpkg-save")).unwrap(), Path::new("../data/x.conf"));
+    }
+
+    /// Review c2/c4: an untouched offer for a file the admin then adopted.
+    #[test]
+    fn stale_offer_goes_when_an_upgrade_drops_its_pristine_file() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        let bin = ("bin/d", Node::File(b"d\n", 0o755));
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "1", &[bin, ("etc/x.conf", Node::File(b"v1\n", 0o644))]));
+        fs::write(rootfs.join("etc/x.conf"), b"mine\n").unwrap();
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "2", &[bin, ("etc/x.conf", Node::File(b"v2\n", 0o644))]));
+        fs::copy(rootfs.join("etc/x.conf.jpkg-new"), rootfs.join("etc/x.conf")).unwrap();
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "3", &[bin]));
+        assert!(!rootfs.join("etc/x.conf").exists(), "pristine: removed");
+        assert!(!rootfs.join("etc/x.conf.jpkg-new").exists(), "and its offer with it");
+    }
+
+    #[test]
+    fn stale_offer_does_not_block_dir_to_symlink_or_dir_to_file() {
+        for to_link in [true, false] {
+            let tmp = TempDir::new().unwrap();
+            let (rootfs, db) = fresh_root(&tmp);
+            let _lock = db.lock().unwrap();
+            let v = |ver: &str, a: &'static [u8]| {
+                conf_pkg(tmp.path(), ver, &[("etc/foo.d", Node::Dir(0o755)), ("etc/foo.d/a.conf", Node::File(a, 0o644))])
+            };
+            install(&rootfs, &db, &v("1", b"a1\n"));
+            fs::write(rootfs.join("etc/foo.d/a.conf"), b"mine\n").unwrap();
+            install(&rootfs, &db, &v("2", b"a2\n"));
+            fs::copy(rootfs.join("etc/foo.d/a.conf.jpkg-new"), rootfs.join("etc/foo.d/a.conf")).unwrap();
+            let v3 = if to_link {
+                dir_then_link(tmp.path(), "3", true)
+            } else {
+                conf_pkg(tmp.path(), "3", &[("etc/foo.d", Node::File(b"now a file\n", 0o644))])
+            };
+            install(&rootfs, &db, &v3);
+            let m = rootfs.join("etc/foo.d").symlink_metadata().unwrap();
+            if to_link {
+                assert!(m.file_type().is_symlink());
+            } else {
+                assert!(m.file_type().is_file(), "installed, not offered");
+                assert!(!rootfs.join("etc/foo.d.jpkg-new").exists());
+            }
+        }
+    }
+
+    /// Review c0: config files are written last and atomically, so a step-7
+    /// failure leaves the recorded copies and a fixed release replaces them.
+    #[test]
+    fn failed_install_leaves_recorded_config_and_the_retry_replaces_it() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "oth", "1", &[], &[("share/ku/t/o", Node::File(b"o\n", 0o644))]));
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "1", &[("etc/ku.conf", Node::File(b"stock-1\n", 0o644))]));
+        let broken = conf_pkg(tmp.path(), "2", &[
+            ("etc/ku.conf", Node::File(b"stock-2\n", 0o644)),
+            ("share/ku/t", Node::File(b"collides with oth's directory\n", 0o644)),
+        ]);
+        extract_and_register(&JpkgArchive::open(&broken).unwrap(), &rootfs, &db).expect_err("EISDIR at share/ku/t");
+        assert_eq!(fs::read(rootfs.join("etc/ku.conf")).unwrap(), b"stock-1\n", "config not yet written");
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "3", &[("etc/ku.conf", Node::File(b"stock-3\n", 0o644))]));
+        assert_eq!(fs::read(rootfs.join("etc/ku.conf")).unwrap(), b"stock-3\n");
+        assert!(!rootfs.join("etc/ku.conf.jpkg-new").exists());
+        assert!(!rootfs.join("etc/ku.conf.jpkg-tmp").exists());
+    }
+
+    #[test]
+    fn config_files_keep_mode_and_leave_no_temporary_file() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "1", &[("etc/s.conf", Node::File(b"s\n", 0o4750))]));
+        assert_eq!(mode_of(&rootfs.join("etc/s.conf")), 0o4750);
+        let names: Vec<_> = fs::read_dir(rootfs.join("etc")).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("s.conf")]);
     }
 
     #[test]
@@ -3119,6 +3395,45 @@ pub(crate) mod tests {
         let plan = plan_config_files(&rootfs, &stage, "confpkg", Some(&old), &files, &others).unwrap();
         assert!(plan.install.is_empty() && plan.offer.is_empty());
         assert!(!stage.join("etc/x.conf").exists() && !stage.join("etc/x.conf.jpkg-new").exists());
+    }
+
+    /// 5c and 6b each apply Displace::Keep on their own (6b repeats it for a
+    /// link retargeted after planning), which hides either one end to end.
+    fn retarget_plan(tmp: &TempDir) -> (PathBuf, InstalledDb, PathBuf, Vec<FileEntry>, InstalledPkg, Ownership) {
+        let (rootfs, db) = fresh_root(tmp);
+        install(&rootfs, &db, &ca_pkg(tmp.path(), "1"));
+        let stage = tmp.path().join("stage");
+        fs::create_dir_all(stage.join("etc/ssl/certs")).unwrap();
+        fs::write(stage.join("etc/ssl/certs/ca-certificates.crt"), b"2").unwrap();
+        symlink("certs/ca-certificates.crt", stage.join("etc/ssl/cert.pem")).unwrap();
+        let files = build_manifest(&stage).unwrap();
+        let old = db.get("ca").unwrap().unwrap();
+        let others = db.path_owners(None, Some("ca")).unwrap();
+        (rootfs, db, stage, files, old, others)
+    }
+
+    #[test]
+    fn plan_drops_the_package_link_where_the_admin_retargeted_it() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db, stage, files, old, others) = retarget_plan(&tmp);
+        let _lock = db.lock().unwrap();
+        fs::remove_file(rootfs.join("etc/ssl/cert.pem")).unwrap();
+        symlink("local/corp.pem", rootfs.join("etc/ssl/cert.pem")).unwrap();
+        plan_config_files(&rootfs, &stage, "ca", Some(&old), &files, &others).unwrap();
+        assert!(stage.join("etc/ssl/cert.pem").symlink_metadata().is_err(), "5c dropped the staged link");
+    }
+
+    #[test]
+    fn displace_step_keeps_a_link_retargeted_after_planning() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db, stage, files, old, others) = retarget_plan(&tmp);
+        let _lock = db.lock().unwrap();
+        let plan = plan_config_files(&rootfs, &stage, "ca", Some(&old), &files, &others).unwrap();
+        assert!(stage.join("etc/ssl/cert.pem").symlink_metadata().is_ok(), "pristine at 5c");
+        fs::remove_file(rootfs.join("etc/ssl/cert.pem")).unwrap();
+        symlink("local/corp.pem", rootfs.join("etc/ssl/cert.pem")).unwrap();
+        displace_config_paths(&rootfs, &stage, "ca", "2", &plan).unwrap();
+        assert!(stage.join("etc/ssl/cert.pem").symlink_metadata().is_err(), "6b dropped it");
     }
 
     /// Step 6c: an edit made after 5c (while upgrade-clean runs) is kept.

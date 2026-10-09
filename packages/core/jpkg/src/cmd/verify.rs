@@ -292,12 +292,12 @@ fn run_installed_verify(args: &[String]) -> i32 {
             packages_bad += 1;
             if single {
                 println!(
-                    "  FAIL: {} missing, {} modified, {} errors",
+                    "  FAIL: {} missing, {} modified, {} errors{note}",
                     result.missing, result.modified, result.errors
                 );
             } else if verbose {
                 println!(
-                    " FAIL ({} missing, {} modified, {} errors)",
+                    " FAIL ({} missing, {} modified, {} errors){note}",
                     result.missing, result.modified, result.errors
                 );
             }
@@ -333,6 +333,13 @@ struct VerifyResult {
     errors: usize,
     /// Config files changed locally (2.2.11): reported, not a failure.
     config_changed: usize,
+}
+
+/// `(mismatches, config_changed)` for one package, for other modules' tests.
+#[cfg(test)]
+pub(crate) fn verify_package_for_tests(pkg: &crate::db::InstalledPkg, rootfs: &Path) -> (usize, usize) {
+    let r = verify_package(pkg, rootfs, "test", false);
+    (r.mismatches, r.config_changed)
 }
 
 /// Verify all files in `pkg` against `rootfs`.
@@ -398,6 +405,35 @@ fn verify_package(
         }
 
         if let Some(ref expected_target) = fe.symlink_target {
+            if crate::config::is_config_path(rel) {
+                // 2.2.11: a link at a config path the admin changed (another
+                // target, or something else in its place) is kept on
+                // upgrade, so it is reported like a changed config file.
+                match crate::config::on_disk(rootfs, rel) {
+                    Ok(crate::config::OnDisk::Link(t)) if t == *expected_target => {}
+                    Ok(crate::config::OnDisk::Missing) => {
+                        result.mismatches += 1;
+                        result.missing += 1;
+                        if print_detail {
+                            println!("{}:{}  expected={}  got=(missing)", pkg_name, fe.path, expected_target);
+                        }
+                    }
+                    Ok(_) => {
+                        result.config_changed += 1;
+                        if print_detail {
+                            println!("{pkg_name}:{}  config link, changed locally", fe.path);
+                        }
+                    }
+                    Err(_) => {
+                        result.mismatches += 1;
+                        result.errors += 1;
+                        if print_detail {
+                            println!("{}:{}  expected={}  got=(error)", pkg_name, fe.path, expected_target);
+                        }
+                    }
+                }
+                continue;
+            }
             // Symlink check: read_link and compare.
             match std::fs::read_link(&abs) {
                 Ok(actual_path) => {
