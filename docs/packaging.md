@@ -350,12 +350,16 @@ you delete it.
 
 jonerix has no local CA store: the trust store is the package's, and an
 edit inside `/etc/ssl/certs/` or to `/etc/ssl/cert.pem` is undone by the
-next update. To trust a private CA, point the program at it: Go programs
-and the curl command read `SSL_CERT_FILE` and `SSL_CERT_DIR` (which replace
-the default bundle, so give them a file holding the bundle plus your CA,
-kept outside `/etc/ssl`); LibreSSL itself ignores both, so a program using
-libssl or libtls (python3 among them) needs its own CA option (`--cacert`,
-`cafile=`, …).
+next update. To trust a private CA, point each program at it. Go programs:
+set `SSL_CERT_FILE` to a file holding only your CA (Go still reads
+`/etc/ssl/certs/`, so the package's CA updates keep landing; do not also set
+`SSL_CERT_DIR`). curl: give `--cacert` (or `SSL_CERT_FILE`, which it also
+reads) a file holding the bundle plus your CA, and rebuild that file after
+every ca-certificates update (`cat /etc/ssl/certs/ca-certificates.crt
+corp.pem > /etc/local-ca.pem`), or it keeps trusting CAs the package has
+removed; a single `SSL_CERT_FILE` in the environment cannot suit both. A
+program using LibreSSL's libssl or libtls (python3 among them) ignores
+both variables and needs its own CA option (`cafile=`, …).
 
 ### Upgrading to 2.2.11
 

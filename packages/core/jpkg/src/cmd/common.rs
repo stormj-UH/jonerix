@@ -116,9 +116,11 @@ impl fmt::Display for InstallError {
                 let more = foreign.len().saturating_sub(shown.len());
                 write!(
                     f,
-                    "cannot install {pkg}-{new_version}: target path {} \
-                     conflicts with existing directory (still populated \
-                     after old-manifest cleanup); foreign files present: {}",
+                    "cannot install {pkg}-{new_version}: it turns {} from a \
+                     directory into a symlink or back, and that directory \
+                     holds files that are not this package's unchanged ones; \
+                     move them out of the way (or restore the packaged copies) \
+                     and retry: {}",
                     dir.display(),
                     if more > 0 {
                         format!("{} (+{} more)", shown.join(", "), more)

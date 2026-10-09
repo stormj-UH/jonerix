@@ -62,7 +62,10 @@
 //! and the files below it are installed as new -- after checking that the
 //! directory the link led to holds only that package's own pristine files
 //! (else the upgrade is refused before any write, naming the rest).  Another
-//! package's link is never removed to make room.  Directories are only
+//! package's link that leads to a directory is followed, never removed; one
+//! jpkg recorded that cannot hold a directory (dead, or to a file) is
+//! removed.  Under `--root` an absolute link counts as leading nowhere,
+//! because it would resolve on the host (to be revisited in 2.2.12).  Directories are only
 //! ever removed when empty, except the old directory of a package that
 //! turns it into a symlink, which upgrade-clean removes only after checking
 //! that everything in it is the package's and pristine.
@@ -264,7 +267,8 @@ pub enum Displace {
     /// it, and do not write the package's link.
     Keep,
     /// The package's own previous link, jpkg's file, or another package's
-    /// link that leads nowhere, where a directory goes: remove it first
+    /// recorded link that does not lead to a directory (dead, or to a
+    /// file), where a directory goes: remove it first
     /// (config files below it are then decided as if nothing were there).
     Remove,
     /// Anything else not pristine: move it to `<path>.jpkg-save` first.
@@ -275,7 +279,8 @@ pub enum Displace {
 /// `disk` is a symlink that leads (followed, as install_files would follow
 /// it) to a directory inside the root being installed into.  `own_link`:
 /// `disk` is exactly the symlink this package's previous version shipped
-/// there (another owner's link is never removed to make room).
+/// there (another owner's link that leads to a directory is followed, never
+/// removed).
 pub fn displace(
     disk: &OnDisk,
     n: &FileEntry,
