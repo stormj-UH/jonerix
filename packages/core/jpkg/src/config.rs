@@ -61,11 +61,12 @@
 //! A package's own previous link where it now ships a directory is removed,
 //! and the files below it are installed as new -- after checking that the
 //! directory the link led to holds only that package's own pristine files
-//! (else the upgrade is refused before any write, naming the rest).  Another
-//! package's link that leads to a directory is followed, never removed; one
-//! jpkg recorded that cannot hold a directory (dead, or to a file) is
-//! removed.  Under `--root` an absolute link counts as leading nowhere,
-//! because it would resolve on the host (to be revisited in 2.2.12).  Directories are only
+//! (else the upgrade is refused before any write, naming the rest; links
+//! are resolved inside the root and nested links below are walked too).
+//! Another package's link that leads to a directory is followed, never
+//! removed; under `--root`, where an absolute link (or one climbing out of
+//! the root) cannot be followed, the install is refused instead.  One jpkg
+//! recorded that leads nowhere or to a file is removed.  Directories are only
 //! ever removed when empty, except the old directory of a package that
 //! turns it into a symlink, which upgrade-clean removes only after checking
 //! that everything in it is the package's and pristine.
@@ -438,6 +439,54 @@ pub fn drop_scratch(rootfs: &Path, path: &str) -> io::Result<bool> {
     Ok(dropped)
 }
 
+/// Resolve `rel` inside `root` the way a chroot into `root` would: symlinks
+/// are followed component by component, an absolute target starts again at
+/// `root`, and `..` never climbs above it.  Returns the real path (under
+/// `root`), or `None` when a component is missing, a link loops (more than
+/// 40 hops) or cannot be read.  Never opens anything but directories'
+/// metadata and links.
+pub fn resolve_in_root(root: &Path, rel: &Path) -> Option<PathBuf> {
+    use std::ffi::OsString;
+    use std::path::Component;
+    fn push_rev(pending: &mut Vec<OsString>, p: &Path) {
+        for c in p.components().rev() {
+            match c {
+                Component::Normal(n) => pending.push(n.to_os_string()),
+                Component::ParentDir => pending.push(OsString::from("..")),
+                _ => {}
+            }
+        }
+    }
+    let mut pending: Vec<OsString> = Vec::new();
+    push_rev(&mut pending, rel);
+    let mut cur = root.to_path_buf();
+    let mut hops = 0;
+    while let Some(c) = pending.pop() {
+        if c == ".." {
+            if cur != root {
+                cur.pop();
+            }
+            continue;
+        }
+        let next = cur.join(&c);
+        let m = next.symlink_metadata().ok()?;
+        if m.file_type().is_symlink() {
+            hops += 1;
+            if hops > 40 {
+                return None;
+            }
+            let t = fs::read_link(&next).ok()?;
+            if t.is_absolute() {
+                cur = root.to_path_buf();
+            }
+            push_rev(&mut pending, &t);
+        } else {
+            cur = next;
+        }
+    }
+    Some(cur)
+}
+
 /// True when `<path>.jpkg-new` exists as a regular file (never followed).
 pub fn has_pending_new(rootfs: &Path, path: &str) -> bool {
     with_suffix(&rootfs.join(path), NEW_SUFFIX)
@@ -660,6 +709,26 @@ mod tests {
         fs::create_dir_all(r.join("etc/init.d")).unwrap();
         fs::write(r.join("etc/init.d/svc"), b"hacked\n").unwrap();
         assert!(!keep_on_disk(r, &code), "init.d is code");
+    }
+
+    #[test]
+    fn resolve_in_root_follows_links_like_a_chroot() {
+        let t = tempfile::TempDir::new().unwrap();
+        let r = t.path().join("root");
+        fs::create_dir_all(r.join("share/foo")).unwrap();
+        fs::create_dir_all(r.join("etc")).unwrap();
+        std::os::unix::fs::symlink("/share/foo", r.join("etc/abs")).unwrap();
+        std::os::unix::fs::symlink("../share/foo", r.join("etc/rel")).unwrap();
+        std::os::unix::fs::symlink("../../../../../share/foo", r.join("etc/climb")).unwrap();
+        std::os::unix::fs::symlink("loop2", r.join("etc/loop1")).unwrap();
+        std::os::unix::fs::symlink("loop1", r.join("etc/loop2")).unwrap();
+        std::os::unix::fs::symlink("/nowhere", r.join("etc/dead")).unwrap();
+        let want = Some(r.join("share/foo"));
+        assert_eq!(resolve_in_root(&r, Path::new("etc/abs")), want, "absolute: starts again at the root");
+        assert_eq!(resolve_in_root(&r, Path::new("etc/rel")), want);
+        assert_eq!(resolve_in_root(&r, Path::new("etc/climb")), want, "'..' stops at the root");
+        assert_eq!(resolve_in_root(&r, Path::new("etc/loop1")), None);
+        assert_eq!(resolve_in_root(&r, Path::new("etc/dead")), None);
     }
 
     #[test]

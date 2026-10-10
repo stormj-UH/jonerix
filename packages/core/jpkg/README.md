@@ -1,6 +1,6 @@
 # jpkg — jonerix package manager
 
-**Version 2.2.11** — Rust from-scratch port of the C jpkg 1.1.5.
+**Version 2.2.12** — Rust from-scratch port of the C jpkg 1.1.5.
 
 jpkg is the system package manager for jonerix.  It handles package creation,
 installation, removal, dependency resolution, Ed25519 signature verification,

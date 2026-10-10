@@ -293,8 +293,9 @@ symlinked parent directory is followed (move `/etc/foo` elsewhere and link
 it back, and package files are written, and on removal pristine ones
 deleted, through the link), and a directory a package ships is merged into
 an existing directory, or written through your symlink when it leads to a
-directory (under `--root`, an absolute link is not followed out of the
-root: it is moved to `.jpkg-save`). Where a package now ships a directory
+directory (under `--root`, an absolute link, or one that climbs out of the
+root, is not followed: yours is moved to `.jpkg-save`, and another
+package's makes the install stop before anything is written). Where a package now ships a directory
 in place of a link its previous version shipped, the link is removed and
 the directory created -- unless the directory the link led to holds
 anything but that package's own unchanged files, in which case the upgrade

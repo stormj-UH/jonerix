@@ -77,7 +77,7 @@ Generated from tracked `packages/**/recipe.toml` -- **145 recipes**. All jonerix
 | **`jonerix-os-info`** | `extra` | 1.0.0 | 0BSD | any | `toybox` | - | Legacy distro-marker files (/etc/lsb-release, /etc/jonerix-release, /etc/system-release{,-cpe}, /etc/issue, /etc/issue.net) regenerated from /etc/os-release at install/upgrade time |
 | **`jonerix-raspi5-fixups`** | `extra` | 1.6.35 | 0BSD | aarch64 | `musl`, `openrc`, `python3`, `shadow`, `toybox` | `rust` | Hardware fixups for jonerix on Raspberry Pi 5 (EEE, fan, onboard WiFi, OpenRC-backed reboot, cold-reboot, wake-on-power, RTC coin-cell monitor) + adduser safety + legacy bootstrap cleanup + fstab rescue + errors=remount-ro |
 | **`jonerix-util`** | `extra` | 0.1.1-r0 | 0BSD | any | `musl` | `clang`, `rust` | Clean-room permissive-licensed replacement for parts of util-linux (lscpu, hwclock, ionice, nsenter, chsh) |
-| **`jpkg`** | `core` | 2.2.11 | 0BSD | any | `musl`, `mksh` | `rust` | jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5) |
+| **`jpkg`** | `core` | 2.2.12 | 0BSD | any | `musl`, `mksh` | `rust` | jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5) |
 | **`jq`** | `core` | 1.8.1 | MIT | any | `musl` | `clang`, `make`, `exproxide`, `jonerix-headers` | Lightweight and flexible command-line JSON processor |
 | **`libarchive`** | `core` | 3.8.6-r5 | Apache-2.0 | any | `musl`, `zlib`, `xz`, `zstd`, `lz4`, `libressl` | `clang`, `cmake`, `samurai`, `libressl`, `zlib`, `xz`, `zstd`, `lz4` | Multi-format archive and compression library with bsdtar |
 | **`libcxx`** | `develop` | 21.1.2-r1 | Apache-2.0 | any | `musl` | `clang`, `cmake`, `samurai`, `python3` | LLVM libc++, libc++abi, and libunwind runtime with corrected libunwind SONAME |

@@ -1,8 +1,20 @@
 [package]
 name = "jpkg"
-version = "2.2.11"
+version = "2.2.12"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.12 — symlinks are judged inside the root.
+#   * Links are resolved as a chroot into the target root would resolve
+#     them (absolute targets start at the root, '..' stops there).  Under
+#     --root an absolute link, or a relative one that climbs out of the
+#     root, is never followed (install_files would follow it on the host).
+#   * Another package's link to a directory that cannot be followed here is
+#     no longer removed to make room for a directory: the install is
+#     refused before any write.
+#   * Before removing its own link to make room for its directory, a
+#     package's check of what lives below that link resolves the link
+#     inside the root and also walks links nested below it.
+#
 # 2.2.11 — config files survive upgrades.
 #   * A regular file a package ships under etc/ is a config file, except
 #     under etc/init.d/ and etc/cron.d/ (run as code) and the trust store,

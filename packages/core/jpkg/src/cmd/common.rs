@@ -853,12 +853,27 @@ fn plan_config_files<'a>(
             wrap_io(config::on_disk(rootfs, &n.path), &dest, "check config path")?
         };
         let own_link = own.is_some_and(|t| matches!(&disk, OnDisk::Link(d) if d == t));
-        let decision = config::displace(&disk, n, &rec, leads_to_dir(&disk, &dest, rootfs), own_link);
+        let decision = config::displace(&disk, n, &rec, leads_to_dir(&disk, &dest, &n.path, rootfs), own_link);
         if decision == Displace::Keep {
             keep_admin_object(stage_dir, pkg_name, n, &rec)?;
         }
         if decision == Displace::Remove && own_link {
-            check_own_link_contents(rootfs, &dest, &old_by_path, pkg_name, pkg_version)?;
+            check_own_link_contents(rootfs, &n.path, &old_by_path, pkg_name, pkg_version)?;
+        }
+        if decision == Displace::Remove && !own_link && matches!(disk, OnDisk::Link(_)) {
+            // Another package's link that cannot be followed here (an
+            // absolute one under --root) but does lead to a directory in the
+            // root: removing it would break that package, following it would
+            // write outside the root.  Refuse before any write.
+            if config::resolve_in_root(rootfs, Path::new(&n.path)).is_some_and(|p| p.is_dir()) {
+                return Err(InstallError::FileOp {
+                    path: dest,
+                    op: "place a directory over another package's symlink to a directory, which cannot be \
+                         followed inside this root (install without --root, or have that package use a \
+                         relative link)",
+                    source: io::Error::new(io::ErrorKind::AlreadyExists, "in use by another package"),
+                });
+            }
         }
         if matches!(decision, Displace::Remove | Displace::Save) && matches!(disk, OnDisk::Link(_)) {
             gone_links.push(&n.path);
@@ -916,68 +931,84 @@ fn plan_config_files<'a>(
     Ok(plan)
 }
 
-/// True when `disk` is a symlink at `abs` that leads (followed, as
-/// install_files' create_dir_all would follow it) to a directory.  Under an
-/// alternate root an absolute target would resolve on the host, outside the
-/// root, so it is never followed there.
-fn leads_to_dir(disk: &OnDisk, abs: &Path, rootfs: &Path) -> bool {
-    match disk {
-        OnDisk::Link(t) if Path::new(t).is_absolute() && rootfs != Path::new("/") => false,
-        OnDisk::Link(_) => abs.metadata().map(|m| m.is_dir()).unwrap_or(false),
-        _ => false,
+/// True when `disk` is a symlink at `abs` (`rel` under `rootfs`) that
+/// install_files may follow: create_dir_all resolves it on the host, so it
+/// counts only when that host resolution is the same directory the link
+/// leads to inside the root.  Under an alternate root that rules out an
+/// absolute link, and a relative one that climbs out of the root.
+fn leads_to_dir(disk: &OnDisk, abs: &Path, rel: &str, rootfs: &Path) -> bool {
+    if !matches!(disk, OnDisk::Link(_)) {
+        return false;
     }
+    let (Ok(host), Some(inside)) = (fs::canonicalize(abs), crate::config::resolve_in_root(rootfs, Path::new(rel))) else {
+        return false;
+    };
+    let inside = fs::canonicalize(&inside).unwrap_or(inside);
+    host == inside && host.is_dir()
 }
 
 /// Before 6b removes this package's own previous link to make room for the
 /// directory it now ships: everything below the directory the link leads to
-/// must be what that previous version recorded there (by its real path) and
-/// still pristine, or an untouched offer or scratch file of jpkg's.  Anything
-/// else -- the admin's files, another package's -- would silently drop out of
-/// /etc, so the upgrade is refused before any write, naming it, the same way
-/// a directory turning into a link is refused.  A link that leads nowhere,
-/// or out of the root, has nothing of the root's below it.
+/// (resolved inside the root, as a chroot would, and through any further
+/// links that lead to directories) must be what that previous version
+/// recorded there (by its real path) and still pristine, or an untouched
+/// offer or scratch file of jpkg's.  Anything else -- the admin's files,
+/// another package's -- would silently drop out of /etc, so the upgrade is
+/// refused before any write, naming it, the same way a directory turning into
+/// a link is refused.  A link that leads nowhere has nothing below it.
 fn check_own_link_contents(
     rootfs: &Path,
-    link: &Path,
+    link_rel: &str,
     old_by_path: &std::collections::HashMap<&str, &FileEntry>,
     pkg_name: &str,
     pkg_version: &str,
 ) -> Result<(), InstallError> {
-    let (Ok(target), Ok(root)) = (fs::canonicalize(link), fs::canonicalize(rootfs)) else {
+    let Some(target) = crate::config::resolve_in_root(rootfs, Path::new(link_rel)) else {
         return Ok(());
     };
-    let Ok(phys) = target.strip_prefix(&root) else {
-        return Ok(());
-    };
-    if !target.is_dir() {
-        return Ok(());
-    }
+    let mut dirs = vec![target];
+    let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut foreign: Vec<PathBuf> = Vec::new();
-    for entry in WalkDir::new(&target).min_depth(1) {
-        let entry = entry.map_err(|e| {
-            InstallError::Io(io::Error::new(io::ErrorKind::Other, format!("walkdir {}: {e}", target.display())))
-        })?;
-        if entry.file_type().is_dir() {
+    while let Some(dir) = dirs.pop() {
+        if !dir.is_dir() || !seen.insert(dir.clone()) {
             continue;
         }
-        let rel = phys.join(entry.path().strip_prefix(&target).expect("walkdir child"));
-        let key = rel.to_string_lossy();
-        let ours = match old_by_path.get(key.as_ref()) {
-            Some(o) => !crate::config::keep_probe(crate::config::on_disk(rootfs, &key), &Recorded::entry(o)),
-            None => crate::config::is_package_leftover(rootfs, &key, old_by_path),
-        };
-        if !ours {
-            foreign.push(entry.path().to_path_buf());
+        for entry in WalkDir::new(&dir).min_depth(1) {
+            let entry = entry.map_err(|e| {
+                InstallError::Io(io::Error::new(io::ErrorKind::Other, format!("walkdir {}: {e}", dir.display())))
+            })?;
+            if entry.file_type().is_dir() {
+                continue;
+            }
+            let Ok(rel) = entry.path().strip_prefix(rootfs) else {
+                continue;
+            };
+            let key = rel.to_string_lossy();
+            let ours = match old_by_path.get(key.as_ref()) {
+                Some(o) => !crate::config::keep_probe(crate::config::on_disk(rootfs, &key), &Recorded::entry(o)),
+                None => crate::config::is_package_leftover(rootfs, &key, old_by_path),
+            };
+            if !ours {
+                foreign.push(entry.path().to_path_buf());
+            }
+            // A link below that leads to a directory: what is behind it
+            // drops out of /etc too.
+            if entry.path_is_symlink() {
+                if let Some(next) = crate::config::resolve_in_root(rootfs, rel) {
+                    dirs.push(next);
+                }
+            }
         }
     }
     if foreign.is_empty() {
         return Ok(());
     }
     foreign.sort();
+    foreign.dedup();
     Err(InstallError::UpgradeForeignFiles {
         pkg: pkg_name.to_string(),
         new_version: pkg_version.to_string(),
-        dir: link.to_path_buf(),
+        dir: rootfs.join(link_rel),
         foreign,
     })
 }
@@ -1052,7 +1083,7 @@ fn displace_config_paths(
             OnDisk::Other
         });
         let own_link = own.is_some_and(|t| matches!(&disk, OnDisk::Link(d) if d == t));
-        match config::displace(&disk, n, rec, leads_to_dir(&disk, &from, rootfs), own_link) {
+        match config::displace(&disk, n, rec, leads_to_dir(&disk, &from, &n.path, rootfs), own_link) {
             Displace::Leave => {}
             Displace::Keep => keep_admin_object(stage_dir, pkg_name, n, rec)?,
             Displace::Remove => wrap_io(fs::remove_file(&from), &from, "remove packaged file in the way of a directory")?,
@@ -3860,6 +3891,104 @@ pub(crate) mod tests {
         fs::write(rootfs.join("etc/x.conf.jpkg-new.jpkg-tmp"), b"half an offer").unwrap();
         install(&rootfs, &db, &conf_pkg(tmp.path(), "2", &[bin]));
         assert!(!rootfs.join("etc/x.conf.jpkg-new.jpkg-tmp").exists());
+    }
+
+    /// 2.2.12: another package's absolute link to a directory under --root
+    /// used to be removed (it cannot be followed there), breaking that
+    /// package's later upgrades.  Refused before any write.
+    #[test]
+    fn another_packages_absolute_link_under_root_is_refused() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        let pa = |v: &str| build_jpkg_tree(tmp.path(), "pa", v, &[], &[
+            ("share/foo/a.conf", Node::File(b"a\n", 0o644)),
+            ("etc/foo", Node::Link("/share/foo")),
+            ("bin/pa", Node::File(v.as_bytes(), 0o755)),
+        ]);
+        install(&rootfs, &db, &pa("1"));
+        let pb = build_jpkg_tree(tmp.path(), "pb", "1", &[], &[
+            ("etc/foo", Node::Dir(0o755)),
+            ("etc/foo/b.conf", Node::File(b"b\n", 0o644)),
+            ("bin/pb", Node::File(b"pb\n", 0o755)),
+        ]);
+        let err = extract_and_register(&JpkgArchive::open(&pb).unwrap(), &rootfs, &db)
+            .expect_err("must neither remove pa's link nor follow it out of the root");
+        assert!(err.to_string().contains("cannot be followed inside this root"), "{err}");
+        assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(!rootfs.join("bin/pb").exists(), "refused before any write");
+        install(&rootfs, &db, &pa("2"));
+        assert_eq!(fs::read(rootfs.join("bin/pa")).unwrap(), b"2", "pa keeps upgrading");
+    }
+
+    fn own_abs_link_v1(tmp: &Path) -> PathBuf {
+        conf_pkg(tmp, "1", &[
+            ("share/foo/a.conf", Node::File(b"a1\n", 0o644)),
+            ("etc/foo", Node::Link("/share/foo")),
+        ])
+    }
+
+    /// 2.2.12: the package's own absolute link under --root is checked
+    /// inside the root (it used to resolve on the host and check nothing).
+    #[test]
+    fn own_absolute_link_under_root_is_checked_inside_the_root() {
+        for admin_file in [true, false] {
+            let tmp = TempDir::new().unwrap();
+            let (rootfs, db) = fresh_root(&tmp);
+            let _lock = db.lock().unwrap();
+            install(&rootfs, &db, &own_abs_link_v1(tmp.path()));
+            if admin_file {
+                fs::write(rootfs.join("share/foo/local.conf"), b"mine\n").unwrap();
+            }
+            let r = extract_and_register(&JpkgArchive::open(&own_dir_v2(tmp.path())).unwrap(), &rootfs, &db);
+            if admin_file {
+                let err = r.expect_err("the admin's file would drop out of /etc");
+                assert!(err.to_string().contains("local.conf"), "{err}");
+                assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().file_type().is_symlink());
+            } else {
+                r.unwrap();
+                assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().is_dir());
+                assert_eq!(fs::read(rootfs.join("etc/foo/a.conf")).unwrap(), b"a2\n");
+            }
+        }
+    }
+
+    /// 2.2.12: a link inside the old link's directory that leads to another
+    /// directory is walked too: what is behind it would drop out as well.
+    #[test]
+    fn nested_links_below_an_own_link_are_checked() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "1", &[
+            ("share/foo/a.conf", Node::File(b"a1\n", 0o644)),
+            ("share/foo/sub", Node::Link("../other")),
+            ("share/other/y", Node::File(b"y\n", 0o644)),
+            ("etc/foo", Node::Link("../share/foo")),
+        ]));
+        fs::write(rootfs.join("share/other/x"), b"the admin's\n").unwrap();
+        let err = extract_and_register(&JpkgArchive::open(&own_dir_v2(tmp.path())).unwrap(), &rootfs, &db)
+            .expect_err("share/other/x is reachable through the nested link");
+        assert!(err.to_string().contains("share/other/x"), "{err}");
+    }
+
+    /// 2.2.12: a relative admin link that climbs out of the root is not
+    /// followed (install_files would write on the host); it is saved.
+    #[test]
+    fn relative_admin_link_climbing_out_of_the_root_is_saved() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        let host_dir = tmp.path().join("host-side");
+        fs::create_dir_all(&host_dir).unwrap();
+        fs::create_dir_all(rootfs.join("etc")).unwrap();
+        symlink("../../host-side", rootfs.join("etc/x.d")).unwrap();
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "1", &[
+            ("etc/x.d", Node::Dir(0o755)),
+            ("etc/x.d/a.conf", Node::File(b"a\n", 0o644)),
+        ]));
+        assert!(fs::read_dir(&host_dir).unwrap().next().is_none(), "nothing written outside the root");
+        assert!(rootfs.join("etc/x.d.jpkg-save").symlink_metadata().unwrap().file_type().is_symlink());
     }
 
     #[test]
