@@ -1,6 +1,6 @@
 [package]
 name = "toybox"
-version = "0.8.11-r15"
+version = "0.8.11-r16"
 license = "0BSD"
 description = "BSD-licensed coreutils replacement"
 # 0.8.11-r5: post_install yields to uutils.  When uutils is installed it
@@ -34,6 +34,13 @@ description = "BSD-licensed coreutils replacement"
 # 0.8.11-r9: make post_install/post_remove honor JPKG_ROOT when hooks run
 # outside a chroot, as happens for alternate-root installs before /bin/sh is
 # present in the target root.
+#
+# 0.8.11-r16: declare libressl.  toybox is built with
+# CONFIG_TOYBOX_LIBCRYPTO=y, so /bin/toybox (and every applet, /bin/sh
+# while that is still toybox) needs libcrypto.so.55 at run time, but only
+# musl was declared: on a fresh root jpkg could install toybox before
+# libressl, and the hooks that ran in between failed to relocate.  libressl
+# depends only on musl, so this adds no cycle.
 #
 # 0.8.11-r15: one release for the 2026-09 tormenta triage.
 #  - patches/0004: backport upstream 8cee68231f.  dirtree called
@@ -490,8 +497,8 @@ rm -f "$_root/etc/runlevels/default/syslogd"
 """
 
 [depends]
-runtime = ["musl"]
+runtime = ["musl", "libressl"]
 # brash is best-effort: install_target_build_deps WARNs and continues if
 # brash isn't yet built (first-pass bootstrap), so the recipe falls back
 # to mksh+patch via the build-time check above.
-build = ["clang", "brash", "jonerix-headers", "onetrueawk"]
+build = ["clang", "brash", "jonerix-headers", "onetrueawk", "libressl"]
