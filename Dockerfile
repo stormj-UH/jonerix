@@ -106,7 +106,7 @@ RUN jpkg --root /jonerix update && \
       mandoc fastfetch \
       pico \
       gitredoxide \
-      strace zsh; \
+      strace zsh jpkg; \
     do \
       echo "=== Installing: $pkg ===" && \
       jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \
@@ -126,10 +126,9 @@ RUN if [ -d /jonerix/usr ]; then \
 # of the packages above had added theirs).
 RUN chroot /jonerix /bin/makewhatis /share/man || true
 
-# Copy jpkg + jpkg-local + jpkg-conform into the rootfs
-RUN cp /usr/local/bin/jpkg /jonerix/bin/jpkg && \
-    cp /usr/local/bin/jpkg-local /jonerix/bin/jpkg-local && \
-    cp /usr/local/bin/jpkg-conform /jonerix/bin/jpkg-conform
+# jpkg, jpkg-local and jpkg-conform come from the jpkg package installed
+# above, so jpkg is registered and `jpkg upgrade` keeps it current; the
+# freshly built copy in /usr/local/bin only drives this build.
 
 # Post-install symlinks
 RUN \
