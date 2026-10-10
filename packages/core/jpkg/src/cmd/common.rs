@@ -1620,8 +1620,11 @@ pub fn extract_and_register(
     // their links.
     let mut replaced: Vec<(&str, InstalledPkg)> = Vec::new();
     for r in &metadata.package.replaces {
-        if let Some(p) = db.get(r)? {
-            replaced.push((r.as_str(), p));
+        match db.get(r) {
+            Ok(Some(p)) => replaced.push((r.as_str(), p)),
+            Ok(None) => {}
+            // As in path_owners, which then lists none of its paths either.
+            Err(e) => log::warn!("jpkg: skipping unreadable record for {r}: {e}"),
         }
     }
     let mut config_plan = plan_config_files(
