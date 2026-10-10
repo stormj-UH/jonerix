@@ -116,9 +116,11 @@ os_release="${ROOTFS}/etc/os-release"
 db_installed="${ROOTFS}/var/db/jpkg/installed"
 
 TMPDIR=$(mktemp -d /tmp/jpkg-conform.XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
+trap '_rc=$?; rm -rf "$TMPDIR"; exit $_rc' EXIT
 # A hangup or interrupt must still run the EXIT trap (which restores the
-# mirror config once it is swapped), so turn signals into exits.
+# mirror config once it is swapped), so turn signals into exits.  The EXIT
+# traps end in `exit $_rc`: mksh would otherwise exit with the status of
+# the trap's last command, and an interrupted conform would report success.
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -203,7 +205,7 @@ restore_conf() {
     # hiccup; the user can always `jpkg update` manually.
     jpkg update >/dev/null 2>&1 || true
 }
-trap 'rm -rf "$TMPDIR"; restore_conf' EXIT
+trap '_rc=$?; rm -rf "$TMPDIR"; restore_conf; exit $_rc' EXIT
 
 mkdir -p "$(dirname "$jpkg_conf")"
 cat > "$jpkg_conf" <<EOF
@@ -291,11 +293,13 @@ pinned_version() {
 drift=0
 fixed=0
 failed=0
+jpkg_rc=0
 
 # jpkg first, on its own.  Everything after this runs with the pinned (or
 # newer) jpkg -- never `install --force jpkg`, which would make the old
 # jpkg reinstall its whole runtime closure without config protection, and
-# never a downgrade of jpkg itself.
+# never a downgrade of jpkg itself.  If that step fails, stop: the old jpkg
+# must not go on to conform the rest.
 jpkg_pin=$(pinned_version jpkg)
 jpkg_have=$(installed_version jpkg)
 if [ -n "$jpkg_pin" ] && [ "$jpkg_have" != "$jpkg_pin" ]; then
@@ -303,9 +307,14 @@ if [ -n "$jpkg_pin" ] && [ "$jpkg_have" != "$jpkg_pin" ]; then
     printf 'jpkg-conform: drift: jpkg installed=%s pinned=%s (handled first)\n' \
         "${jpkg_have:-<not registered>}" "$jpkg_pin"
     if [ -z "$jpkg_have" ]; then
-        jpkg install jpkg || failed=$((failed + 1))
+        jpkg install jpkg || jpkg_rc=$?
     else
-        jpkg upgrade jpkg || failed=$((failed + 1))
+        jpkg upgrade jpkg || jpkg_rc=$?
+    fi
+    if [ "$jpkg_rc" -ne 0 ]; then
+        printf 'jpkg-conform: updating jpkg itself failed (exit %s); nothing else was conformed and /etc/os-release was left as it was\n' \
+            "$jpkg_rc" >&2
+        exit 1
     fi
     jpkg_now=$(installed_version jpkg)
     if [ "$jpkg_now" = "$jpkg_pin" ]; then

@@ -295,7 +295,8 @@ deleted, through the link), and a directory a package ships is merged into
 an existing directory, or written through your symlink when it leads to a
 directory (under `--root`, an absolute link, or one that climbs out of the
 root, is not followed: yours is moved to `.jpkg-save`, and another
-package's makes the install stop before anything is written). Where a package now ships a directory
+package's makes the install stop before anything is written, unless the
+new package replaces it; then the link is checked as below). Where a package now ships a directory
 in place of a link its previous version shipped, the link is removed and
 the directory created -- unless the directory the link led to holds
 anything but that package's own unchanged files (looking through further
@@ -316,7 +317,7 @@ written, naming them.
 | a package turns a config file (its own or another package's) into a symlink or a directory, and the file was changed | moves the changed file to `<file>.jpkg-save` first; refuses the install rather than overwrite an existing `.jpkg-save` |
 | a package puts a directory where your own FIFO, file, or symlink to something that is not a directory sits | moves that to `<file>.jpkg-save` first |
 | a package turns a directory into a symlink and you changed a config file in it | refuses the upgrade, naming your file; move it out of the directory (or take the packaged copy back) and retry |
-| a package turns its symlink into a directory, and the directory the link led to holds your files or another package's | same: refused, naming them |
+| a package turns its symlink (or that of a package it replaces) into a directory, and the directory the link led to holds your files or another package's | same: refused, naming them |
 
 The installed manifest records what the package shipped, also for a kept
 file, so the next upgrade compares against that. Files and links at config

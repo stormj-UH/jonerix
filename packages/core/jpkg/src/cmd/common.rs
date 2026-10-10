@@ -823,7 +823,7 @@ fn plan_config_files<'a>(
     stage_dir: &Path,
     pkg_name: &str,
     pkg_version: &str,
-    replaces: &[String],
+    replaced: &[(&str, InstalledPkg)],
     old_pkg: Option<&'a InstalledPkg>,
     files: &'a [FileEntry],
     others: &'a Ownership,
@@ -859,17 +859,25 @@ fn plan_config_files<'a>(
             keep_admin_object(stage_dir, pkg_name, n, &rec)?;
         }
         if decision == Displace::Remove && own_link {
-            check_own_link_contents(rootfs, &n.path, &old_by_path, pkg_name, pkg_version)?;
+            check_link_contents(rootfs, &n.path, &old_by_path, &[], pkg_name, pkg_version)?;
         }
         if decision == Displace::Remove && !own_link && matches!(disk, OnDisk::Link(_)) {
             // Another package's link that cannot be followed here (an
             // absolute one under --root) but does lead to a directory in the
             // root: removing it would break that package, following it would
             // write outside the root.  Refuse before any write -- unless this
-            // package replaces every owner of the link (a takeover).
+            // package replaces every owner of the link (a takeover), and the
+            // directory the link leads to holds only their unchanged files.
             let owners = others.owners_of(&n.path);
-            let taken_over = !owners.is_empty() && owners.iter().all(|c| replaces.iter().any(|r| *r == c.owner));
-            if !taken_over && config::resolve_in_root(rootfs, Path::new(&n.path)).is_some_and(|p| p.is_dir()) {
+            let taken_over = !owners.is_empty() && owners.iter().all(|c| replaced.iter().any(|(r, _)| *r == c.owner));
+            if taken_over {
+                let from: Vec<&InstalledPkg> = replaced
+                    .iter()
+                    .filter(|(r, _)| owners.iter().any(|c| c.owner == *r))
+                    .map(|(_, p)| p)
+                    .collect();
+                check_link_contents(rootfs, &n.path, &old_by_path, &from, pkg_name, pkg_version)?;
+            } else if config::resolve_in_root(rootfs, Path::new(&n.path)).is_some_and(|p| p.is_dir()) {
                 return Err(InstallError::FileOp {
                     path: dest,
                     op: "place a directory over another package's symlink to a directory, which cannot be \
@@ -951,22 +959,29 @@ fn leads_to_dir(disk: &OnDisk, abs: &Path, rel: &str, rootfs: &Path) -> bool {
     host == inside && host.is_dir()
 }
 
-/// Before 6b removes this package's own previous link to make room for the
-/// directory it now ships: everything below the directory the link leads to
-/// (resolved inside the root, as a chroot would, and through any further
-/// links that lead to directories) must be what that previous version
-/// recorded there (by its real path) and still pristine, or an untouched
-/// offer or scratch file of jpkg's.  Anything else -- the admin's files,
-/// another package's -- would silently drop out of /etc, so the upgrade is
-/// refused before any write, naming it, the same way a directory turning into
-/// a link is refused.  A link that leads nowhere has nothing below it.
-fn check_own_link_contents(
+/// Before 6b removes a link to make room for the directory this package now
+/// ships -- its own previous link, or (`taken_from`) the link of packages it
+/// replaces: everything below the directory the link leads to (resolved
+/// inside the root, as a chroot would, and through any further links that
+/// lead to directories) must be what this package's previous version or one
+/// of `taken_from` recorded there (by its real path) and still pristine, or
+/// an untouched offer or scratch file of jpkg's.  Anything else -- the
+/// admin's files, another package's -- would silently drop out of /etc, so
+/// the install is refused before any write, naming it, the same way a
+/// directory turning into a link is refused.  A link that leads nowhere has
+/// nothing below it.
+fn check_link_contents(
     rootfs: &Path,
     link_rel: &str,
     old_by_path: &std::collections::HashMap<&str, &FileEntry>,
+    taken_from: &[&InstalledPkg],
     pkg_name: &str,
     pkg_version: &str,
 ) -> Result<(), InstallError> {
+    let mut taken: std::collections::HashMap<&str, Vec<&FileEntry>> = std::collections::HashMap::new();
+    for e in taken_from.iter().flat_map(|p| p.files.iter()) {
+        taken.entry(e.path.as_str()).or_default().push(e);
+    }
     let Some(target) = crate::config::resolve_in_root(rootfs, Path::new(link_rel)) else {
         return Ok(());
     };
@@ -989,10 +1004,11 @@ fn check_own_link_contents(
                 continue;
             };
             let key = rel.to_string_lossy();
+            let pristine = |rec: &Recorded<'_>| !crate::config::keep_probe(crate::config::on_disk(rootfs, &key), rec);
             let ours = match old_by_path.get(key.as_ref()) {
-                Some(o) => !crate::config::keep_probe(crate::config::on_disk(rootfs, &key), &Recorded::entry(o)),
+                Some(o) => pristine(&Recorded::entry(o)),
                 None => crate::config::is_package_leftover(rootfs, &key, old_by_path),
-            };
+            } || taken.get(key.as_ref()).is_some_and(|es| es.iter().any(|e| pristine(&Recorded::entry(e))));
             if !ours {
                 foreign.push(entry.path().to_path_buf());
             }
@@ -1600,12 +1616,20 @@ pub fn extract_and_register(
     // ── 5c. Config files (2.2.11): keep what the admin changed.  Touches
     //        only the staging tree.  The manifest keeps the package's hash
     //        either way.
+    // Installed packages this one replaces, by name, for 5c's takeover of
+    // their links.
+    let mut replaced: Vec<(&str, InstalledPkg)> = Vec::new();
+    for r in &metadata.package.replaces {
+        if let Some(p) = db.get(r)? {
+            replaced.push((r.as_str(), p));
+        }
+    }
     let mut config_plan = plan_config_files(
         rootfs,
         &stage_dir,
         &pkg_name,
         &pkg_version,
-        &metadata.package.replaces,
+        &replaced,
         old_pkg.as_ref(),
         &files,
         &others,
@@ -4040,6 +4064,48 @@ pub(crate) mod tests {
         ]));
         assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().is_dir());
         assert_eq!(fs::read(rootfs.join("etc/foo/b.conf")).unwrap(), b"b\n");
+    }
+
+    #[test]
+    fn replaces_takeover_refuses_when_others_files_are_behind_the_link() {
+        // What is behind the replaced package's link -- an admin's file, a
+        // changed packaged file, a third package's file -- would drop out of
+        // /etc: refused before any write, naming it.
+        for case in ["admin", "changed", "third"] {
+            let tmp = TempDir::new().unwrap();
+            let (rootfs, db) = fresh_root(&tmp);
+            let _lock = db.lock().unwrap();
+            install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pa", "1", &[], &[
+                ("share/foo/a.conf", Node::File(b"a\n", 0o644)),
+                ("etc/foo", Node::Link("/share/foo")),
+            ]));
+            let name = match case {
+                "admin" => {
+                    fs::write(rootfs.join("share/foo/local.conf"), b"mine\n").unwrap();
+                    "share/foo/local.conf"
+                }
+                "changed" => {
+                    fs::write(rootfs.join("share/foo/a.conf"), b"edited\n").unwrap();
+                    "share/foo/a.conf"
+                }
+                _ => {
+                    install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pc", "1", &[], &[
+                        ("share/foo/c.conf", Node::File(b"c\n", 0o644)),
+                    ]));
+                    "share/foo/c.conf"
+                }
+            };
+            let pb = build_jpkg_tree(tmp.path(), "pb", "1", &["pa"], &[
+                ("etc/foo", Node::Dir(0o755)),
+                ("etc/foo/b.conf", Node::File(b"b\n", 0o644)),
+                ("bin/pb", Node::File(b"pb\n", 0o755)),
+            ]);
+            let err = extract_and_register(&JpkgArchive::open(&pb).unwrap(), &rootfs, &db)
+                .expect_err(case);
+            assert!(err.to_string().contains(name), "{case}: {err}");
+            assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().file_type().is_symlink(), "{case}");
+            assert!(!rootfs.join("bin/pb").exists(), "{case}: refused before any write");
+        }
     }
 
     #[test]
