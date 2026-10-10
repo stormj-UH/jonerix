@@ -91,7 +91,8 @@ RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 
 # Install all packages via jpkg.
 # Keep zsh late in the list so its post-install completion refresh sees the
-# final command set in the image.
+# final command set in the image.  Any package may fail with a warning
+# except jpkg itself: an image without its package manager must not build.
 RUN jpkg --root /jonerix update && \
     for pkg in \
       musl ncurses libressl zlib xz lz4 zstd ca-certificates \
@@ -110,7 +111,9 @@ RUN jpkg --root /jonerix update && \
     do \
       echo "=== Installing: $pkg ===" && \
       jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \
-    done
+    done && \
+    test -x /jonerix/bin/jpkg && \
+    test -f /jonerix/var/db/jpkg/installed/jpkg/metadata.toml
 
 RUN install -m 755 /usr/local/bin/bootstrap-meson /jonerix/bin/bootstrap-meson && \
     chroot /jonerix /bin/bootstrap-meson && \
