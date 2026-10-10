@@ -462,6 +462,11 @@ pub fn resolve_in_root(root: &Path, rel: &Path) -> Option<PathBuf> {
     let mut cur = root.to_path_buf();
     let mut hops = 0;
     while let Some(c) = pending.pop() {
+        // Only a directory can have something below it: the kernel says
+        // ENOTDIR for `file/..` or `file/x`.
+        if cur != root && !cur.is_dir() {
+            return None;
+        }
         if c == ".." {
             if cur != root {
                 cur.pop();
@@ -729,6 +734,8 @@ mod tests {
         assert_eq!(resolve_in_root(&r, Path::new("etc/climb")), want, "'..' stops at the root");
         assert_eq!(resolve_in_root(&r, Path::new("etc/loop1")), None);
         assert_eq!(resolve_in_root(&r, Path::new("etc/dead")), None);
+        fs::write(r.join("etc/file"), b"x").unwrap();
+        assert_eq!(resolve_in_root(&r, Path::new("etc/file/..")), None, "ENOTDIR, as the kernel says");
     }
 
     #[test]

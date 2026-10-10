@@ -298,8 +298,9 @@ root, is not followed: yours is moved to `.jpkg-save`, and another
 package's makes the install stop before anything is written). Where a package now ships a directory
 in place of a link its previous version shipped, the link is removed and
 the directory created -- unless the directory the link led to holds
-anything but that package's own unchanged files, in which case the upgrade
-is refused before anything is written, naming them.
+anything but that package's own unchanged files (looking through further
+links below it too), in which case the upgrade is refused before anything is
+written, naming them.
 
 | Situation | What jpkg does |
 |---|---|

@@ -823,6 +823,7 @@ fn plan_config_files<'a>(
     stage_dir: &Path,
     pkg_name: &str,
     pkg_version: &str,
+    replaces: &[String],
     old_pkg: Option<&'a InstalledPkg>,
     files: &'a [FileEntry],
     others: &'a Ownership,
@@ -864,8 +865,11 @@ fn plan_config_files<'a>(
             // Another package's link that cannot be followed here (an
             // absolute one under --root) but does lead to a directory in the
             // root: removing it would break that package, following it would
-            // write outside the root.  Refuse before any write.
-            if config::resolve_in_root(rootfs, Path::new(&n.path)).is_some_and(|p| p.is_dir()) {
+            // write outside the root.  Refuse before any write -- unless this
+            // package replaces every owner of the link (a takeover).
+            let owners = others.owners_of(&n.path);
+            let taken_over = !owners.is_empty() && owners.iter().all(|c| replaces.iter().any(|r| *r == c.owner));
+            if !taken_over && config::resolve_in_root(rootfs, Path::new(&n.path)).is_some_and(|p| p.is_dir()) {
                 return Err(InstallError::FileOp {
                     path: dest,
                     op: "place a directory over another package's symlink to a directory, which cannot be \
@@ -966,6 +970,7 @@ fn check_own_link_contents(
     let Some(target) = crate::config::resolve_in_root(rootfs, Path::new(link_rel)) else {
         return Ok(());
     };
+    let top = target.clone();
     let mut dirs = vec![target];
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut foreign: Vec<PathBuf> = Vec::new();
@@ -993,9 +998,13 @@ fn check_own_link_contents(
             }
             // A link below that leads to a directory: what is behind it
             // drops out of /etc too.
+            // (Not one that points back up to the directory itself, an
+            // ancestor or the root: nothing new is behind that.)
             if entry.path_is_symlink() {
                 if let Some(next) = crate::config::resolve_in_root(rootfs, rel) {
-                    dirs.push(next);
+                    if !top.starts_with(&next) {
+                        dirs.push(next);
+                    }
                 }
             }
         }
@@ -1596,6 +1605,7 @@ pub fn extract_and_register(
         &stage_dir,
         &pkg_name,
         &pkg_version,
+        &metadata.package.replaces,
         old_pkg.as_ref(),
         &files,
         &others,
@@ -3596,7 +3606,7 @@ pub(crate) mod tests {
         let files = build_manifest(&stage).unwrap();
         let old = db.get("confpkg").unwrap().unwrap();
         let others = db.path_owners(None, Some("confpkg")).unwrap();
-        let plan = plan_config_files(&rootfs, &stage, "confpkg", "2", Some(&old), &files, &others).unwrap();
+        let plan = plan_config_files(&rootfs, &stage, "confpkg", "2", &[], Some(&old), &files, &others).unwrap();
         assert!(plan.install.is_empty() && plan.offer.is_empty());
         assert!(!stage.join("etc/x.conf").exists() && !stage.join("etc/x.conf.jpkg-new").exists());
     }
@@ -3624,7 +3634,7 @@ pub(crate) mod tests {
         let _lock = db.lock().unwrap();
         fs::remove_file(rootfs.join("etc/pki/default.pem")).unwrap();
         symlink("local/corp.pem", rootfs.join("etc/pki/default.pem")).unwrap();
-        plan_config_files(&rootfs, &stage, "ca", "2", Some(&old), &files, &others).unwrap();
+        plan_config_files(&rootfs, &stage, "ca", "2", &[], Some(&old), &files, &others).unwrap();
         assert!(stage.join("etc/pki/default.pem").symlink_metadata().is_err(), "5c dropped the staged link");
     }
 
@@ -3633,7 +3643,7 @@ pub(crate) mod tests {
         let tmp = TempDir::new().unwrap();
         let (rootfs, db, stage, files, old, others) = retarget_plan(&tmp);
         let _lock = db.lock().unwrap();
-        let plan = plan_config_files(&rootfs, &stage, "ca", "2", Some(&old), &files, &others).unwrap();
+        let plan = plan_config_files(&rootfs, &stage, "ca", "2", &[], Some(&old), &files, &others).unwrap();
         assert!(stage.join("etc/pki/default.pem").symlink_metadata().is_ok(), "pristine at 5c");
         fs::remove_file(rootfs.join("etc/pki/default.pem")).unwrap();
         symlink("local/corp.pem", rootfs.join("etc/pki/default.pem")).unwrap();
@@ -3659,7 +3669,7 @@ pub(crate) mod tests {
         let files = build_manifest(&stage).unwrap();
         let old = db.get("confpkg").unwrap().unwrap();
         let others = db.path_owners(None, Some("confpkg")).unwrap();
-        let mut plan = plan_config_files(&rootfs, &stage, "confpkg", "2", Some(&old), &files, &others).unwrap();
+        let mut plan = plan_config_files(&rootfs, &stage, "confpkg", "2", &[], Some(&old), &files, &others).unwrap();
         assert_eq!(plan.install.len(), 1);
         assert_eq!(plan.offer.len(), 1);
         // Now, between planning and writing, the admin edits a.conf and
@@ -3989,6 +3999,43 @@ pub(crate) mod tests {
         ]));
         assert!(fs::read_dir(&host_dir).unwrap().next().is_none(), "nothing written outside the root");
         assert!(rootfs.join("etc/x.d.jpkg-save").symlink_metadata().unwrap().file_type().is_symlink());
+    }
+
+    /// Review 1.2.4 c1: a link below that points back up ('..', '/') is not
+    /// walked, so it does not make the whole tree look foreign.
+    #[test]
+    fn nested_link_pointing_back_up_is_not_walked() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &conf_pkg(tmp.path(), "1", &[
+            ("share/foo/a.conf", Node::File(b"a1\n", 0o644)),
+            ("share/foo/up", Node::Link("..")),
+            ("share/foo/top", Node::Link("/")),
+            ("etc/foo", Node::Link("../share/foo")),
+        ]));
+        install(&rootfs, &db, &own_dir_v2(tmp.path()));
+        assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().is_dir());
+        assert_eq!(fs::read(rootfs.join("etc/foo/a.conf")).unwrap(), b"a2\n");
+    }
+
+    /// Review 1.2.4 c2: a package that replaces the link's owner may take
+    /// its absolute link over under --root.
+    #[test]
+    fn replaces_takeover_of_an_absolute_link_under_root_is_allowed() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pa", "1", &[], &[
+            ("share/foo/a.conf", Node::File(b"a\n", 0o644)),
+            ("etc/foo", Node::Link("/share/foo")),
+        ]));
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pb", "1", &["pa"], &[
+            ("etc/foo", Node::Dir(0o755)),
+            ("etc/foo/b.conf", Node::File(b"b\n", 0o644)),
+        ]));
+        assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().is_dir());
+        assert_eq!(fs::read(rootfs.join("etc/foo/b.conf")).unwrap(), b"b\n");
     }
 
     #[test]

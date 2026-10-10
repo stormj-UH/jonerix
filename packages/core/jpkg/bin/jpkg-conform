@@ -14,11 +14,15 @@
 #
 # Given an x.y.z version (e.g. 1.1.6), this reconfigures jpkg's mirror
 # to point at that tag's GitHub release, runs `jpkg update` to fetch
-# the pinned INDEX.zst, and for every package that is installed locally
-# AND present in the release it issues `jpkg install --force <pkg>` —
-# which upgrades or downgrades the package to the exact version the
-# release pinned. Then it restores the mirror config, refreshes the
-# INDEX, and writes the matching /etc/os-release.
+# the pinned INDEX.zst, brings jpkg itself up to the pinned version first
+# (`jpkg install jpkg` / `jpkg upgrade jpkg`, never --force and never a
+# downgrade, so every later step runs with the newest jpkg -- 2.2.11+
+# keeps admin-edited config files), and then moves every other package
+# that is installed locally AND present in the release to the pinned
+# version: `jpkg upgrade <pkg>` when the pin is newer, `jpkg install
+# --force <pkg>` when it is older.  Then it restores the mirror config,
+# refreshes the INDEX, and -- only when every package conformed -- writes
+# the matching /etc/os-release.
 #
 # Packages installed locally but not in the release are left alone.
 # Packages in the release but not installed are NOT auto-installed.
@@ -31,6 +35,8 @@
 # `jpkg-conform <ver>`. mksh-compatible (POSIX + a few mksh extras like
 # `set -eu`, `trap`, and `command -v` that toybox sh lacks). No bash arrays,
 # brace expansion, or process substitution — those would still need brash.
+# No awk either (jpkg does not depend on one): the INDEX and metadata are
+# read with sh and sed.
 #
 # Part of jpkg (0BSD, jonerix core jpkg).
 
@@ -111,6 +117,11 @@ db_installed="${ROOTFS}/var/db/jpkg/installed"
 
 TMPDIR=$(mktemp -d /tmp/jpkg-conform.XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT
+# A hangup or interrupt must still run the EXIT trap (which restores the
+# mirror config once it is swapped), so turn signals into exits.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Pick a downloader. curl is in core; wget generally isn't.
 if command -v curl >/dev/null 2>&1; then
@@ -130,16 +141,16 @@ case "$(uname -m)" in
         exit 1 ;;
 esac
 
-# ---------------- step 1: fetch + install /etc/os-release ----------------
+# ---------------- step 1: fetch /etc/os-release ----------------
 #
-# Always done, regardless of --nopkgs. Primary source: the os-release
-# file that was committed at the release tag. Fallback: synthesise a
-# minimal one from the version string. Either way, we keep a backup of
-# the pre-existing file at /etc/os-release.pre-conform.<ver>.
-
+# Primary source: the os-release file that was committed at the release
+# tag. Fallback: synthesise a minimal one from the version string. It is
+# installed (with a backup of the pre-existing file at
+# /etc/os-release.pre-conform.<ver>) right away for --nopkgs, otherwise
+# only after every package conformed, so a host is never labelled with a
+# release it did not reach.
 osr_src="$TMPDIR/os-release"
 osr_url="${RAW_BASE}/${TAG}/config/defaults/etc/os-release"
-
 if fetch "$osr_url" "$osr_src" 2>/dev/null; then
     printf 'jpkg-conform: fetched os-release for %s from git tag\n' "$TAG"
 else
@@ -153,16 +164,17 @@ HOME_URL="https://github.com/${REPO}"
 BUG_REPORT_URL="https://github.com/${REPO}/issues"
 EOF
 fi
-
-if [ -f "$os_release" ]; then
-    cp "$os_release" "${os_release}.pre-conform.${BARE}" 2>/dev/null || true
-fi
-install -Dm644 "$osr_src" "$os_release"
-printf 'jpkg-conform: installed %s\n' "$os_release"
+install_os_release() {
+    if [ -f "$os_release" ]; then
+        cp "$os_release" "${os_release}.pre-conform.${BARE}" 2>/dev/null || true
+    fi
+    install -Dm644 "$osr_src" "$os_release"
+    printf 'jpkg-conform: installed %s\n' "$os_release"
+}
 
 # ---------------- short-circuit for --nopkgs ----------------
-
 if [ "$NOPKGS" -eq 1 ]; then
+    install_os_release
     printf 'jpkg-conform: --nopkgs set; package conformance skipped\n'
     exit 0
 fi
@@ -231,80 +243,98 @@ if [ ! -s "$index_file" ]; then
     fi
 fi
 
-# Walk [name-arch] sections and emit "name\tversion" for our arch.
+# Walk [name-arch] sections and emit "name<TAB>version" for our arch.  The
+# package name may itself contain dashes (jonerix-raspi5-fixups), so only
+# the trailing "-<arch>" is stripped.
 pinned_list="$TMPDIR/pinned.tsv"
-awk -v arch="$ARCH" '
-    function flush() {
-        if (pkg != "" && ver != "") {
-            printf "%s\t%s\n", pkg, ver;
-        }
-        pkg = ""; ver = "";
-    }
-    /^\[[^]]+\]$/ {
-        flush();
-        line = $0;
-        sub(/^\[/, "", line); sub(/\]$/, "", line);
-        # Section name is "<pkgname>-<arch>". The pkg name itself may
-        # contain dashes (jonerix-raspi5-fixups, llvm-all), so split on
-        # the LAST dash only.
-        n = length(line);
-        p = 0;
-        for (i = n; i > 0; i--) {
-            if (substr(line, i, 1) == "-") { p = i; break; }
-        }
-        if (p == 0) next;
-        sec_arch = substr(line, p + 1);
-        if (sec_arch != arch) next;
-        pkg = substr(line, 1, p - 1);
-        next;
-    }
-    /^version[[:space:]]*=/ {
-        if (pkg == "") next;
-        sub(/^version[[:space:]]*=[[:space:]]*"/, "");
-        sub(/".*$/, "");
-        ver = $0;
-    }
-    END { flush(); }
-' "$index_file" > "$pinned_list"
-
+_tab=$(printf '\t')
+pkg=""
+while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+        "["*"]")
+            sec=${line#\[}
+            sec=${sec%\]}
+            case "$sec" in
+                *-"$ARCH") pkg=${sec%-"$ARCH"} ;;
+                *) pkg="" ;;
+            esac
+            ;;
+        "version = \""*)
+            if [ -n "$pkg" ]; then
+                ver=${line#*\"}
+                ver=${ver%%\"*}
+                printf '%s%s%s\n' "$pkg" "$_tab" "$ver"
+                pkg=""
+            fi
+            ;;
+    esac
+done < "$index_file" > "$pinned_list"
 pinned_count=$(wc -l < "$pinned_list")
 printf 'jpkg-conform: %d package(s) pinned for %s in %s INDEX\n' \
     "$pinned_count" "$ARCH" "$TAG"
 
 # ---------------- step 4: compare to installed and conform ----------------
+installed_version() {
+    # Read the installed version straight from the on-disk metadata (no
+    # per-package jpkg call, which would pay the lock + INDEX load each).
+    _m="${db_installed}/$1/metadata.toml"
+    [ -f "$_m" ] || return 0
+    sed -n '/^[[:space:]]*version[[:space:]]*=/{s/^[^"]*"\([^"]*\)".*/\1/p;q;}' "$_m" 2>/dev/null
+}
+pinned_version() {
+    while IFS="$_tab" read -r _p _v; do
+        [ "$_p" = "$1" ] && { printf '%s\n' "$_v"; return 0; }
+    done < "$pinned_list"
+    return 0
+}
 
 drift=0
 fixed=0
 failed=0
 
+# jpkg first, on its own.  Everything after this runs with the pinned (or
+# newer) jpkg -- never `install --force jpkg`, which would make the old
+# jpkg reinstall its whole runtime closure without config protection, and
+# never a downgrade of jpkg itself.
+jpkg_pin=$(pinned_version jpkg)
+jpkg_have=$(installed_version jpkg)
+if [ -n "$jpkg_pin" ] && [ "$jpkg_have" != "$jpkg_pin" ]; then
+    drift=$((drift + 1))
+    printf 'jpkg-conform: drift: jpkg installed=%s pinned=%s (handled first)\n' \
+        "${jpkg_have:-<not registered>}" "$jpkg_pin"
+    if [ -z "$jpkg_have" ]; then
+        jpkg install jpkg || failed=$((failed + 1))
+    else
+        jpkg upgrade jpkg || failed=$((failed + 1))
+    fi
+    jpkg_now=$(installed_version jpkg)
+    if [ "$jpkg_now" = "$jpkg_pin" ]; then
+        fixed=$((fixed + 1))
+    else
+        printf 'jpkg-conform: jpkg stays at %s (the release pins %s; jpkg is never downgraded)\n' \
+            "${jpkg_now:-<not registered>}" "$jpkg_pin" >&2
+    fi
+fi
+
 # Read-from-file pattern keeps us portable across mksh/busybox/toybox —
 # `while read; do ...; done < file` avoids the subshell trap that bites
 # `cmd | while read`.
-while IFS="	" read -r pkg pinned_ver; do
+while IFS="$_tab" read -r pkg pinned_ver; do
     [ -n "$pkg" ] || continue
-
-    # Read installed version directly from the on-disk metadata file
-    # rather than shelling out to `jpkg info <pkg>`. The previous
-    # implementation invoked jpkg ~once per release-pinned package
-    # (~90 packages on aarch64), each call paying the lock-acquisition
-    # + INDEX-load cost — turning conform into an 80-90s wallclock
-    # operation. A direct awk on the metadata file runs in microseconds.
-    metafile="/var/db/jpkg/installed/${pkg}/metadata.toml"
-    [ -f "$metafile" ] || continue
-    installed_ver=$(awk -F\" '/^[[:space:]]*version[[:space:]]*=/ {
-        print $2; exit
-    }' "$metafile" 2>/dev/null)
-    if [ -z "$installed_ver" ]; then
-        continue
-    fi
-    if [ "$installed_ver" = "$pinned_ver" ]; then
-        continue
-    fi
-
+    [ "$pkg" = jpkg ] && continue
+    installed_ver=$(installed_version "$pkg")
+    [ -n "$installed_ver" ] || continue
+    [ "$installed_ver" = "$pinned_ver" ] && continue
     drift=$((drift + 1))
     printf 'jpkg-conform: drift: %s installed=%s pinned=%s\n' \
         "$pkg" "$installed_ver" "$pinned_ver"
-    if jpkg install --force "$pkg"; then
+    # A newer pin: a plain upgrade of this package alone.  Still off (an
+    # older pin): reinstall the pinned version.
+    jpkg upgrade "$pkg" || true
+    if [ "$(installed_version "$pkg")" != "$pinned_ver" ]; then
+        jpkg install --force "$pkg" || true
+    fi
+    if [ "$(installed_version "$pkg")" = "$pinned_ver" ]; then
         fixed=$((fixed + 1))
     else
         failed=$((failed + 1))
@@ -323,6 +353,8 @@ printf '  conformed         : %s\n' "$fixed"
 printf '  failed            : %s\n' "$failed"
 
 if [ "$failed" -gt 0 ]; then
+    printf 'jpkg-conform: /etc/os-release left as it was (not every package conformed)\n' >&2
     exit 1
 fi
+install_os_release
 exit 0

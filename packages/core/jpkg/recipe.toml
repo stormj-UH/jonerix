@@ -13,7 +13,14 @@ description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5
 #     refused before any write.
 #   * Before removing its own link to make room for its directory, a
 #     package's check of what lives below that link resolves the link
-#     inside the root and also walks links nested below it.
+#     inside the root and also walks links nested below it (not ones
+#     pointing back up).  A package that replaces the link's owner may
+#     still take it over.
+#   * jpkg conform brings jpkg itself up first (install/upgrade, never
+#     --force, never a downgrade), upgrades newer pins instead of
+#     force-reinstalling their closures, writes /etc/os-release only once
+#     every package conformed, restores the mirror config on a hangup or
+#     interrupt, and no longer needs awk.
 #
 # 2.2.11 — config files survive upgrades.
 #   * A regular file a package ships under etc/ is a config file, except

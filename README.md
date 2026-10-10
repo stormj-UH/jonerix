@@ -224,6 +224,11 @@ jpkg local build ./packages/core/jpkg
 jpkg conform 1.2.4
 ```
 
+`jpkg conform` brings jpkg itself up first from 1.2.4 on. A host whose jpkg
+is older than 2.2.12 still has the old `jpkg-conform`, which does not, so
+run `jpkg update && jpkg install jpkg && jpkg upgrade jpkg` there before
+`jpkg conform 1.2.4` (see docs/packaging.md, "Upgrading to 2.2.11").
+
 The current source tree packages `jpkg` **2.2.12**. The Rust implementation
 keeps the C jpkg wire formats compatible and keeps the crate itself
 `unsafe`-free.
