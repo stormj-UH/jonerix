@@ -3740,6 +3740,10 @@ pub(crate) mod tests {
         fs::create_dir_all(&host_dir).unwrap();
         fs::create_dir_all(rootfs.join("etc")).unwrap();
         symlink(&host_dir, rootfs.join("etc/x.d")).unwrap();
+        // The same absolute path also exists inside the root, so the link
+        // leads to a directory either way; only the host-vs-root
+        // disagreement says it must not be followed.
+        fs::create_dir_all(rootfs.join(host_dir.strip_prefix("/").unwrap())).unwrap();
         install(&rootfs, &db, &conf_pkg(tmp.path(), "1", &[
             ("etc/x.d", Node::Dir(0o755)),
             ("etc/x.d/a.conf", Node::File(b"a\n", 0o644)),
