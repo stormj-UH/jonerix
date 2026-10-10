@@ -70,6 +70,10 @@ ARG CACHEBUST=0
 # All symlinks are created in the same RUN to avoid broken /bin/sh between layers.
 RUN echo "cache: ${CACHEBUST}" > /dev/null && \
     jpkg update && \
+    # The jpkg copied in above only bootstraps (an Alpine base has none);
+    # install the published package over it so jpkg is registered on every
+    # host made from this image and `jpkg upgrade` keeps it current.
+    jpkg install --force jpkg && \
     jpkg install --force toybox && \
     jpkg install --force mksh && \
     /bin/toybox ln -sf mksh /bin/sh && \

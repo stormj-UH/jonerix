@@ -194,15 +194,12 @@ if [ -x "${STAGING}/bin/makewhatis" ]; then
     chroot "${STAGING}" /bin/makewhatis /share/man 2>/dev/null || true
 fi
 
-# Install jpkg into the rootfs. Always prefer the freshly-built binary
-# over whatever's in the `jpkg` package on the release — the release
-# tarball ships a lagging version (tagged "packages") while the CI
-# build produced the current main-branch jpkg (new TLS linkage,
-# bugfixes, etc.). Install the package for its metadata + recipe +
-# signing key, then clobber the binary with the fresh one.
-echo "  -> jpkg (package for metadata + fresh binary)"
-jpkg --root "${STAGING}" install jpkg || true
-install -Dm755 "$(command -v jpkg)" "${STAGING}/bin/jpkg"
+# Install jpkg into the rootfs as a package.  jpkg is published before
+# any image is rebuilt, so the package is current; its binaries are not
+# replaced with the build host's, which would leave a registered package
+# whose files do not match its manifest.
+echo "  -> jpkg"
+jpkg --root "${STAGING}" install jpkg
 
 # ---------------------------------------------------------------------------
 # 6. Flatten merged-usr layout

@@ -99,7 +99,7 @@ COPY --from=jpkg-builder /lib/libzstd.so.1     /lib/libzstd.so.1
 RUN jpkg update && \
     jpkg --root /jonerix update && \
     jpkg --root /jonerix install \
-        musl zlib toybox mksh dropbear openrc libressl ca-certificates curl zstd
+        musl zlib toybox mksh dropbear openrc libressl ca-certificates curl zstd jpkg
 
 # Flatten usr/ into / (merged-usr layout)
 RUN if [ -d /jonerix/usr ]; then \
@@ -145,11 +145,10 @@ FROM scratch
 
 COPY --from=rootfs /jonerix/ /
 
-# Freshly built jpkg + jpkg-local sidecar binary (dynamically linked
-# against musl/libressl/zstd). main.c dispatches `jpkg local <subcmd>`
-# to /bin/jpkg-local via execvp; the binary must be present.
-COPY --from=jpkg-builder /build/jpkg/jpkg /bin/jpkg
-COPY --from=jpkg-builder /build/jpkg/jpkg-local /bin/jpkg-local
+# /bin/jpkg, jpkg-local and jpkg-conform come from the jpkg package
+# installed into /jonerix above, so jpkg is a registered package on every
+# host made from this image and `jpkg upgrade` keeps it current.  (The
+# freshly built jpkg above only drives this build.)
 
 ENV PATH=/bin
 ENV HOME=/root

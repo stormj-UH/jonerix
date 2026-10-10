@@ -108,8 +108,11 @@ LATE_PACKAGES = [
 ]
 
 # Always present, regardless of --packages. These are load-bearing for Pi 5.
+# jpkg itself: without it the image has no package manager (the build host's
+# jpkg only drives the build), and an unregistered copy is never upgraded.
 MANDATORY_PACKAGES = [
     "jonerix-raspi5-fixups",
+    "jpkg",
 ]
 
 # Default release tag the image pins to. Read from
