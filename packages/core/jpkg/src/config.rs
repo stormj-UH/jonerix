@@ -60,12 +60,15 @@
 //! an absolute one, which would lead out of the root and is saved instead.
 //! A package's own previous link where it now ships a directory is removed,
 //! and the files below it are installed as new -- after checking that the
-//! directory the link led to holds only that package's own pristine files
+//! directory the link led to holds only the pristine files (and untouched
+//! offers or scratch files) of that package or of packages it replaces
 //! (else the upgrade is refused before any write, naming the rest; links
 //! are resolved inside the root and nested links below are walked too).
 //! Another package's link that leads to a directory is followed, never
 //! removed; under `--root`, where an absolute link (or one climbing out of
-//! the root) cannot be followed, the install is refused instead.  One jpkg
+//! the root) cannot be followed, the install is refused instead -- unless
+//! the package replaces every owner of the link, which is then removed
+//! after the same check.  One jpkg
 //! recorded that leads nowhere or to a file is removed.  Directories are only
 //! ever removed when empty, except the old directory of a package that
 //! turns it into a symlink, which upgrade-clean removes only after checking
