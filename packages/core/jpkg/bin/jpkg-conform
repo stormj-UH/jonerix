@@ -117,12 +117,16 @@ db_installed="${ROOTFS}/var/db/jpkg/installed"
 
 TMPDIR=$(mktemp -d /tmp/jpkg-conform.XXXXXX)
 # Remove the scratch dir and, once the mirror config is swapped (step 2),
-# put it back -- once, whichever trap gets here first.
+# put it back -- once, whichever trap gets here first.  Further signals are
+# ignored until the config is back (restore_conf lets them through again
+# for its slow index refresh): a second one landing mid-cleanup would
+# otherwise exit from a nested trap with the release mirror still in place.
 _swapped=0
 _cleaned=0
 cleanup() {
     [ "$_cleaned" -eq 0 ] || return 0
     _cleaned=1
+    trap '' HUP INT TERM
     rm -rf "$TMPDIR"
     if [ "$_swapped" -eq 1 ]; then
         restore_conf
@@ -211,6 +215,9 @@ restore_conf() {
     else
         rm -f "$jpkg_conf"
     fi
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     # Refresh the index against the restored mirror so subsequent
     # jpkg commands on this host don't keep seeing the release-pinned
     # INDEX. We swallow failures — the conform itself may have
