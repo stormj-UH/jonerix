@@ -859,7 +859,7 @@ fn plan_config_files<'a>(
             keep_admin_object(stage_dir, pkg_name, n, &rec)?;
         }
         if decision == Displace::Remove && own_link {
-            check_link_contents(rootfs, &n.path, &old_by_path, &[], pkg_name, pkg_version)?;
+            check_link_contents(rootfs, &n.path, &old_by_path, replaced, pkg_name, pkg_version)?;
         }
         if decision == Displace::Remove && !own_link && matches!(disk, OnDisk::Link(_)) {
             // Another package's link that cannot be followed here (an
@@ -871,12 +871,7 @@ fn plan_config_files<'a>(
             let owners = others.owners_of(&n.path);
             let taken_over = !owners.is_empty() && owners.iter().all(|c| replaced.iter().any(|(r, _)| *r == c.owner));
             if taken_over {
-                let from: Vec<&InstalledPkg> = replaced
-                    .iter()
-                    .filter(|(r, _)| owners.iter().any(|c| c.owner == *r))
-                    .map(|(_, p)| p)
-                    .collect();
-                check_link_contents(rootfs, &n.path, &old_by_path, &from, pkg_name, pkg_version)?;
+                check_link_contents(rootfs, &n.path, &old_by_path, replaced, pkg_name, pkg_version)?;
             } else if config::resolve_in_root(rootfs, Path::new(&n.path)).is_some_and(|p| p.is_dir()) {
                 return Err(InstallError::FileOp {
                     path: dest,
@@ -960,28 +955,30 @@ fn leads_to_dir(disk: &OnDisk, abs: &Path, rel: &str, rootfs: &Path) -> bool {
 }
 
 /// Before 6b removes a link to make room for the directory this package now
-/// ships -- its own previous link, or (`taken_from`) the link of packages it
-/// replaces: everything below the directory the link leads to (resolved
-/// inside the root, as a chroot would, and through any further links that
-/// lead to directories) must be what this package's previous version or one
-/// of `taken_from` recorded there (by its real path) and still pristine, or
-/// an untouched offer or scratch file of jpkg's.  Anything else -- the
-/// admin's files, another package's -- would silently drop out of /etc, so
-/// the install is refused before any write, naming it, the same way a
-/// directory turning into a link is refused.  A link that leads nowhere has
-/// nothing below it.
+/// ships -- its own previous link, or the link of packages it replaces:
+/// everything below the directory the link leads to (resolved inside the
+/// root, as a chroot would, and through any further links that lead to
+/// directories) must be what this package's previous version or a package
+/// it replaces (`replaced`) recorded there (by its real path) and still
+/// pristine, or an untouched offer or scratch file of jpkg's for one of
+/// those.  Anything else -- the admin's files, another package's -- would
+/// silently drop out of /etc, so the install is refused before any write,
+/// naming it, the same way a directory turning into a link is refused.  A
+/// link that leads nowhere has nothing below it.
 fn check_link_contents(
     rootfs: &Path,
     link_rel: &str,
     old_by_path: &std::collections::HashMap<&str, &FileEntry>,
-    taken_from: &[&InstalledPkg],
+    replaced: &[(&str, InstalledPkg)],
     pkg_name: &str,
     pkg_version: &str,
 ) -> Result<(), InstallError> {
-    let mut taken: std::collections::HashMap<&str, Vec<&FileEntry>> = std::collections::HashMap::new();
-    for e in taken_from.iter().flat_map(|p| p.files.iter()) {
-        taken.entry(e.path.as_str()).or_default().push(e);
-    }
+    // Each replaced package's manifest by path (two of them may record the
+    // same path with different contents).
+    let theirs: Vec<std::collections::HashMap<&str, &FileEntry>> = replaced
+        .iter()
+        .map(|(_, p)| p.files.iter().map(|e| (e.path.as_str(), e)).collect())
+        .collect();
     let Some(target) = crate::config::resolve_in_root(rootfs, Path::new(link_rel)) else {
         return Ok(());
     };
@@ -1008,7 +1005,10 @@ fn check_link_contents(
             let ours = match old_by_path.get(key.as_ref()) {
                 Some(o) => pristine(&Recorded::entry(o)),
                 None => crate::config::is_package_leftover(rootfs, &key, old_by_path),
-            } || taken.get(key.as_ref()).is_some_and(|es| es.iter().any(|e| pristine(&Recorded::entry(e))));
+            } || theirs.iter().any(|m| match m.get(key.as_ref()) {
+                Some(e) => pristine(&Recorded::entry(e)),
+                None => crate::config::is_package_leftover(rootfs, &key, m),
+            });
             if !ours {
                 foreign.push(entry.path().to_path_buf());
             }
@@ -1616,15 +1616,13 @@ pub fn extract_and_register(
     // ── 5c. Config files (2.2.11): keep what the admin changed.  Touches
     //        only the staging tree.  The manifest keeps the package's hash
     //        either way.
-    // Installed packages this one replaces, by name, for 5c's takeover of
-    // their links.
+    // Installed packages this one replaces, by name, for 5c's checks of
+    // links it removes.  An unreadable record fails here, before any write,
+    // as step 9 would fail on it after the root is written.
     let mut replaced: Vec<(&str, InstalledPkg)> = Vec::new();
-    for r in &metadata.package.replaces {
-        match db.get(r) {
-            Ok(Some(p)) => replaced.push((r.as_str(), p)),
-            Ok(None) => {}
-            // As in path_owners, which then lists none of its paths either.
-            Err(e) => log::warn!("jpkg: skipping unreadable record for {r}: {e}"),
+    for r in metadata.package.replaces.iter().filter(|r| !r.is_empty()) {
+        if let Some(p) = db.get(r)? {
+            replaced.push((r.as_str(), p));
         }
     }
     let mut config_plan = plan_config_files(
@@ -4109,6 +4107,94 @@ pub(crate) mod tests {
             assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().file_type().is_symlink(), "{case}");
             assert!(!rootfs.join("bin/pb").exists(), "{case}: refused before any write");
         }
+    }
+
+    /// pa's absolute link etc/foo -> /etc/foo.d over its config file
+    /// etc/foo.d/a.conf, installed under --root.
+    fn pa_with_etc_link(tmp: &Path, rootfs: &Path, db: &InstalledDb) {
+        install(rootfs, db, &build_jpkg_tree(tmp, "pa", "1", &[], &[
+            ("etc/foo.d/a.conf", Node::File(b"a\n", 0o644)),
+            ("etc/foo", Node::Link("/etc/foo.d")),
+        ]));
+    }
+
+    #[test]
+    fn replaces_takeover_accepts_the_replaced_owners_untouched_leftovers() {
+        // jpkg's own offer and scratch files next to the replaced package's
+        // config file are its, as they would be on its own link; an offer
+        // the admin edited is not.
+        for (case, file, body, ok) in [
+            ("offer", "etc/foo.d/a.conf.jpkg-new", &b"a\n"[..], true),
+            ("scratch", "etc/foo.d/a.conf.jpkg-tmp", &b"partial"[..], true),
+            ("edited offer", "etc/foo.d/a.conf.jpkg-new", &b"edited\n"[..], false),
+        ] {
+            let tmp = TempDir::new().unwrap();
+            let (rootfs, db) = fresh_root(&tmp);
+            let _lock = db.lock().unwrap();
+            pa_with_etc_link(tmp.path(), &rootfs, &db);
+            fs::write(rootfs.join(file), body).unwrap();
+            let pb = build_jpkg_tree(tmp.path(), "pb", "1", &["pa"], &[
+                ("etc/foo", Node::Dir(0o755)),
+                ("etc/foo/b.conf", Node::File(b"b\n", 0o644)),
+            ]);
+            let r = extract_and_register(&JpkgArchive::open(&pb).unwrap(), &rootfs, &db);
+            if ok {
+                r.unwrap_or_else(|e| panic!("{case}: {e}"));
+                assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().is_dir(), "{case}");
+            } else {
+                let err = r.expect_err(case);
+                assert!(err.to_string().contains(file), "{case}: {err}");
+                assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().file_type().is_symlink(), "{case}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_replaced_packages_unchanged_files_count_behind_a_link() {
+        // One step: pb replaces pa (the link's owner) and pc (a file behind
+        // it).  Two steps: pb first takes over pa's link, then turns it into
+        // a directory -- pa's files behind it still count.
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        pa_with_etc_link(tmp.path(), &rootfs, &db);
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pc", "1", &[], &[
+            ("etc/foo.d/c.conf", Node::File(b"c\n", 0o644)),
+        ]));
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pb", "1", &["pa", "pc"], &[
+            ("etc/foo", Node::Dir(0o755)),
+            ("etc/foo/b.conf", Node::File(b"b\n", 0o644)),
+        ]));
+        assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().is_dir());
+
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        pa_with_etc_link(tmp.path(), &rootfs, &db);
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pb", "1", &["pa"], &[
+            ("etc/foo", Node::Link("/etc/foo.d")),
+        ]));
+        assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().file_type().is_symlink());
+        install(&rootfs, &db, &build_jpkg_tree(tmp.path(), "pb", "2", &["pa"], &[
+            ("etc/foo", Node::Dir(0o755)),
+            ("etc/foo/b.conf", Node::File(b"b\n", 0o644)),
+        ]));
+        assert!(rootfs.join("etc/foo").symlink_metadata().unwrap().is_dir());
+        assert_eq!(fs::read(rootfs.join("etc/foo.d/a.conf")).unwrap(), b"a\n", "pa's file stays where pa recorded it");
+    }
+
+    #[test]
+    fn unreadable_record_of_a_replaced_package_fails_before_any_write() {
+        let tmp = TempDir::new().unwrap();
+        let (rootfs, db) = fresh_root(&tmp);
+        let _lock = db.lock().unwrap();
+        pa_with_etc_link(tmp.path(), &rootfs, &db);
+        let meta = rootfs.join("var/db/jpkg/installed/pa/metadata.toml");
+        assert!(meta.is_file());
+        fs::write(&meta, b"not [toml").unwrap();
+        let pb = build_jpkg_tree(tmp.path(), "pb", "1", &["pa"], &[("bin/pb", Node::File(b"pb\n", 0o755))]);
+        extract_and_register(&JpkgArchive::open(&pb).unwrap(), &rootfs, &db).expect_err("unreadable record");
+        assert!(!rootfs.join("bin/pb").exists(), "failed before any write");
     }
 
     #[test]

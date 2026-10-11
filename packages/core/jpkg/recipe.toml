@@ -15,8 +15,9 @@ description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5
 #     package's check of what lives below that link resolves the link
 #     inside the root and also walks links nested below it (not ones
 #     pointing back up).  A package that replaces the link's owner may
-#     still take it over, after the same check (the replaced package's
-#     unchanged files count as its own).
+#     still take it over, after the same check; the unchanged files and
+#     untouched offers of every package it replaces count as its own, also
+#     when it later turns that link into a directory itself.
 #   * jpkg conform brings jpkg itself up first (install/upgrade, never
 #     --force, never a downgrade) and stops if that fails, upgrades newer
 #     pins instead of force-reinstalling their closures, writes
