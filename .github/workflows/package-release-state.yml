@@ -187,13 +187,60 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -eu
-          mkdir -p /tmp/jpkg-open-release
-          gh release download packages \
-            --repo "$GH_REPO" \
-            --pattern "*.jpkg" \
-            --dir /tmp/jpkg-open-release 2>/dev/null || true
+          dir=/tmp/jpkg-open-release
+          mkdir -p "$dir"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          # Writes "name size" for every .jpkg asset on the rolling release
+          # that is not staged here at its published size, so a download
+          # that stopped partway counts as missing too.
+          list_missing() {
+            gh release view packages \
+              --repo "$GH_REPO" \
+              --json assets \
+              --jq '.assets[] | select(.name | endswith(".jpkg")) | "\(.name) \(.size)"' \
+              > "$tmp/listed"
+            LC_ALL=C sort "$tmp/listed" > "$tmp/wanted"
+            : > "$tmp/found"
+            for pkg in "$dir"/*.jpkg; do
+              [ -f "$pkg" ] || continue
+              printf '%s %s\n' "${pkg##*/}" "$(wc -c < "$pkg" | tr -d ' ')" >> "$tmp/found"
+            done
+            LC_ALL=C sort "$tmp/found" > "$tmp/staged"
+            LC_ALL=C comm -23 "$tmp/wanted" "$tmp/staged" > "$tmp/missing"
+          }
+
+          attempt=1
+          max_attempts=4
+          while :; do
+            if ! gh release download packages \
+                --repo "$GH_REPO" \
+                --pattern "*.jpkg" \
+                --dir "$dir" \
+                --skip-existing; then
+              echo "::warning::gh release download packages failed (attempt $attempt of $max_attempts)." >&2
+            fi
+            list_missing
+            [ -s "$tmp/missing" ] || break
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              while read -r name size; do
+                echo "::error::$name is on the packages release but was not downloaded at its published size ($size bytes) after $max_attempts attempts."
+              done < "$tmp/missing"
+              exit 1
+            fi
+            echo "Rolling packages not yet staged after attempt $attempt of $max_attempts:"
+            sed 's/ .*//; s/^/  /' "$tmp/missing"
+            # Drop any partial copy so --skip-existing fetches it again.
+            while read -r name _; do
+              rm -f "$dir/$name"
+            done < "$tmp/missing"
+            sleep $((attempt * 15))
+            attempt=$((attempt + 1))
+          done
+
           echo "Rolling packages staged for release:"
-          ls -lh /tmp/jpkg-open-release/*.jpkg 2>/dev/null || echo "(none)"
+          ls -lh "$dir"/*.jpkg 2>/dev/null || echo "(none)"
 
       - name: Rebuild open release INDEX
         if: ${{ steps.request.outputs.action == 'open' }}
