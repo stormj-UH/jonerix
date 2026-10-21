@@ -1,8 +1,16 @@
 [package]
 name = "jpkg"
-version = "2.2.12"
+version = "2.2.13"
 license = "0BSD"
 description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5)"
+# 2.2.13 — jpkg no longer trusts the compromised eMudhra chains.
+#   * jpkg's HTTPS client verifies against its compiled-in root store
+#     (webpki-roots), not /etc/ssl, so it needs its own fix: webpki-roots
+#     1.0.10 drops emSign ECC Root CA - G3 (as NSS 3.131.1 does) and
+#     rustls-webpki 0.103.16 refuses the eight eMudhra intermediates with
+#     compromised keys by their public keys (Mozilla bug 2083449).  No
+#     code change.
+#
 # 2.2.12 — symlinks are judged inside the root.
 #   * Links are resolved as a chroot into the target root would resolve
 #     them (absolute targets start at the root, '..' stops there).  Under
