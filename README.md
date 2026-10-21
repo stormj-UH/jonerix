@@ -13,7 +13,12 @@
 **jonerix is a self-hosting alt-Linux built around permissive licensing.**
 
 The current tagged distro release is
-**[v1.2.4](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.4)**.
+**[v1.2.4e](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.4e)**, an
+emergency release on top of v1.2.4: every root store jonerix ships stops
+trusting the eMudhra chains whose intermediate keys were compromised
+(Mozilla bug 2083449). Update with
+`jpkg update && jpkg install jpkg && jpkg upgrade jpkg && jpkg upgrade`, or
+`jpkg conform 1.2.4e` on a host pinned to a release.
 The tree currently tracks **145 package recipes** and builds for
 `x86_64` and `aarch64`.
 
@@ -149,7 +154,7 @@ iwr -useb https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/wsl/i
   -OutFile $env:TEMP\jonerix-install.ps1
 
 & $env:TEMP\jonerix-install.ps1 -InstallDir "D:\WSL\jonerix" -DistroName "jonerix-dev"
-& $env:TEMP\jonerix-install.ps1 -Release "v1.2.4"
+& $env:TEMP\jonerix-install.ps1 -Release "v1.2.4e"
 ```
 
 See [install/wsl/install.ps1](install/wsl/install.ps1) and
@@ -171,7 +176,7 @@ Pin the package set to a tagged release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/stormj-UH/jonerix/main/install/jonerix-pi5.sh \
-  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.4
+  | sudo sh -s -- -d /dev/sdX --release-tag v1.2.4e
 ```
 
 Complete a CI image after `dd` by adding the firmware/kernel payload that the
@@ -221,15 +226,15 @@ jpkg list
 jpkg owns /bin/ping
 jpkg local install ./pkg.jpkg
 jpkg local build ./packages/core/jpkg
-jpkg conform 1.2.4
+jpkg conform 1.2.4e
 ```
 
 `jpkg conform` brings jpkg itself up first from 1.2.4 on. A host whose jpkg
 is older than 2.2.12 still has the old `jpkg-conform`, which does not, so
 run `jpkg update && jpkg install jpkg && jpkg upgrade jpkg` there before
-`jpkg conform 1.2.4` (see docs/packaging.md, "Upgrading to 2.2.11").
+`jpkg conform 1.2.4e` (see docs/packaging.md, "Upgrading to 2.2.11").
 
-The current source tree packages `jpkg` **2.2.12**. The Rust implementation
+The current source tree packages `jpkg` **2.2.13**. The Rust implementation
 keeps the C jpkg wire formats compatible and keeps the crate itself
 `unsafe`-free.
 
@@ -272,7 +277,7 @@ that traditional Linux systems usually take for granted.
 | libnl | `nloxide` | 1.2.3 | Netlink and Generic Netlink for hostapd/wpa_supplicant. |
 | expr | `exproxide` | 0.1.1-r0 | POSIX `expr(1)` for configure scripts. |
 | util-linux subset | `jonerix-util` | see PACKAGES.md | Small replacements for the util-linux commands jonerix actually needs. |
-| jpkg C implementation | `jpkg` | 2.2.12 | Rust package manager retaining the historical jpkg file formats. |
+| jpkg C implementation | `jpkg` | 2.2.13 | Rust package manager retaining the historical jpkg file formats. |
 
 Third-party permissive replacements include `uutils` for a larger coreutils
 surface and `ripgrep` for recursive search.
@@ -418,7 +423,7 @@ the recipes have drifted apart.
     _                       _            jonerik@tormenta
    (_) ___  _ __   ___ _ __(_)_  __      ----------------
    | |/ _ \| '_ \ / _ \ '__| \ \/ /      Host -> Raspberry Pi 5 Model B Rev 1.1
-   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.2.4 aarch64
+   | | (_) | | | |  __/ |  | |>  <       OS -> jonerix 1.2.4e aarch64
   _/ |\___/|_| |_|\___|_|  |_/_/\_\      Init System -> openrc-init
  |__/                                    Packages -> 87 (jpkg)
  ========= permissive + linux =========  Shell -> brash
