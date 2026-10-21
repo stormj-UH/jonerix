@@ -92,7 +92,9 @@ RUN apk add --no-cache libarchive-tools && ln -sf bsdtar /usr/bin/tar
 # Install all packages via jpkg.
 # Keep zsh late in the list so its post-install completion refresh sees the
 # final command set in the image.  Any package may fail with a warning
-# except jpkg itself: an image without its package manager must not build.
+# except jpkg itself (an image without its package manager must not build)
+# and ca-certificates (without it /etc/ssl/cert.pem is LibreSSL's file and
+# curl has no CA bundle at all).
 RUN jpkg --root /jonerix update && \
     for pkg in \
       musl ncurses libressl zlib xz lz4 zstd ca-certificates \
@@ -113,7 +115,10 @@ RUN jpkg --root /jonerix update && \
       jpkg --root /jonerix install "$pkg" || echo "WARN: $pkg failed"; \
     done && \
     test -x /jonerix/bin/jpkg && \
-    test -f /jonerix/var/db/jpkg/installed/jpkg/metadata.toml
+    test -f /jonerix/var/db/jpkg/installed/jpkg/metadata.toml && \
+    test -f /jonerix/var/db/jpkg/installed/ca-certificates/metadata.toml && \
+    test -s /jonerix/etc/ssl/certs/ca-certificates.crt && \
+    test -L /jonerix/etc/ssl/cert.pem
 
 RUN install -m 755 /usr/local/bin/bootstrap-meson /jonerix/bin/bootstrap-meson && \
     chroot /jonerix /bin/bootstrap-meson && \

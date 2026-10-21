@@ -91,10 +91,13 @@ FIRMWARE_ONLY=0     # --firmware-only: skip partition/format/userland,
 # logsave / mklost+found. Pulled in by default so every Pi 5 image
 # can format, check, and inspect its own filesystems without needing
 # the GPL e2fsprogs + dosfstools stack.
-DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd openresolv ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 reforger raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch"
+DEFAULT_PACKAGES="musl toybox mksh openrc dhcpcd openresolv ifupdown-ng dropbear bsdtar openntpd jonerix-ntp-http-bootstrap sudo python3 reforger raspi-config shadow jonerix-raspi5-fixups jonerix-netutils zsh gitredoxide ripgrep pico fastfetch ca-certificates"
 MANDATORY_PACKAGES="jonerix-raspi5-fixups"
 # Installed last with --force so their files and `replaces` ownership land
 # after the main transaction (ca-certificates owns /etc/ssl/cert.pem).
+# This only orders packages already selected above: ca-certificates is in
+# DEFAULT_PACKAGES too (since 1.2.4e), or curl, which reads only
+# /etc/ssl/certs/ca-certificates.crt, would have no CA bundle.
 LATE_PACKAGES="ca-certificates"
 EXTRA_PACKAGES=""
 NO_DEFAULT_PACKAGES=0
