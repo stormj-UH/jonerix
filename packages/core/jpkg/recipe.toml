@@ -9,7 +9,10 @@ description = "jonerix package manager (Rust 2.0 — supersedes the C jpkg 1.1.5
 #     1.0.10 drops emSign ECC Root CA - G3 (as NSS 3.131.1 does) and
 #     rustls-webpki 0.103.16 refuses the eight eMudhra intermediates with
 #     compromised keys by their public keys (Mozilla bug 2083449).  No
-#     code change.
+#     code change.  Unlike the 2026-10-20 bundle, webpki-roots 1.0.10
+#     still carries emSign Root CA - C1 and emSign ECC Root CA - C3, which
+#     NSS 3.131.1 also dropped at eMudhra's own request (bug 2083709); no
+#     compromised key chains to either.
 #
 # 2.2.12 — symlinks are judged inside the root.
 #   * Links are resolved as a chroot into the target root would resolve

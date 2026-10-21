@@ -18,7 +18,9 @@ emergency release on top of v1.2.4: every root store jonerix ships stops
 trusting the eMudhra chains whose intermediate keys were compromised
 (Mozilla bug 2083449). Update with
 `jpkg update && jpkg install jpkg && jpkg upgrade jpkg && jpkg upgrade`, or
-`jpkg conform 1.2.4e` on a host pinned to a release.
+`jpkg conform 1.2.4e` on a host pinned to a release. pip carries its own CA
+bundle: check that `python3 -m pip --version` reports 26.2.2, and run
+`python -m pip install -U pip` inside every existing virtualenv.
 The tree currently tracks **145 package recipes** and builds for
 `x86_64` and `aarch64`.
 
