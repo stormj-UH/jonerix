@@ -14,9 +14,12 @@
 
 The current tagged distro release is
 **[v1.2.4e](https://github.com/stormj-UH/jonerix/releases/tag/v1.2.4e)**, an
-emergency release on top of v1.2.4: every root store jonerix ships stops
-trusting the eMudhra chains whose intermediate keys were compromised
-(Mozilla bug 2083449). Update with
+emergency release on top of v1.2.4: the system CA store (ca-certificates
+and LibreSSL's `/etc/ssl/cert.pem`), jpkg and pip stop trusting the eMudhra
+chains whose intermediate keys were compromised (Mozilla bug 2083449).
+Node.js keeps its compiled-in root list until it is rebuilt; until then run it
+with `--use-openssl-ca` (or set `NODE_OPTIONS=--use-openssl-ca`) so it uses
+the system store instead. Update with
 `jpkg update && jpkg install jpkg && jpkg upgrade jpkg && jpkg upgrade`, or
 `jpkg conform 1.2.4e` on a host pinned to a release. pip carries its own CA
 bundle: check that `python3 -m pip --version` reports 26.2.2, and run
