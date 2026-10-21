@@ -87,8 +87,17 @@ jobs:
               v*) ;;
               *) tag="v$tag" ;;
             esac
-            if ! printf '%s\n' "$tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null 2>&1; then
-              echo "Release tag must look like vX.Y.Z: $tag" >&2
+            # vX.Y.Z, or vX.Y.Z plus one lowercase letter for an emergency
+            # release on top of X.Y.Z (v1.2.4e).  The case catches what a
+            # line-by-line grep would not, such as an embedded newline.
+            case "$tag" in
+              *[!0-9a-z.]*)
+                echo "Release tag must look like vX.Y.Z or vX.Y.Za: $tag" >&2
+                exit 1
+                ;;
+            esac
+            if ! printf '%s\n' "$tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*[a-z]\{0,1\}$' >/dev/null 2>&1; then
+              echo "Release tag must look like vX.Y.Z or vX.Y.Za: $tag" >&2
               exit 1
             fi
           fi
@@ -279,7 +288,7 @@ jobs:
             echo "State asset has no tag= line." >&2
             exit 1
           fi
-          if ! printf '%s\n' "$active_tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null 2>&1; then
+          if ! printf '%s\n' "$active_tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*[a-z]\{0,1\}$' >/dev/null 2>&1; then
             echo "State asset has invalid release tag: $active_tag" >&2
             exit 1
           fi

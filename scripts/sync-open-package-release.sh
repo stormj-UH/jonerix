@@ -41,8 +41,8 @@ if [ -z "$active_tag" ]; then
     echo "Open package release state has no tag= line." >&2
     exit 1
 fi
-if ! printf '%s\n' "$active_tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null 2>&1; then
-    echo "Open package release tag is not a vX.Y.Z tag: $active_tag" >&2
+if ! printf '%s\n' "$active_tag" | grep '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*[a-z]\{0,1\}$' >/dev/null 2>&1; then
+    echo "Open package release tag is not a vX.Y.Z or vX.Y.Za tag: $active_tag" >&2
     exit 1
 fi
 
