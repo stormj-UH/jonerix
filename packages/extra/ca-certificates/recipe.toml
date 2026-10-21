@@ -91,11 +91,20 @@ head -5 cacert.pem | grep -q "Bundle of CA Root Certificates" || \
 # DER SHA-256 of roots that must never be trusted again (Mozilla bug
 # 2083449): emSign ECC Root CA - G3; AAA Certificate Services, which
 # cross-signed the same compromised keys (not a TLS anchor in NSS, but in
-# other bundles); the emSign Root TLS CA - G3 cross-certificate.  Hashed
-# with base64 -d | sha256sum, as the builder has neither openssl nor awk.
+# other bundles); emSign Root TLS CA - G3 and emSign Root CS CA - G3, the
+# direct issuers of the compromised intermediates, self-signed and
+# cross-signed by ECC G3.  Hashed with base64 -d | sha256sum, as the
+# builder has neither openssl nor awk.
 DISTRUSTED="86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b
 d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4
-3094025792039a68af6e553686410bdab7c0d4a36b9084cba64202e35d6ebbdd"
+7dd78d5f4f13459a83dff9abbba62edbaf6f2d102bf257fd712f4d9f2746ed8d
+3094025792039a68af6e553686410bdab7c0d4a36b9084cba64202e35d6ebbdd
+f2edaaff3d9b701fb4d14c9f285f8c0bad90fc3bcc1fa07d47f4718edaba34a5
+7137fa71ad46ba686f746d1014ac57e8e6c6e9af4aa2f73c0c44a5cf27debb59"
+# The pipe below reports only cut's status: a missing or failing base64
+# would hash empty input for every certificate and match nothing.
+command -v base64 >/dev/null 2>&1 || { echo "ca-certificates: base64 not found" >&2; exit 1; }
+EMPTY_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 certs=0
 inside=0
 : > cert.b64
@@ -109,6 +118,10 @@ while IFS= read -r line; do
             inside=0
             certs=$((certs + 1))
             fp=$(base64 -d < cert.b64 | sha256sum | cut -d' ' -f1)
+            if [ -z "$fp" ] || [ "$fp" = "$EMPTY_SHA256" ]; then
+                echo "ca-certificates: could not hash certificate $certs" >&2
+                exit 1
+            fi
             if printf '%s\n' "$DISTRUSTED" | grep -qx "$fp"; then
                 echo "ca-certificates: the bundle still trusts distrusted root $fp" >&2
                 exit 1
