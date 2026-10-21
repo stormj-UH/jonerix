@@ -1,8 +1,17 @@
 [package]
 name = "ca-certificates"
-version = "20260211-r3"
+version = "20261020"
 license = "MPL-2.0"
 description = "Mozilla CA certificate bundle for TLS verification (sourced from curl.se)"
+# 20261020 (jonerix 1.2.4e): curl.se cacert-2026-10-20.pem, Mozilla's
+# server-auth roots as of NSS 3.131.1 (118 certificates).  NSS 3.131.1
+# removes emSign ECC Root CA - G3, the root that eight eMudhra
+# intermediates with compromised keys chain to (Mozilla bug 2083449),
+# plus eMudhra's retired C1 and C3 roots.  The previous bundle (Mozilla
+# data of 2026-02-11, 145 roots) also loses 28 roots Mozilla removed since
+# then (DigiCert Global Root CA, the Entrust roots, ...) and gains 4.
+# The build now refuses any bundle that still holds a root those
+# compromised chains reach (see DISTRUSTED below).
 # r3: single owner for /etc/ssl/cert.pem. libressl installs its own
 # bundled cert.pem at that path and this package installs a symlink to
 # the Mozilla bundle there; with both installed each manifest listed the
@@ -53,11 +62,12 @@ find_vendored_file() {
 }
 
 # Pinned upstream hash — bump both this and [package].version when
-# Mozilla's CA list changes. curl.se updates cacert.pem in place,
-# so the hash is the authoritative integrity check.
-PEM_SHA256="b6e66569cc3d438dd5abe514d0df50005d570bfc96c14dca8f768d020cb96171"
-PEM_SRC=$(find_vendored_file cacert.pem) || {
-    echo "ca-certificates: missing vendored cacert.pem" >&2
+# Mozilla's CA list changes.  Vendor curl.se's dated copy
+# (cacert-YYYY-MM-DD.pem): cacert.pem is updated in place.
+PEM_NAME="cacert-2026-10-20.pem"
+PEM_SHA256="796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe"
+PEM_SRC=$(find_vendored_file "$PEM_NAME") || {
+    echo "ca-certificates: missing vendored $PEM_NAME" >&2
     exit 1
 }
 cp "$PEM_SRC" cacert.pem
@@ -78,6 +88,44 @@ fi
 # `## Bundle of CA Root Certificates` on line 2.
 head -5 cacert.pem | grep -q "Bundle of CA Root Certificates" || \
     { echo "ca-certificates: unexpected header"; head -5 cacert.pem; exit 1; }
+# DER SHA-256 of roots that must never be trusted again (Mozilla bug
+# 2083449): emSign ECC Root CA - G3; AAA Certificate Services, which
+# cross-signed the same compromised keys (not a TLS anchor in NSS, but in
+# other bundles); the emSign Root TLS CA - G3 cross-certificate.  Hashed
+# with base64 -d | sha256sum, as the builder has neither openssl nor awk.
+DISTRUSTED="86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b
+d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4
+3094025792039a68af6e553686410bdab7c0d4a36b9084cba64202e35d6ebbdd"
+certs=0
+inside=0
+: > cert.b64
+while IFS= read -r line; do
+    case "$line" in
+        "-----BEGIN CERTIFICATE-----")
+            inside=1
+            : > cert.b64
+            ;;
+        "-----END CERTIFICATE-----")
+            inside=0
+            certs=$((certs + 1))
+            fp=$(base64 -d < cert.b64 | sha256sum | cut -d' ' -f1)
+            if printf '%s\n' "$DISTRUSTED" | grep -qx "$fp"; then
+                echo "ca-certificates: the bundle still trusts distrusted root $fp" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            if [ "$inside" -eq 1 ]; then
+                printf '%s\n' "$line" >> cert.b64
+            fi
+            ;;
+    esac
+done < cacert.pem
+rm -f cert.b64
+if [ "$certs" -ne 118 ]; then
+    echo "ca-certificates: expected 118 certificates in $PEM_NAME, found $certs" >&2
+    exit 1
+fi
 """
 install = """
 set -e

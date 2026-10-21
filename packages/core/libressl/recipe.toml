@@ -1,8 +1,14 @@
 [package]
 name = "libressl"
-version = "4.0.0"
+version = "4.0.0-r1"
 license = "ISC"
 description = "Free TLS/crypto stack from OpenBSD (provides libssl, libcrypto, libtls)"
+# 4.0.0-r1 (jonerix 1.2.4e): /etc/ssl/cert.pem is the Mozilla bundle that
+# ca-certificates ships (curl.se cacert-2026-10-20.pem, checked by hash),
+# not LibreSSL's own (OpenBSD rev 1.28).  That one trusts emSign ECC Root
+# CA - G3 and AAA Certificate Services, which both reach the eight eMudhra
+# intermediates with compromised keys (Mozilla bug 2083449), and hosts
+# without ca-certificates read it.  Bump it together with ca-certificates.
 
 [source]
 url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.0.0.tar.gz"
@@ -29,7 +35,24 @@ install = """DESTDIR=$DESTDIR samu -C build install
 if [ -d "$DESTDIR/usr" ]; then cp -a "$DESTDIR/usr/." "$DESTDIR/" && rm -rf "$DESTDIR/usr"; fi
 if [ -d "$DESTDIR/lib64" ]; then cp -a "$DESTDIR/lib64/." "$DESTDIR/lib/" && rm -rf "$DESTDIR/lib64"; fi
 find $DESTDIR/bin -type f -exec llvm-strip --strip-all {} \; 2>/dev/null || true
-find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true"""
+find $DESTDIR/lib -name "*.so*" -type f -exec llvm-strip --strip-unneeded {} \; 2>/dev/null || true
+PEM_NAME=cacert-2026-10-20.pem
+PEM_SHA256=796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe
+pem_src=""
+oldifs=$IFS
+IFS=:
+for dir in ${JPKG_SOURCE_CACHE:-}; do
+    if [ -n "$dir" ] && [ -f "$dir/$PEM_NAME" ]; then pem_src="$dir/$PEM_NAME"; break; fi
+done
+IFS=$oldifs
+if [ -z "$pem_src" ] && [ -f "$RECIPE_DIR/../../../sources/$PEM_NAME" ]; then
+    pem_src="$RECIPE_DIR/../../../sources/$PEM_NAME"
+fi
+[ -n "$pem_src" ] || { echo "libressl: missing vendored $PEM_NAME" >&2; exit 1; }
+[ "$(sha256sum "$pem_src" | cut -d' ' -f1)" = "$PEM_SHA256" ] || { echo "libressl: $PEM_NAME sha256 mismatch" >&2; exit 1; }
+[ -f "$DESTDIR/etc/ssl/cert.pem" ] || { echo "libressl: the install laid down no etc/ssl/cert.pem" >&2; exit 1; }
+install -m644 "$pem_src" "$DESTDIR/etc/ssl/cert.pem"
+"""
 
 [depends]
 runtime = ["musl"]

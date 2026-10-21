@@ -169,7 +169,9 @@ for recipe in "${RECIPES}"/core/*/recipe.toml \
 done
 
 # Non-[source] vendored inputs used directly by package build scripts.
-check_cached_file ca-certificates cacert.pem b6e66569cc3d438dd5abe514d0df50005d570bfc96c14dca8f768d020cb96171
+check_cached_file ca-certificates cacert-2026-10-20.pem 796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe
+check_cached_file libressl cacert-2026-10-20.pem 796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe
+check_cached_file python3 pip-26.2.2-py3-none-any.whl fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70
 check_cached_file tzdata tzdata2026a.tar.gz 77b541725937bb53bd92bd484c0b43bec8545e2d3431ee01f04ef8f2203ba2b7
 check_cached_file go go1.26.1.linux-arm64.tar.gz a290581cfe4fe28ddd737dde3095f3dbeb7f2e4065cab4eae44dfc53b760c2f7
 check_cached_file go go1.26.1.linux-amd64.tar.gz 031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a

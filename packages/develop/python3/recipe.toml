@@ -1,6 +1,6 @@
 [package]
 name = "python3"
-version = "3.14.5-r1"
+version = "3.14.5-r2"
 license = "PSF-2.0"
 description = "Python programming language interpreter (PGO/LTO, computed-gotos, with _bz2)"
 
@@ -24,6 +24,14 @@ system = "custom"
 #     multi-rule prerequisite merge no longer feeds headers to clang.
 #   - llvm-extra 21.1.2-r1 ships libclang_rt.profile.a in clang's
 #     per-triple runtime directory for the PGO link.
+#
+# 3.14.5-r2 (2026-10-20): ensurepip bundles pip 26.2.2 instead of 26.1.1.
+#   pip 26.1.1 vendors certifi 2026.2.25, which trusts emSign ECC Root
+#   CA - G3, the root of the compromised eMudhra intermediates (Mozilla
+#   bug 2083449), and pip loads certifi on top of the system store, so a
+#   new /etc/ssl bundle alone does not fix pip.  26.2.2 vendors certifi
+#   2026.10.19 (no G3).  post_install's `ensurepip --upgrade` moves the
+#   system pip on; existing venvs need `python3 -m pip install -U pip`.
 configure = """mkdir -p .jpkg-tools
 printf '#!/bin/sh\nexec cmp -s "$@"\n' > .jpkg-tools/diff
 chmod 755 .jpkg-tools/diff
@@ -75,6 +83,26 @@ if old not in text:
     raise SystemExit("check_extension_modules get_builddir stanza not found")
 path.write_text(text.replace(old, new))
 PY
+PIP_WHL=pip-26.2.2-py3-none-any.whl
+PIP_WHL_SHA256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70
+pip_src=""
+oldifs=$IFS
+IFS=:
+for dir in ${JPKG_SOURCE_CACHE:-}; do
+    if [ -n "$dir" ] && [ -f "$dir/$PIP_WHL" ]; then pip_src="$dir/$PIP_WHL"; break; fi
+done
+IFS=$oldifs
+if [ -z "$pip_src" ] && [ -f "$RECIPE_DIR/../../../sources/$PIP_WHL" ]; then
+    pip_src="$RECIPE_DIR/../../../sources/$PIP_WHL"
+fi
+[ -n "$pip_src" ] || { echo "python3: missing vendored $PIP_WHL" >&2; exit 1; }
+[ "$(sha256sum "$pip_src" | cut -d' ' -f1)" = "$PIP_WHL_SHA256" ] || { echo "python3: $PIP_WHL sha256 mismatch" >&2; exit 1; }
+[ -f Lib/ensurepip/_bundled/pip-26.1.1-py3-none-any.whl ] || { echo "python3: bundled pip-26.1.1 wheel not found" >&2; exit 1; }
+rm -f Lib/ensurepip/_bundled/pip-*.whl
+cp "$pip_src" Lib/ensurepip/_bundled/
+sed 's/^_PIP_VERSION = "26.1.1"$/_PIP_VERSION = "26.2.2"/' Lib/ensurepip/__init__.py > Lib/ensurepip/__init__.py.new
+mv Lib/ensurepip/__init__.py.new Lib/ensurepip/__init__.py
+grep -qx '_PIP_VERSION = "26.2.2"' Lib/ensurepip/__init__.py || { echo "python3: ensurepip _PIP_VERSION not updated" >&2; exit 1; }
 PATH="$PWD/.jpkg-tools:$PATH" \
   CFLAGS="$CFLAGS -I/include/ncursesw" \
   CC=clang CXX=clang++ ./configure \
